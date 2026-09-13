@@ -1,0 +1,23 @@
+#!/bin/sh
+# 公开仓库数据红线守卫：拦截误暂存的数据文件。
+# 启用：git config core.hooksPath .githooks
+
+BLOCKED=$(git diff --cached --name-only --diff-filter=AM \
+  | grep -E '\.(csv|tsv|xlsx|xls|dta|sav|sas7bdat|parquet|feather|rds|RData|rda)$' \
+  | grep -v '^data-raw/synthetic/' \
+  | grep -v '^inst/extdata/' \
+  | grep -v '^data/' || true)
+
+if [ -n "$BLOCKED" ]; then
+  echo "=========================================================="
+  echo " 拒绝提交：检测到数据文件进入暂存区"
+  echo "=========================================================="
+  echo "$BLOCKED" | sed 's/^/    /'
+  echo
+  echo " 本仓库为公开仓库。患者数据与 MIMIC 数据禁止入库。"
+  echo " · 确属可公开的合成/脱敏数据 -> 移到 data-raw/synthetic/"
+  echo " · 确属包自带数据集          -> 放 data/ 或 inst/extdata/"
+  echo " · 确认无误需强行提交        -> git commit --no-verify"
+  exit 1
+fi
+exit 0
