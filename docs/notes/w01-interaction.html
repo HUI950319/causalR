@@ -1,0 +1,1606 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hans" xml:lang="zh-Hans"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>两个处理，一起动手 – 因果推断读书笔记</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../notes/w01-effect-modification.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-4571e413af9019dfdcc70175faf53a1f.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-a6fa77cc9567ac399ef81f705f9a4054.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-5b106fb89e54330c31ec335e74f12ebe.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-a6fa77cc9567ac399ef81f705f9a4054.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "没有结果",
+    "search-matching-documents-text": "匹配的文档",
+    "search-copy-link-title": "复制搜索链接",
+    "search-hide-matches-text": "隐藏其它匹配结果",
+    "search-more-match-text": "更多匹配结果",
+    "search-more-matches-text": "更多匹配结果",
+    "search-clear-button-title": "清除",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "取消",
+    "search-submit-button-title": "提交",
+    "search-label": "搜索"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar docked quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../notes/w01-potential-outcomes.html">阶段一 · 估计量全景</a></li><li class="breadcrumb-item"><a href="../notes/w01-interaction.html"><span class="chapter-title">两个处理，一起动手</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="搜索" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header sidebar-header-stacked">
+      <a href="../index.html" class="sidebar-logo-link">
+      </a>
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../">因果推断读书笔记</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/HUI950319/causalR" title="源代码" class="quarto-navigation-tool px-1" aria-label="源代码"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="切换深色模式"><i class="bi"></i></a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="搜索"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">关于这份笔记</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">阶段一 · 估计量全景</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-potential-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Zeus 的心脏移植</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-randomized-experiments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">一枚硬币，还是两枚</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-observational-studies.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">一枚硬币也没抛</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-effect-modification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">没有「治疗的因果效应」这种东西</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-interaction.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">两个处理，一起动手</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">目录</h2>
+   
+  <ul>
+  <li><a href="#交互作用要有联合干预" id="toc-交互作用要有联合干预" class="nav-link active" data-scroll-target="#交互作用要有联合干预">5.1 交互作用要有联合干预</a></li>
+  <li><a href="#识别交互作用" id="toc-识别交互作用" class="nav-link" data-scroll-target="#识别交互作用">5.2 识别交互作用</a></li>
+  <li><a href="#反应类型把人按会怎么反应分类" id="toc-反应类型把人按会怎么反应分类" class="nav-link" data-scroll-target="#反应类型把人按会怎么反应分类">5.3 反应类型：把人按「会怎么反应」分类</a></li>
+  <li><a href="#充分原因因果派" id="toc-充分原因因果派" class="nav-link" data-scroll-target="#充分原因因果派">5.4 充分原因：因果派</a></li>
+  <li><a href="#充分原因交互协同与拮抗" id="toc-充分原因交互协同与拮抗" class="nav-link" data-scroll-target="#充分原因交互协同与拮抗">5.5 充分原因交互：协同与拮抗</a></li>
+  <li><a href="#反事实还是充分-组分原因" id="toc-反事实还是充分-组分原因" class="nav-link" data-scroll-target="#反事实还是充分-组分原因">5.6 反事实，还是充分-组分原因？</a></li>
+  <li><a href="#这章停在哪里" id="toc-这章停在哪里" class="nav-link" data-scroll-target="#这章停在哪里">这章停在哪里</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/w01-interaction.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content page-columns page-full" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../notes/w01-potential-outcomes.html">阶段一 · 估计量全景</a></li><li class="breadcrumb-item"><a href="../notes/w01-interaction.html"><span class="chapter-title">两个处理，一起动手</span></a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-title">两个处理，一起动手</span></h1>
+<p class="subtitle lead">第 5 章 · 交互作用</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<blockquote class="blockquote">
+<p><strong>原书</strong>：Hernán &amp; Robins, <em>Causal Inference: What If</em>（2025-01-02 版）， 第 5 章，书页 57–70。本章是读书笔记，非原书译文。</p>
+</blockquote>
+<p>前四章的记号一直只带一个上标：<span class="math inline">\(Y^{a}\)</span>。第 5 章加上第二个。</p>
+<p>开场还是马德里街头。前面你只随机分配「自己抬不抬头」，现在书又加了一条随机分配： <strong>你站在街上是穿着衣服，还是光着</strong>。于是可以问：你穿着衣服时抬头，效果多大？ 光着的时候呢？如果这两个效应不一样，就说这两个处理（抬头、穿衣）在结局上 <strong>发生了交互作用</strong>。</p>
+<p>这一章要说的事其实只有一句：<strong>交互作用是关于「一起动手」的概念</strong>。 第 4 章的效应修饰只要求你对 <span class="math inline">\(A\)</span> 动手，<span class="math inline">\(V\)</span> 你只是拿来分层； 第 5 章的 <span class="math inline">\(E\)</span> 是你<strong>也要动手</strong>的东西。一句话之差，识别的代价、能下的结论、 甚至「交互」这个词到底指什么，全都变了。</p>
+<div class="column-page">
+<div class="fig-frame map-frame">
+<svg viewbox="0 0 900 800" role="img" aria-labelledby="map5-t map5-d">
+        <title id="map5-t">第 5 章全章地图</title>
+        <desc id="map5-d">从「两个处理一起干预会怎样」出发，先给出基于联合干预的交互作用定义，
+        转折为 A 与 E 地位对等（效应修饰不是），再走到识别：把 (A, E) 当成一个四水平的处理；
+        其后岔为反事实框架的 16 种反应类型与充分原因框架的 9 个因果派两条并列的路，
+        在 Fine Point 5.1 的不等式处合龙，最后指出两个框架回答的是两个不同的问题，引出第 6 章。</desc>
+
+        <defs>
+          <marker id="mk5" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6.5" markerheight="6.5" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" class="mk-fill"></path>
+          </marker>
+        </defs>
+
+        <!-- ============ 连线（先画，压在节点下） ============ -->
+        <g class="ln" marker-end="url(#mk5)">
+          <path d="M 450 64  L 450 114"></path>
+          <path d="M 450 166 L 450 214"></path>
+          <path d="M 450 266 L 450 314"></path>
+          <path d="M 450 366 L 450 390 L 265 390 L 265 412"></path>
+          <path d="M 450 366 L 450 390 L 635 390 L 635 412"></path>
+          <path d="M 265 508 L 265 530 L 450 530 L 450 554"></path>
+          <path d="M 635 508 L 635 530 L 450 530 L 450 554"></path>
+          <path d="M 450 606 L 450 644"></path>
+          <path d="M 450 696 L 450 734"></path>
+        </g>
+        <path d="M 270 140 L 256 140" class="ln ln-dash"></path>
+        <path d="M 650 240 L 668 240" class="ln ln-dash"></path>
+        <path d="M 260 340 L 256 340" class="ln ln-dash"></path>
+        <path d="M 640 340 L 668 340" class="ln ln-dash"></path>
+        <path d="M 230 580 L 220 580" class="ln ln-dash"></path>
+        <path d="M 650 670 L 668 670" class="ln ln-dash"></path>
+
+        <!-- ============ 节点 ============ -->
+        <g class="nd">
+          <rect x="230" y="20" width="440" height="44" rx="22" class="n-entry"></rect>
+          <text x="450" y="47" class="t">很多因果问题问的是：两个处理一起干预会怎样？</text>
+
+          <rect x="270" y="114" width="360" height="52" rx="3" class="n-core"></rect>
+          <text x="450" y="146" class="t">定义靠联合干预：Y<tspan dy="-6" class="sup">a,e</tspan><tspan dy="6"> 的四个值</tspan></text>
+
+          <rect x="10" y="117" width="246" height="46" rx="3" class="n-side"></rect>
+          <text x="133" y="134" class="t t-side">Y<tspan dy="-5" class="sup">a</tspan><tspan dy="5"> 只是 Y</tspan><tspan dy="-5" class="sup">a,E</tspan><tspan dy="5"> 的特例</tspan></text>
+          <text x="133" y="153" class="t t-side">一致性 = 递归代入的特例</text>
+
+          <rect x="250" y="214" width="400" height="52" rx="3" class="n-turn"></rect>
+          <text x="450" y="246" class="t t-turn">A 与 E 地位对等 —— 效应修饰不是</text>
+
+          <rect x="668" y="217" width="222" height="46" rx="3" class="n-side"></rect>
+          <text x="779" y="234" class="t t-side">V 是你不动手的那个</text>
+          <text x="779" y="253" class="t t-side">没有动作，就没有交互</text>
+
+          <rect x="260" y="314" width="380" height="52" rx="3" class="n-core"></rect>
+          <text x="450" y="346" class="t">识别：把 (A, E) 当一个四水平处理</text>
+
+          <rect x="10" y="317" width="246" height="46" rx="3" class="n-side"></rect>
+          <text x="133" y="334" class="t t-side">E 也随机分配时</text>
+          <text x="133" y="353" class="t t-side">交互作用 = 效应修饰</text>
+
+          <rect x="668" y="317" width="222" height="46" rx="3" class="n-side"></rect>
+          <text x="779" y="334" class="t t-side">两处理先后发生时</text>
+          <text x="779" y="353" class="t t-side">不必这么强 · 第三部分</text>
+
+          <rect x="110" y="412" width="310" height="96" rx="3" class="n-core"></rect>
+          <text x="265" y="440" class="t t-hd">反事实框架 · §5.3</text>
+          <text x="265" y="467" class="t t-num">16 型里 6 型不带交互</text>
+          <text x="265" y="492" class="t t-sub">剩下 10 型分成三个等价类</text>
+
+          <rect x="480" y="412" width="310" height="96" rx="3" class="n-core"></rect>
+          <text x="635" y="440" class="t t-hd">充分原因框架 · §5.4–5.5</text>
+          <text x="635" y="467" class="t t-num">9 个因果派 · U₅ = 协同</text>
+          <text x="635" y="492" class="t t-sub">A=1 与 E=1 同处一个派</text>
+
+          <rect x="230" y="554" width="440" height="52" rx="3" class="n-core"></rect>
+          <text x="450" y="586" class="t">不必知道机制：不等式成立 ⇒ 一定有协同</text>
+
+          <rect x="10" y="557" width="210" height="46" rx="3" class="n-side"></rect>
+          <text x="115" y="574" class="t t-side">充分而不必要</text>
+          <text x="115" y="593" class="t t-side">不成立也可能有协同</text>
+
+          <rect x="250" y="644" width="400" height="52" rx="3" class="n-turn"></rect>
+          <text x="450" y="676" class="t t-turn">但两个框架回答的是两个问题</text>
+
+          <rect x="668" y="647" width="222" height="46" rx="3" class="n-side"></rect>
+          <text x="779" y="664" class="t t-side">what happens?</text>
+          <text x="779" y="683" class="t t-side">how does it happen?</text>
+
+          <rect x="250" y="734" width="400" height="48" rx="24" class="n-final"></rect>
+          <text x="450" y="764" class="t t-final">第 6 章：把假设画成因果图</text>
+        </g>
+      </svg>
+</div>
+<p class="fig-cap">
+<b>全章地图。</b>主干是一次转折：交互作用一旦按「联合干预」定义，<span class="math inline">\(A\)</span> 和 <span class="math inline">\(E\)</span> 就自动获得对等地位， 而第 4 章的效应修饰从来没给过 <span class="math inline">\(V\)</span> 这个地位——<b>这不是措辞讲究，是识别代价的分水岭</b>。 转折之后只有一句识别结论（把两个处理拼成一个四水平处理），随即岔成<b>两条并列的路</b>： 左边数反事实反应类型，右边画因果派，落点是同一件事——协同。虚线框一律不在论证主干上， 是前提、旁证或提醒。
+</p>
+</div>
+<section id="交互作用要有联合干预" class="level2">
+<h2 class="anchored" data-anchor-id="交互作用要有联合干预">5.1 交互作用要有联合干预</h2>
+<p>把心脏移植的例子扩一维。在分配移植 <span class="math inline">\(A\)</span>（1 = 移植）之前，先分配一种复合维生素 <span class="math inline">\(E\)</span>（1 = 服用）。于是每个人落进四个格子之一，也就有了<strong>四个</strong>反事实结局：</p>
+<p><span class="math display">\[Y^{a=1,e=1},\quad Y^{a=1,e=0},\quad Y^{a=0,e=1},\quad Y^{a=0,e=0}\]</span></p>
+<p><span class="math inline">\(Y^{a,e}\)</span> 读作「把这个人的 <span class="math inline">\(A\)</span> 设成 <span class="math inline">\(a\)</span>、<span class="math inline">\(E\)</span> 设成 <span class="math inline">\(e\)</span>，会观察到的结局」。 同时对两个（或更多）处理动手，书称为<strong>联合干预</strong>（joint intervention）。</p>
+<p>定义随之而来：<strong>如果把 <span class="math inline">\(E\)</span> 全设成 1 之后 <span class="math inline">\(A\)</span> 的因果效应，与把 <span class="math inline">\(E\)</span> 全设成 0 之后 <span class="math inline">\(A\)</span> 的因果效应不同，就说 <span class="math inline">\(A\)</span> 与 <span class="math inline">\(E\)</span> 之间存在交互作用。</strong> 在风险差这个尺度上写出来，就是</p>
+<p><span class="math display">\[\Pr[Y^{a=1,e=1}=1] - \Pr[Y^{a=0,e=1}=1] \;\neq\; \Pr[Y^{a=1,e=0}=1] - \Pr[Y^{a=0,e=0}=1]\]</span></p>
+<div class="pitfall">
+<p><span class="pitfall-label">要点一 · 第二个上标不是装饰，是一次额外的干预</span></p>
+<p>边注把 <span class="math inline">\(Y^a\)</span> 和 <span class="math inline">\(Y^{a,e}\)</span> 的关系交代得很干净：如果实际观察到的 <span class="math inline">\(E\)</span> 就等于 <span class="math inline">\(e\)</span>， 那么 <span class="math inline">\(Y^{a} = Y^{a,E}\)</span>——<strong>单处理的反事实只是联合反事实的一个特例</strong>。</p>
+<p>沿着这条递归代入再走一步就会发现，一致性假设本身也是它的特例：</p>
+<p><span class="math display">\[Y = Y^{A} = Y^{A,E}\]</span></p>
+<p>也就是「把 <span class="math inline">\(A\)</span>、<span class="math inline">\(E\)</span> 设成这个人实际取到的值，得到的就是实际观察到的结局」。 第 1 章那条看上去平淡的一致性，在这里露出了它真正的形状：它是递归代入在 「全部设成实际值」这一端的边界情形。书把细节推给了第 6 章 Technical Point 6.2。</p>
+</div>
+<p>书接着给了一组具体数字：设 <span class="math inline">\(E\)</span> 全给时 <span class="math inline">\(A\)</span> 的因果风险差是 <strong>0.1</strong>， <span class="math inline">\(E\)</span> 全不给时是 <strong>0.2</strong>。两者不等，所以加法尺度上存在交互作用（而且是<strong>次可加</strong>的， 因为 0.1 &lt; 0.2）。</p>
+<p>有意思的是接下来这一步。把上面那个不等式用初等代数挪一下位置，得到</p>
+<p><span class="math display">\[\Pr[Y^{a=1,e=1}=1] - \Pr[Y^{a=1,e=0}=1] \;\neq\; \Pr[Y^{a=0,e=1}=1] - \Pr[Y^{a=0,e=0}=1]\]</span></p>
+<p>左边是「<strong>全部移植</strong>时维生素的效应」，右边是「<strong>全部不移植</strong>时维生素的效应」。 也就是说，<strong>「移植的效应随维生素而变」和「维生素的效应随移植而变」是同一件事</strong>， 不是两件需要分别检验的事。</p>
+<p>为了让这个对称看得见，给四个绝对风险各挑一个数（书只给了 0.1 和 0.2 两个差值， 下面这四个绝对风险是笔记作者补的）：</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th></th>
+<th><span class="math inline">\(e=1\)</span>（给维生素）</th>
+<th><span class="math inline">\(e=0\)</span>（不给）</th>
+<th><span class="math inline">\(E\)</span> 的风险差</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><span class="math inline">\(a=1\)</span>（移植）</td>
+<td>0.6</td>
+<td>0.4</td>
+<td><strong>0.2</strong></td>
+</tr>
+<tr class="even">
+<td><span class="math inline">\(a=0\)</span>（不移植）</td>
+<td>0.5</td>
+<td>0.2</td>
+<td><strong>0.3</strong></td>
+</tr>
+<tr class="odd">
+<td><span class="math inline">\(A\)</span> 的风险差</td>
+<td><strong>0.1</strong></td>
+<td><strong>0.2</strong></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>横着读：<span class="math inline">\(A\)</span> 的效应从 0.2 掉到 0.1，差 <span class="math inline">\(-0.1\)</span>。 竖着读：<span class="math inline">\(E\)</span> 的效应从 0.3 掉到 0.2，也差 <span class="math inline">\(-0.1\)</span>。 <strong>同一个偏离可加性的量，从哪个方向看都一样大</strong>——这就是「地位对等」的算术含义。</p>
+<div class="pitfall warn">
+<p><span class="pitfall-label">要点二 · 交互作用和效应修饰差的不是尺度，是有没有动手</span></p>
+<p>这是第 4、5 两章之间最容易滑过去的一道缝。</p>
+<p>第 4 章说「<span class="math inline">\(V\)</span> 修饰 <span class="math inline">\(A\)</span> 的效应」时，谈的是 <span class="math inline">\(Y^{a}\)</span> 在 <span class="math inline">\(V\)</span> 的各层里怎么变， <strong>从头到尾没有出现过 <span class="math inline">\(Y^{a,v}\)</span></strong>。性别是 Table 4.1 的效应修饰因子，可书里 一次也没讨论过「性别对死亡的因果效应」——因为没人打算对性别动手。</p>
+<p>第 5 章说「<span class="math inline">\(A\)</span> 与 <span class="math inline">\(E\)</span> 有交互作用」时，两个上标都在，两个都是干预。</p>
+<div class="contrast">
+<div class="contrast-item">
+<p><span class="contrast-hd">效应修饰 · 第 4 章</span></p>
+<p>记号：<span class="math inline">\(Y^{a}\)</span>，按 <span class="math inline">\(V\)</span> 分层。</p>
+<p><span class="math inline">\(V\)</span> 和 <span class="math inline">\(A\)</span> <strong>地位不对等</strong>：只有 <span class="math inline">\(A\)</span> 是可干预的。</p>
+<p>代价：只需要 <span class="math inline">\(A\)</span> 的可交换性、正性、一致性。<span class="math inline">\(V\)</span> 什么都不用假设。</p>
+</div>
+<div class="contrast-item">
+<p><span class="contrast-hd">交互作用 · 第 5 章</span></p>
+<p>记号：<span class="math inline">\(Y^{a,e}\)</span>，联合干预。</p>
+<p><span class="math inline">\(A\)</span> 和 <span class="math inline">\(E\)</span> <strong>地位对等</strong>：两个定义完全等价。</p>
+<p>代价：可交换性、正性、一致性对 <span class="math inline">\((A, E)\)</span> 这个<strong>联合处理</strong>都要成立。</p>
+</div>
+</div>
+<p>书在第 4 章用 <span class="math inline">\(V\)</span> 这个字母、第 5 章用 <span class="math inline">\(E\)</span> 这个字母，正是在标记这个差别： <span class="math inline">\(V\)</span> 是「我不打算为它做任何识别假设」的变量，<span class="math inline">\(E\)</span> 是「我准备把它当处理来识别」的变量。</p>
+</div>
+<p>顺着这条缝，书给了两个方向的反例，都值得记住：</p>
+<ul>
+<li><strong>有修饰，无交互。</strong> 第 4 章里国籍 <span class="math inline">\(V\)</span> 修饰了移植的效应，但国籍并不作用于结局， 因此<strong>不可能</strong>和 <span class="math inline">\(A\)</span> 交互——书的原话是 <em>no action, no interaction</em>（没有动作，就没有交互）。 <span class="math inline">\(V\)</span> 之所以是修饰因子，是因为它和某个真正起作用、又确实和 <span class="math inline">\(A\)</span> 交互的未识别变量相关， 也就是第 4 章说的<strong>代理效应修饰因子</strong>。</li>
+<li><strong>有交互，无修饰。</strong> 边注说这在逻辑上也成立，只是大概很少见，因为它要求 <span class="math inline">\(A\)</span> 有双向的效应并且<strong>恰好完全抵消</strong>（VanderWeele 2009b）。</li>
+</ul>
+</section>
+<section id="识别交互作用" class="level2">
+<h2 class="anchored" data-anchor-id="识别交互作用">5.2 识别交互作用</h2>
+<p>识别交互作用需要什么？答案短得有点让人不安：<strong>和识别一个处理的效应完全一样， 只是要对两个处理都成立。</strong></p>
+<p><span class="math display">\[\text{可交换性} + \text{正性} + \text{一致性}\quad\text{对 } A \text{ 和 } E \text{ 都要有}\]</span></p>
+<p>书给了一个换视角的说法，我觉得是这一节最该记住的一句： <strong>与其把 <span class="math inline">\(A\)</span> 和 <span class="math inline">\(E\)</span> 看成两个二值处理，不如把 <span class="math inline">\(AE\)</span> 看成一个有四个水平的处理</strong> （11、01、10、00）。这样一来，「识别交互作用」这件事就退化成前几章那个老问题， 一条新方法都不用学，只是处理的取值多了、反事实结局多了。</p>
+<p>一个直接推论：<strong>如果 <span class="math inline">\(E\)</span> 也是随机分配的，交互作用和效应修饰就重合了。</strong> 此时边际风险 <span class="math inline">\(\Pr[Y^{a=1,e=1}=1]\)</span> 等于条件风险 <span class="math inline">\(\Pr[Y^{a=1}=1 \mid E=1]\)</span>， 交互作用的定义可以整个改写成</p>
+<p><span class="math display">\[\Pr[Y^{a=1}=1\mid E=1] - \Pr[Y^{a=0}=1\mid E=1] \;\neq\; \Pr[Y^{a=1}=1\mid E=0] - \Pr[Y^{a=0}=1\mid E=0]\]</span></p>
+<p>右边这行<strong>正是</strong>第 4 章「<span class="math inline">\(E\)</span> 在加法尺度上修饰 <span class="math inline">\(A\)</span> 的效应」的定义。于是第 4 章 讲的那套识别效应修饰的方法可以原样搬过来用，只要把 <span class="math inline">\(V\)</span> 换成 <span class="math inline">\(E\)</span>。</p>
+<p><span class="math inline">\(E\)</span> 不是随机分配时也不难办：四个边际风险 <span class="math inline">\(\Pr[Y^{a,e}=1]\)</span> 照样可以在通常的识别 假设下，用<strong>标准化或 IP 加权</strong>算出来——还是第 2 章那两把工具，只是现在要对四个格子做。</p>
+<div class="pitfall">
+<p><span class="pitfall-label">要点三 · 「我们检验了交互作用」这句话要分两种情况听</span></p>
+<p>书明确区分了两种处境，对读文献特别有用：</p>
+<p><strong>情况一：只愿意为 <span class="math inline">\(A\)</span> 做可交换性假设，不愿意为 <span class="math inline">\(E\)</span> 做。</strong> 这时你<strong>不能</strong>评估 <span class="math inline">\(A\)</span> 与 <span class="math inline">\(E\)</span> 的交互作用，但<strong>仍然可以</strong>评估 <span class="math inline">\(E\)</span> 对 <span class="math inline">\(A\)</span> 效应的修饰—— 因为在 <span class="math inline">\(E\)</span> 的每一层里算 <span class="math inline">\(A\)</span> 的效应，用不着任何关于 <span class="math inline">\(E\)</span> 的识别假设。 随机试验里按基线特征分亚组，就是这种情况。</p>
+<p><strong>情况二：愿意为联合处理 <span class="math inline">\((A, E)\)</span> 的四个取值都做假设。</strong> 这时才谈得上交互作用。</p>
+<p>所以看到一篇观察性研究报告「A 与 B 存在交互作用」，该问的不是 P 值， 而是：<strong>你为 B 做了什么识别假设？B 的混杂调整了吗？</strong> 如果答案是「B 只是分层用的」，那它报告的是效应修饰，不是交互作用。</p>
+</div>
+<p>这一节还留了两处指向后文的伏笔：</p>
+<ul>
+<li>「对联合处理 <span class="math inline">\((A,E)\)</span> 全套成立」是<strong>充分</strong>条件，不是必要条件。 第三部分会说明，当两个处理<strong>发生在不同时点</strong>时，条件可以放松——这正是时变处理那条线的入口。</li>
+<li>前面几章一直用确定性反事实只是图省事；<strong>总体因果效应和交互作用的结论都不需要确定性</strong>。 但<strong>下一节例外</strong>：§5.3 只在反事实是确定性、且处理与结局都是二值时成立。</li>
+</ul>
+</section>
+<section id="反应类型把人按会怎么反应分类" class="level2 page-columns page-full">
+<h2 class="anchored" data-anchor-id="反应类型把人按会怎么反应分类">5.3 反应类型：把人按「会怎么反应」分类</h2>
+<p>单个二值处理下，第 1 章的 20 个人可以按反事实结局分成四型。书把 Table 1.1 的名字直接点了出来：</p>
+<table class="caption-top table">
+<caption>Table 5.1（书页 60）的四型，名字与人数是笔记作者从第 1 章 Table 1.1 填回去的。4 + 6 + 6 + 4 = 20。</caption>
+<colgroup>
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>型</th>
+<th><span class="math inline">\(Y^{a=0}\)</span></th>
+<th><span class="math inline">\(Y^{a=1}\)</span></th>
+<th>含义</th>
+<th>第 1 章里是谁（人数）</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>doomed（注定）</td>
+<td>1</td>
+<td>1</td>
+<td>治不治都死</td>
+<td>Artemis, Athena, Persephone, Ares（4）</td>
+</tr>
+<tr class="even">
+<td>helped（获益）</td>
+<td>1</td>
+<td>0</td>
+<td>只有不治才死</td>
+<td>Hebe, Kronos, Poseidon, Apollo, Hermes, Dyonisus（6）</td>
+</tr>
+<tr class="odd">
+<td>hurt（受害）</td>
+<td>0</td>
+<td>1</td>
+<td>只有治了才死</td>
+<td>Rheia, Leto, Aphrodite, Zeus, Hephaestus, Polyphemus（6）</td>
+</tr>
+<tr class="even">
+<td>immune（免疫）</td>
+<td>0</td>
+<td>0</td>
+<td>治不治都活</td>
+<td>Demeter, Hestia, Hera, Hades（4）</td>
+</tr>
+</tbody>
+</table>
+<p>两个二值处理下，每个人有四个反事实结局，于是有 <span class="math inline">\(2^4 = 16\)</span> 种反应类型 （Miettinen 1982 最早列出）。下面这张表的左半边是原书 Table 5.2，<strong>16 行一行没动</strong>； 右边两列是笔记作者按书页 61–62 的正文补的。</p>
+<div class="column-page">
+<div class="joint-table">
+
+<table class="caption-top table">
+<thead>
+<tr class="grp-row header">
+<th class="grp" data-quarto-table-cell-role="th"></th>
+<th colspan="4" class="grp" data-quarto-table-cell-role="th">Table 5.2 · 原书 16 行，一行没动</th>
+<th colspan="2" class="grp sep-l" data-quarto-table-cell-role="th">笔记补的两列</th>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">型</th>
+<th data-quarto-table-cell-role="th">Y<sup>1,1</sup></th>
+<th data-quarto-table-cell-role="th">Y<sup>0,1</sup></th>
+<th data-quarto-table-cell-role="th">Y<sup>1,0</sup></th>
+<th data-quarto-table-cell-role="th">Y<sup>0,0</sup></th>
+<th class="sep-l" data-quarto-table-cell-role="th">这一型是什么人</th>
+<th data-quarto-table-cell-role="th">归类</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1</td>
+<td class="eff-pos">1</td>
+<td class="eff-pos">1</td>
+<td class="eff-pos">1</td>
+<td class="eff-pos">1</td>
+<td class="name sep-l">怎么治都死</td>
+<td>无交互</td>
+</tr>
+<tr class="even">
+<td>2</td>
+<td class="eff-pos">1</td>
+<td class="eff-pos">1</td>
+<td class="eff-pos">1</td>
+<td class="eff-nil">0</td>
+<td class="name sep-l">只有两个都不给才活</td>
+<td><strong>类③</strong></td>
+</tr>
+<tr class="odd">
+<td>3</td>
+<td class="eff-pos">1</td>
+<td class="eff-pos">1</td>
+<td class="eff-nil">0</td>
+<td class="eff-pos">1</td>
+<td class="name sep-l">只有移植且不给维生素才活</td>
+<td><strong>类③</strong></td>
+</tr>
+<tr class="even">
+<td>4</td>
+<td class="eff-pos">1</td>
+<td class="eff-pos">1</td>
+<td class="eff-nil">0</td>
+<td class="eff-nil">0</td>
+<td class="name sep-l">给维生素就死，移植无关</td>
+<td>无交互</td>
+</tr>
+<tr class="odd">
+<td>5</td>
+<td class="eff-pos">1</td>
+<td class="eff-nil">0</td>
+<td class="eff-pos">1</td>
+<td class="eff-pos">1</td>
+<td class="name sep-l">只有不移植且给维生素才活</td>
+<td><strong>类③</strong></td>
+</tr>
+<tr class="even">
+<td>6</td>
+<td class="eff-pos">1</td>
+<td class="eff-nil">0</td>
+<td class="eff-pos">1</td>
+<td class="eff-nil">0</td>
+<td class="name sep-l">移植就死，维生素无关</td>
+<td>无交互</td>
+</tr>
+<tr class="odd">
+<td>7</td>
+<td class="eff-pos">1</td>
+<td class="eff-nil">0</td>
+<td class="eff-nil">0</td>
+<td class="eff-pos">1</td>
+<td class="name sep-l">两个都给或都不给才死</td>
+<td><strong>类②</strong></td>
+</tr>
+<tr class="even">
+<td>8</td>
+<td class="eff-pos">1</td>
+<td class="eff-nil">0</td>
+<td class="eff-nil">0</td>
+<td class="eff-nil">0</td>
+<td class="name sep-l">只有两个都给才死</td>
+<td><strong>类① · 协同</strong></td>
+</tr>
+<tr class="odd">
+<td>9</td>
+<td class="eff-nil">0</td>
+<td class="eff-pos">1</td>
+<td class="eff-pos">1</td>
+<td class="eff-pos">1</td>
+<td class="name sep-l">只有两个都给才活</td>
+<td><strong>类③</strong></td>
+</tr>
+<tr class="even">
+<td>10</td>
+<td class="eff-nil">0</td>
+<td class="eff-pos">1</td>
+<td class="eff-pos">1</td>
+<td class="eff-nil">0</td>
+<td class="name sep-l">恰好给一个才死</td>
+<td><strong>类②</strong></td>
+</tr>
+<tr class="odd">
+<td>11</td>
+<td class="eff-nil">0</td>
+<td class="eff-pos">1</td>
+<td class="eff-nil">0</td>
+<td class="eff-pos">1</td>
+<td class="name sep-l">不移植就死，维生素无关</td>
+<td>无交互</td>
+</tr>
+<tr class="even">
+<td>12</td>
+<td class="eff-nil">0</td>
+<td class="eff-pos">1</td>
+<td class="eff-nil">0</td>
+<td class="eff-nil">0</td>
+<td class="name sep-l">只有不移植且给维生素才死</td>
+<td><strong>类①</strong></td>
+</tr>
+<tr class="odd">
+<td>13</td>
+<td class="eff-nil">0</td>
+<td class="eff-nil">0</td>
+<td class="eff-pos">1</td>
+<td class="eff-pos">1</td>
+<td class="name sep-l">不给维生素就死，移植无关</td>
+<td>无交互</td>
+</tr>
+<tr class="even">
+<td>14</td>
+<td class="eff-nil">0</td>
+<td class="eff-nil">0</td>
+<td class="eff-pos">1</td>
+<td class="eff-nil">0</td>
+<td class="name sep-l">只有移植且不给维生素才死</td>
+<td><strong>类①</strong></td>
+</tr>
+<tr class="odd">
+<td>15</td>
+<td class="eff-nil">0</td>
+<td class="eff-nil">0</td>
+<td class="eff-nil">0</td>
+<td class="eff-pos">1</td>
+<td class="name sep-l">只有两个都不给才死</td>
+<td><strong>类①</strong></td>
+</tr>
+<tr class="even">
+<td>16</td>
+<td class="eff-nil">0</td>
+<td class="eff-nil">0</td>
+<td class="eff-nil">0</td>
+<td class="eff-nil">0</td>
+<td class="name sep-l">怎么治都活</td>
+<td>无交互</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+<div class="legend">
+<p><span class="swatch seen"></span> 6 个「无交互」型（1、4、6、11、13、16）：<span class="math inline">\(A\)</span> 的效应不随 <span class="math inline">\(E\)</span> 变，<span class="math inline">\(E\)</span> 的效应也不随 <span class="math inline">\(A\)</span> 变 <span class="swatch unseen"></span> 类①（8、12、14、15）只在四种组合中的一种下发病；类②（7、10）两个处理的效应在对方的两个水平下恰好相反；类③（2、3、5、9）在四种组合中的三种下发病</p>
+</div>
+<p class="fig-cap">
+<b>16 行其实就是 15 到 0 的四位二进制数从大到小排一遍。</b> 这不是巧合，是因为四个反事实结局各自取 0/1，穷举就是这个顺序—— 表里没有任何需要记忆的内容，缺的行一眼就能看出来。<br> 真正要记的是右边一列的划分：<b>6 型不带交互，剩下 10 型分成三个等价类</b>。 Greenland 与 Poole（1988）指出 Miettinen 的 16 型<strong>对重编码不稳健</strong> （把 <span class="math inline">\(A\)</span>、<span class="math inline">\(E\)</span> 的「0」和「1」标签互换，型号会变），这三个等价类是他们给出的、 对重编码不变的划分。
+</p>
+</div>
+<p>那 6 个「无交互」型（1、4、6、11、13、16）的共同点是： <strong>对这样一个人来说，<span class="math inline">\(A\)</span> 的因果效应和 <span class="math inline">\(E\)</span> 取什么值无关，<span class="math inline">\(E\)</span> 的因果效应也和 <span class="math inline">\(A\)</span> 取什么值无关。</strong> 比如第 4 型只在给了维生素时死，移植与否根本不影响他；第 6 型只在移植了才死， 维生素与否不影响他。如果人群里每个人都属于这 6 型，加法尺度上就不存在交互作用。</p>
+<p>反过来，<strong>加法尺度上存在交互作用，就意味着人群里至少有人落在上面那三个等价类里</strong>—— 也就是说，对这些人，不知道 <span class="math inline">\(E\)</span> 就说不清 <span class="math inline">\(A\)</span> 会带来什么，反之亦然。</p>
+<div class="pitfall warn">
+<p><span class="pitfall-label">要点四 · 没测出交互作用，不等于没有带交互的人</span></p>
+<p>书把这一步说得很轻，但它是整章里最该警惕的一句：</p>
+<p>加法尺度上<strong>没有</strong>交互作用，可能是因为人群里确实没人属于那三个等价类， <strong>也可能是因为方向相反、大小相等的偏离恰好互相抵消掉了</strong>—— 例如第 7 型和第 10 型的人一样多，或者第 8 型和第 12 型的人一样多 （Greenland, Lash &amp; Rothman 2008 有更多这类抵消的讨论）。</p>
+<p>第 7 型「两个都给或都不给才死」和第 10 型「恰好给一个才死」， 是两种截然相反的机制。它们在人群水平上各自贡献一个大小相等、符号相反的偏离， <strong>总体风险差表现得像完全可加</strong>。</p>
+<p>这和第 1 章那条老教训是同一条：<strong>总体量为零，不代表个体效应为零。</strong> 第 1 章说的是「平均因果效应为零 ≠ 没有人被治疗影响」（sharp null 与 null 的差别）， 这里说的是「没有交互 ≠ 没有交互型的人」。同一个陷阱，换了一个维度。</p>
+</div>
+<div class="pitfall">
+<p><span class="pitfall-label">要点五 · 单调性：一个把可能性砍掉一半的假设</span></p>
+<p>Technical Point 5.2 给了一个后面反复要用的条件。</p>
+<p>单处理时：只有 helped 型的人满足 <span class="math inline">\(Y^{a=0} &gt; Y^{a=1}\)</span>。其余三型都有 <span class="math inline">\(Y^{a=1} \geq Y^{a=0}\)</span>，即个体的反事实结局关于 <span class="math inline">\(a\)</span> <strong>单调不减</strong>。 如果治疗不可能让任何人<strong>免于</strong>结局（也就是人群里没有 helped 型）， 就说 <span class="math inline">\(A\)</span> 对 <span class="math inline">\(Y\)</span> 的因果效应是<strong>单调的</strong>。</p>
+<p>两个处理时：如果每个人的 <span class="math inline">\(Y^{a,e}\)</span> 对 <span class="math inline">\(a\)</span> 和 <span class="math inline">\(e\)</span> 都单调不减，就说两个效应都单调。 书用四个被排除的反应模式把它写死：不存在 <span class="math inline">\(\big(Y^{a=1,e=1}=0,\,Y^{a=0,e=1}=1\big)\)</span>、 <span class="math inline">\(\big(Y^{a=1,e=1}=0,\,Y^{a=1,e=0}=1\big)\)</span>、 <span class="math inline">\(\big(Y^{a=1,e=0}=0,\,Y^{a=0,e=0}=1\big)\)</span>、 <span class="math inline">\(\big(Y^{a=0,e=1}=0,\,Y^{a=0,e=0}=1\big)\)</span> 的个体。</p>
+<p>单调性不是能从数据里验出来的东西，得靠专业知识论证——「这个药不可能救任何人」 这种话在药物流行病学里往往站得住（比如研究不良反应），在疗效研究里几乎一定站不住。 下一节会看到，这个假设能把检验协同的门槛降低一大截。</p>
+</div>
+</section>
+<section id="充分原因因果派" class="level2 page-columns page-full">
+<h2 class="anchored" data-anchor-id="充分原因因果派">5.4 充分原因：因果派</h2>
+<p>到这里书换了一套语言。</p>
+<p>回到单处理。有人治了就死，有人不治才死，有人怎样都死，有人怎样都活—— 这个多样性本身就说明 <strong><span class="math inline">\(A\)</span> 不是决定 <span class="math inline">\(Y\)</span> 的唯一变量</strong>。</p>
+<ul>
+<li>治疗的人里只有一部分死了，说明<strong>光有治疗不够</strong>。假设移植（<span class="math inline">\(A=1\)</span>）只在 对麻醉过敏的人身上致死，把「和 <span class="math inline">\(A=1\)</span> 一起就足以必然导致结局」的<strong>最小</strong>背景因子集 记作 <span class="math inline">\(U_1\)</span>。于是「<span class="math inline">\(A=1\)</span> 且 <span class="math inline">\(U_1=1\)</span>」是一个<strong>最小充分原因</strong>。</li>
+<li>没治疗的人里也只有一部分死了。假设不移植（<span class="math inline">\(A=0\)</span>）只在射血分数低于 20% 的人身上致死， 这个最小背景因子集记作 <span class="math inline">\(U_2\)</span>。「<span class="math inline">\(A=0\)</span> 且 <span class="math inline">\(U_2=1\)</span>」是第二个充分原因。</li>
+<li>还有既没有 <span class="math inline">\(U_1\)</span> 也没有 <span class="math inline">\(U_2\)</span>、却怎样都死的人（doomed）。说明存在<strong>本身就足够</strong>的 背景因子，比如研究开始时已有胰腺癌，记作 <span class="math inline">\(U_0\)</span>。这是第三个充分原因。</li>
+</ul>
+<p>边注补了一句定义上的要紧话：<strong>按定义，背景因子 <span class="math inline">\(U\)</span> 是不可被干预的，也不受 <span class="math inline">\(A\)</span> 影响。</strong> 这句话决定了因果派不是 DAG——派里的 <span class="math inline">\(U\)</span> 不是「另一个可以调整的协变量」。</p>
+<p>把每个充分原因画成一个圆、每个组分画成圆里的一块，就是原书 Figure 5.1 的三个圆： <code>A=1 | U₁=1</code>、<code>A=0 | U₂=1</code>、<code>U₀=1</code>（整圆）。这套画法通称<strong>因果派</strong>（the causal pies）。</p>
+<div class="pitfall">
+<p><span class="pitfall-label">要点六 · 因果派立刻解释了「效应大小依赖人群」</span></p>
+<p>这是这套图最便宜也最有用的一次兑现。</p>
+<p>设想两个人群，<span class="math inline">\(U_2\)</span> 和 <span class="math inline">\(U_0\)</span> 的分布完全相同，区别只在 <span class="math inline">\(U_1\)</span>（对麻醉过敏）的比例： 一个 1%，一个 10%。在两个人群里各做一次随机试验，各有一半人分到 <span class="math inline">\(A=1\)</span>。</p>
+<p><strong>第二个人群里移植的平均因果效应更大</strong>——因为「<span class="math inline">\(A=1\)</span> 加 <span class="math inline">\(U_1=1\)</span>」这个派 在那里常见 10 倍，另外两个派一样常见。</p>
+<p>第 4 章说「效应修饰因子的分布决定了效应大小，所以因果效应不能跨人群外推」， 那是从数字上说的；这里是从机制上说的：<strong>你的处理要起作用，得有人手里正好握着 拼完那个派所缺的那一块。</strong></p>
+</div>
+<p>两个处理时，派的数量从 3 涨到 9（Greenland 与 Poole 1988 最早数出来）。 除了「<span class="math inline">\(A\)</span> 单独致死」「缺 <span class="math inline">\(A\)</span> 致死」「与两者都无关」，还要加上「<span class="math inline">\(E\)</span> 单独致死」 「缺 <span class="math inline">\(E\)</span> 致死」，以及四种「只在 <span class="math inline">\(A\)</span>、<span class="math inline">\(E\)</span> 的某个组合下才致死」：</p>
+<div class="column-page">
+<div class="fig-frame dia-frame">
+<svg viewbox="0 0 900 530" role="img" aria-labelledby="pie5-t pie5-d">
+        <title id="pie5-t">两个处理下的 9 个充分-组分原因（因果派）</title>
+        <desc id="pie5-d">九个圆排成三行三列，每个圆代表一个最小充分原因，圆里的分块是它的组分。
+        第一行是与处理无关的 U0、A=1 加 U1、A=0 加 U2；第二行是 E=1 加 U3、E=0 加 U4、
+        A=1 与 E=1 加 U5；第三行是 A=1 与 E=0 加 U6、A=0 与 E=1 加 U7、A=0 与 E=0 加 U8。
+        其中含有 A=0 或 E=0 组分的五个派被画上叉，表示两个处理的效应都单调时它们不可能存在。</desc>
+
+        <g class="dia-shape" fill="none">
+          <!-- 第一行 -->
+          <circle class="n-core" stroke-width="1.8" cx="210" cy="110" r="52"></circle>
+
+          <circle class="n-core" stroke-width="1.8" cx="450" cy="110" r="52"></circle>
+          <line x1="450" y1="110" x2="450" y2="58"></line>
+          <line x1="450" y1="110" x2="450" y2="162"></line>
+
+          <circle class="n-core" stroke-width="1.8" cx="690" cy="110" r="52"></circle>
+          <line x1="690" y1="110" x2="690" y2="58"></line>
+          <line x1="690" y1="110" x2="690" y2="162"></line>
+
+          <!-- 第二行 -->
+          <circle class="n-core" stroke-width="1.8" cx="210" cy="270" r="52"></circle>
+          <line x1="210" y1="270" x2="210" y2="218"></line>
+          <line x1="210" y1="270" x2="210" y2="322"></line>
+
+          <circle class="n-core" stroke-width="1.8" cx="450" cy="270" r="52"></circle>
+          <line x1="450" y1="270" x2="450" y2="218"></line>
+          <line x1="450" y1="270" x2="450" y2="322"></line>
+
+          <circle class="n-core" stroke-width="1.8" cx="690" cy="270" r="52"></circle>
+          <line x1="690" y1="270" x2="690" y2="218"></line>
+          <line x1="690" y1="270" x2="645" y2="296"></line>
+          <line x1="690" y1="270" x2="735" y2="296"></line>
+
+          <!-- 第三行 -->
+          <circle class="n-core" stroke-width="1.8" cx="210" cy="430" r="52"></circle>
+          <line x1="210" y1="430" x2="210" y2="378"></line>
+          <line x1="210" y1="430" x2="165" y2="456"></line>
+          <line x1="210" y1="430" x2="255" y2="456"></line>
+
+          <circle class="n-core" stroke-width="1.8" cx="450" cy="430" r="52"></circle>
+          <line x1="450" y1="430" x2="450" y2="378"></line>
+          <line x1="450" y1="430" x2="405" y2="456"></line>
+          <line x1="450" y1="430" x2="495" y2="456"></line>
+
+          <circle class="n-core" stroke-width="1.8" cx="690" cy="430" r="52"></circle>
+          <line x1="690" y1="430" x2="690" y2="378"></line>
+          <line x1="690" y1="430" x2="645" y2="456"></line>
+          <line x1="690" y1="430" x2="735" y2="456"></line>
+        </g>
+
+        <!-- 单调性下不可能存在的 5 个：U2、U4、U6、U7、U8 -->
+        <g class="n-turn" stroke-width="4" stroke-linecap="round" stroke-opacity=".85">
+          <line x1="630" y1="50" x2="750" y2="170"></line>
+          <line x1="630" y1="170" x2="750" y2="50"></line>
+
+          <line x1="390" y1="210" x2="510" y2="330"></line>
+          <line x1="390" y1="330" x2="510" y2="210"></line>
+
+          <line x1="150" y1="370" x2="270" y2="490"></line>
+          <line x1="150" y1="490" x2="270" y2="370"></line>
+
+          <line x1="390" y1="370" x2="510" y2="490"></line>
+          <line x1="390" y1="490" x2="510" y2="370"></line>
+
+          <line x1="630" y1="370" x2="750" y2="490"></line>
+          <line x1="630" y1="490" x2="750" y2="370"></line>
+        </g>
+
+        <g class="dia-eq" text-anchor="middle" paint-order="stroke" stroke="var(--surface)" stroke-width="3.5" stroke-linejoin="round">
+          <text x="210" y="115">U₀=1</text>
+
+          <text x="426" y="115">A=1</text>
+          <text x="474" y="115">U₁=1</text>
+
+          <text x="666" y="115">A=0</text>
+          <text x="714" y="115">U₂=1</text>
+
+          <text x="186" y="275">E=1</text>
+          <text x="234" y="275">U₃=1</text>
+
+          <text x="426" y="275">E=0</text>
+          <text x="474" y="275">U₄=1</text>
+
+          <text x="668" y="260">A=1</text>
+          <text x="714" y="260">E=1</text>
+          <text x="690" y="300">U₅=1</text>
+
+          <text x="188" y="420">A=1</text>
+          <text x="234" y="420">E=0</text>
+          <text x="210" y="460">U₆=1</text>
+
+          <text x="428" y="420">A=0</text>
+          <text x="474" y="420">E=1</text>
+          <text x="450" y="460">U₇=1</text>
+
+          <text x="668" y="420">A=0</text>
+          <text x="714" y="420">E=0</text>
+          <text x="690" y="460">U₈=1</text>
+        </g>
+
+      </svg>
+</div>
+<p class="fig-cap">
+<b>示意重绘，非原图；把原书 Figure 5.2（9 个派）与 Figure 5.3（单调时划掉 5 个）压成了一张。</b> 原图的分块角度不等，这里一律画成等分，只保留「哪些组分在同一个派里」这一层信息。<br> <b>没被划掉的 4 个是单调性下仍可能存在的全部</b>：<span class="math inline">\(U_0\)</span>、<span class="math inline">\(A{=}1\)</span> 那个、<span class="math inline">\(E{=}1\)</span> 那个， 以及 <b><span class="math inline">\(A{=}1\)</span> 与 <span class="math inline">\(E{=}1\)</span> 同处一派的 <span class="math inline">\(U_5\)</span></b>——最后这个就是协同。 凡是含 <span class="math inline">\(A{=}0\)</span> 或 <span class="math inline">\(E{=}0\)</span> 组分的派（<span class="math inline">\(U_2,U_4,U_6,U_7,U_8\)</span>）在单调性下都不可能存在： 如果含 <span class="math inline">\(A{=}0\)</span> 的派存在，就意味着有人<strong>因为没被治疗而发病</strong>，等价于「治疗能救他」， 这正是单调性排除掉的 helped 型（Technical Point 5.3，书页 69）。
+</p>
+</div>
+<p>书顺手提醒：<strong>9 个派不是在所有场景下都存在。</strong> 比如维生素 <span class="math inline">\(E=1\)</span> 如果不会害死任何人， 那三个含 <span class="math inline">\(E=1\)</span> 组分的派（<span class="math inline">\(U_3\)</span>、<span class="math inline">\(U_5\)</span>、<span class="math inline">\(U_7\)</span>）就不存在——它们存在意味着有人 （比如 <span class="math inline">\(U_3=1\)</span> 的人）<strong>会被维生素害死</strong>，也就是不给他维生素反而能救他。</p>
+<div class="pitfall">
+<p><span class="pitfall-label">要点七 · 反应类型和因果派是同一件事的两种写法</span></p>
+<p>Fine Point 5.2 把两套语言的对应表给了出来（单处理的情形）：</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>型</th>
+<th><span class="math inline">\(Y^{a=0}\)</span></th>
+<th><span class="math inline">\(Y^{a=1}\)</span></th>
+<th>组分原因</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>doomed</td>
+<td>1</td>
+<td>1</td>
+<td><span class="math inline">\(U_0=1\)</span>，或 <span class="math inline">\(\{U_1=1 \text{ 且 } U_2=1\}\)</span></td>
+</tr>
+<tr class="even">
+<td>helped</td>
+<td>1</td>
+<td>0</td>
+<td><span class="math inline">\(U_0=0\)</span> 且 <span class="math inline">\(U_1=0\)</span> 且 <span class="math inline">\(U_2=1\)</span></td>
+</tr>
+<tr class="odd">
+<td>hurt</td>
+<td>0</td>
+<td>1</td>
+<td><span class="math inline">\(U_0=0\)</span> 且 <span class="math inline">\(U_1=1\)</span> 且 <span class="math inline">\(U_2=0\)</span></td>
+</tr>
+<tr class="even">
+<td>immune</td>
+<td>0</td>
+<td>0</td>
+<td><span class="math inline">\(U_0=0\)</span> 且 <span class="math inline">\(U_1=0\)</span> 且 <span class="math inline">\(U_2=0\)</span></td>
+</tr>
+</tbody>
+</table>
+<p>这个映射<strong>是单向多对一的</strong>：一组组分原因只对应一个反应类型，反过来不成立。 doomed 型可以由任何含 <span class="math inline">\(U_0=1\)</span> 的组合造成，也可以由任何含 <span class="math inline">\(\{U_1=1, U_2=1\}\)</span> 的组合造成。</p>
+<p>同一条 Fine Point 还用组分原因重写了可交换性。会在治疗下发病的是 doomed 和 hurt， 也就是 <span class="math inline">\(U_0=1\)</span> 或 <span class="math inline">\(U_1=1\)</span> 的人；会在未治疗下发病的是 doomed 和 helped， 即 <span class="math inline">\(U_0=1\)</span> 或 <span class="math inline">\(U_2=1\)</span> 的人。于是 <span class="math inline">\(Y^a \perp\!\!\!\perp A\)</span> 等价于</p>
+<p><span class="math display">\[\Pr[U_0=1 \text{ 或 } U_1=1 \mid A=1] = \Pr[U_0=1 \text{ 或 } U_1=1 \mid A=0]\]</span></p>
+<p>以及对 <span class="math inline">\(U_0, U_2\)</span> 的同一条等式。<strong>可交换性在这里有了机制层面的读法</strong>： 治疗组和未治疗组里，握着那几块关键拼图的人比例得一样。</p>
+</div>
+</section>
+<section id="充分原因交互协同与拮抗" class="level2">
+<h2 class="anchored" data-anchor-id="充分原因交互协同与拮抗">5.5 充分原因交互：协同与拮抗</h2>
+<p>日常说「<span class="math inline">\(A\)</span> 和 <span class="math inline">\(E\)</span> 有交互作用」时，脑子里想的往往是某种机制——两个东西<strong>一起使劲</strong>。 但 §5.1 那个反事实定义<strong>根本没提机制</strong>，它只是两个反事实对比之差， 在一个理想随机试验里就能识别出来，完全不需要想清楚背后是物理的、化学的、 生物的还是社会学的。</p>
+<p>§5.5 补上的是第二个概念，它确实往机制走了一步：</p>
+<blockquote class="blockquote">
+<p><strong>如果 <span class="math inline">\(A\)</span> 和 <span class="math inline">\(E\)</span> 出现在同一个充分原因里，就说人群中存在 <span class="math inline">\(A\)</span> 与 <span class="math inline">\(E\)</span> 的充分原因交互。</strong></p>
+</blockquote>
+<p>具体说，存在 <span class="math inline">\(U_5=1\)</span> 的人（两个都给才死、只给一个不死），就存在充分原因交互。 翻成反事实的话：<strong>只要存在一个 <span class="math inline">\(Y^{a=1,e=1}=1\)</span> 而 <span class="math inline">\(Y^{a=0,e=1}=Y^{a=1,e=0}=0\)</span> 的人 （Table 5.2 的第 7、8 型），充分原因交互就存在。</strong></p>
+<p>Rothman（1976）给了两个方向的名字：</p>
+<ul>
+<li><strong>协同（synergism）</strong>：<span class="math inline">\(A=1\)</span> 与 <span class="math inline">\(E=1\)</span> 在同一个派里。</li>
+<li><strong>拮抗（antagonism）</strong>：<span class="math inline">\(A=1\)</span> 与 <span class="math inline">\(E=0\)</span>（或 <span class="math inline">\(A=0\)</span> 与 <span class="math inline">\(E=1\)</span>）在同一个派里。</li>
+</ul>
+<p>书随即点破：<strong>拮抗其实就是「<span class="math inline">\(A\)</span> 与『不给 <span class="math inline">\(E\)</span>』之间的协同」。</strong> 所以这两个词不是两种现象，是同一种现象在不同编码下的两个名字—— 这正是 Greenland 与 Poole 当年抱怨 16 型「对重编码不稳健」的那件事， 在派的语言里再出现一次。</p>
+<div class="pitfall warn">
+<p><span class="pitfall-label">要点八 · 不知道任何机制，也能证明协同存在</span></p>
+<p>这是本章最反直觉、也最实用的一条。</p>
+<p>充分原因交互谈的是机制，听上去必须先知道机制才能判断。但 Fine Point 5.1 给出的 不等式说明：<strong>只要下面这个不等式在数据上成立，就一定存在第 7、8 型的人， 也就一定存在协同</strong>——一句机制都不用想。</p>
+<p>VanderWeele 与 Robins（2007a, 2008）给的充分条件是</p>
+<p><span class="math display">\[\Pr[Y^{a=1,e=1}=1] - \Big(\Pr[Y^{a=0,e=1}=1] + \Pr[Y^{a=1,e=0}=1]\Big) &gt; 0\]</span></p>
+<p>等价地写成</p>
+<p><span class="math display">\[\Pr[Y^{a=1,e=1}=1] - \Pr[Y^{a=0,e=1}=1] &gt; \Pr[Y^{a=1,e=0}=1]\]</span></p>
+<p>在 <span class="math inline">\(A\)</span>、<span class="math inline">\(E\)</span> 都随机分配的试验里，这三个反事实风险都算得出来，直接验就行。</p>
+<p><strong>但这个条件强得离谱。</strong> 注意不等号右边是一个<strong>绝对风险</strong>，不是风险差—— 它要求「有 <span class="math inline">\(E\)</span> 时 <span class="math inline">\(A\)</span> 的效应」大过「只给 <span class="math inline">\(A\)</span> 时的整个死亡风险」。 书自己承认：这个充分条件强到<strong>存在第 7、8 型的大多数情形都会被它漏掉</strong>。</p>
+<p>如果愿意加上<strong>单调性</strong>（两个处理都不能让任何人免于结局，见要点五）， 门槛立刻降到一个熟悉的形式：</p>
+<p><span class="math display">\[\Pr[Y^{a=1,e=1}=1] - \Pr[Y^{a=0,e=1}=1] &gt; \Pr[Y^{a=1,e=0}=1] - \Pr[Y^{a=0,e=0}=1]\]</span></p>
+<p>右边终于也是一个风险差了——<strong>这就是「超可加交互」</strong>。 于是结论变成一句很好记的话：<strong>效应单调时，超可加的交互作用意味着存在第 8 型的人</strong> （单调性把第 7 型排除掉了，因为第 7 型「两个都给或都不给才死」里含着 「不给就死」的成分）。这个较弱的充分条件最早由 Greenland 与 Rothman 给出。</p>
+<p>遗传学里专门关心第 8 型是否存在，称为<strong>组分上位性</strong>（compositional epistasis）； VanderWeele（2010a）综述了相关的经验检验。</p>
+<p>两条不等式都是<strong>充分而不必要</strong>：不成立时，协同仍然可能存在。</p>
+</div>
+<div class="pitfall">
+<p><span class="pitfall-label">要点九 · 「生物学交互」这个叫法名不副实</span></p>
+<p>流行病学里习惯把充分原因交互叫作<strong>生物学交互</strong>（Rothman et al.&nbsp;1980）。 Fine Point 5.3 用一个例子说明这个叫法容易误导。</p>
+<p>设 <span class="math inline">\(A\)</span> 和 <span class="math inline">\(E\)</span> 是同一个基因的两个等位基因，这个基因生产一种必需蛋白。 两个等位基因都突变（<span class="math inline">\(A=1\)</span> 且 <span class="math inline">\(E=1\)</span>）的人造不出这种蛋白，出生一周内死亡； 两个都不突变、或只突变一个的人，蛋白水平正常，活下来。</p>
+<p>按定义，这里<strong>存在协同</strong>：有一个含 <span class="math inline">\(A=1\)</span> 与 <span class="math inline">\(E=1\)</span> 的充分原因。 可是这两个等位基因<strong>并没有在物理上相互作用</strong>——它们只是各自失效， 凑在一起把一条路堵死了。</p>
+<p><strong>「一起造成结局」和「彼此作用」不是一回事。</strong> 写讨论时说「我们发现了 A 与 B 的生物学交互，提示二者在通路上相互作用」， 多数时候是越界的。</p>
+</div>
+</section>
+<section id="反事实还是充分-组分原因" class="level2">
+<h2 class="anchored" data-anchor-id="反事实还是充分-组分原因">5.6 反事实，还是充分-组分原因？</h2>
+<p>书在这一节回答「那到底该用哪套」，答案是：<strong>它们回答的根本不是同一个问题。</strong></p>
+<div class="contrast">
+<div class="contrast-item">
+<p><span class="contrast-hd">充分-组分原因框架</span></p>
+<p>「<strong>给定一个结局，什么事件可能是它的原因？</strong>」</p>
+<p>从结局往回找原因。给的是<strong>一组</strong>一起发生就必然导致结局的行动、事件或自然状态。</p>
+<p>回答的是「<strong>它是怎么发生的？</strong>」</p>
+</div>
+<div class="contrast-item">
+<p><span class="contrast-hd">反事实（潜在结果）框架</span></p>
+<p>「<strong>如果对某个因素动手、把它设成别的值，会发生什么？</strong>」</p>
+<p>从一个原因往前推结局。<strong>不要求</strong>知道这个因素是通过什么机制影响结局的。</p>
+<p>回答的是「<strong>会发生什么？</strong>」</p>
+</div>
+</div>
+<p>两套框架都比这本书老得多：反事实的思路休谟（1748）就已经点到； 充分-组分原因框架由哲学家 Mackie（1965）发展出来，他提出的 <strong>INUS 条件</strong>是这么拆的——一个对 <span class="math inline">\(Y\)</span> 而言 <strong>I</strong>nsufficient（本身不充分） 但 <strong>N</strong>ecessary（不可或缺）的组分，属于某个本身 <strong>U</strong>nnecessary（不必要） 却 <strong>S</strong>ufficient（充分）的条件。翻成因果派的话：<strong>派里的一块。</strong></p>
+<p>书给出的取舍很直白：</p>
+<ul>
+<li>这本书要做的事（估计假想干预的平均因果效应）<strong>天然属于反事实框架</strong>。</li>
+<li>充分-组分原因框架的价值主要在<strong>教学</strong>：它让「效应大小依赖背景因子分布」 「效应修饰、交互作用与协同之间的关系」这些概念变得可视。</li>
+<li>它在<strong>实际数据分析里的价值还没有定论</strong>。经典形式下它是确定性的、 结论依赖结局的编码方式、并且按定义只能处理二值处理与二值结局， 这实际上排除了任何连续变量，把适用范围限制在少数几个二值因素。 更近的扩展（VanderWeele 2010b 推广到三水平处理；VanderWeele &amp; Robins 2012 讨论随机反事实与随机充分原因的关系）也许能改善这一点，但即使扩展了， 我们通常也<strong>没有足够的数据量</strong>去支撑它做出的那些精细区分。</li>
+</ul>
+<p>最后一句是给第 6 章的引子：<strong>一些看上去不同的框架——因果图、决策论—— 本质上和反事实框架是等价的。</strong></p>
+<div class="pitfall warn">
+<p><span class="pitfall-label">要点十 · 归因分数相加超过 100%，错的不是算术</span></p>
+<p>Fine Point 5.4 是全章最能直接用在论文审读上的一段。</p>
+<p>第 3 章 Fine Point 3.6 定义过<strong>超额分数</strong>：归因于处理 <span class="math inline">\(A\)</span> 的病例比例。 设 <span class="math inline">\(A\)</span> 的超额分数是 <strong>75%</strong>，<span class="math inline">\(E\)</span> 的超额分数是 <strong>50%</strong>。 那么同时干预 <span class="math inline">\(A\)</span> 和 <span class="math inline">\(E\)</span> 能预防 <strong>125%</strong> 的病例吗？当然不能。</p>
+<p>用因果派一眼就看清楚问题出在哪：假设 Zeus 的背景因子恰好是 <span class="math inline">\(U_5=1\)</span>（别的都没有）， 而且 <span class="math inline">\(A=1\)</span>、<span class="math inline">\(E=1\)</span> 都给了。撤掉 <span class="math inline">\(A\)</span> 他不会发病，撤掉 <span class="math inline">\(E\)</span> 他也不会发病。 于是 <strong>Zeus 被数进了 <span class="math inline">\(A\)</span> 的 75% 里，又被数进了 <span class="math inline">\(E\)</span> 的 50% 里</strong>。</p>
+<p><strong>当两个处理可能是同一个派里的两块时，分开谈「归因于 <span class="math inline">\(A\)</span> 的比例」和 「归因于 <span class="math inline">\(E\)</span> 的比例」本身就没有意义。</strong></p>
+<p>书举了一个极端的例子：苯丙酮尿症导致的智力障碍，发生在携带易感基因、 又吃了特定食物的人身上。去掉那些食物能预防<strong>全部</strong>病例，所以食物的超额分数是 100%； 换掉易感基因也能预防<strong>全部</strong>病例，所以基因的超额分数也是 100%。 于是这个病的原因既可以说 <strong>100% 是遗传的，也可以说 100% 是环境的</strong>。</p>
+<p>「基因还是环境贡献了多少比例」这个问法，从一开始就问错了。</p>
+</div>
+</section>
+<section id="这章停在哪里" class="level2">
+<h2 class="anchored" data-anchor-id="这章停在哪里">这章停在哪里</h2>
+<div class="pitfall">
+<p><span class="pitfall-label">一个书里没做的小计算：两个尺度不可能同时说「没有交互」</span></p>
+<p>Technical Point 5.1 把加法和乘法两个尺度的交互都定义了，但没有把它们放在一起比。 记 <span class="math inline">\(p_{ae} = \Pr[Y^{a,e}=1]\)</span>，做一下这个比较很有意思。</p>
+<p><strong>加法尺度无交互</strong>要求 <span class="math inline">\(p_{11} = p_{10} + p_{01} - p_{00}\)</span>； <strong>乘法尺度无交互</strong>要求 <span class="math inline">\(p_{11} = p_{10}\,p_{01} / p_{00}\)</span>。 两者同时成立当且仅当</p>
+<p><span class="math display">\[p_{10} + p_{01} - p_{00} = \frac{p_{10}\,p_{01}}{p_{00}}
+\;\Longleftrightarrow\; (p_{10} - p_{00})(p_{00} - p_{01}) = 0\]</span></p>
+<p>也就是说，<strong>只有当其中一个处理在另一个缺席时完全没有效应，两个尺度才会给出同一个结论</strong>。 只要两个处理各自都有效应，你在加法尺度上说「没有交互」，在乘法尺度上就一定得说「有交互」， 反之亦然。</p>
+<p>举个数：<span class="math inline">\(p_{00}=0.1\)</span>、<span class="math inline">\(p_{10}=0.2\)</span>、<span class="math inline">\(p_{01}=0.3\)</span>、<span class="math inline">\(p_{11}=0.4\)</span>。 加法上 <span class="math inline">\(0.4 = 0.2 + 0.3 - 0.1\)</span>，<strong>没有交互</strong>； 乘法上 <span class="math inline">\(0.4/0.1 = 4\)</span> 而 <span class="math inline">\((0.2/0.1)\times(0.3/0.1) = 6\)</span>，<strong>次乘法交互</strong>。 同一批数，两个尺度两个结论，谁都没算错。</p>
+<p>所以「有没有交互作用」这句话<strong>单独说是不完整的</strong>，必须带上尺度。 这条限制会一路跟到第 4 部分讲效应异质性。</p>
+</div>
+<div class="qa">
+<p><span class="q">效应修饰和交互作用，一句话说清差别</span></p>
+<p><strong>交互作用要对两个变量都动手，效应修饰只对一个。</strong></p>
+<p>再展开一点：效应修饰问「<span class="math inline">\(Y^{a}\)</span> 在 <span class="math inline">\(V\)</span> 的各层里变不变」，<span class="math inline">\(V\)</span> 只负责分层， 不需要任何识别假设；交互作用问「<span class="math inline">\(Y^{a,e}\)</span> 这四个值之间的关系」， <span class="math inline">\((A,E)\)</span> 这个四水平的联合处理要满足全套可交换性、正性、一致性。</p>
+<p>代价差别是实打实的：前者在随机试验里做亚组分析就够，后者要求你把 <span class="math inline">\(E\)</span> 的混杂也处理干净。</p>
+<p><em>一个方便的自查：如果你没法说出「把 <span class="math inline">\(E\)</span> 设成 1」在现实中是什么操作， 那你手上的多半是效应修饰，不是交互作用。</em></p>
+</div>
+<div class="qa">
+<p><span class="q">一篇论文报告「A×B 交互项 P = 0.03」，这算发现了交互作用吗？</span></p>
+<p>不一定，得先问三件事：</p>
+<ol type="1">
+<li><strong>B 的识别假设做了吗？</strong> 如果 B 只是从基线表里挑出来分层用的，那这是效应修饰的 证据，不是交互作用的证据（要点三）。</li>
+<li><strong>哪个尺度？</strong> 线性模型的乘积项检验的是加法尺度，logistic 模型的检验的是乘法尺度。 两者结论可以完全相反，而且通常就是相反的（上面那个小计算）。</li>
+<li><strong>「没有交互」想说明什么？</strong> 如果论文想用「交互项不显著」来论证「机制上没有协同」， 那它同时踩了两个坑：人群水平的抵消（要点四），以及充分条件的不必要性（要点八）。</li>
+</ol>
+<p><em>反过来，如果一篇随机试验报告的是<strong>超可加</strong>的交互，并且能论证两个处理都是单调的， 那它离「存在第 8 型的人」这个机制结论只差一句话——这时候结论反而比大多数 「交互显著」的论文硬得多。</em></p>
+</div>
+<p>书的最后一句把接力棒交给了第 6 章：因果图和决策论这些看上去不同的框架， 本质上与反事实框架等价。</p>
+<p>这也正好接上 24 周路线里第 2 周的安排。前五章把「要识别什么」讲完了： 第 1 章定义效应，第 2 章给随机试验，第 3 章把观察性研究当条件随机试验来办， 第 4 章说效应会随人群变，第 5 章说两个处理可以纠缠在一起。 <strong>但「可交换性到底成不成立」这个问题，前五章一次都没有给出可操作的判断办法</strong>—— 第 3 章只能诉诸专业知识，本章的 <span class="math inline">\(U\)</span> 按定义还不可观测。 第 6 章开始，这件事终于有了工具：<strong>把假设画出来，让图告诉你该调整谁。</strong></p>
+<div class="provenance">
+<section id="关于这份笔记" class="level3">
+<h3 class="anchored" data-anchor-id="关于这份笔记">关于这份笔记</h3>
+<dl>
+<dt>来源</dt>
+<dd>
+Hernán MA, Robins JM. <em>Causal Inference: What If</em>. 2025-01-02 版， 第 5 章（书页 57–70，PDF 第 66–79 页；正文止于书页 69，书页 70 是只有页眉的空白页）。 本页是读书笔记，非原书译文。
+</dd>
+<dt>核对方式</dt>
+<dd>
+Table 5.2 的 16 行 4 列逐格对照 PDF 重建，并通过三项自洽检验： <span class="ck">①</span> 16 行恰好是 15 到 0 的四位二进制数降序排列，不重不漏； <span class="ck">②</span> 正文点名的 6 个「无交互」型（1、4、6、11、13、16）在表里确实满足 「<span class="math inline">\(A\)</span> 的效应不随 <span class="math inline">\(E\)</span> 变、<span class="math inline">\(E\)</span> 的效应不随 <span class="math inline">\(A\)</span> 变」； <span class="ck">③</span> 三个等价类（8/12/14/15、7/10、2/3/5/9）共 10 行，加上 6 行无交互正好 16 行。 第 ②③ 两条能对上，说明抄录与分类都没错。
+</dd>
+<dd>
+<p>Table 5.1 的四型与第 1 章 Table 1.1 的 20 个名字逐一对应，人数 4 + 6 + 6 + 4 = 20， 与第 1 章一致。</p>
+</dd>
+<dd>
+<p><strong>Fine Point 5.1 的第一个不等式是靠整页渲染核对的。</strong> <code>pdftotext</code> 把 <span class="math inline">\(\Pr[\cdot] - \big(\Pr[\cdot] + \Pr[\cdot]\big) &gt; 0\)</span> 外面那对括号吃掉了， 文本层读出来像是 <span class="math inline">\(- \cdots + \cdots\)</span>，<strong>符号正好错一个</strong>。 把 PDF 第 72 页整页渲染成图片后确认括号存在，第二行的等价形式 <span class="math inline">\(\Pr[Y^{a=1,e=1}=1] - \Pr[Y^{a=0,e=1}=1] &gt; \Pr[Y^{a=1,e=0}=1]\)</span> 也与之自洽。</p>
+</dd>
+<dd>
+<p><strong>Figure 5.1 / 5.2 / 5.3 全部靠整页渲染确认</strong>（PDF 第 73、74、78 页）： 三个派的组分、九个派的组分与编号、以及 Figure 5.3 里被画叉的五个 （<span class="math inline">\(U_2\)</span>、<span class="math inline">\(U_4\)</span>、<span class="math inline">\(U_6\)</span>、<span class="math inline">\(U_7\)</span>、<span class="math inline">\(U_8\)</span>），都是看图数出来的。 这三张图是嵌入位图，<code>pdftotext</code> 一个字都吐不出来。书页 70 是空白页也是这么确认的。</p>
+</dd>
+<dd>
+<p>笔记自己补的算例独立复算过：0.6 / 0.4 / 0.5 / 0.2 那组四个风险给出 <span class="math inline">\(A\)</span> 的风险差 0.1 与 0.2、<span class="math inline">\(E\)</span> 的风险差 0.2 与 0.3、两个方向的偏离都是 <span class="math inline">\(-0.1\)</span>； 0.1 / 0.2 / 0.3 / 0.4 那组满足加法可加（<span class="math inline">\(0.4 = 0.2+0.3-0.1\)</span>）但次乘法（<span class="math inline">\(4 &lt; 6\)</span>）。</p>
+</dd>
+</dl>
+</section>
+<section id="哪些是我的改动不是原书" class="level3">
+<h3 class="anchored" data-anchor-id="哪些是我的改动不是原书">哪些是我的改动，不是原书</h3>
+<ul>
+<li><strong>全章地图</strong>：完全由笔记作者绘制，原书没有这张图。</li>
+<li><strong>因果派图</strong>：把原书 <strong>Figure 5.2（9 个派）与 Figure 5.3（单调时划掉 5 个）压成了一张</strong>。 原图的分块角度不相等，重绘一律画成等分；原图把处理组分的标签放在圆外， 这里放进对应的分块里。<strong>示意重绘，非原图。</strong></li>
+<li><strong>Table 5.2 右边两列</strong>（「这一型是什么人」「归类」）：<strong>16 行的行序与数值一格没动</strong>， 两列的内容来自书页 61–62 的正文，但书的表里没有这两列，书也没有逐型写出白话解释。</li>
+<li><strong>Table 5.1 里填回第 1 章的 20 个名字并数出 4 / 6 / 6 / 4</strong>：书在 §5.3 正文里点了名， 但没有把名字放进表里，也没有数人数。</li>
+<li><strong>四个绝对风险的算例</strong>（0.6 / 0.4 / 0.5 / 0.2）：书只给了 0.1 与 0.2 两个风险差， 没有给四个绝对风险。补这四个数是为了让「<span class="math inline">\(A\)</span> 的效应差 <span class="math inline">\(-0.1\)</span>」和「<span class="math inline">\(E\)</span> 的效应差 <span class="math inline">\(-0.1\)</span>」 这个对称看得见。</li>
+<li><strong>「两个尺度不可能同时说没有交互」这条代数等价</strong>：Technical Point 5.1 分别定义了 加法与乘法尺度上的交互，<strong>但没有把两者放在一起比较</strong>。 <span class="math inline">\((p_{10}-p_{00})(p_{00}-p_{01})=0\)</span> 这个推导和 0.1/0.2/0.3/0.4 的反例都是笔记作者做的。</li>
+<li><strong>「拮抗就是重编码后的协同」与 Greenland–Poole 重编码问题的并置</strong>：书在 §5.3 说过 16 型对重编码不稳健，在 §5.5 说过拮抗可以看成「与不给 <span class="math inline">\(E\)</span> 的协同」， 但没有把这两处点成同一件事。</li>
+<li><strong>与第 1 章「sharp null 与 null 的差别」的对照</strong>（要点四）：书没有把这两处并起来讲。</li>
+<li>所有小标题措辞、「要点一到十」的归纳，以及与 causalR 项目、24 周路线 （W2 DAG、W3 倾向评分、W5 双稳健、第三部分时变处理、第四部分效应异质性）的关联， 都是笔记作者的判断。</li>
+</ul>
+</section>
+<section id="哪些内容是缺的" class="level3">
+<h3 class="anchored" data-anchor-id="哪些内容是缺的">哪些内容是缺的</h3>
+<ul>
+<li><strong>Technical Point 5.1 的乘法尺度部分只收了定义</strong>，超乘法 / 次乘法的名字给了， 但书里那一串把「无交互」改写成两次减法之和的代数变形没有抄录。</li>
+<li><strong>Technical Point 5.2 的四个被排除的反应模式</strong>已按原式收录， 但书对「单调不减」在一般情形下的形式化讨论没有展开。</li>
+<li><strong>Fine Point 5.2 的可交换性改写只保留了结论与其中一条等式</strong>， 另一条（关于 <span class="math inline">\(U_0, U_2\)</span> 的）只用一句话带过，没有单独列出。 该 Fine Point 末尾的文献（Greenland &amp; Brumback 2002、Flanders 2006、 VanderWeele &amp; Hernán 2006）未展开。</li>
+<li><strong>第三部分「两处理发生在不同时点时条件可放松」只提了一句</strong>，没有展开—— 那是 W7–W10 的内容。</li>
+<li>第 5 章共 <strong>12 条页边注</strong>（不含 Table 5.1 / 5.2 与 Figure 5.1 / 5.2 / 5.3 的图表标签）， 位置与原文已逐条核对。本页把这 12 条<strong>全部用上了</strong>： <span class="math inline">\(Y^a = Y^{a,E}\)</span> 与递归代入、VanderWeele 2009b（有交互无修饰）、Miettinen 1982、 Greenland &amp; Poole 1988（重编码）、Greenland/Lash/Rothman 2008（抵消）、 背景因子 <span class="math inline">\(U\)</span> 不可干预、Greenland &amp; Poole 1988（9 个充分原因）、「因果派」这个叫法、 Rothman 1976（协同与拮抗）、Hume 1748、Mackie 1965（INUS）、 VanderWeele 2010b 与 VanderWeele &amp; Robins 2012（三水平与随机扩展）。</li>
+<li>参考文献（Miettinen 1982、Greenland &amp; Poole 1988、Rothman 1976、Mackie 1965、 VanderWeele &amp; Robins 2007a/2008/2012、VanderWeele 2009b/2010a/2010b 等） 未整理成 <code>references.bib</code> 条目。</li>
+</ul>
+</section>
+</div>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "已复制");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "已复制");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/hui950319\.github\.io\/causalR\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../notes/w01-effect-modification.html" class="pagination-link" aria-label="没有「治疗的因果效应」这种东西">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">没有「治疗的因果效应」这种东西</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/w01-interaction.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></div></div></footer></body></html>
