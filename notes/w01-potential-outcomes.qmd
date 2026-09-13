@@ -1,0 +1,483 @@
+---
+title: "Zeus 的心脏移植"
+subtitle: "第 1 章 · 一个因果效应的定义"
+---
+
+> **原书**：Hernán &amp; Robins, *Causal Inference: What If*（2025-01-02 版），
+> 第 1 章，书页 3–12。本章是读书笔记，非原书译文。
+
+这章作者自己先打了预防针：**别指望获得深刻的概念洞察**。你早就懂什么是因果效应了——
+不懂的话你活不到能读这本书。婴儿时期看见别人跳进泳池就能够到果酱罐，你要是没有因果直觉，
+早就跟着跳下去了。
+
+所以这章的唯一任务是**给你已有的直觉配一套记号**。读的时候标准不是「我懂了吗」，
+而是「我能不能把直觉和记号对上」。
+
+但它藏着三个不那么显然的东西，下面会逐个标出来。
+
+::: {.column-page}
+
+```{=html}
+<div class="fig-frame map-frame">
+<svg viewBox="0 0 900 730" role="img" aria-labelledby="map-t map-d">
+        <title id="map-t">第 1 章全章地图</title>
+        <desc id="map-d">从「A 对 Y 有因果作用吗」出发，个体效应因每人只见一格而不可识别，
+        退到人群层面后岔为上帝视角与凡人视角两条并列的线，二者之差即混杂，引出第 2 章随机化。</desc>
+
+        <defs>
+          <marker id="mk" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" class="mk-fill"></path>
+          </marker>
+        </defs>
+
+        <!-- ============ 连线（先画，压在节点下） ============ -->
+        <g class="ln" marker-end="url(#mk)">
+          <path d="M 450 64  L 450 114"></path>
+          <path d="M 450 166 L 450 214"></path>
+          <path d="M 450 266 L 450 314"></path>
+          <path d="M 450 366 L 450 390 L 280 390 L 280 412"></path>
+          <path d="M 450 366 L 450 390 L 620 390 L 620 412"></path>
+          <path d="M 280 508 L 280 530 L 450 530 L 450 554"></path>
+          <path d="M 620 508 L 620 530 L 450 530 L 450 554"></path>
+          <path d="M 450 606 L 450 644"></path>
+        </g>
+        <path d="M 285 140 L 222 140" class="ln ln-dash"></path>
+
+        <!-- ============ 节点 ============ -->
+        <g class="nd">
+          <rect x="320" y="20"  width="260" height="44" rx="22" class="n-entry"></rect>
+          <text x="450" y="47"  class="t">A 对 Y 有因果作用吗？</text>
+
+          <rect x="285" y="114" width="330" height="52" rx="3" class="n-core"></rect>
+          <text x="450" y="146" class="t">个体效应：Y<tspan dy="-6" class="sup">a=1</tspan><tspan dy="6"> ≠ </tspan>Y<tspan dy="-6" class="sup">a=0</tspan></text>
+
+          <rect x="22"  y="117" width="200" height="46" rx="3" class="n-side"></rect>
+          <text x="122" y="145" class="t t-side">成立前提：SUTVA ＋ 一致性</text>
+
+          <rect x="295" y="214" width="310" height="52" rx="3" class="n-turn"></rect>
+          <text x="450" y="246" class="t t-turn">每人只见一格 ⇒ 不可识别</text>
+
+          <rect x="295" y="314" width="310" height="52" rx="3" class="n-core"></rect>
+          <text x="450" y="346" class="t">退到人群：平均因果效应</text>
+
+          <!-- 上帝视角：白底 = 反事实世界 -->
+          <rect x="135" y="412" width="290" height="96" rx="3" class="n-god"></rect>
+          <text x="280" y="440" class="t t-hd">上帝视角 · Table 1.1</text>
+          <text x="280" y="466" class="t t-num">10/20 vs 10/20 → RR 1.00</text>
+          <text x="280" y="491" class="t t-sub">但 6 人被治死、6 人被治活</text>
+
+          <!-- 凡人视角：灰底 = 现实世界 -->
+          <rect x="475" y="412" width="290" height="96" rx="3" class="n-mortal"></rect>
+          <text x="620" y="440" class="t t-hd">凡人视角 · Table 1.2</text>
+          <text x="620" y="466" class="t t-num">7/13 vs 3/7 → RR 1.26</text>
+          <text x="620" y="491" class="t t-sub">唯一能真正算出来的数</text>
+
+          <rect x="285" y="554" width="330" height="52" rx="3" class="n-turn"></rect>
+          <text x="450" y="586" class="t t-turn">同一人群 1.00 ≠ 1.26 ⇒ 混杂</text>
+
+          <rect x="270" y="644" width="360" height="48" rx="24" class="n-final"></rect>
+          <text x="450" y="674" class="t t-final">第 2 章：随机化能否消除这个差距</text>
+        </g>
+      </svg>
+</div>
+```
+
+<p class="fig-cap">
+<b>全章地图。</b>主干一条：想问因果 → 个体层面不可识别 → 退到人群。
+到这里岔成<b>两个并列的视角</b>——白底的上帝视角（Table 1.1）能算出因果 RR 1.00，
+灰底的凡人视角（Table 1.2）只能算出关联 RR 1.26。它们不是上下游，
+是同一人群的两种问法；合不拢的那部分就叫混杂。虚线框不在流程上，是记号成立的前提。
+</p>
+:::
+
+## 1.1 个体因果效应：定义即不可识别
+
+Zeus 在 1 月 1 日接受心脏移植，5 天后死亡。假设神启告诉我们：**如果他没移植，5 天后还活着**。
+于是我们说移植导致了 Zeus 的死亡。
+
+记号化：治疗 `A`（1 = 移植，0 = 不移植），结局 `Y`（1 = 死，0 = 活）。
+
+$$Y^{a=1} = 1 \neq 0 = Y^{a=0} \qquad \text{(Zeus：有因果效应)}$$
+
+$$Y^{a=1} = 0 = Y^{a=0} \qquad \text{(Hera：无因果效应)}$$
+
+$Y^{a=1}$ 和 $Y^{a=0}$ 叫**潜在结果**（potential outcomes）或**反事实结果**
+（counterfactual outcomes）。书里点了两个名字的取舍：前者强调「取决于实际接受的治疗，
+两个都*可能*被观测到」，后者强调「这些情形*可能根本没发生*」。同一个东西，不同学派的偏好。
+
+::: {.pitfall}
+[要点一 · 一致性在这里就出现了]{.pitfall-label}
+
+对每个人，两个反事实结果里**对应他实际接受的治疗的那一个，是真实发生的**。
+Zeus 实际接受了治疗（$A=1$），所以他的 $Y^{a=1}=1$ 就等于观测到的 $Y=1$：
+
+$$Y = Y^A$$
+
+这就是**一致性**（consistency）。它是连接反事实世界与观测数据的**唯一桥梁**——
+没有它，反事实记号就是纯粹的哲学玄谈，跟数据一点关系都没有。
+很多人以为一致性是第 3 章的内容，其实第 1 章第 3 页就埋下了。
+:::
+
+然后是这节的结论，也是整本书的起点：
+
+> 个体因果效应无法识别——因为每个人只能观测到一个反事实结果，另一个永远缺失。
+>
+> — *What If*, §1.1, p.4
+
+注意措辞是 *cannot be identified*（不能表示成观测数据的函数），不是「难以估计」。
+**这不是样本量问题。** 再多的人、再好的设计都补不上，因为缺的不是精度，是那一半数据本身。
+
+## FP 1.1–1.2 两个藏在边栏里的假设：SUTVA
+
+上面那句「$Y^{a=1}$ 是 Zeus 接受治疗时会观测到的结果」听起来毫无争议，其实压着两个前提。
+书把它们放进了两个灰框边栏——位置在 1.1 和 1.2 节之间，很容易当成补充材料跳过，
+但它们决定的是**反事实记号本身是否有意义**。
+
+::: {.pitfall}
+[Fine Point 1.1 — 无干扰（no interference）]{.pitfall-label}
+
+一个人的反事实结果**不依赖于其他人的治疗值**。我们说「Zeus 接受移植就会死」，
+隐含了「无论 Hera 是否也接受移植，结论不变」。
+
+书举的反例很尖锐：假设 Hera 得到新心脏这件事让 Zeus 难过到熬不过自己的手术——
+而如果 Hera 没被移植，他本可以活下来。这时 Hera 的*治疗*干扰了 Zeus 的*结果*。
+
+一旦存在干扰，$Y_i^a$ **不再良定义**：「心脏移植对 Zeus 的因果效应」这句话本身失去意义，
+只能说「Hera 未获得新心脏时，移植对 Zeus 的因果效应」。传染病研究和教育干预里这是常态。
+:::
+
+::: {.pitfall}
+[Fine Point 1.2 — 治疗只有一个版本]{.pitfall-label}
+
+治疗值 $A=a$ **只对应一种干预**。说「Zeus 接受心脏移植会死」，
+隐含假设所有心脏移植都由同一位外科医生、用同样的术式和设备完成。
+
+若存在多个版本（比如技术水平不同的术者），Zeus 可能在 Asclepios 主刀下存活、
+在 Hygieia 主刀下死亡。此时 $Y_i^a$ 同样**不再良定义**。书甚至把这个逻辑推到了尽头——
+如果术式、场所也相关，就得说「Asclepios 在科斯神庙用他的蛇杖主刀时的效应」。
+
+出路叫 **treatment variation irrelevance**（VanderWeele 2009）：允许多个版本存在，
+但要求它们导致**相同**的 $Y_i^a$。Robins &amp; Greenland (2000) 先指出了这一点。
+全书默认这条成立。
+:::
+
+这两条合起来，就是 Rubin (1980) 那个 **SUTVA**（stable-unit-treatment-value assumption）。
+书说得很清楚：它们不是技术细节，而是**反事实结果能否被定义**的前提——
+在它们不成立的地方，$Y^{a=1}$ 这个符号根本写不出来，后面所有的识别讨论都无从谈起。
+
+::: {.pitfall .warn}
+[对 W1 自检问题② 的直接回答]{.pitfall-label}
+
+「一致性假设在『手术 vs 保守治疗』上具体意味着什么」——答案的一半就在 Fine Point 1.2：
+**「手术」是一个治疗值，还是一堆治疗值？**
+
+不同术式、不同术者经验、不同手术时机、不同中心，都是「手术」的不同版本。
+如果它们对结局的影响不同，那么「手术的因果效应」这句话就没有良定义的所指——
+你估出来的数取决于你的队列里各版本的混合比例，换一家医院就变了。
+
+书把完整答案留到了 §3.4「Consistency: First, define the counterfactual outcome」。
+W1 读到第 3 章时回头看这里。
+:::
+
+## 1.2 平均因果效应：一张精心设计的表
+
+既然个体的不行，就退到人群。Zeus 的大家族 20 个人，上帝视角给出两列反事实结果。
+下面这张表把**上帝视角**（Table 1.1）和**凡人视角**（Table 1.2）并在了一起——
+书里它们是相隔 6 页的两张独立表格，合起来看才见真章。
+
+::: {.column-page}
+```{=html}
+<div class="joint-table">
+<table>
+        <thead>
+          <tr class="grp-row">
+            <th class="grp"></th>
+            <th class="grp" colspan="2">上帝视角 · Table 1.1</th>
+            <th class="grp"></th>
+            <th class="grp sep-l" colspan="2">凡人视角 · Table 1.2</th>
+          </tr>
+          <tr>
+            <th style="text-align:left">个体</th>
+            <th><i>Y</i><sup>a=0</sup></th>
+            <th><i>Y</i><sup>a=1</sup></th>
+            <th>个体效应</th>
+            <th class="sep-l"><i>A</i></th>
+            <th><i>Y</i></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="name">Rheia</td>      <td class="seen">0</td><td class="unseen">1</td><td class="eff-pos">+1</td><td class="sep-l">0</td><td>0</td></tr>
+          <tr><td class="name">Kronos</td>     <td class="seen">1</td><td class="unseen">0</td><td class="eff-neg">−1</td><td class="sep-l">0</td><td>1</td></tr>
+          <tr><td class="name">Demeter</td>    <td class="seen">0</td><td class="unseen">0</td><td class="eff-nil">0</td><td class="sep-l">0</td><td>0</td></tr>
+          <tr><td class="name">Hades</td>      <td class="seen">0</td><td class="unseen">0</td><td class="eff-nil">0</td><td class="sep-l">0</td><td>0</td></tr>
+          <tr><td class="name">Hestia</td>     <td class="unseen">0</td><td class="seen">0</td><td class="eff-nil">0</td><td class="sep-l">1</td><td>0</td></tr>
+          <tr><td class="name">Poseidon</td>   <td class="unseen">1</td><td class="seen">0</td><td class="eff-neg">−1</td><td class="sep-l">1</td><td>0</td></tr>
+          <tr><td class="name">Hera</td>       <td class="unseen">0</td><td class="seen">0</td><td class="eff-nil">0</td><td class="sep-l">1</td><td>0</td></tr>
+          <tr><td class="name">Zeus</td>       <td class="unseen">0</td><td class="seen">1</td><td class="eff-pos">+1</td><td class="sep-l">1</td><td>1</td></tr>
+          <tr><td class="name">Artemis</td>    <td class="seen">1</td><td class="unseen">1</td><td class="eff-nil">0</td><td class="sep-l">0</td><td>1</td></tr>
+          <tr><td class="name">Apollo</td>     <td class="seen">1</td><td class="unseen">0</td><td class="eff-neg">−1</td><td class="sep-l">0</td><td>1</td></tr>
+          <tr><td class="name">Leto</td>       <td class="seen">0</td><td class="unseen">1</td><td class="eff-pos">+1</td><td class="sep-l">0</td><td>0</td></tr>
+          <tr><td class="name">Ares</td>       <td class="unseen">1</td><td class="seen">1</td><td class="eff-nil">0</td><td class="sep-l">1</td><td>1</td></tr>
+          <tr><td class="name">Athena</td>     <td class="unseen">1</td><td class="seen">1</td><td class="eff-nil">0</td><td class="sep-l">1</td><td>1</td></tr>
+          <tr><td class="name">Hephaestus</td> <td class="unseen">0</td><td class="seen">1</td><td class="eff-pos">+1</td><td class="sep-l">1</td><td>1</td></tr>
+          <tr><td class="name">Aphrodite</td>  <td class="unseen">0</td><td class="seen">1</td><td class="eff-pos">+1</td><td class="sep-l">1</td><td>1</td></tr>
+          <tr><td class="name">Polyphemus</td> <td class="unseen">0</td><td class="seen">1</td><td class="eff-pos">+1</td><td class="sep-l">1</td><td>1</td></tr>
+          <tr><td class="name">Persephone</td> <td class="unseen">1</td><td class="seen">1</td><td class="eff-nil">0</td><td class="sep-l">1</td><td>1</td></tr>
+          <tr><td class="name">Hermes</td>     <td class="unseen">1</td><td class="seen">0</td><td class="eff-neg">−1</td><td class="sep-l">1</td><td>0</td></tr>
+          <tr><td class="name">Hebe</td>       <td class="unseen">1</td><td class="seen">0</td><td class="eff-neg">−1</td><td class="sep-l">1</td><td>0</td></tr>
+          <tr><td class="name">Dionysus</td>   <td class="unseen">1</td><td class="seen">0</td><td class="eff-neg">−1</td><td class="sep-l">1</td><td>0</td></tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="name">死亡数 / 总数</td>
+            <td>10 / 20</td>
+            <td>10 / 20</td>
+            <td>6 正 · 6 负 · 8 零</td>
+            <td class="sep-l">13 治疗</td>
+            <td>7 / 13 治疗组</td>
+          </tr>
+        </tfoot>
+      </table>
+</div>
+```
+
+::: {.legend}
+[]{.swatch .seen} 实际观测到的那一格（$Y = Y^A$）
+[]{.swatch .unseen} 永远看不到的那一格
+:::
+
+<p class="fig-cap">
+每一行里，实心格和斜纹格必有一个、且只有一个是实心——这就是一致性 $Y = Y^A$ 的图形版本。
+凡人视角那两列，完全是从实心格抄过来的。
+</p>
+:::
+
+$$\Pr[Y^{a=1}=1] = 10/20 = 0.5, \qquad \Pr[Y^{a=0}=1] = 10/20 = 0.5$$
+
+**平均因果效应**的定义：$\Pr[Y^{a=1}=1] \neq \Pr[Y^{a=0}=1]$，
+等价写法 $E[Y^{a=1}] \neq E[Y^{a=0}]$。本例中两边都是 0.5，所以**因果零假设成立**。
+
+::: {.pitfall}
+[要点二 · 平均为零 ≠ 对谁都没用]{.pitfall-label}
+
+看「个体效应」那一列：20 个人里 **12 个人有实实在在的因果效应**——
+6 个被移植害死（+1），6 个被移植救活（−1），8 个不受影响。正负恰好抵消，平均因果效应才是零。
+
+这在临床上是致命的：一个 RCT 报出 HR = 1.00，可能意味着药没用，
+也可能意味着它救了一半人、害了另一半人。第 4 章的效应修饰和 W20 的 CATE 就是冲着这件事去的。
+:::
+
+Technical Point 1.1 把这点推得更深。书里那句话正好印证上表的分布——
+*「$Y^{a=1} - Y^{a=0}$ 不是常数：6 人为 −1，6 人为 +1，8 人为 0」*。由此：
+
+$$\operatorname{Var}(Y^{a=1}) - \operatorname{Var}(Y^{a=0}) = 0 \qquad \text{可识别，随机试验就能算}$$
+
+$$\operatorname{Var}(Y^{a=1} - Y^{a=0}) > 0 \qquad \text{永不可识别}$$
+
+原因：后者需要 $Y^{a=1}$ 与 $Y^{a=0}$ 的**协方差**，而你永远不可能同时观测到
+同一个人的两个反事实结果——上表每行只有一个实心格。这条对任何非线性泛函
+（方差、中位数、风险率）都成立。
+
+## 1.3 效应度量：风险差和风险比不是一回事
+
+因果零假设的三种等价写法：
+
+$$\text{(i)}\quad \Pr[Y^{a=1}=1] - \Pr[Y^{a=0}=1] = 0 \qquad \text{风险差}$$
+
+$$\text{(ii)}\quad \frac{\Pr[Y^{a=1}=1]}{\Pr[Y^{a=0}=1]} = 1 \qquad \text{风险比}$$
+
+$$\text{(iii)}\quad \frac{\Pr[Y^{a=1}=1]\,/\,\Pr[Y^{a=1}=0]}{\Pr[Y^{a=0}=1]\,/\,\Pr[Y^{a=0}=0]} = 1 \qquad \text{优势比}$$
+
+::: {.pitfall}
+[要点三 · 藏在边注里，最容易翻过去]{.pitfall-label}
+
+因果风险**差** *是* 个体因果效应 $Y^{a=1}-Y^{a=0}$ 在差值尺度上的平均。
+
+因果风险**比** *不是* 个体因果效应 $Y^{a=1}/Y^{a=0}$ 在比值尺度上的平均——
+它是人群层面的度量，但不是任何个体效应的平均。
+:::
+
+直接后果：**NNT 只在风险差上有意义**。Fine Point 1.3 的例子——
+1 亿人治疗后死 2000 万、不治疗死 3000 万，风险差 $0.2 - 0.3 = -0.1$，
+于是 $\text{NNT} = 1/0.1 = 10$，平均每治 10 个人救 1 条命。
+这个「平均」之所以成立，正因为风险差是个体效应的平均。换成风险比就没这个解释。
+
+你在 RegR 里做效应量选择时，这决定了什么时候能说「个体获益」，
+什么时候只能说「人群风险变化」。
+
+## 1.4 随机变异：先记账，第 10 章再算
+
+书在这里做了个教学简化，值得知道它简化掉了什么。随机误差有两个来源：**抽样变异**，
+以及**非确定性反事实**（量子层面，Zeus 在治疗下死亡的概率是 0.9，而不是「必然死」）。
+书说，**第 10 章之前一律忽略**——假设反事实结果是确定性的，且我们观测了一个极大超总体的每一个人。
+
+> 把这 20 个人看成 200 亿人，其中 10 亿人和 Zeus 一模一样，10 亿人和 Hera 一模一样，
+> 以此类推。于是我们可以带着奥林匹斯山般的确定性做计算。
+>
+> — *What If*, §1.4, p.10（转述）
+
+所以前 9 章所有的等号都是「识别」意义上的等号，不带置信区间。
+**识别（identification）和估计（estimation）是两件事**，Part I 只谈识别。
+你在前几章找不到标准误，不是书漏了，是刻意的。
+
+## 1.5 因果与关联：本章的高潮
+
+回到上表右半边——现实里我们只有那两列：实际治疗 $A$ 和观测结局 $Y$。
+数一数：13 人接受治疗，其中 7 人死亡；7 人未治疗，其中 3 人死亡。
+
+$$\Pr[Y=1 \mid A=1] = 7/13 \approx 0.538, \qquad \Pr[Y=1 \mid A=0] = 3/7 \approx 0.429$$
+
+于是在**同一个人群**里，两个答案彻底相反：
+
+::: {.contrast}
+::: {.contrast-item}
+[关联风险比 · 凡人视角]{.contrast-hd}
+
+[1.26]{.figure-num .assoc}
+
+$(7/13) \div (3/7)$ — 治疗组死得更多。这是你从真实数据里唯一能直接算出来的东西。
+:::
+
+::: {.contrast-item}
+[因果风险比 · 上帝视角]{.contrast-hd}
+
+[1.00]{.figure-num .causal}
+
+$(10/20) \div (10/20)$ — 全体治疗与全体不治疗，风险完全一样。治疗其实毫无人群层面的效果。
+:::
+:::
+
+数学上的分野干净利落：
+
+$$\underbrace{\Pr[Y=1 \mid A=a]}_{\text{关联：条件概率，人群的一个子集}} \qquad\text{vs}\qquad \underbrace{\Pr[Y^{a}=1]}_{\text{因果：边际概率，整个人群}}$$
+
+::: {.column-page}
+```{=html}
+<div class="fig-frame dia-frame">
+<svg viewBox="0 0 720 420" role="img" aria-labelledby="fig11-t fig11-d">
+        <title id="fig11-t">Figure 1.1 — 因果与关联的分野</title>
+        <desc id="fig11-d">兴趣人群是一个菱形，左半白色代表实际接受治疗者，右半灰色代表未治疗者。向左分叉是因果：整个白菱形与整个灰菱形相比。向右分叉是关联：原菱形的白色左半与灰色右半相比。</desc>
+
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" class="dia-head-fill"></path>
+          </marker>
+        </defs>
+
+        <!-- 顶部：兴趣人群 -->
+        <text x="360" y="24" text-anchor="middle" class="dia-head">Population of interest</text>
+        <polygon points="360,40 360,124 320,82" class="dia-shape dia-treated"></polygon>
+        <polygon points="360,40 400,82 360,124" class="dia-shape dia-untreated"></polygon>
+        <text x="306" y="87" text-anchor="end"   class="dia-text">Treated</text>
+        <text x="414" y="87" text-anchor="start" class="dia-text">Untreated</text>
+
+        <!-- 分叉箭头 -->
+        <path d="M 344 134 L 220 180" class="dia-arrow" marker-end="url(#ah)"></path>
+        <path d="M 376 134 L 500 180" class="dia-arrow" marker-end="url(#ah)"></path>
+
+        <text x="190" y="212" text-anchor="middle" class="dia-head">Causation</text>
+        <text x="530" y="212" text-anchor="middle" class="dia-head">Association</text>
+
+        <!-- 左：因果 = 整个白菱形 vs 整个灰菱形 -->
+        <polygon points="120,256 158,300 120,344 82,300"  class="dia-shape dia-treated"></polygon>
+        <text x="190" y="306" text-anchor="middle" class="dia-vs">vs.</text>
+        <polygon points="260,256 298,300 260,344 222,300" class="dia-shape dia-untreated"></polygon>
+
+        <text x="120" y="382" text-anchor="middle" class="dia-eq">E[Y<tspan dy="-6" font-size="10.5">a=1</tspan><tspan dy="6">]</tspan></text>
+        <text x="260" y="382" text-anchor="middle" class="dia-eq">E[Y<tspan dy="-6" font-size="10.5">a=0</tspan><tspan dy="6">]</tspan></text>
+
+        <!-- 右：关联 = 白色左半 vs 灰色右半 -->
+        <polygon points="505,256 505,344 467,300" class="dia-shape dia-treated"></polygon>
+        <text x="530" y="306" text-anchor="middle" class="dia-vs">vs.</text>
+        <polygon points="555,256 593,300 555,344" class="dia-shape dia-untreated"></polygon>
+
+        <text x="486" y="382" text-anchor="middle" class="dia-eq">E[Y | A = 1]</text>
+        <text x="574" y="382" text-anchor="middle" class="dia-eq">E[Y | A = 0]</text>
+      </svg>
+</div>
+```
+
+<p class="fig-cap">
+Figure 1.1（示意重绘）。<b>数一数形状就够了：</b>左边「因果」是两个<b>完整</b>菱形——
+同一批人被算了两遍，一遍全体治疗、一遍全体不治疗，加起来是 2 倍人群，其中一半是反事实。
+右边「关联」是两个<b>半块</b>——原菱形被劈开，13 人归左、7 人归右，加起来正好 1 个人群，
+全部真实存在。原图 Association 部分两个三角形朝向不一致，此处改为背对背以对应顶部菱形的劈分方位。
+</p>
+:::
+
+回到上面那张图：因果是「**整个**白钻石 vs **整个**灰钻石」（所有人都治 vs 所有人都不治），
+关联是「原钻石**内部**的白色区域 vs 灰色区域」（实际被治的人 vs 实际没治的人）。
+**因果问的是反事实世界的 what if，关联问的是现实世界的 what is。**
+
+这就是 "association is not causation" 那句老话的精确含义。两者的差距有个名字——**混杂**，
+第 7 章处理。本例中差距的来源很直白：接受移植的人本来就病得更重。
+
+::: {.pitfall .warn}
+[本章唯一带临床后果的例子]{.pitfall-label}
+
+阿司匹林的因果风险比是 **0.5**（确实保护），关联风险比是 **1.5**——
+因为心血管高危患者被优先开了阿司匹林。
+
+某位医生看到关联 RR = 1.5，判断「用阿司匹林的人死得更多」，于是给病人停药。
+
+**这位医生会因医疗过失被起诉。**
+:::
+
+## 这章停在哪里
+
+> 因果推断需要 Table 1.1 那样的数据，而我们能拿到的永远只有 Table 1.2 那样的真实数据。
+> 问题是：在什么条件下，真实数据可以用于因果推断？下一章给出一个答案：做随机试验。
+>
+> — *What If*, §1.5, p.12（第 1 章最后一段）
+
+所以第 1 章只完成了 W1 自检问题①的一半：它证明了个体效应不可识别、定义了平均因果效应，
+但**没有证明平均因果效应可以识别**。那要等第 2 章（随机化）和第 3 章
+（可交换性、正性、一致性）。
+
+::: {.qa}
+[自检① 为什么个体因果效应不可识别，而平均因果效应可以？]{.q}
+
+个体效应需要同一个人的两个反事实结果——上表每行只有一个实心格，另一格的信息量是零，
+再多样本也补不上，因为 $Y^{a=1}$ 与 $Y^{a=0}$ 的**联合分布**永不可识别。
+平均效应只需要两个**边际**分布：均值是线性泛函，从边际就能算。
+观测数据能给你边际，永远给不了联合。
+
+*至于边际在什么条件下可从数据得到，第 1 章没答，那是第 2–3 章的事。*
+:::
+
+顺带：这正是 causalR 项目的底层逻辑——目标试验模拟做的就是用观测数据去构造那个
+「如果所有人都接受策略 $a$」的白钻石。第 3.6 节就叫 The target trial，第 22 章整章讲它。
+
+::: {.provenance}
+### 关于这份笔记
+
+来源
+:   Hernán MA, Robins JM. *Causal Inference: What If*. 2025-01-02 版，
+    第 1 章（书页 3–12，PDF 第 12–21 页）。本页是读书笔记，非原书译文。
+
+核对方式
+:   表中 20 行数据逐格对照 PDF 原文，并通过三项自洽检验：
+    [①]{.ck} 每行 $Y = Y^A$ 均成立（一致性）；
+    [②]{.ck} $Y^{a=1}$ 与 $Y^{a=0}$ 各 10 例死亡；
+    [③]{.ck} 治疗组 7/13、未治疗组 3/7 与 §1.5 原文数值一致。
+    个体效应的 6 正 / 6 负 / 8 零分布与 Technical Point 1.1 的原文描述吻合——
+    这条是书自带的交叉验证，能对上说明抄录无误。
+
+### 哪些是我的改动，不是原书
+
+- **合并表**：原书 Table 1.1（书页 5）与 Table 1.2（书页 11）是相隔 6 页的两张独立表格。
+  并置、行对齐、以及**「个体效应」这一列和实心/斜纹的底纹标记，都是本笔记添加的**，原书没有。
+- **Figure 1.1**：示意重绘，Association 部分改为背对背朝向。
+- **全章地图**：完全由笔记作者绘制，原书没有这张图。
+- 所有小标题措辞、「要点一/二/三」的归纳、以及与 causalR 项目的关联，均为笔记作者的判断。
+
+### 哪些内容是缺的
+
+- **Technical Point 1.2**（非确定性反事实）只在 §1.4 一笔带过，其形式化未收录。
+- §1.3 关于非二分类结局、以及效应度量作为一般泛函对比的讨论未展开。
+- 原书的参考文献（Cox 1958、Rubin 1980、Halloran &amp; Struchiner 1995 等）未整理成条目。
+- 本页所有图表均为重绘或重建，**没有从 PDF 直接提取的原图**——该书图表为矢量对象，
+  无法提取。需要引用原图时请回到 PDF。
+:::
