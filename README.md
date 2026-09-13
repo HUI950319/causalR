@@ -21,7 +21,8 @@
 
 | 已上线 | 主题 |
 |---|---|
-| [W1](https://hui950319.github.io/causalR/notes/w01-potential-outcomes.html) | 潜在结果框架与三大识别假设 |
+| [W1 · 第 1 章](https://hui950319.github.io/causalR/notes/w01-potential-outcomes.html) | 潜在结果框架与三大识别假设 |
+| [W1 · 第 2 章](https://hui950319.github.io/causalR/notes/w01-randomized-experiments.html) | 随机试验：可交换性、标准化与 IP 加权 |
 
 ---
 
