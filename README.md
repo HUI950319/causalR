@@ -3,6 +3,7 @@
 <!-- badges: start -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+[![Study notes](https://img.shields.io/badge/study_notes-online-1b4079.svg)](https://hui950319.github.io/causalR/)
 <!-- badges: end -->
 
 观察性研究的因果推断与**目标试验模拟（Target Trial Emulation, TTE）**工具包，
@@ -10,6 +11,17 @@
 
 仓库同时是一份 **24 周学习记录**：`learn/` 是路线与笔记，`weeks/` 是每周的分析代码，
 `R/` 里的函数是从这些代码中被反复用到、最终沉淀下来的那部分。
+
+### 📖 在线读书笔记
+
+**<https://hui950319.github.io/causalR/>**
+
+每周一章，结构是「全章地图 → 逐节精读 → 关键陷阱 → 自检问题 → 交付说明」。
+站点由 Quarto book 生成（源文件在 [`notes/`](notes/)，产物在 `docs/`），支持全文搜索与明暗主题。
+
+| 已上线 | 主题 |
+|---|---|
+| [W1](https://hui950319.github.io/causalR/notes/w01-potential-outcomes.html) | 潜在结果框架与三大识别假设 |
 
 ---
 
