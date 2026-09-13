@@ -1,0 +1,1981 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hans" xml:lang="zh-Hans"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>第 12 章 · 把权重交给模型去估 – 因果推断读书笔记</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../notes/w03-why-model.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-4571e413af9019dfdcc70175faf53a1f.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-314b8f8b688a0fcdf2aa71489979e4ab.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-29851f4f32fd8eebc705f717ab5f629d.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-314b8f8b688a0fcdf2aa71489979e4ab.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "没有结果",
+    "search-matching-documents-text": "匹配的文档",
+    "search-copy-link-title": "复制搜索链接",
+    "search-hide-matches-text": "隐藏其它匹配结果",
+    "search-more-match-text": "更多匹配结果",
+    "search-more-matches-text": "更多匹配结果",
+    "search-clear-button-title": "清除",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "取消",
+    "search-submit-button-title": "提交",
+    "search-label": "搜索"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar docked quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../notes/w03-why-model.html">原书第二部分 · 有模型的因果推断</a></li><li class="breadcrumb-item"><a href="../notes/w03-ip-weighting-msm.html"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="搜索" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header sidebar-header-stacked">
+      <a href="../index.html" class="sidebar-logo-link">
+      </a>
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../">因果推断读书笔记</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/HUI950319/causalR" title="源代码" class="quarto-navigation-tool px-1" aria-label="源代码"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="切换深色模式"><i class="bi"></i></a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="搜索"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">关于这份笔记</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/notation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">记号与约定</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">阶段一 · 估计量全景</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-potential-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 1 章 · Zeus 的心脏移植</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-randomized-experiments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 2 章 · 一枚硬币，还是两枚</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-observational-studies.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 3 章 · 一枚硬币也没抛</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-effect-modification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 4 章 · 没有「治疗的因果效应」这种东西</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 5 章 · 两个处理，一起动手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-causal-diagrams.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 6 章 · 先画假设，再下结论</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-confounding.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 7 章 · 后门关上，可交换性才回来</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-selection-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 8 章 · 进了分析的人，未必还能互换</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-measurement-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 9 章 · 带星号的变量，与担不起因果的箭头</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-random-variability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 10 章 · 该不该撤稿</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">原书第二部分 · 有模型的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w03-why-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 11 章 · 数据不会自己说话</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w03-ip-weighting-msm.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">目录</h2>
+   
+  <ul>
+  <li><a href="#因果问题一个刻意选的坏例子" id="toc-因果问题一个刻意选的坏例子" class="nav-link active" data-scroll-target="#因果问题一个刻意选的坏例子">12.1 因果问题<span class="hook">：一个刻意选的坏例子</span></a></li>
+  <li><a href="#用模型估-ip-权重把数格子换成-logistic-回归" id="toc-用模型估-ip-权重把数格子换成-logistic-回归" class="nav-link" data-scroll-target="#用模型估-ip-权重把数格子换成-logistic-回归">12.2 用模型估 IP 权重<span class="hook">：把数格子换成 logistic 回归</span></a>
+  <ul class="collapse">
+  <li><a href="#为什么必须建模" id="toc-为什么必须建模" class="nav-link" data-scroll-target="#为什么必须建模">为什么必须建模</a></li>
+  <li><a href="#模型是什么样的" id="toc-模型是什么样的" class="nav-link" data-scroll-target="#模型是什么样的">模型是什么样的</a></li>
+  <li><a href="#结果" id="toc-结果" class="nav-link" data-scroll-target="#结果">结果</a></li>
+  <li><a href="#technical-point-12.1horvitz-thompson-与-hájek" id="toc-technical-point-12.1horvitz-thompson-与-hájek" class="nav-link" data-scroll-target="#technical-point-12.1horvitz-thompson-与-hájek">Technical Point 12.1：Horvitz-Thompson 与 Hájek</a></li>
+  </ul></li>
+  <li><a href="#稳定化-ip-权重伪人群不必造成两倍大" id="toc-稳定化-ip-权重伪人群不必造成两倍大" class="nav-link" data-scroll-target="#稳定化-ip-权重伪人群不必造成两倍大">12.3 稳定化 IP 权重<span class="hook">：伪人群不必造成两倍大</span></a>
+  <ul class="collapse">
+  <li><a href="#figure-12.1把它用第-2-章那-20-个人算一遍" id="toc-figure-12.1把它用第-2-章那-20-个人算一遍" class="nav-link" data-scroll-target="#figure-12.1把它用第-2-章那-20-个人算一遍">Figure 12.1：把它用第 2 章那 20 个人算一遍</a></li>
+  <li><a href="#在-nhefs-上的效果" id="toc-在-nhefs-上的效果" class="nav-link" data-scroll-target="#在-nhefs-上的效果">在 NHEFS 上的效果</a></li>
+  <li><a href="#fine-point-12.2正性的两种违反" id="toc-fine-point-12.2正性的两种违反" class="nav-link" data-scroll-target="#fine-point-12.2正性的两种违反">Fine Point 12.2：正性的两种违反</a></li>
+  </ul></li>
+  <li><a href="#边际结构模型结局是反事实的那种模型" id="toc-边际结构模型结局是反事实的那种模型" class="nav-link" data-scroll-target="#边际结构模型结局是反事实的那种模型">12.4 边际结构模型<span class="hook">：结局是反事实的那种模型</span></a>
+  <ul class="collapse">
+  <li><a href="#连续处理模型必须非饱和" id="toc-连续处理模型必须非饱和" class="nav-link" data-scroll-target="#连续处理模型必须非饱和">连续处理：模型必须非饱和</a></li>
+  <li><a href="#连续处理的权重更难估" id="toc-连续处理的权重更难估" class="nav-link" data-scroll-target="#连续处理的权重更难估">连续处理的权重更难估</a></li>
+  <li><a href="#结果-1" id="toc-结果-1" class="nav-link" data-scroll-target="#结果-1">结果</a></li>
+  <li><a href="#二值结局的边际结构-logistic-模型" id="toc-二值结局的边际结构-logistic-模型" class="nav-link" data-scroll-target="#二值结局的边际结构-logistic-模型">二值结局的边际结构 logistic 模型</a></li>
+  </ul></li>
+  <li><a href="#效应修饰与边际结构模型加协变量的唯一理由是兴趣" id="toc-效应修饰与边际结构模型加协变量的唯一理由是兴趣" class="nav-link" data-scroll-target="#效应修饰与边际结构模型加协变量的唯一理由是兴趣">12.5 效应修饰与边际结构模型<span class="hook">：加协变量的唯一理由是兴趣</span></a>
+  <ul class="collapse">
+  <li><a href="#权重分子的选择" id="toc-权重分子的选择" class="nav-link" data-scroll-target="#权重分子的选择">权重分子的选择</a></li>
+  <li><a href="#该把哪些变量放进边际结构模型" id="toc-该把哪些变量放进边际结构模型" class="nav-link" data-scroll-target="#该把哪些变量放进边际结构模型">该把哪些变量放进边际结构模型</a></li>
+  </ul></li>
+  <li><a href="#删失与缺失数据把删失也当成一个处理" id="toc-删失与缺失数据把删失也当成一个处理" class="nav-link" data-scroll-target="#删失与缺失数据把删失也当成一个处理">12.6 删失与缺失数据<span class="hook">：把删失也当成一个处理</span></a>
+  <ul class="collapse">
+  <li><a href="#因果对比的改写与乘积权重" id="toc-因果对比的改写与乘积权重" class="nav-link" data-scroll-target="#因果对比的改写与乘积权重">因果对比的改写，与乘积权重</a></li>
+  <li><a href="#非稳定化-vs-稳定化两种伪人群" id="toc-非稳定化-vs-稳定化两种伪人群" class="nav-link" data-scroll-target="#非稳定化-vs-稳定化两种伪人群">非稳定化 vs 稳定化：两种伪人群</a></li>
+  <li><a href="#结果-2" id="toc-结果-2" class="nav-link" data-scroll-target="#结果-2">结果</a></li>
+  </ul></li>
+  <li><a href="#这章停在哪里" id="toc-这章停在哪里" class="nav-link" data-scroll-target="#这章停在哪里">这章停在哪里</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/w03-ip-weighting-msm.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content page-columns page-full" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../notes/w03-why-model.html">原书第二部分 · 有模型的因果推断</a></li><li class="breadcrumb-item"><a href="../notes/w03-ip-weighting-msm.html"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></h1>
+<p class="subtitle lead"><em>IP weighting and marginal structural models</em> · IP 加权与边际结构模型</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<blockquote class="blockquote">
+<p><strong>原书</strong>：Hernán &amp; Robins, <em>Causal Inference: What If</em>（2025-01-02 版）， 第 12 章，书页 157–168。本章是读书笔记，非原书译文。</p>
+</blockquote>
+<p>第二部分<strong>整个</strong>是围绕同一个因果问题组织的：</p>
+<blockquote class="blockquote">
+<p><strong>戒烟对体重增加的平均因果效应是多少？</strong></p>
+<p>— <em>What If</em>, §12 章首, p.157</p>
+</blockquote>
+<p>而本章要做的事，一句话就能说清：</p>
+<blockquote class="blockquote">
+<p>IP 加权在第 2 章就介绍过了，但我们<strong>只把它描述成一种非参数方法</strong>。 现在我们描述<strong>把模型和 IP 加权结合起来使用</strong>——在附加假设之下， 这将让我们能对付<strong>有许多协变量的高维问题</strong>与<strong>非二值的处理</strong>。</p>
+<p>— <em>What If</em>, §12 章首, p.157（复述）</p>
+</blockquote>
+<p>数据是真实的 <strong>NHEFS</strong>（National Health and Nutrition Examination Survey Data I Epidemiologic Follow-up Study），由美国国家卫生统计中心与国家老龄研究所联合发起。 原书官网提供了本书用到的子集。</p>
+<div class="column-page">
+<div class="fig-frame map-frame">
+<svg viewbox="0 0 900 830" role="img" aria-labelledby="map12-t map12-d">
+        <title id="map12-t">第 12 章全章地图</title>
+        <desc id="map12-d">从戒烟对体重增加的效应这个问题出发。粗糙比较给出 2.5 公斤，
+        但戒烟者与未戒烟者在九个基线变量上都不同。九个混杂因子切出的格子有数百万个，
+        非参数估计不可能，于是用 logistic 模型估计处理概率，再取倒数作为权重。
+        权重有两种：非稳定化的均值为二，稳定化的均值为一、范围窄得多。
+        由此得到 3.4 公斤这个估计。再往上一层是边际结构模型，它的结局变量是反事实的，
+        二值处理下它是饱和的，连续处理下必须非饱和。往模型里加协变量可以考察效应修饰。
+        最后把删失也当成一个处理，用乘积权重同时处理混杂与选择偏倚。</desc>
+
+        <defs>
+          <marker id="mk12" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6.5" markerheight="6.5" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" class="mk-fill"></path>
+          </marker>
+        </defs>
+
+        <g class="ln" marker-end="url(#mk12)">
+          <path d="M 450 64  L 450 108"></path>
+          <path d="M 450 190 L 450 234"></path>
+          <path d="M 450 292 L 450 336"></path>
+          <path d="M 450 394 L 450 414 L 250 414 L 250 440"></path>
+          <path d="M 450 394 L 450 414 L 650 414 L 650 440"></path>
+          <path d="M 250 522 L 250 544 L 450 544 L 450 576"></path>
+          <path d="M 650 522 L 650 544 L 450 544 L 450 576"></path>
+          <path d="M 450 634 L 450 678"></path>
+          <path d="M 450 736 L 450 780"></path>
+        </g>
+
+        <g class="nd">
+          <rect x="215" y="20" width="470" height="44" rx="22" class="n-entry"></rect>
+          <text x="450" y="48" class="t">戒烟对体重增加的平均因果效应？</text>
+
+          <rect x="215" y="108" width="470" height="82" class="n-core"></rect>
+          <text x="450" y="132" class="t">粗糙比较：4.5 − 2.0 = 2.5 kg</text>
+          <text x="450" y="156" class="t t-sub">但戒烟者平均老 4 岁，9 个基线变量都不同</text>
+          <text x="450" y="179" class="t t-sub">1566 人 · 9 个混杂因子</text>
+
+          <rect x="245" y="234" width="410" height="58" class="n-turn"></rect>
+          <text x="450" y="256" class="t t-turn">9 个混杂因子 → 数百万个格子</text>
+          <text x="450" y="279" class="t t-sub">非参数估计不可能 → 只能建模</text>
+
+          <rect x="215" y="336" width="470" height="58" class="n-core"></rect>
+          <text x="450" y="358" class="t">logistic 模型估 Pr[A=1 | L]，取倒数做权重</text>
+          <text x="450" y="381" class="t t-sub">造一个 L 与 A 独立的伪人群</text>
+
+          <rect x="110" y="440" width="280" height="82" class="n-mortal"></rect>
+          <text x="250" y="464" class="t t-hd">非稳定化 Wᴬ = 1/f(A|L)</text>
+          <text x="250" y="488" class="t t-num">1.05 – 16.7，均值 2</text>
+          <text x="250" y="511" class="t t-sub">伪人群是原人群的两倍</text>
+
+          <rect x="510" y="440" width="280" height="82" class="n-god"></rect>
+          <text x="650" y="464" class="t t-hd">稳定化 SWᴬ = f(A)/f(A|L)</text>
+          <text x="650" y="488" class="t t-num">0.33 – 4.30，均值 1</text>
+          <text x="650" y="511" class="t t-sub">伪人群与原人群同样大</text>
+
+          <rect x="245" y="576" width="410" height="58" class="n-core"></rect>
+          <text x="450" y="598" class="t t-num">θ̂₁ = 3.4 kg（95% CI 2.4, 4.5）</text>
+          <text x="450" y="621" class="t t-sub">两种权重给出同一个点估计</text>
+
+          <rect x="215" y="678" width="470" height="58" class="n-core"></rect>
+          <text x="450" y="700" class="t">边际结构模型 E[Yᵃ] = β₀ + β₁a</text>
+          <text x="450" y="723" class="t t-sub">结局是反事实的，拟合不到任何真实数据上</text>
+
+          <rect x="205" y="780" width="490" height="46" class="n-final"></rect>
+          <text x="450" y="808" class="t t-final">把删失也当处理：SWᴬ·ᶜ 同时治混杂与选择偏倚</text>
+        </g>
+</svg>
+</div>
+<p class="fig-cap">
+<b>全章地图（笔记作者绘制，原书无此图）。</b>本章的结构其实是<strong>第 2 章 + 第 11 章</strong>： 第 2 章给了 IP 加权的全部思想，第 11 章说明了高维下必须建模—— 本章做的就是把第 2 章里那个靠数格子算出来的 <span class="math inline">\(f(A\mid L)\)</span>，换成一个 logistic 模型的输出。 <b>「边际结构模型」这个名字里的两个词，分别指向图上最后两格</b>： 「边际」指模型里不含协变量，「结构」指它的结局变量是反事实的。
+</p>
+</div>
+<section id="因果问题一个刻意选的坏例子" class="level2">
+<h2 class="anchored" data-anchor-id="因果问题一个刻意选的坏例子">12.1 因果问题<span class="hook">：一个刻意选的坏例子</span></h2>
+<p>目标是估计<strong>戒烟</strong>（处理 <span class="math inline">\(A\)</span>）对<strong>体重增加</strong>（结局 <span class="math inline">\(Y\)</span>）的平均因果效应。 数据是 NHEFS 中 <strong>1566 名 25–74 岁的吸烟者</strong>，他们都有一次基线访视（1971–75） 和约 10 年后的随访访视（1982）。</p>
+<ul>
+<li><strong><span class="math inline">\(A = 1\)</span></strong>：报告在随访访视之前已戒烟；否则 <span class="math inline">\(A = 0\)</span>。</li>
+<li><strong><span class="math inline">\(Y\)</span></strong>：随访体重减基线体重（kg）。</li>
+</ul>
+<p>粗糙的比较是：</p>
+<div class="joint-table">
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th></th>
+<th>戒烟者 <span class="math inline">\(A=1\)</span></th>
+<th>未戒烟者 <span class="math inline">\(A=0\)</span></th>
+<th>差</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>平均体重增加</td>
+<td><span class="math inline">\(4.5\)</span> kg</td>
+<td><span class="math inline">\(2.0\)</span> kg</td>
+<td><span class="math inline">\(\mathbf{2.5}\)</span> kg</td>
+</tr>
+<tr class="even">
+<td></td>
+<td></td>
+<td></td>
+<td>95% CI <span class="math inline">\((1.7,\ 3.4)\)</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+<blockquote class="blockquote">
+<p><strong>大多数人都增重了，但戒烟者平均增得更多。</strong></p>
+<p>— <em>What If</em>, §12.1, p.157</p>
+</blockquote>
+<p>而关联差 <span class="math inline">\(E[Y\mid A=1]-E[Y\mid A=0]\)</span> 一般<strong>不等于</strong>因果差 <span class="math inline">\(E[Y^{a=1}]-E[Y^{a=0}]\)</span>—— 只要戒烟者与未戒烟者在<strong>影响体重增加的特征</strong>上有差别。</p>
+<blockquote class="blockquote">
+<p>例如，<strong>戒烟者平均比未戒烟者大 4 岁</strong>（戒烟者年龄在 50 岁以上的可能性高出 44%）， 而<strong>年长者增重比年轻者少</strong>，无论他们戒不戒烟。 我们说年龄是 <span class="math inline">\(A\)</span> 对 <span class="math inline">\(Y\)</span> 效应的一个（<strong>代理</strong>）混杂因子，分析需要对年龄调整。 <strong>未调整的估计 2.5 可能低估了真实的因果效应。</strong></p>
+<p>— <em>What If</em>, §12.1, p.158（复述）</p>
+</blockquote>
+<p>原书 Table 12.1 的基线特征（笔者逐格照录）：</p>
+<div class="joint-table">
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>基线特征均值</th>
+<th><span class="math inline">\(A=1\)</span>（戒烟）</th>
+<th><span class="math inline">\(A=0\)</span>（未戒烟）</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>年龄（岁）</td>
+<td>46.2</td>
+<td>42.8</td>
+</tr>
+<tr class="even">
+<td>男性（%）</td>
+<td>54.6</td>
+<td>46.6</td>
+</tr>
+<tr class="odd">
+<td>白人（%）</td>
+<td>91.1</td>
+<td>85.4</td>
+</tr>
+<tr class="even">
+<td>大学（%）</td>
+<td>15.4</td>
+<td>9.9</td>
+</tr>
+<tr class="odd">
+<td>体重（kg）</td>
+<td>72.4</td>
+<td>70.3</td>
+</tr>
+<tr class="even">
+<td>每天吸烟支数</td>
+<td>18.6</td>
+<td>21.2</td>
+</tr>
+<tr class="odd">
+<td>吸烟年数</td>
+<td>26.0</td>
+<td>24.1</td>
+</tr>
+<tr class="even">
+<td>很少锻炼（%）</td>
+<td>40.7</td>
+<td>37.9</td>
+</tr>
+<tr class="odd">
+<td>久坐生活（%）</td>
+<td>11.2</td>
+<td>8.9</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>本章假定<strong>下列 9 个基线变量足以调整混杂</strong>： 性别、年龄、种族、教育（5 类）、吸烟强度（支/天）、吸烟年数、 日常体力活动（3 类）、业余锻炼（3 类）、体重（kg）。 <strong><span class="math inline">\(L\)</span> 就是这 9 个已测协变量构成的向量。</strong>（混杂因子的选择策略留到第 18 章。）</p>
+<div class="pitfall warn">
+<p><span class="pitfall-label">Fine Point 12.1：作者自己承认这是「一个坏例子」</span></p>
+<p>这条边栏的标题就叫 <strong>Setting a bad example</strong>，非常值得完整记下来。</p>
+<blockquote class="blockquote">
+<p>我们的戒烟例子很<strong>方便</strong>：它不需要很深的专业知识，数据也是公开的。 <strong>而我们为这份方便付出的代价之一，是潜在的选择偏倚。</strong></p>
+<p>— <em>What If</em>, Fine Point 12.1, p.158</p>
+</blockquote>
+<p><strong>偏倚从哪来</strong>：我们把个体分类为 <span class="math inline">\(A=1\)</span>，依据是他报告 (i) 基线（1971–75）是吸烟者， 且 (ii) 在 <strong>1982 年的问卷中</strong>报告已戒烟。</p>
+<blockquote class="blockquote">
+<p>条件 (ii) 意味着纳入我们研究的个体<strong>在基线与 1982 年之间没有死亡、也没有失访</strong> （否则他们无法回答问卷）。也就是说，<strong>我们把个体选进研究的条件， 是一个发生在处理（戒烟）开始之后的事件——回答了 1982 年的问卷。 如果处理影响被选入研究的概率，我们就可能有第 8 章所说的选择偏倚。</strong></p>
+<p>— <em>What If</em>, Fine Point 12.1, p.158</p>
+</blockquote>
+<p><strong>为什么随机试验没有这个问题</strong>：在随机试验里，每个人在<strong>基线</strong>就被分配到戒烟或不戒烟， 所以<strong>即使他没能活到 1982 年那次访视，他的处理组别仍然是已知的</strong>。</p>
+<p><strong>而且这与 §12.6 要处理的那种缺失不同</strong>：§12.6 处理的是<strong>结局</strong>的删失 / 缺失， 本条说的是<strong>处理本身</strong>的缺失。后者要靠敏感性分析处理 （Hernán et al.&nbsp;2008, Appendix 3）。</p>
+<p>最后书把这个缺陷提升成了一条一般性的诊断：</p>
+<blockquote class="blockquote">
+<p>选这个例子让我们能在<strong>自己的分析里</strong>演示一个在「模拟目标试验」的观察性数据分析中 <strong>无处不在</strong>的问题：<strong>随访起点上「处理分配」与「入选资格」的错位</strong> （misalignment of treatment assignment and eligibility at the start of follow-up； Hernán et al.&nbsp;2016）。 <strong>尽管我们为了保持分析简单而决定忽略这个问题， 在真实工作中「教学方便」不会是回避这一偏倚的好借口。</strong></p>
+<p>— <em>What If</em>, Fine Point 12.1, p.158</p>
+</blockquote>
+<p><em>这一条是 W11–W16 目标试验模拟那一整段的种子： 「时间零点对齐」正是 TTE 方法论的第一条纪律。 书在第 12 章就把自己的反面教材摆了出来。</em></p>
+<p><strong>另有一句括号里的坦白</strong>：由于不同的人在不同时间戒烟， <strong><span class="math inline">\(A\)</span> 其实是一个时变处理，本书第二部分自始至终忽略这一点</strong>，时变处理留到第三部分。</p>
+</div>
+</section>
+<section id="用模型估-ip-权重把数格子换成-logistic-回归" class="level2">
+<h2 class="anchored" data-anchor-id="用模型估-ip-权重把数格子换成-logistic-回归">12.2 用模型估 IP 权重<span class="hook">：把数格子换成 logistic 回归</span></h2>
+<p>先复习 IP 加权做了什么。IP 加权造一个<strong>伪人群</strong>，其中从协变量 <span class="math inline">\(L\)</span> 指向处理 <span class="math inline">\(A\)</span> 的箭头被删掉了。 更精确地说，伪人群有两条性质：</p>
+<ol type="1">
+<li><strong><span class="math inline">\(A\)</span> 与 <span class="math inline">\(L\)</span> 统计独立</strong>；</li>
+<li>伪人群中的均值 <span class="math inline">\(E_{ps}[Y\mid A=a]\)</span> 等于<strong>实际人群中的标准化均值</strong> <span class="math inline">\(\sum_l E[Y\mid A=a, L=l]\Pr[L=l]\)</span>。</li>
+</ol>
+<div class="pitfall">
+<p><span class="pitfall-label">这两条性质不需要可交换性；需要可交换性的是后面四条</span></p>
+<blockquote class="blockquote">
+<p><strong>即使条件可交换性 <span class="math inline">\(Y^a \perp\!\!\!\perp A \mid L\)</span> 在实际人群中不成立</strong>， 上面这两条性质也是真的（见 Technical Point 2.3）。</p>
+<p>— <em>What If</em>, §12.2, p.158</p>
+</blockquote>
+<p>而<strong>如果</strong>条件可交换性成立，这两条性质才进一步蕴含：</p>
+<ol type="i">
+<li><span class="math inline">\(Y^a\)</span> 的均值在两个人群中相同；</li>
+<li>伪人群中<strong>无条件可交换性</strong>（即无混杂）成立；</li>
+<li>实际人群中的反事实均值 <span class="math inline">\(E[Y^a]\)</span> 等于伪人群中的 <span class="math inline">\(E_{ps}[Y\mid A=a]\)</span>；</li>
+<li><strong>伪人群中关联就是因果。</strong></li>
+</ol>
+<p><strong>这个区分值得留意</strong>：IP 加权本身是一个纯粹的<strong>重加权操作</strong>， 它总能造出一个 <span class="math inline">\(A \perp\!\!\!\perp L\)</span> 的伪人群； <strong>它变成因果推断，靠的是外加的可交换性假设。</strong></p>
+</div>
+<p>个体特异的处理 IP 权重定义为</p>
+<p><span class="math display">\[W^A = \frac{1}{f(A \mid L)}\]</span></p>
+<p>二值处理下，分母对戒烟者是 <span class="math inline">\(\Pr[A=1\mid L]\)</span>、对未戒烟者是 <span class="math inline">\(\Pr[A=0\mid L]\)</span>， 而 <span class="math inline">\(\Pr[A=0\mid L] = 1 - \Pr[A=1\mid L]\)</span>，<strong>所以只需要估一个 <span class="math inline">\(\Pr[A=1\mid L]\)</span></strong>。</p>
+<p>边注给了这个量最有名的名字：</p>
+<blockquote class="blockquote">
+<p><strong>条件处理概率 <span class="math inline">\(\Pr[A=1\mid L]\)</span> 被称为倾向评分</strong>（propensity score）。 更多关于倾向评分的内容见第 15 章。</p>
+<p>— <em>What If</em>, §12.2 边注, p.159</p>
+</blockquote>
+<section id="为什么必须建模" class="level3">
+<h3 class="anchored" data-anchor-id="为什么必须建模">为什么必须建模</h3>
+<p>第 2 章 §2.4 里，<span class="math inline">\(\Pr[A=1\mid L]\)</span> 是<strong>非参数</strong>估计的： 数一数每个 <span class="math inline">\(L\)</span> 层里有多少人被处理，再除以该层人数—— 全部信息来自一棵只有 4 条分支的树（<span class="math inline">\(L\)</span> 两层 × <span class="math inline">\(A\)</span> 两层）。</p>
+<blockquote class="blockquote">
+<p>但在我们的例子里，<strong>高维数据、许多混杂因子、有些还有很多水平</strong>， 非参数估计 <span class="math inline">\(\Pr[A=1\mid L]\)</span> <strong>根本不可能</strong>。 <strong>即使我们愿意把除年龄外的 9 个混杂因子全部重编码为最多 6 类， 我们的树仍然会有 200 多万条分支。</strong> 如果用吸烟年数、强度和体重的实际取值范围，还会多出好几百万条。 <strong>在 1566 个人被分散到数百万个层里时，我们得不到有意义的非参数层特异估计。 只能求助于模型。</strong></p>
+<p>— <em>What If</em>, §12.2, p.159（复述）</p>
+</blockquote>
+<p><em>这正是第 10 章 §10.5 的维数灾难在本例中的具体形态： <span class="math inline">\(240\)</span> 人对 <span class="math inline">\(2^{100}\)</span> 层，换成了 <span class="math inline">\(1566\)</span> 人对数百万层。</em></p>
+</section>
+<section id="模型是什么样的" class="level3">
+<h3 class="anchored" data-anchor-id="模型是什么样的">模型是什么样的</h3>
+<blockquote class="blockquote">
+<p>为了在 <span class="math inline">\(L\)</span> 定义的数百万个层里得到 <span class="math inline">\(\Pr[A=1\mid L]\)</span> 的参数估计， 我们<strong>对「戒烟的概率」拟合了一个 logistic 回归模型，把 9 个混杂因子全部作为协变量</strong>。 对（准）连续协变量——年龄、体重、吸烟强度与吸烟年数——我们用了<strong>线性项与二次项</strong>， 并且<strong>没有包含协变量之间的乘积项</strong>。</p>
+<p>— <em>What If</em>, §12.2, p.159（复述）</p>
+</blockquote>
+<p>这两条设定在说什么，书自己翻译了一遍：</p>
+<ul>
+<li><strong>二次项</strong> ⟹ 在 logit 尺度上，连续协变量与戒烟风险的条件关系可以由一条<strong>抛物线</strong>表示；</li>
+<li><strong>没有乘积项</strong> ⟹ 每个协变量对（logit 形式的）风险的贡献，<strong>与其它协变量的贡献无关</strong>。</li>
+</ul>
+<p><em>这两句正是第 11 章 §11.4 说的「对条件均值函数形状的先验限制」在实际分析里的样子。</em></p>
+</section>
+<section id="结果" class="level3">
+<h3 class="anchored" data-anchor-id="结果">结果</h3>
+<blockquote class="blockquote">
+<p>估计出的 IP 权重 <span class="math inline">\(W^A\)</span> <strong>范围从 1.05 到 16.7，均值是 2.00。</strong></p>
+<p>— <em>What If</em>, §12.2 边注, p.159</p>
+</blockquote>
+<p>在这个伪人群中拟合<strong>饱和</strong>线性模型 <span class="math inline">\(E[Y\mid A] = \theta_0 + \theta_1 A\)</span> （加权最小二乘，权重为估计出的 IP 权重），得到</p>
+<p><span class="math display">\[\hat\theta_1 = \mathbf{3.4}\ \text{kg}\]</span></p>
+<p>也就是说，<strong>在我们的假设下，戒烟平均使体重增加 3.4 kg。</strong> （对比未调整的 2.5 kg——调整之后效应<strong>变大了</strong>，与 §12.1 那句「未调整估计可能低估」一致。）</p>
+<div class="pitfall warn">
+<p><span class="pitfall-label">IP 加权的置信区间：三条路，书选了最保守的一条</span></p>
+<p>点估计好算，<strong>区间不好算</strong>——普通最小二乘的标准误不考虑权重是估出来的。书给了三条路：</p>
+<div class="contrast">
+<div class="contrast-item">
+<p><span class="contrast-hd">① 解析方差估计量</span></p>
+<p>用统计理论推导对应的方差估计量。</p>
+<p><strong>代价</strong>：需要数据分析者<strong>自己编程实现估计量</strong>，标准统计软件里一般没有现成的。</p>
+</div>
+<div class="contrast-item">
+<p><span class="contrast-hd">② 非参数 bootstrap</span></p>
+<p>用重抽样近似方差。</p>
+<p><strong>代价</strong>：对大数据库需要<strong>相应的计算资源，或者足够的耐心</strong>。</p>
+</div>
+</div>
+<div class="contrast">
+<div class="contrast-item">
+<p><span class="contrast-hd">③ 稳健方差估计量</span></p>
+<p>例如 GEE 模型在<strong>独立工作相关结构</strong>下用的那个，<strong>大多数统计软件包里都是标准选项</strong>。</p>
+</div>
+<div class="contrast-item">
+<p><span class="contrast-hd">③ 的代价：保守</span></p>
+<blockquote class="blockquote">
+<p>基于稳健方差估计量的 95% 置信区间是<strong>有效的</strong>， 但与上面的解析估计量和 bootstrap 估计量不同，它是<strong>保守的</strong>—— <strong>它覆盖超总体参数的时间多于 95%。</strong></p>
+<p>— <em>What If</em>, §12.2, p.160</p>
+</blockquote>
+</div>
+</div>
+<p><span class="math inline">\(\hat\theta_1 = 3.4\)</span> 周围的<strong>保守</strong> 95% 置信区间是 <span class="math inline">\(\mathbf{(2.4,\ 4.5)}\)</span>。 <strong>本章所有 IP 加权估计的置信区间都是保守的。</strong></p>
+<p>书还加了一句提醒：<strong>如果 <span class="math inline">\(\Pr[A=1\mid L]\)</span> 的模型被错误设定</strong>， <span class="math inline">\(\theta_0\)</span>、<span class="math inline">\(\theta_1\)</span> 的估计就会有偏，而且——像第 11 章说过的那样—— <strong>置信区间覆盖真值的时间可能少于 95%。</strong></p>
+<p><em>这正是第 11 章 §11.5 那条「模型错了，窄区间不是更精确，而是在错误的位置上很自信」 在因果分析里的第一次兑现。</em></p>
+</div>
+</section>
+<section id="technical-point-12.1horvitz-thompson-与-hájek" class="level3">
+<h3 class="anchored" data-anchor-id="technical-point-12.1horvitz-thompson-与-hájek">Technical Point 12.1：Horvitz-Thompson 与 Hájek</h3>
+<p>这一条给出了「我们到底在算哪个估计量」的精确答案。</p>
+<div class="joint-table">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>估计量</th>
+<th>形式</th>
+<th>性质</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Horvitz-Thompson</strong>（1952）</td>
+<td><span class="math inline">\(\widehat{E}\!\left[\dfrac{I(A=a)\,Y}{f(A\mid L)}\right]\)</span></td>
+<td><span class="math inline">\(f(A\mid L)\)</span> <strong>已知</strong>时相合</td>
+</tr>
+<tr class="even">
+<td><strong>Hájek</strong>（1971）</td>
+<td><span class="math inline">\(\dfrac{\widehat{E}\!\left[\dfrac{I(A=a)\,Y}{f(A\mid L)}\right]}{\widehat{E}\!\left[\dfrac{I(A=a)}{f(A\mid L)}\right]}\)</span></td>
+<td><strong>本章实际用的那个</strong>（<span class="math inline">\(\hat\theta_0 + \hat\theta_1 a\)</span> 在 <span class="math inline">\(A\)</span> 二值时就是它）</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Hájek 估计量是分母那个期望的<strong>（渐近）无偏</strong>估计的商； 在正性成立时 <span class="math inline">\(E\!\left[\frac{I(A=a)}{f(A\mid L)}\right] = 1\)</span>，所以两者极限相同。</p>
+<blockquote class="blockquote">
+<p>实践中<strong>Hájek 估计量更受青睐</strong>，因为与 Horvitz-Thompson 估计量不同， <strong>对二值 <span class="math inline">\(Y\)</span> 它保证落在 0 与 1 之间</strong>—— 即使 <span class="math inline">\(f(A\mid L)\)</span> 未知、而被一个<strong>设定错误</strong>的模型的预测值 <span class="math inline">\(\hat f(A\mid L)\)</span> 替代。</p>
+<p>— <em>What If</em>, Technical Point 12.1, p.160</p>
+</blockquote>
+<div class="pitfall">
+<p><span class="pitfall-label">正性不成立时，两者的差别变成一个实质问题</span></p>
+<p>记 <span class="math inline">\(Q(a) = \{l;\ \Pr(A=a\mid L=l) &gt; 0\}\)</span> 为「<span class="math inline">\(A=a\)</span> 有正概率被观察到」的那些 <span class="math inline">\(l\)</span>。 正性不成立时：</p>
+<ul>
+<li>Hájek 估计量收敛到 <span class="math inline">\(\sum_l E[Y\mid A=a, L=l, L \in Q(a)]\Pr[L=l \mid L \in Q(a)]\)</span>， 在可交换性下等于 <span class="math inline">\(E[Y^a \mid L \in Q(a)]\)</span>—— <strong>即「只在正性成立的那部分人群里」的反事实均值</strong>；</li>
+<li>因此 <strong><span class="math inline">\(a=1\)</span> 与 <span class="math inline">\(a=0\)</span> 的 Hájek 估计量之差，在缺乏正性时没有因果解释</strong>；</li>
+<li>而 Horvitz-Thompson 与 Hájek 的极限之比<strong>不再是 1，而是 <span class="math inline">\(\Pr[Q(a)]\)</span></strong>， 因为 Hájek 的分母收敛到 <span class="math inline">\(\Pr[Q(a)]\)</span> 而不是 1。</li>
+</ul>
+<p><strong>换句话说：正性被违反时，两个估计量分道扬镳，而且没有哪一个能救回整个人群的效应。</strong> 这与第 3 章说的「正性不成立时把推断限制在正性成立的子集上」是同一件事的代数形式。</p>
+</div>
+</section>
+</section>
+<section id="稳定化-ip-权重伪人群不必造成两倍大" class="level2 page-columns page-full">
+<h2 class="anchored" data-anchor-id="稳定化-ip-权重伪人群不必造成两倍大">12.3 稳定化 IP 权重<span class="hook">：伪人群不必造成两倍大</span></h2>
+<p>IP 加权的目标是造一个 <span class="math inline">\(L\)</span> 与 <span class="math inline">\(A\)</span> 无关的伪人群。第 2 章用的是 <span class="math inline">\(W^A = 1/f(A\mid L)\)</span>， 造出来的伪人群是原人群的<strong>两倍</strong>大——因为 <span class="math inline">\(W^A\)</span> 的均值是 2。</p>
+<blockquote class="blockquote">
+<p>非正式地说，这些权重模拟了一个由<strong>原研究人群的两份拷贝</strong>组成的伪人群， 其中一份被处理、另一份未被处理。</p>
+<p>— <em>What If</em>, §12.3, p.161</p>
+</blockquote>
+<p><strong>但造法不止一种。</strong></p>
+<div class="contrast">
+<div class="contrast-item">
+<p><span class="contrast-hd">人人 <span class="math inline">\(p = 0.5\)</span></span></p>
+<p>用权重 <span class="math inline">\(0.5 / f(A\mid L)\)</span>，造出一个<strong>与原人群同样大</strong>、 且人人接受 <span class="math inline">\(A=1\)</span> 的概率都是 <span class="math inline">\(0.5\)</span> 的伪人群。</p>
+<p>这个伪人群在代数上等于把上一段那个伪人群的<strong>所有权重除以 2</strong>， 因此<strong>效应估计完全相同</strong>。</p>
+<p>更一般地，<span class="math inline">\(p / f(A\mid L)\)</span> 对任何 <span class="math inline">\(0 &lt; p \le 1\)</span> 都行； <strong><span class="math inline">\(W^A = 1/f(A\mid L)\)</span> 只是 <span class="math inline">\(p=1\)</span> 的那个特例。</strong></p>
+</div>
+<div class="contrast-item">
+<p><span class="contrast-hd">人人概率不必相同</span></p>
+<blockquote class="blockquote">
+<p>关键要求是：<strong>在伪人群中，处理 <span class="math inline">\(A\)</span> 的概率不依赖于混杂因子 <span class="math inline">\(L\)</span>。</strong> 我们可以给所有人同一个概率 <span class="math inline">\(p\)</span> 来做到这一点， <strong>也可以造一个不同的人有不同处理概率的伪人群—— 只要这个概率不依赖于 <span class="math inline">\(L\)</span> 的取值。</strong></p>
+<p>— <em>What If</em>, §12.3, p.161（复述）</p>
+</blockquote>
+<p>一个常见选择：给被处理者原人群中的 <span class="math inline">\(\Pr[A=1]\)</span>，给未处理者原人群中的 <span class="math inline">\(\Pr[A=0]\)</span>。 紧凑地写就是</p>
+<p><span class="math display">\[SW^A = \frac{f(A)}{f(A\mid L)}\]</span></p>
+</div>
+</div>
+<section id="figure-12.1把它用第-2-章那-20-个人算一遍" class="level3">
+<h3 class="anchored" data-anchor-id="figure-12.1把它用第-2-章那-20-个人算一遍">Figure 12.1：把它用第 2 章那 20 个人算一遍</h3>
+<p>书把 <span class="math inline">\(f(A)/f(A\mid L)\)</span> 应用到第 2 章 Figure 2.1 的数据上， 其中 <span class="math inline">\(\Pr[A=1] = 13/20 = 0.65\)</span>、<span class="math inline">\(\Pr[A=0] = 7/20 = 0.35\)</span>。 下表是笔者从原图逐格读出的结果：</p>
+<div class="joint-table">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 14%">
+</colgroup>
+<thead>
+<tr class="header">
+<th><span class="math inline">\(L\)</span></th>
+<th><span class="math inline">\(A\)</span></th>
+<th>原人数</th>
+<th><span class="math inline">\(f(A\mid L)\)</span></th>
+<th><span class="math inline">\(SW^A = f(A)/f(A\mid L)\)</span></th>
+<th>伪人群人数</th>
+<th>其中 <span class="math inline">\(Y=1\)</span></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>0</td>
+<td>未处理</td>
+<td>4</td>
+<td><span class="math inline">\(.5\)</span></td>
+<td><span class="math inline">\(.35/.5 = .7\)</span></td>
+<td><span class="math inline">\(2.8\)</span></td>
+<td><span class="math inline">\(0.7\)</span></td>
+</tr>
+<tr class="even">
+<td>0</td>
+<td>处理</td>
+<td>4</td>
+<td><span class="math inline">\(.5\)</span></td>
+<td><span class="math inline">\(.65/.5 = 1.3\)</span></td>
+<td><span class="math inline">\(5.2\)</span></td>
+<td><span class="math inline">\(1.3\)</span></td>
+</tr>
+<tr class="odd">
+<td>1</td>
+<td>未处理</td>
+<td>3</td>
+<td><span class="math inline">\(.25\)</span></td>
+<td><span class="math inline">\(.35/.25 = 1.4\)</span></td>
+<td><span class="math inline">\(4.2\)</span></td>
+<td><span class="math inline">\(2.8\)</span></td>
+</tr>
+<tr class="even">
+<td>1</td>
+<td>处理</td>
+<td>9</td>
+<td><span class="math inline">\(.75\)</span></td>
+<td><span class="math inline">\(.65/.75 = .87\)</span></td>
+<td><span class="math inline">\(7.8\)</span></td>
+<td><span class="math inline">\(5.2\)</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+<blockquote class="blockquote">
+<p>在第 3 章的可识别性条件下，这个伪人群<strong>像一个假想的随机试验</strong>， 其中研究人群里 <strong>65% 的个体被随机分配到 <span class="math inline">\(A=1\)</span>、35% 分配到 <span class="math inline">\(A=0\)</span></strong>。 注意，为了保持 65/35 的比例，<strong>各分支上的人数不可能是整数。 幸运的是，非整数的人在数学里不是什么大问题。</strong></p>
+<p>— <em>What If</em>, §12.3, p.161</p>
+</blockquote>
+<div class="pitfall">
+<p><span class="pitfall-label">这张表可以整个验一遍</span></p>
+<ul>
+<li>伪人群总规模 <span class="math inline">\(= 2.8 + 5.2 + 4.2 + 7.8 = \mathbf{20}\)</span>——<strong>与原研究人群一样大</strong>（对比非稳定化的 40）；</li>
+<li>伪人群中 <span class="math inline">\(\Pr[A=1] = (5.2+7.8)/20 = 13/20 = \mathbf{0.65}\)</span>——<strong>与原人群相同</strong>，这正是「稳定化」的含义；</li>
+<li>伪人群中处理组风险 <span class="math inline">\(= (1.3+5.2)/(5.2+7.8) = 6.5/13 = 0.5\)</span>； 未处理组风险 <span class="math inline">\(= (0.7+2.8)/(2.8+4.2) = 3.5/7 = 0.5\)</span>； <strong>风险比 = 1</strong>——与第 2 章的结论一致。</li>
+</ul>
+<p><strong>三条并起来看就明白了</strong>：稳定化改变的是<strong>伪人群的大小与处理分布</strong>， <strong>不改变效应估计</strong>。</p>
+</div>
+</section>
+<section id="在-nhefs-上的效果" class="level3 page-columns page-full">
+<h3 class="anchored" data-anchor-id="在-nhefs-上的效果">在 NHEFS 上的效果</h3>
+<div class="column-page">
+<div class="fig-frame dag-frame">
+<svg viewbox="0 0 900 330" role="img" aria-labelledby="f12-t f12-d">
+                <title id="f12-t">四组 IP 权重的范围，以及连续处理的边际结构模型</title>
+                <desc id="f12-d">左格是四组权重的取值范围横条，非稳定化权重从 1.05 延伸到 16.7、均值 2，三组稳定化权重都落在 0.2 到 5.2 之间、均值 1。右格是吸烟强度变化的边际结构模型抛物线，在不变处给出 2.0 公斤，在每天多抽 20 支处给出约 1 公斤。</desc>
+                <text x="255" y="26" class="dg-hd">四组 IP 权重的取值范围（原书报告值）</text>
+                <text x="675" y="26" class="dg-hd">连续处理的边际结构模型</text>
+        <path d="M 222.9 254 L 222.9 260" class="ln-sum"></path>
+        <text x="222.9" y="276" class="dg-ref">0.2</text>
+        <path d="M 264.1 254 L 264.1 260" class="ln-sum"></path>
+        <text x="264.1" y="276" class="dg-ref">0.5</text>
+        <path d="M 295.3 254 L 295.3 260" class="ln-sum"></path>
+        <text x="295.3" y="276" class="dg-ref">1</text>
+        <path d="M 326.5 254 L 326.5 260" class="ln-sum"></path>
+        <text x="326.5" y="276" class="dg-ref">2</text>
+        <path d="M 367.7 254 L 367.7 260" class="ln-sum"></path>
+        <text x="367.7" y="276" class="dg-ref">5</text>
+        <path d="M 398.8 254 L 398.8 260" class="ln-sum"></path>
+        <text x="398.8" y="276" class="dg-ref">10</text>
+        <path d="M 430.0 254 L 430.0 260" class="ln-sum"></path>
+        <text x="430.0" y="276" class="dg-ref">20</text>
+        <path d="M 210 254 L 430 254" class="ln-sum"></path>
+        <path d="M 295.3 56 L 295.3 254" class="dg-missing"></path>
+        <path d="M 297.5 74 L 421.9 74" class="pipe pipe-assoc"></path>
+        <path d="M 297.5 67 L 297.5 81" class="pipe pipe-assoc"></path>
+        <path d="M 421.9 67 L 421.9 81" class="pipe pipe-assoc"></path>
+        <circle cx="326.5" cy="74" r="5" class="mk-fill"></circle>
+        <text x="196" y="79" class="dg-note" style="text-anchor:end">Wᴬ · 二值处理</text>
+        <text x="433.9" y="79" class="dg-ref" style="text-anchor:start">均值 2.00</text>
+        <path d="M 245.5 124 L 360.9 124" class="pipe pipe-causal"></path>
+        <path d="M 245.5 117 L 245.5 131" class="pipe pipe-causal"></path>
+        <path d="M 360.9 117 L 360.9 131" class="pipe pipe-causal"></path>
+        <circle cx="295.3" cy="124" r="5" class="mk-fill"></circle>
+        <text x="196" y="129" class="dg-note" style="text-anchor:end">SWᴬ · 二值处理</text>
+        <text x="372.9" y="129" class="dg-ref" style="text-anchor:start">均值 1.00</text>
+        <path d="M 220.6 174 L 368.6 174" class="pipe pipe-causal"></path>
+        <path d="M 220.6 167 L 220.6 181" class="pipe pipe-causal"></path>
+        <path d="M 368.6 167 L 368.6 181" class="pipe pipe-causal"></path>
+        <circle cx="295.3" cy="174" r="5" class="mk-fill"></circle>
+        <text x="196" y="179" class="dg-note" style="text-anchor:end">SWᴬ · 连续处理</text>
+        <text x="380.6" y="179" class="dg-ref" style="text-anchor:start">均值 1.00</text>
+        <path d="M 248.1 224 L 358.6 224" class="pipe pipe-causal"></path>
+        <path d="M 248.1 217 L 248.1 231" class="pipe pipe-causal"></path>
+        <path d="M 358.6 217 L 358.6 231" class="pipe pipe-causal"></path>
+        <circle cx="295.3" cy="224" r="5" class="mk-fill"></circle>
+        <text x="196" y="229" class="dg-note" style="text-anchor:end">SWᴬᶜ · 加删失权重</text>
+        <text x="370.6" y="229" class="dg-ref" style="text-anchor:start">均值 1.00</text>
+        <text x="300" y="302" class="dg-note">实心点 = 权重均值 · 虚线 = 1</text>
+        <text x="300" y="322" class="dg-ref">稳定化把范围从 16 倍压到 13 倍以内，均值从 2 拉回 1</text>
+        <path d="M 530.0 212.0 L 830.0 212.0" class="ln-sum"></path>
+        <path d="M 530.0 248.0 L 530.0 68.0" class="ln-sum"></path>
+        <path d="M 572.9 212.0 L 572.9 218.0" class="ln-sum"></path>
+        <text x="572.9" y="234.0" class="dg-ref">-20</text>
+        <path d="M 658.6 212.0 L 658.6 218.0" class="ln-sum"></path>
+        <text x="658.6" y="234.0" class="dg-ref">0</text>
+        <path d="M 744.3 212.0 L 744.3 218.0" class="ln-sum"></path>
+        <text x="744.3" y="234.0" class="dg-ref">20</text>
+        <path d="M 830.0 212.0 L 830.0 218.0" class="ln-sum"></path>
+        <text x="830.0" y="234.0" class="dg-ref">40</text>
+        <path d="M 524.0 212.0 L 530.0 212.0" class="ln-sum"></path>
+        <text x="518.0" y="217.0" class="dg-ref" style="text-anchor:end">0</text>
+        <path d="M 524.0 176.0 L 530.0 176.0" class="ln-sum"></path>
+        <text x="518.0" y="181.0" class="dg-ref" style="text-anchor:end">1</text>
+        <path d="M 524.0 140.0 L 530.0 140.0" class="ln-sum"></path>
+        <text x="518.0" y="145.0" class="dg-ref" style="text-anchor:end">2</text>
+        <path d="M 524.0 104.0 L 530.0 104.0" class="ln-sum"></path>
+        <text x="518.0" y="109.0" class="dg-ref" style="text-anchor:end">3</text>
+        <path d="M 524.0 68.0 L 530.0 68.0" class="ln-sum"></path>
+        <text x="518.0" y="73.0" class="dg-ref" style="text-anchor:end">4</text>
+        <path d="M 602.9 70.6 L 607.1 77.2 L 611.4 83.6 L 615.7 89.8 L 620.0 95.8 L 624.3 101.5 L 628.6 107.1 L 632.9 112.4 L 637.1 117.5 L 641.4 122.4 L 645.7 127.1 L 650.0 131.5 L 654.3 135.8 L 658.6 139.8 L 662.9 143.6 L 667.1 147.2 L 671.4 150.6 L 675.7 153.8 L 680.0 156.7 L 684.3 159.5 L 688.6 162.0 L 692.9 164.3 L 697.1 166.4 L 701.4 168.3 L 705.7 169.9 L 710.0 171.4 L 714.3 172.6 L 718.6 173.6 L 722.9 174.4 L 727.1 175.0 L 731.4 175.3 L 735.7 175.5 L 740.0 175.4 L 744.3 175.1 L 748.6 174.6 L 752.9 173.9 L 757.1 172.9 L 761.4 171.8 L 765.7 170.4 L 770.0 168.8 L 774.3 167.0 L 778.6 165.0 L 782.9 162.8 L 787.1 160.3 L 791.4 157.7 L 795.7 154.8 L 800.0 151.7 L 804.3 148.4 L 808.6 144.9 L 812.9 141.1 L 817.1 137.2 L 821.4 133.0 L 825.7 128.6 L 830.0 124.0" class="pipe pipe-causal"></path>
+        <path d="M 658.6 212.0 L 658.6 139.8" class="dg-missing"></path>
+        <circle cx="658.6" cy="139.8" r="6" class="n-final"></circle>
+        <text x="624.6" y="133.8" class="dg-note">2.0 kg</text>
+        <path d="M 744.3 212.0 L 744.3 179.6" class="dg-missing"></path>
+        <circle cx="744.3" cy="179.6" r="6" class="n-final"></circle>
+        <text x="744.3" y="205.6" class="dg-note">0.9 kg</text>
+        <text x="667.1" y="78.8" class="dg-ref" style="text-anchor:start">Ê[Yᵃ] = 2.005 − 0.109a + 0.003a²</text>
+        <text x="675" y="302" class="dg-note">横轴：每天抽烟支数的变化 a</text>
+        <text x="675" y="322" class="dg-ref">纵轴：体重增加（kg）· 1162 人（基线 ≤25 支/天）</text>
+        <path d="M 480 16 L 480 316" class="dg-sep"></path>
+        </svg>
+</div>
+<p class="fig-cap">
+<b>笔记作者绘制，原书无此图；四组权重的范围与均值、以及右格的三个系数与两个预测值， 全部取自原书正文与边注。</b>横轴为对数刻度。 右格的抛物线是用原书给出的<strong>四舍五入后</strong>的三个系数 （<span class="math inline">\(2.005\)</span> / <span class="math inline">\(-0.109\)</span> / <span class="math inline">\(0.003\)</span>）画的， 所以它在 <span class="math inline">\(a=20\)</span> 处给出 <span class="math inline">\(1.03\)</span>，而<strong>深色圆点是原书报告的 <span class="math inline">\(0.9\)</span></strong>—— 这个约 <span class="math inline">\(0.13\)</span> kg 的差来自 <span class="math inline">\(\hat\beta_2\)</span> 的四舍五入（<span class="math inline">\(0.003\)</span> 对约 <span class="math inline">\(0.0027\)</span>）， 见本页末的核对说明。
+</p>
+</div>
+<blockquote class="blockquote">
+<p>在我们的戒烟例子中，IP 权重 <span class="math inline">\(f(A)/f(A\mid L)\)</span> <strong>范围从 0.33 到 4.30</strong>， 而 IP 权重 <span class="math inline">\(1/f(A\mid L)\)</span> <strong>范围从 1.05 到 16.7</strong>。 <strong>分子上的稳定化因子 <span class="math inline">\(f(A)\)</span> 是这个更窄范围的原因。</strong></p>
+<p>— <em>What If</em>, §12.3, p.162</p>
+</blockquote>
+<p>术语就此定下：<span class="math inline">\(W^A = 1/f(A\mid L)\)</span> 叫<strong>非稳定化权重</strong>， <span class="math inline">\(SW^A = f(A)/f(A\mid L)\)</span> 叫<strong>稳定化权重</strong>。 <strong>稳定化权重的均值预期为 1</strong>，因为伪人群的大小等于研究人群的大小。</p>
+<div class="pitfall warn">
+<p><span class="pitfall-label">「权重均值应该是 1」是一条应当每次都做的诊断</span></p>
+<blockquote class="blockquote">
+<p>在数据分析中，<strong>应当检查估计出的权重 <span class="math inline">\(SW^A\)</span> 的均值是否为 1</strong> （Hernán &amp; Robins 2006a）。 <strong>偏离 1 意味着模型设定错误，或者正性被违反、或接近被违反。</strong> 关于检查正性见 Fine Point 12.2。</p>
+<p>— <em>What If</em>, §12.3 边注, p.162</p>
+</blockquote>
+<p>本例中 <span class="math inline">\(SW^A\)</span> 的均值<strong>正是 1.00</strong>。</p>
+<p><em>这是本书给出的少数几条「可以直接写进分析脚本」的诊断之一。 它便宜、通用，而且能同时报警两类完全不同的问题。</em></p>
+</div>
+<p>用 <span class="math inline">\(SW^A\)</span> 重估：分母仍用 §12.2 的那个 logistic 模型； 分子 <span class="math inline">\(\Pr[A=1]\)</span> 用非参数估计 <span class="math inline">\(403/1566\)</span> （等价地，拟合一个只有截距、没有协变量的饱和 logistic 模型）。结果是</p>
+<p><span class="math display">\[\hat\theta_1 = 3.4\ \text{kg} \quad (95\%\ \text{CI}:\ 2.4,\ 4.5)\]</span></p>
+<p><strong>与用非稳定化权重得到的完全一样。</strong></p>
+<div class="pitfall">
+<p><span class="pitfall-label">那为什么还要用稳定化权重？——一个有前提的回答</span></p>
+<blockquote class="blockquote">
+<p>因为<strong>稳定化权重通常会给出比非稳定化权重更窄的 95% 置信区间</strong>。 <strong>然而，稳定化权重的统计优越性只在（IP 加权的）模型不饱和时才可能出现。</strong> 在上面的例子里，两参数模型 <span class="math inline">\(E[Y\mid A]=\theta_0+\theta_1 A\)</span> 是<strong>饱和</strong>的， 因为处理 <span class="math inline">\(A\)</span> 只能取 2 个值。</p>
+<p>— <em>What If</em>, §12.3, p.162</p>
+</blockquote>
+<p><strong>所以本例中两者给出相同的区间，不是反例，而是意料之中。</strong></p>
+<blockquote class="blockquote">
+<p>在许多设定下（例如<strong>时变处理或连续处理</strong>），加权模型<strong>不可能</strong>饱和， 因此要用稳定化权重。</p>
+<p>— <em>What If</em>, §12.3, p.163</p>
+</blockquote>
+<p><em>换句话说：稳定化在二值单时点处理上是个没什么用的技巧， 在 W7–W8 的时变处理上才变成必需品——那时权重会随时间累乘， 分子上的稳定化因子是唯一能压住极端权重的东西。</em></p>
+</div>
+</section>
+<section id="fine-point-12.2正性的两种违反" class="level3">
+<h3 class="anchored" data-anchor-id="fine-point-12.2正性的两种违反">Fine Point 12.2：正性的两种违反</h3>
+<blockquote class="blockquote">
+<p>在我们的研究中，<strong>有 4 位 66 岁的白人女性，她们中没有一个人戒烟。</strong> 也就是说，给定（<span class="math inline">\(L\)</span> 的一个子集）条件下 <span class="math inline">\(A=1\)</span> 的概率是 0。 <strong>正性——IP 加权的一个条件——在经验上被违反了。</strong></p>
+<p>— <em>What If</em>, Fine Point 12.2, p.162</p>
+</blockquote>
+<div class="contrast">
+<div class="contrast-item">
+<p><span class="contrast-hd">结构性违反</span></p>
+<p>第 3 章描述的那一类：<strong>某些 <span class="math inline">\(L\)</span> 取值的个体不可能被处理（或不被处理）。</strong></p>
+<p>书的例子：估计某些化学品暴露对死亡的效应时，<strong>是否在岗</strong>是重要的混杂因子—— 不在岗的人更可能生病和死亡，而且<strong>人只有在岗时才可能接触到这种化学品</strong>。 于是「给定不在岗时接受处理的概率」<strong>在结构上恰好是 0</strong>（结构零）。 <strong>在这个混杂因子上分层，我们总会找到零格。</strong></p>
+<p><strong>后果</strong>：用 IP 加权或标准化<strong>无法</strong>对整个人群做因果推断。 <strong>推断必须被限制在结构正性成立的那些层上。</strong></p>
+</div>
+<div class="contrast-item">
+<p><span class="contrast-hd">随机性违反</span></p>
+<p>上面 4 位 66 岁白人女性那一类：<strong>样本是有限的</strong>， 所以按若干混杂因子分层之后，<strong>即使目标人群中处理概率不是真的为 0， 也会在某些地方开始出现零格。</strong></p>
+<p>零格在不同样本中<strong>随机地</strong>出现在不同位置—— 本例里「白人女性 66 岁」和「67 岁」层中戒烟人数为 0， 而「65 岁」和「69 岁」层中戒烟人数为正。</p>
+<p><strong>后果</strong>：我们用参数模型<strong>在有随机零的层里估计处理概率， 用的是其它层里个体的数据</strong>——换句话说，<strong>用参数模型把这些零抹平了</strong>。 本例中那个 logistic 模型是通过<strong>从研究中所有其他个体外推</strong> 来估计 66 岁白人女性的戒烟概率的。</p>
+</div>
+</div>
+<div class="pitfall warn">
+<p><span class="pitfall-label">书自己点破的那句：你每次这么做，都在默认一件事</span></p>
+<blockquote class="blockquote">
+<p><strong>每当我们在存在零格时用参数方法估计 IP 权重——就像我们估 <span class="math inline">\(\hat\theta_1 = 3.4\)</span> 时那样—— 我们实际上就是在假设「非正性是随机的」。</strong></p>
+<p>— <em>What If</em>, Fine Point 12.2, p.162</p>
+</blockquote>
+<p>这句值得反复读。它说的是：<strong>模型的平滑能力会把「结构性的不可能」 和「碰巧没人」渲染成同一个样子</strong>，而两者的后果完全不同—— 前者要求把推断限制在子人群上，后者只是外推。</p>
+<p><strong>而软件不会替你区分。</strong> 区分它们的唯一办法是<strong>专业知识</strong>： 问一句「这一格里的人，在物理上、制度上、临床上，有没有可能接受另一种处理」。</p>
+</div>
+</section>
+</section>
+<section id="边际结构模型结局是反事实的那种模型" class="level2">
+<h2 class="anchored" data-anchor-id="边际结构模型结局是反事实的那种模型">12.4 边际结构模型<span class="hook">：结局是反事实的那种模型</span></h2>
+<p>考虑下面这个关于处理水平 <span class="math inline">\(a\)</span> 之下结局均值的线性模型：</p>
+<p><span class="math display">\[E[Y^a] = \beta_0 + \beta_1 a\]</span></p>
+<blockquote class="blockquote">
+<p><strong>这个模型和我们此前描述过的所有模型都不同：这个模型的结局变量是反事实的 ——因而一般是观察不到的。因此这个模型无法被拟合到任何现实世界研究的数据上。</strong> 对反事实结局的边际均值建模的模型，被称为<strong>边际结构均值模型</strong>。</p>
+<p>— <em>What If</em>, §12.4, p.163</p>
+</blockquote>
+<p>结构均值模型中处理的参数<strong>对应平均因果效应</strong>： 上面这个模型里 <span class="math inline">\(\beta_1 = E[Y^{a=1}] - E[Y^{a=0}]\)</span>。 <strong>前面几节估计的正是某个边际结构模型的 <span class="math inline">\(\beta_1\)</span>。</strong></p>
+<div class="pitfall">
+<p><span class="pitfall-label">两个模型，一个参数：整条论证链</span></p>
+<ol type="1">
+<li>用 IP 加权造一个伪人群；</li>
+<li>在伪人群数据上用 IP 加权最小二乘拟合<strong>关联</strong>模型 <span class="math inline">\(E[Y\mid A]=\theta_0+\theta_1 A\)</span>；</li>
+<li>在我们的假设下，<strong>伪人群中关联就是因果</strong>；</li>
+<li>因此关联参数 <span class="math inline">\(\theta_1\)</span> <strong>可以被赋予与结构参数 <span class="math inline">\(\beta_1\)</span> 相同的因果解释</strong>；</li>
+<li>于是 <span class="math inline">\(\hat\theta_1\)</span> 这个对伪人群关联参数的相合估计， <strong>同时也是对人群中因果效应 <span class="math inline">\(\beta_1 = E[Y^{a=1}]-E[Y^{a=0}]\)</span> 的相合估计。</strong></li>
+</ol>
+<p><strong>这条链条是整个第二部分的模板</strong>：每一章都在换第 1 步和第 2 步的具体做法， 第 3–5 步不变。</p>
+</div>
+<p>二值处理下这个边际结构模型是<strong>饱和</strong>的：等号左边两个未知量 （<span class="math inline">\(E[Y^{a=1}]\)</span>、<span class="math inline">\(E[Y^{a=0}]\)</span>），右边两个参数（<span class="math inline">\(\beta_0\)</span>、<span class="math inline">\(\beta_1\)</span>）。 <strong>所以伪人群里的样本均值就够用了。</strong></p>
+<section id="连续处理模型必须非饱和" class="level3">
+<h3 class="anchored" data-anchor-id="连续处理模型必须非饱和">连续处理：模型必须非饱和</h3>
+<p>考虑新的处理 <span class="math inline">\(A =\)</span> <strong>吸烟强度的变化</strong>，定义为 1982 年每天吸烟支数减去基线每天吸烟支数。 <span class="math inline">\(A\)</span> 可以取 <span class="math inline">\(-25\)</span>（每天少抽 25 支）或 <span class="math inline">\(40\)</span>（每天多抽 40 支）等许多值。 目标是在<strong>基线每天吸烟 <span class="math inline">\(\le 25\)</span> 支的 1162 人</strong>中估计 <span class="math inline">\(E[Y^{a}] - E[Y^{a'}]\)</span>。</p>
+<blockquote class="blockquote">
+<p>因为 <span class="math inline">\(A\)</span> 能取几十个值，<strong>一个有同样多参数的饱和模型变得不切实际</strong>。 我们只能考虑一个<strong>非饱和</strong>的结构模型来刻画 <span class="math inline">\(A\)</span> 对 <span class="math inline">\(Y\)</span> 均值的剂量–反应曲线。</p>
+<p>— <em>What If</em>, §12.4, p.164（复述）</p>
+</blockquote>
+<p>若相信抛物线能恰当描述这条曲线，就用</p>
+<p><span class="math display">\[E[Y^a] = \beta_0 + \beta_1 a + \beta_2 a^2\]</span></p>
+<p>其中 <span class="math inline">\(E[Y^{a=0}] = \beta_0\)</span> 是「基线到 1982 年吸烟强度不变」时的平均体重增加。</p>
+<div class="pitfall warn">
+<p><span class="pitfall-label">零保持性：边际结构模型的一个漂亮性质</span></p>
+<p>边注给了一条容易被忽略但很重要的性质：</p>
+<blockquote class="blockquote">
+<p>边际结构模型的一个<strong>可取性质是零保持</strong>（null preservation，见第 9 章）： <strong>当「无平均因果效应」这个零假设为真时，边际结构模型永远不会被错误设定。</strong> 例如，在这个零假设下，边际结构模型 <span class="math inline">\(E[Y^a]=\beta_0+\beta_1 a+\beta_2 a^2\)</span> <strong>对任何 <span class="math inline">\(a\)</span> 都被正确设定</strong>，其中 <span class="math inline">\(\beta_1=\beta_2=0\)</span> 且 <span class="math inline">\(\beta_0 = E[Y^a]\)</span>。 若条件可交换性成立，则 <span class="math inline">\(E[Y] = \beta_0\)</span>。</p>
+<p>— <em>What If</em>, §12.4 边注, p.164</p>
+</blockquote>
+<p><strong>为什么这很重要</strong>：它意味着<strong>边际结构模型不会「凭空造出效应」</strong>—— 模型设定错误只会扭曲非零效应的形状，不会把零效应变成非零。</p>
+<p><em>对比第 8 章 Technical Point 8.1 里那个风险比： <strong>那个统计量在零假设下就自带偏倚</strong>。两者放在一起，就能看出 「零保持」这个性质有多值钱。</em></p>
+</div>
+</section>
+<section id="连续处理的权重更难估" class="level3">
+<h3 class="anchored" data-anchor-id="连续处理的权重更难估">连续处理的权重更难估</h3>
+<p><span class="math inline">\(SW^A = f(A)/f(A\mid L)\)</span> 里的 <span class="math inline">\(f(A\mid L)\)</span>， 在二值处理下是一个概率（用 logistic 模型估），<strong>在连续处理下是一个概率密度函数</strong>。</p>
+<blockquote class="blockquote">
+<p>不幸的是，<strong>pdf 一般很难估计</strong>，尤其当 <span class="math inline">\(L\)</span> 是高维且含有连续分量时—— <strong>这就是为什么把 IP 加权用在连续处理上常常是危险的。</strong></p>
+<p>— <em>What If</em>, §12.4, p.164</p>
+</blockquote>
+<p>本例中书假定 <span class="math inline">\(f(A\mid L)\)</span> 是均值为 <span class="math inline">\(\mu_L = E[A\mid L]\)</span>、方差 <span class="math inline">\(\sigma^2\)</span> 为常数的<strong>正态分布</strong>， 用线性回归估 <span class="math inline">\(E[A\mid L]\)</span> 和残差方差；分子 <span class="math inline">\(f(A)\)</span> 也假定为正态。</p>
+<blockquote class="blockquote">
+<p><strong>在把 IP 加权用于连续处理时应当小心，因为效应估计可能对 「用什么模型或算法来估计条件密度 <span class="math inline">\(f(A\mid L)\)</span>」这个选择极其敏感。</strong></p>
+<p>— <em>What If</em>, §12.4, p.165</p>
+</blockquote>
+<p>边注列出了一个仍在活跃发展的方向：更稳定地估计 IP 权重的方法， 见 Imai &amp; Ratkovic (2015)、Wang &amp; Zubizarreta (2020)、 Kallus &amp; Santacatterina (2018)、Avagyan &amp; Vansteelandt (2021)。</p>
+</section>
+<section id="结果-1" class="level3">
+<h3 class="anchored" data-anchor-id="结果-1">结果</h3>
+<p>估计出的 <span class="math inline">\(SW^A\)</span> 范围 <span class="math inline">\(0.19\)</span> 到 <span class="math inline">\(5.10\)</span>，均值 <span class="math inline">\(1.00\)</span> （书还说明：假定了同方差，检查残差图后看起来合理； 其它分布选择——例如带异方差的截断正态——给出相似的估计）。</p>
+<p>参数估计是 <span class="math inline">\(\hat\beta_0 = 2.005\)</span>、<span class="math inline">\(\hat\beta_1 = -0.109\)</span>、<span class="math inline">\(\hat\beta_2 = 0.003\)</span>，由此：</p>
+<div class="joint-table">
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>情形</th>
+<th>平均体重增加</th>
+<th>95% CI</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>所有人吸烟强度不变（<span class="math inline">\(a=0\)</span>）</td>
+<td><span class="math inline">\(2.0\)</span> kg</td>
+<td><span class="math inline">\((1.4,\ 2.6)\)</span></td>
+</tr>
+<tr class="even">
+<td>所有人每天多抽 20 支（<span class="math inline">\(a=20\)</span>）</td>
+<td><span class="math inline">\(0.9\)</span> kg</td>
+<td><span class="math inline">\((-1.7,\ 3.5)\)</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="pitfall warn">
+<p><span class="pitfall-label">原书此处有一处符号错误（2025-01-02 版）</span></p>
+<p>书页 165 正文写的是：</p>
+<blockquote class="blockquote">
+<p>The estimate of <span class="math inline">\(E[Y^{a=20}] - E[Y^{a=0}]\)</span> is therefore <span class="math inline">\(2.0 - 0.9 = 1.10\)</span> kg.</p>
+</blockquote>
+<p><strong>但按它自己刚给出的两个数</strong>（<span class="math inline">\(E[Y^{a=0}] = 2.0\)</span>、<span class="math inline">\(E[Y^{a=20}] = 0.9\)</span>）：</p>
+<p><span class="math display">\[E[Y^{a=20}] - E[Y^{a=0}] = 0.9 - 2.0 = \mathbf{-1.1}\ \text{kg}\]</span></p>
+<p><strong>书写的 <span class="math inline">\(2.0 - 0.9\)</span> 算的是 <span class="math inline">\(E[Y^{a=0}] - E[Y^{a=20}]\)</span>，与它声明的对比反了号。</strong> 已以 150 dpi 整页渲染书页 165（PDF 174）复核，确认该式确实这样印在书上， 不是 <code>pdftotext</code> 提取错误。</p>
+<p><strong>实质结论不变</strong>：按这个边际结构模型，<strong>每天多抽 20 支烟会使平均体重增加比不变时少约 1.1 kg</strong> （而且 95% 区间 <span class="math inline">\((-1.7, 3.5)\)</span> 很宽，覆盖 0）。只是符号要读者自己摆正。</p>
+<p><em>顺带记一个次要的数值细节：用书给出的三个四舍五入系数直接算 <span class="math inline">\(\hat\beta_0 + 20\hat\beta_1 + 400\hat\beta_2 = 2.005 - 2.18 + 1.2 = 1.03\)</span>， 与书报告的 <span class="math inline">\(0.9\)</span> 差 <span class="math inline">\(0.13\)</span> kg——这个差来自 <span class="math inline">\(\hat\beta_2\)</span> 的四舍五入： 要得到 <span class="math inline">\(0.9\)</span> 需要 <span class="math inline">\(\hat\beta_2 \approx 0.0027\)</span>。本页右图的曲线与圆点之间那点缝隙就是它。</em></p>
+</div>
+</section>
+<section id="二值结局的边际结构-logistic-模型" class="level3">
+<h3 class="anchored" data-anchor-id="二值结局的边际结构-logistic-模型">二值结局的边际结构 logistic 模型</h3>
+<p>同样的框架可以用在二值结局上。例如关心戒烟 <span class="math inline">\(A\)</span> 对 1992 年前死亡 <span class="math inline">\(D\)</span> 的因果效应：</p>
+<p><span class="math display">\[\mathrm{logit}\,\Pr[D^a = 1] = \alpha_0 + \alpha_1 a\]</span></p>
+<p>其中 <span class="math inline">\(\exp(\alpha_1)\)</span> 是<strong>戒烟对不戒烟的因果比值比</strong>。 在我们的假设下，这个模型的参数由「在 IP 加权造出的伪人群上拟合 <span class="math inline">\(\mathrm{logit}\,\Pr[D=1\mid A]=\theta_0+\theta_1 A\)</span>」相合地估计。</p>
+<p>书估计出的因果比值比是 <span class="math inline">\(\exp(\hat\theta_1) = \mathbf{1.0}\)</span>（95% CI <span class="math inline">\(0.8,\ 1.4\)</span>）。</p>
+</section>
+</section>
+<section id="效应修饰与边际结构模型加协变量的唯一理由是兴趣" class="level2">
+<h2 class="anchored" data-anchor-id="效应修饰与边际结构模型加协变量的唯一理由是兴趣">12.5 效应修饰与边际结构模型<span class="hook">：加协变量的唯一理由是兴趣</span></h2>
+<blockquote class="blockquote">
+<p><strong>当目标参数是人群中的平均因果效应时，边际结构模型不含协变量。 然而，为了考察效应修饰，可以把协变量——它们可以是非混杂因子——放进边际结构模型。</strong></p>
+<p>— <em>What If</em>, §12.5, p.165</p>
+</blockquote>
+<p>若假设戒烟的效应随性别 <span class="math inline">\(V\)</span>（0：男，1：女）变化，就把 <span class="math inline">\(V\)</span> 加进去：</p>
+<p><span class="math display">\[E[Y^a \mid V] = \beta_0 + \beta_1 a + \beta_2 V a + \beta_3 V\]</span></p>
+<p><strong>存在加法效应修饰 <span class="math inline">\(\iff\)</span> <span class="math inline">\(\beta_2 \neq 0\)</span>。</strong></p>
+<blockquote class="blockquote">
+<p>严格地说这已经不再是一个<strong>边际</strong>模型了——因为它条件于 <span class="math inline">\(V\)</span>—— 但「边际结构模型」这个词仍然被沿用。</p>
+<p>— <em>What If</em>, §12.5, p.165</p>
+</blockquote>
+<p>拟合方法不变：用加权最小二乘（权重 <span class="math inline">\(W^A\)</span> 或 <span class="math inline">\(SW^A\)</span>）拟合 <span class="math inline">\(E[Y\mid A, V] = \theta_0 + \theta_1 A + \theta_2 VA + \theta_3 V\)</span>。</p>
+<div class="pitfall">
+<p><span class="pitfall-label"><span class="math inline">\(\beta_3\)</span> 没有因果解释；而且 <span class="math inline">\(V\)</span> 通常应该在 <span class="math inline">\(L\)</span> 里</span></p>
+<p>边注给了一条很容易被忽略的警告：</p>
+<blockquote class="blockquote">
+<p><strong>参数 <span class="math inline">\(\beta_3\)</span> 一般没有「<span class="math inline">\(V\)</span> 的效应」这种因果解释。</strong> 记住我们假设的是<strong>处理 <span class="math inline">\(A\)</span></strong> 的可交换性、正性与一致性，<strong>不是性别 <span class="math inline">\(V\)</span> 的。</strong></p>
+<p>— <em>What If</em>, §12.5 边注, p.165</p>
+</blockquote>
+<p><em>第 9 章 §9.5 说的正是同一件事：图上每一支箭都需要自己的良定义干预。 「性别对体重的效应」在这个模型里没有被识别，它只是一个截距项。</em></p>
+<p>另一条：</p>
+<blockquote class="blockquote">
+<p><strong>在大多数设定下，协变量向量 <span class="math inline">\(L\)</span> 应当包含 <span class="math inline">\(V\)</span>。</strong> 即使 <span class="math inline">\(V\)</span> 在给定 <span class="math inline">\(L\)</span> 的其它分量时与 <span class="math inline">\(A\)</span> 独立、因而并非保证可交换性所必需， <strong>把 <span class="math inline">\(V\)</span> 放进 <span class="math inline">\(L\)</span> 一般也会提高边际结构模型参数估计的效率。</strong></p>
+<p>— <em>What If</em>, §12.5, p.165</p>
+</blockquote>
+</div>
+<section id="权重分子的选择" class="level3">
+<h3 class="anchored" data-anchor-id="权重分子的选择">权重分子的选择</h3>
+<blockquote class="blockquote">
+<p>因为我们现在考虑的是<strong>在 <span class="math inline">\(V\)</span> 的层内</strong>的处理效应模型， 稳定化权重的分子可以用 <span class="math inline">\(f[A]\)</span>，<strong>也可以用 <span class="math inline">\(f[A\mid V]\)</span></strong>。 基于 <span class="math inline">\(SW^A(V) = \dfrac{f[A\mid V]}{f[A\mid L]}\)</span> 的 IP 加权 <strong>通常会给出更窄的置信区间</strong>。</p>
+<p>— <em>What If</em>, §12.5, p.165（复述）</p>
+</blockquote>
+<p>直觉是：<span class="math inline">\(SW^A(V)\)</span> 的<strong>方差比 <span class="math inline">\(SW^A\)</span> 小</strong>。 估法与 <span class="math inline">\(SW^A\)</span> 相同，只是<strong>在分子的 logistic 模型里加上协变量 <span class="math inline">\(V\)</span></strong>。</p>
+</section>
+<section id="该把哪些变量放进边际结构模型" class="level3">
+<h3 class="anchored" data-anchor-id="该把哪些变量放进边际结构模型">该把哪些变量放进边际结构模型</h3>
+<p>书给的判据很克制：</p>
+<blockquote class="blockquote">
+<p>研究者选择把 <span class="math inline">\(L\)</span> 的哪个子集 <span class="math inline">\(V\)</span> 放进边际结构模型， <strong>应当只反映研究者的实质性兴趣</strong>。 例如，当研究者<strong>既</strong>相信 <span class="math inline">\(V\)</span> 可能是效应修饰因子， <strong>又</strong>对「<span class="math inline">\(V\)</span> 各层内的处理因果效应」比对「整个人群的效应」更有实质兴趣时， 才应该把 <span class="math inline">\(V\)</span> 放进去。</p>
+<p>— <em>What If</em>, §12.5, p.166（复述）</p>
+</blockquote>
+<p>本例中<strong>没有发现性别效应修饰的有力证据</strong>：<span class="math inline">\(\hat\theta_2\)</span> 的 95% 置信区间是 <span class="math inline">\((-2.2,\ 1.9)\)</span>。</p>
+<div class="pitfall warn">
+<p><span class="pitfall-label">「假边际结构模型」：把 <span class="math inline">\(L\)</span> 全放进去会发生什么</span></p>
+<blockquote class="blockquote">
+<p>如果研究者选择把<strong>所有</strong>变量 <span class="math inline">\(L\)</span> 都放进边际结构模型， 那么稳定化权重 <span class="math inline">\(SW^A(L)\)</span> <strong>等于 1</strong>，IP 加权就<strong>没有必要</strong>了—— 因为在条件可交换性下，这个边际结构模型<strong>就是那个（不加权的）结局回归模型</strong>， 而后者本来就能完全调整由 <span class="math inline">\(L\)</span> 造成的全部混杂（见第 15 章）。 因此，我们<strong>略带幽默地</strong>把「条件于可交换性所需的全部变量 <span class="math inline">\(L\)</span>」的边际结构模型 称为<strong>假边际结构模型</strong>（faux marginal structural model）。</p>
+<p>— <em>What If</em>, §12.5, p.166（复述）</p>
+</blockquote>
+<p>这条把「边际结构模型」与「普通结局回归」之间的连续谱画了出来：</p>
+<ul>
+<li><span class="math inline">\(V = \varnothing\)</span>：真正的边际结构模型，估的是<strong>人群平均效应</strong>；</li>
+<li><span class="math inline">\(V \subsetneq L\)</span>：条件于部分协变量，估的是<strong>这些层内的效应</strong>；</li>
+<li><span class="math inline">\(V = L\)</span>：<strong>退化成普通回归</strong>，权重全为 1。</li>
+</ul>
+<p><strong>所以「用不用 IP 加权」这个问题，等价于「你想要多边际的那个效应」。</strong></p>
+</div>
+<p>书最后给了一条教学上的观察，值得记：</p>
+<blockquote class="blockquote">
+<p>在第一部分我们讨论过：<strong>效应修饰与混杂是两个逻辑上不同的概念。</strong> 尽管如此，<strong>许多学生难以理解这个区分</strong>， 因为同样的统计方法——分层（第 4 章）或回归（第 15 章）—— <strong>既被用于混杂因子调整，也被用于效应修饰的检测</strong>。</p>
+<p>因此，<strong>用边际结构模型来教这些概念可能有某种优势</strong>： 那时<strong>混杂因子调整的方法（IP 加权）与效应修饰检测的方法 （往边际结构模型里加处理–协变量乘积项）是彼此分开的。</strong></p>
+<p>— <em>What If</em>, §12.5, p.166（复述）</p>
+</blockquote>
+</section>
+</section>
+<section id="删失与缺失数据把删失也当成一个处理" class="level2">
+<h2 class="anchored" data-anchor-id="删失与缺失数据把删失也当成一个处理">12.6 删失与缺失数据<span class="hook">：把删失也当成一个处理</span></h2>
+<p>估计效应时我们把分析限制在 <strong>1566 名在 1982 年有体重测量的个体</strong>上。 但<strong>另有 63 个人符合入选标准、却因为 1982 年体重未知而被排除</strong>。</p>
+<blockquote class="blockquote">
+<p><strong>只选择结局值非缺失的个体——也就是把有缺失值的人从分析中删失——可能引入选择偏倚</strong>， 一如第 8 章所述。</p>
+<p>— <em>What If</em>, §12.6, p.166</p>
+</blockquote>
+<p>记删失 <span class="math inline">\(C\)</span>：1982 年体重<strong>未测</strong>（被删失）为 1，<strong>已测</strong>为 0。</p>
+<blockquote class="blockquote">
+<p>也就是说，§12.2 与 §12.4 里我们拟合的<strong>不是</strong>（加权的）结局回归模型 <span class="math inline">\(E[Y\mid A] = \theta_0 + \theta_1 A\)</span>， <strong>而是限制在 <span class="math inline">\(C=0\)</span> 的个体上的模型 <span class="math inline">\(E[Y\mid A,\, C=0] = \theta_0+\theta_1 A\)</span>。</strong></p>
+<p>— <em>What If</em>, §12.6, p.166</p>
+</blockquote>
+<div class="pitfall">
+<p><span class="pitfall-label">数据本身就长得像 Figures 8.3–8.6</span></p>
+<p>书给了两个诊断性的数字，正好对应第 8 章那四张图所要求的两条边：</p>
+<ul>
+<li><strong>处理与删失相关</strong>：<strong>5.8% 的戒烟者 vs 3.2% 的非戒烟者被删失</strong>（<span class="math inline">\(A \to C\)</span> 那支箭）；</li>
+<li><strong>至少某些 <span class="math inline">\(Y\)</span> 的预测因子与删失相关</strong>： <strong>被删失者的平均基线体重 76.6 kg，未删失者 70.8 kg</strong>（<span class="math inline">\(L \to C\)</span> 与 <span class="math inline">\(L \cdots Y\)</span> 那一侧）。</li>
+</ul>
+<blockquote class="blockquote">
+<p>即使在零假设下，<strong>只选未删失个体进入分析，在 <span class="math inline">\(C\)</span> 是「处理 <span class="math inline">\(A\)</span> 与结局 <span class="math inline">\(Y\)</span> 之间某条通路上的对撞子」 或「这样一个对撞子的后代」时，也预期会产生偏倚。</strong></p>
+<p>— <em>What If</em>, §12.6, p.166</p>
+</blockquote>
+<p><em>这两个数字是本章最值得抄进自己分析流程的一条： <strong>在做任何完整病例分析之前，先算一遍「删失率随处理组怎么变」和 「被删失者与未删失者在关键预测因子上差多少」。</strong> 两个数，一分钟，直接告诉你有没有这个结构。</em></p>
+</div>
+<section id="因果对比的改写与乘积权重" class="level3">
+<h3 class="anchored" data-anchor-id="因果对比的改写与乘积权重">因果对比的改写，与乘积权重</h3>
+<p>因为失访造成的删失会引入选择偏倚，我们关心的是<strong>假如研究人群中没有人被删失时</strong>的因果效应：</p>
+<p><span class="math display">\[E[Y^{a=1,\,c=0}] - E[Y^{a=0,\,c=0}]\]</span></p>
+<blockquote class="blockquote">
+<p>上标 <span class="math inline">\(c=0\)</span> 把一件事挑明了：<strong>许多人在说「处理 <span class="math inline">\(A\)</span> 的因果效应」时， 心里想的正是这个因果对比——即使他们选择不写那个上标。</strong></p>
+<p>— <em>What If</em>, §12.6, p.167</p>
+</blockquote>
+<p>这正是第 8 章 §8.4 的转念，在这里变成了一行权重：</p>
+<p><span class="math display">\[W^{A,C} = W^A \times W^C, \qquad W^C = \frac{1}{\Pr[C=0\mid L,\, A]}\ (\text{未删失者}),\quad W^C = 0\ (\text{被删失者})\]</span></p>
+<p>边注给了它的来历：<strong><span class="math inline">\(W^{A,C} = 1/f(A, C=0\mid L)\)</span>， 其中 <span class="math inline">\(A\)</span> 与 <span class="math inline">\(C\)</span> 的联合密度被分解为 <span class="math inline">\(f(A, C=0\mid L) = f(A\mid L)\times \Pr[C=0\mid L, A]\)</span>。</strong></p>
+<p>需要的可识别性条件也相应地变成<strong>联合</strong>版本：</p>
+<ul>
+<li><strong>联合处理 <span class="math inline">\((A, C)\)</span> 在给定 <span class="math inline">\(L\)</span> 下的可交换性</strong>：<span class="math inline">\(Y^{a,c=0} \perp\!\!\!\perp (A, C)\mid L\)</span>；</li>
+<li><strong>对 <span class="math inline">\((A=a,\ C=0)\)</span> 的联合正性</strong>；</li>
+<li><strong>一致性</strong>。</li>
+</ul>
+<div class="pitfall warn">
+<p><span class="pitfall-label">一个留给第三部分的警告</span></p>
+<blockquote class="blockquote">
+<p><strong>如果 <span class="math inline">\(L\)</span> 中的某些变量受处理 <span class="math inline">\(A\)</span> 影响</strong>（如 Figure 8.4）， 条件独立性 <span class="math inline">\(Y^{a,c=0}\perp\!\!\!\perp(A,C)\mid L\)</span> <strong>一般不成立</strong>。 在第三部分我们会说明，存在<strong>替代的可交换性条件</strong>， 使我们在 <span class="math inline">\(L\)</span> 的某些分量受处理影响时仍然可以用 IP 加权估计 <span class="math inline">\(A\)</span> 与 <span class="math inline">\(C\)</span> 的联合效应。</p>
+<p>— <em>What If</em>, §12.6, p.167</p>
+</blockquote>
+<p><em>这就是 W7 时变混杂那一周的入口：本章的整套做法在 「协变量本身被处理改变」时会失效，而 g-methods 正是为此而生。</em></p>
+</div>
+</section>
+<section id="非稳定化-vs-稳定化两种伪人群" class="level3">
+<h3 class="anchored" data-anchor-id="非稳定化-vs-稳定化两种伪人群">非稳定化 vs 稳定化：两种伪人群</h3>
+<div class="contrast">
+<div class="contrast-item">
+<p><span class="contrast-hd"><span class="math inline">\(W^C = 1/\Pr[C=0\mid L,A]\)</span></span></p>
+<p>造出一个<strong>与删失前的原研究人群同样大</strong>的伪人群， 其中<strong>没有从 <span class="math inline">\(L\)</span> 或 <span class="math inline">\(A\)</span> 指向 <span class="math inline">\(C\)</span> 的箭头</strong>。</p>
+<p>本例中大约是 <span class="math inline">\(1566 + 63 = \mathbf{1629}\)</span> 人， <strong>在我们的假设下没有选择偏倚，因为根本没有选择。</strong></p>
+</div>
+<div class="contrast-item">
+<p><span class="contrast-hd"><span class="math inline">\(SW^C = \Pr[C=0\mid A] / \Pr[C=0\mid L,A]\)</span></span></p>
+<p>造出一个<strong>与删失后的原研究人群同样大</strong>的伪人群， 其中<strong>没有从 <span class="math inline">\(L\)</span> 指向 <span class="math inline">\(C\)</span> 的箭头</strong>（<span class="math inline">\(A \to C\)</span> 还在）。</p>
+<p>本例中大约是 <strong>1566</strong> 人。</p>
+<blockquote class="blockquote">
+<p>也就是说，<strong>稳定化权重并不消除伪人群中的删失， 它让删失相对于已测协变量 <span class="math inline">\(L\)</span> 随机地发生。</strong> 因此，在给定 <span class="math inline">\(L\)</span>（和 <span class="math inline">\(A\)</span>）时被删失者与未删失者条件可交换的假设下， <strong>伪人群中被删失者的比例与研究人群中相同：有选择，但没有选择偏倚。</strong></p>
+<p>— <em>What If</em>, §12.6, p.167</p>
+</blockquote>
+</div>
+</div>
+</section>
+<section id="结果-2" class="level3">
+<h3 class="anchored" data-anchor-id="结果-2">结果</h3>
+<p><span class="math inline">\(\Pr[C=0\mid L, A]\)</span> 用一个 logistic 模型在<strong>全部 1629 人</strong>上拟合， 协变量与估处理权重时用的那组相同。用 <span class="math inline">\(SW^{A,C} = SW^A \times SW^C\)</span> 得到</p>
+<p><span class="math display">\[\hat\theta_1 = \mathbf{3.5}\ \text{kg}\quad (95\%\ \text{CI}:\ 2.5,\ 4.5)\]</span></p>
+<p>估计出的 <span class="math inline">\(SW^{A,C}\)</span> 范围 <span class="math inline">\(0.35\)</span> 到 <span class="math inline">\(4.09\)</span>，<strong>均值 1.00</strong>。</p>
+<blockquote class="blockquote">
+<p>这<strong>几乎就是</strong>我们先前用 <span class="math inline">\(SW^A\)</span> 得到的估计， 这提示<strong>要么不存在由删失造成的选择偏倚，要么我们的已测协变量无法消除它。</strong></p>
+<p>— <em>What If</em>, §12.6, p.168</p>
+</blockquote>
+<div class="pitfall">
+<p><span class="pitfall-label">这句「要么…要么…」是本章最诚实的一句话</span></p>
+<p>「加了删失权重之后结果没怎么变」<strong>不是</strong>「没有选择偏倚」的证据。 它同样与「选择偏倚存在，但 <span class="math inline">\(L\)</span> 堵不住 <span class="math inline">\(C\)</span> 与 <span class="math inline">\(Y\)</span> 之间的后门通路」相容。</p>
+<p><strong>这是第 7 章 §7.4 那条「改变量法已被长期弃用」在删失上的重演</strong>： <strong>估计值变了不能证明有偏倚，估计值没变也不能证明没有偏倚。</strong> 能证明的只有结构——也就是你画的那张图，以及 <span class="math inline">\(L\)</span> 是否足以堵住 <span class="math inline">\(C \to Y\)</span> 的后门。</p>
+</div>
+<p>边注还给了一条实用的变量选择建议：</p>
+<blockquote class="blockquote">
+<p><span class="math inline">\(L\)</span> 中的某些变量在 <span class="math inline">\(f(A\mid L)\)</span> 的模型里可能系数为零、但在 <span class="math inline">\(\Pr[C=0\mid L,A]\)</span> 的模型里不为零，反之亦然。 尽管如此，<strong>在大样本中，把所有能独立预测结局的变量 <span class="math inline">\(L\)</span> 同时保留在两个模型里，总是更有效率的。</strong></p>
+<p>— <em>What If</em>, §12.6 边注, p.167</p>
+</blockquote>
+</section>
+</section>
+<section id="这章停在哪里" class="level2">
+<h2 class="anchored" data-anchor-id="这章停在哪里">这章停在哪里</h2>
+<p>第 12 章是第二部分的第一台完整机器。把它拆开看，零件全是旧的：</p>
+<div class="joint-table">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>零件</th>
+<th>来自</th>
+<th>本章做的事</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>IP 加权的思想</td>
+<td>第 2 章</td>
+<td>不变</td>
+</tr>
+<tr class="even">
+<td>把删失当第二个处理</td>
+<td>第 8 章 §8.4</td>
+<td>不变，写成乘积权重</td>
+</tr>
+<tr class="odd">
+<td>「高维下必须建模」</td>
+<td>第 10 章 §10.5、第 11 章</td>
+<td><strong>把 <span class="math inline">\(f(A\mid L)\)</span> 换成 logistic 模型的输出</strong></td>
+</tr>
+<tr class="even">
+<td>「模型设定正确」这条额外假设</td>
+<td>第 11 章 §11.2</td>
+<td>加进了识别条件清单</td>
+</tr>
+<tr class="odd">
+<td>效应修饰 ≠ 混杂</td>
+<td>第 4 章</td>
+<td><strong>用两种不同的操作分开了：加权 vs 加乘积项</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>唯一真正新的东西是「边际结构模型」这个提法</strong>—— 把「我们要估的那个因果量」写成一个<strong>结局为反事实</strong>的模型， 于是估计因果效应就变成了估计这个模型的参数。</p>
+<div class="qa">
+<p><span class="q">自检① 我的 IP 权重「看起来对不对」？</span></p>
+<p>本章给了四条可以直接写进脚本的诊断：</p>
+<ol type="1">
+<li><strong>稳定化权重的均值应该是 1。</strong> 偏离 1 意味着<strong>模型设定错误，或正性被违反 / 接近被违反</strong> （§12.3 边注）。这是最便宜也最通用的一条。</li>
+<li><strong>看权重的范围。</strong> 本例中 <span class="math inline">\(W^A\)</span> 是 <span class="math inline">\(1.05\)</span>–<span class="math inline">\(16.7\)</span>，<span class="math inline">\(SW^A\)</span> 是 <span class="math inline">\(0.33\)</span>–<span class="math inline">\(4.30\)</span>。 极大权重意味着某些人在「代表」很多没被观察到的人—— 他们会主导估计，并把方差顶上去。</li>
+<li><strong>找零格。</strong> 按几个关键混杂因子交叉制表，看有没有某一格里一种处理为 0 人。 有的话，问一句：<strong>这是结构零还是随机零？</strong>（Fine Point 12.2） ——这个问题<strong>软件回答不了，只能靠专业知识</strong>。</li>
+<li><strong>区间要用对方法。</strong> 普通最小二乘的标准误在这里是错的。 三条路：解析方差（要自己编）、bootstrap（要算力）、稳健方差（保守但现成）。 <strong>书全程用第三条，并明确说明它是保守的。</strong></li>
+</ol>
+<p><em>落到 R 上：<code>WeightIt</code> + <code>cobalt</code> 做权重估计与平衡诊断， <code>survey::svyglm</code> 或 <code>sandwich::vcovHC</code> 给稳健方差， <code>boot</code> 给 bootstrap。这正是路线图 W3 那一周的工具链。</em></p>
+</div>
+<div class="qa">
+<p><span class="q">自检② 稳定化到底买到了什么？</span></p>
+<p>按 §12.3，答案是<strong>分情况的</strong>，而且很多人记错：</p>
+<ul>
+<li><strong>点估计</strong>：<strong>完全一样</strong>。稳定化不改变效应估计。</li>
+<li><strong>区间</strong>：<strong>只有在加权模型非饱和时才更窄</strong>。 本章二值单时点处理的例子里两参数模型是饱和的， 所以两种权重给出<strong>同一个区间</strong> <span class="math inline">\((2.4, 4.5)\)</span>——这不是反例。</li>
+<li><strong>真正需要它的地方</strong>：<strong>时变处理、连续处理</strong>——那里模型不可能饱和。 时变处理下权重会随时间<strong>累乘</strong>，分子上的稳定化因子是压住极端权重的唯一手段。</li>
+</ul>
+<p><strong>还有一条附带的好处</strong>：稳定化权重的均值应该是 1， 这给了你一条<strong>免费的模型诊断</strong>（自检①），而非稳定化权重没有这条。</p>
+<p><em>所以「要不要稳定化」的正确答案不是「稳定化更好」， 而是「在你会遇到的所有非饱和场景里，它是必需的；在饱和场景里，它顺便送你一条诊断」。</em></p>
+</div>
+<div class="qa">
+<p><span class="q">自检③ 什么时候不该用 IP 加权？</span></p>
+<p>本章自己点了三处危险：</p>
+<ol type="1">
+<li><strong>连续处理</strong>（§12.4）。<span class="math inline">\(f(A\mid L)\)</span> 变成概率密度， <strong>而 pdf 一般很难估，尤其 <span class="math inline">\(L\)</span> 高维含连续分量时</strong>。 书的原话是「<strong>这就是为什么把 IP 加权用在连续处理上常常是危险的</strong>」， 而且效应估计可能<strong>对密度模型的选择极其敏感</strong>。</li>
+<li><strong>正性有结构性违反</strong>（Fine Point 12.2 + Technical Point 12.1）。 这时<strong>整个人群的效应根本不可识别</strong>，无论用什么估计量； 推断必须限制在正性成立的子人群上。而<strong>参数模型会把这件事抹平，让你看不见</strong>。</li>
+<li><strong><span class="math inline">\(L\)</span> 中有被处理影响的变量</strong>（§12.6）。 联合可交换性 <span class="math inline">\(Y^{a,c=0}\perp\!\!\!\perp(A,C)\mid L\)</span> 一般不成立， 本章这一套要到第三部分才有替代条件。</li>
+</ol>
+<p><strong>还有一条书没有明说但贯穿全章的</strong>：IP 加权把全部赌注押在 <strong><span class="math inline">\(f(A\mid L)\)</span> 这一个模型</strong>上。下一章（标准化 / 参数化 g-公式） 押的是<strong>另一个模型</strong>（结局模型）。两者各有各的错法—— <strong>而 W5 的双稳健估计量正是为了「只要有一个对就行」而存在的。</strong></p>
+</div>
+<p>下一章讲同一个问题的另一条路线：<strong>第 13 章「标准化与参数化 g-公式」</strong>。 第 2 章里标准化和 IP 加权给出了同一个数，第 13 章会说明在有模型之后它们<strong>不再必然相同</strong>， 并给出「IP 加权还是标准化」这个选择题的答案（§13.4 的标题就是这句话）。</p>
+<p>而代码那一侧，本章对应原书 Program 12.1–12.7。整条流水线用 R 写出来是这样的：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 1. 估计处理权重的分母：9 个混杂因子，连续变量带二次项，无交互</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>den <span class="ot">&lt;-</span> <span class="fu">glm</span>(qsmk <span class="sc">~</span> sex <span class="sc">+</span> race <span class="sc">+</span> age <span class="sc">+</span> <span class="fu">I</span>(age<span class="sc">^</span><span class="dv">2</span>) <span class="sc">+</span> <span class="fu">as.factor</span>(education) <span class="sc">+</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>             smokeintensity <span class="sc">+</span> <span class="fu">I</span>(smokeintensity<span class="sc">^</span><span class="dv">2</span>) <span class="sc">+</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>             smokeyrs <span class="sc">+</span> <span class="fu">I</span>(smokeyrs<span class="sc">^</span><span class="dv">2</span>) <span class="sc">+</span> <span class="fu">as.factor</span>(exercise) <span class="sc">+</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>             <span class="fu">as.factor</span>(active) <span class="sc">+</span> wt71 <span class="sc">+</span> <span class="fu">I</span>(wt71<span class="sc">^</span><span class="dv">2</span>),</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>           <span class="at">family =</span> <span class="fu">binomial</span>(), <span class="at">data =</span> nhefs)</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>pd <span class="ot">&lt;-</span> <span class="fu">ifelse</span>(nhefs<span class="sc">$</span>qsmk <span class="sc">==</span> <span class="dv">1</span>, <span class="fu">predict</span>(den, <span class="at">type =</span> <span class="st">"response"</span>),</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>                              <span class="dv">1</span> <span class="sc">-</span> <span class="fu">predict</span>(den, <span class="at">type =</span> <span class="st">"response"</span>))</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. 稳定化：分子是只含截距的饱和模型</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>num <span class="ot">&lt;-</span> <span class="fu">glm</span>(qsmk <span class="sc">~</span> <span class="dv">1</span>, <span class="at">family =</span> <span class="fu">binomial</span>(), <span class="at">data =</span> nhefs)</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>pn  <span class="ot">&lt;-</span> <span class="fu">ifelse</span>(nhefs<span class="sc">$</span>qsmk <span class="sc">==</span> <span class="dv">1</span>, <span class="fu">predict</span>(num, <span class="at">type =</span> <span class="st">"response"</span>),</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>                               <span class="dv">1</span> <span class="sc">-</span> <span class="fu">predict</span>(num, <span class="at">type =</span> <span class="st">"response"</span>))</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>sw  <span class="ot">&lt;-</span> pn <span class="sc">/</span> pd</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(sw)        <span class="co"># ← 自检①：均值应为 1.00，本例范围 0.33–4.30</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. 在伪人群上拟合饱和的边际结构模型，用稳健方差</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(geepack)</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>msm <span class="ot">&lt;-</span> <span class="fu">geeglm</span>(wt82_71 <span class="sc">~</span> qsmk, <span class="at">data =</span> nhefs, <span class="at">weights =</span> sw,</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>              <span class="at">id =</span> seqn, <span class="at">corstr =</span> <span class="st">"independence"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="provenance">
+<section id="关于这份笔记" class="level3">
+<h3 class="anchored" data-anchor-id="关于这份笔记">关于这份笔记</h3>
+<dl>
+<dt>来源</dt>
+<dd>
+Hernán MA, Robins JM. <em>Causal Inference: What If</em>. 2025-01-02 版， 第 12 章（书页 157–168，PDF 第 166–177 页）。本页是读书笔记，非原书译文。
+</dd>
+<dt>核对方式</dt>
+<dd>
+本章只有 1 张图（Figure 12.1，稳定化权重下的伪人群树图）， 用 <code>pdfimages -png -f 166 -l 177</code> 抽出后<strong>逐格读出数值</strong>， 并与第 2 章 Figure 2.1 的原始人数交叉验算：
+</dd>
+<dd>
+<p><span class="ck">①</span> 读出的权重为 <span class="math inline">\(.35/.5 = .7\)</span>、<span class="math inline">\(.65/.5 = 1.3\)</span>、<span class="math inline">\(.35/.25 = 1.4\)</span>、<span class="math inline">\(.65/.75 = .87\)</span>， 对应 <span class="math inline">\(\Pr[A=1\mid L=0] = 4/8 = .5\)</span>、<span class="math inline">\(\Pr[A=1\mid L=1] = 9/12 = .75\)</span>， 与第 2 章 Figure 2.1 的分组人数（<span class="math inline">\(L=0\)</span> 有 8 人、4 治 4 不治；<span class="math inline">\(L=1\)</span> 有 12 人、9 治 3 不治）<strong>一致</strong>。 伪人群人数 <span class="math inline">\(4\times.7 = 2.8\)</span>、<span class="math inline">\(4\times1.3 = 5.2\)</span>、<span class="math inline">\(3\times1.4 = 4.2\)</span>、<span class="math inline">\(9\times.867 = 7.8\)</span>， <strong>与图上印的四个数完全相符</strong>；四者之和 <span class="math inline">\(= 20\)</span>，<strong>等于原研究人群规模</strong>， 与正文「稳定化权重造出的伪人群与研究人群同样大」一致。 伪人群中 <span class="math inline">\(\Pr[A=1] = 13/20 = .65\)</span>，与正文一致； 两组风险各为 <span class="math inline">\(6.5/13 = .5\)</span> 与 <span class="math inline">\(3.5/7 = .5\)</span>，风险比 <span class="math inline">\(=1\)</span>，与第 2 章结论一致。</p>
+</dd>
+<dd>
+<p><span class="ck">②</span> <strong>Table 12.1 的 18 个数、以及正文中的全部统计量逐个照录并交叉验算</strong>： <span class="math inline">\(E[Y|A{=}1] = 4.5\)</span>、<span class="math inline">\(E[Y|A{=}0] = 2.0\)</span>、差 <span class="math inline">\(2.5\)</span>（95% CI <span class="math inline">\(1.7\)</span>–<span class="math inline">\(3.4\)</span>）； 样本量 1566；<span class="math inline">\(\Pr[A=1] = 403/1566 = 0.2573\)</span>； 四组权重的范围与均值（<span class="math inline">\(W^A\)</span>：<span class="math inline">\(1.05\)</span>–<span class="math inline">\(16.7\)</span>，均值 <span class="math inline">\(2.00\)</span>； <span class="math inline">\(SW^A\)</span>：<span class="math inline">\(0.33\)</span>–<span class="math inline">\(4.30\)</span>，均值 <span class="math inline">\(1.00\)</span>；连续处理的 <span class="math inline">\(SW^A\)</span>：<span class="math inline">\(0.19\)</span>–<span class="math inline">\(5.10\)</span>，均值 <span class="math inline">\(1.00\)</span>； <span class="math inline">\(SW^{A,C}\)</span>：<span class="math inline">\(0.35\)</span>–<span class="math inline">\(4.09\)</span>，均值 <span class="math inline">\(1.00\)</span>）； 删失率 <span class="math inline">\(5.8\%\)</span> vs <span class="math inline">\(3.2\%\)</span>；基线体重 <span class="math inline">\(76.6\)</span> vs <span class="math inline">\(70.8\)</span> kg；<span class="math inline">\(1566+63 = 1629\)</span>。</p>
+</dd>
+<dd>
+<p><span class="ck">③</span> <strong>原书此处有一处符号错误，已整页渲染复核</strong>： 书页 165（PDF 174）正文写 「The estimate of <span class="math inline">\(E[Y^{a=20}] - E[Y^{a=0}]\)</span> is therefore <span class="math inline">\(2.0 - 0.9 = 1.10\)</span> kg」， 但同段刚刚给出 <span class="math inline">\(E[Y^{a=0}] = 2.0\)</span>、<span class="math inline">\(E[Y^{a=20}] = 0.9\)</span>， 故 <span class="math inline">\(E[Y^{a=20}] - E[Y^{a=0}] = -1.1\)</span>，<strong>书上写的减法算的是反向对比</strong>。 已以 150 dpi 渲染该页确认这行确实这样印着，不是 <code>pdftotext</code> 提取错误。 <em>这是本仓库笔记迄今记录到的原书第四处数字 / 交叉引用问题 （另三处在第 7 章 §7.6 与第 9 章 §9.3、Fine Point 9.6）。</em></p>
+</dd>
+<dd>
+<p><span class="ck">④</span> <strong>一处四舍五入造成的小不一致</strong>：用书给出的 <span class="math inline">\(\hat\beta_0 = 2.005\)</span>、<span class="math inline">\(\hat\beta_1 = -0.109\)</span>、<span class="math inline">\(\hat\beta_2 = 0.003\)</span> 直接算 <span class="math inline">\(E[Y^{a=20}] = 2.005 - 2.18 + 1.2 = 1.03\)</span>，而书报告 <span class="math inline">\(0.9\)</span>； 反解可知实际的 <span class="math inline">\(\hat\beta_2 \approx 0.0027\)</span>。本页右图据此在曲线与报告点之间留了可见的缝隙， 并在图注里说明。</p>
+</dd>
+<dd>
+<p>本章 <code>pdftotext -layout</code> 提取中 <code>≠</code> 出现 1 次（§12.5 的 <span class="math inline">\(\beta_2 \neq 0\)</span>，以 <code≯=</code> 形式保留）， <strong>未发现被吞成 <code>=</code> 的情形</strong>。帽号与上下标照例丢失 （<code>Pr c [A = 1|L]</code> 即 <span class="math inline">\(\widehat{\Pr}[A=1\mid L]\)</span>、<code>θ̂1</code> 即 <span class="math inline">\(\hat\theta_1\)</span>、 <code>SW A</code> 即 <span class="math inline">\(SW^A\)</span>、<code>Y a=1,c=0</code> 即 <span class="math inline">\(Y^{a=1,c=0}\)</span>），已按语义还原。</p>
+</dd>
+<dd>
+<p>直接引用的英文原句逐字核对、页码逐条确认。标注为「复述」的几处， 是把书的多句话压成一句，非逐字引用。</p>
+</dd>
+</dl>
+</section>
+<section id="哪些是我的改动不是原书" class="level3">
+<h3 class="anchored" data-anchor-id="哪些是我的改动不是原书">哪些是我的改动，不是原书</h3>
+<ul>
+<li><strong>全章地图</strong>：完全由笔记作者绘制，原书没有这张图。 把「边际结构模型」这个名字拆成「边际 = 不含协变量 / 结构 = 结局是反事实的」， 是笔记的说法。</li>
+<li><strong>四组权重范围的横条图</strong>：原书没有这张图。四组权重的范围与均值全部取自原书正文与边注， <strong>并置、对数刻度与配色是笔记的组织</strong>。</li>
+<li><strong>连续处理边际结构模型的抛物线</strong>：原书没有画这条曲线。 三个系数与两个预测值取自原书，<strong>曲线是笔记用这三个（四舍五入后的）系数画的</strong>， 曲线与报告点之间的偏差已在图注与核对说明中标明。</li>
+<li><strong>Figure 12.1 未重绘为树图，而被压成一张六列表</strong>； 「<span class="math inline">\(f(A\mid L)\)</span>」与「原人数」两列是笔记从第 2 章 Figure 2.1 反推补上的， 原图上只印了权重算式与伪人群人数。</li>
+<li><strong>§12.2 里「两条性质不需要可交换性 / 四条结论才需要」那条陷阱</strong>： 书把这两组话写在同一段里，把它们分成两层是笔记的强调。</li>
+<li><strong>§12.2 里置信区间三条路的 2×2 并置</strong>：书是连续行文，压成对照块是笔记的整理。</li>
+<li><strong>Technical Point 12.1 的两行估计量对照表</strong>：书是连续行文，压成表是笔记的整理。</li>
+<li><strong>§12.4 里「两个模型，一个参数」那条五步链条</strong>： 书把这五步写成一段话，编号是笔记加的。</li>
+<li><strong>「零保持」与第 8 章风险比的对比</strong>： 书在边注里讲了零保持，第 8 章 Technical Point 8.1 讲了风险比在零假设下自带偏倚， <strong>把两者并起来看是笔记的判断</strong>。</li>
+<li><strong>§12.5 里「<span class="math inline">\(V\)</span> 从空集到 <span class="math inline">\(L\)</span> 的连续谱」</strong>： 书分别讲了「不含协变量的边际结构模型」和「假边际结构模型」两端， 把它们排成一个谱、并得出「用不用 IP 加权等价于你想要多边际的效应」是笔记的归纳。</li>
+<li><strong>§12.6 里「两个数字，一分钟」的实操建议</strong>： 书给出了 <span class="math inline">\(5.8\%\)</span> vs <span class="math inline">\(3.2\%\)</span> 与 <span class="math inline">\(76.6\)</span> vs <span class="math inline">\(70.8\)</span> 这两组数字作为「数据符合 Figures 8.3–8.6 结构」的证据， 把它们提炼成一条例行诊断是笔记加的。</li>
+<li><strong>「加了删失权重结果没变，不能证明没有选择偏倚」与第 7 章「改变量法」的呼应</strong>： 书只写了那句「要么…要么…」，呼应是笔记的判断。</li>
+<li><strong>本章末尾的「零件表」</strong>：书没有这张表，是笔记对本章与前面各章关系的归纳。</li>
+<li><strong>自检三问</strong>：原书没有这些设问。其中自检① 的四条诊断分别来自 §12.2、§12.3 边注、 Fine Point 12.2，<strong>并成一份清单以及末尾的 R 工具链建议是笔记加的</strong>； 自检③ 里「IP 加权把赌注押在一个模型上、下一章押在另一个、W5 的双稳健是为此而生」 这条也是笔记的判断。</li>
+<li><strong>末尾那段 R 代码</strong>：原书官网提供的是 Program 12.1–12.7，本页<strong>没有照抄</strong>； 这段是笔记按本章描述的模型设定（9 个混杂因子、连续变量带二次项、无交互） 自己写的最小复现骨架，变量名沿用 NHEFS 公开数据集的列名。</li>
+<li>所有小标题措辞，以及与 causalR 项目、W3 倾向评分工具链、W5 双稳健、 W7–W8 时变处理与累乘权重、W11–W16 目标试验模拟中时间零点对齐的关联， 均为笔记作者的判断。</li>
+</ul>
+</section>
+<section id="哪些内容是缺的" class="level3">
+<h3 class="anchored" data-anchor-id="哪些内容是缺的">哪些内容是缺的</h3>
+<ul>
+<li><strong>原书 Program 12.1–12.7 的代码本身未收录</strong>，只在末尾给了一段等价的 R 骨架； 官网的 SAS / Stata / Python 版本未涉及。</li>
+<li><strong>NHEFS 数据本身未纳入本仓库</strong>，本页所有数字均转录自原书正文，<strong>未独立复算</strong>。 （与第 10、11 章不同——那两章的数字可以从书里给出的表和图完全重建。）</li>
+<li><strong>Technical Point 12.2（更一般的稳定化权重 <span class="math inline">\(g[A]/f[A\mid L]\)</span>、 Hájek 均值作为估计方程的解）</strong> 只记了要点， 「为什么某些 <span class="math inline">\(g[A]\)</span> 能给出更有效的估计量」未展开。</li>
+<li><strong>Technical Point 12.1 中非正性下两个估计量极限之比为 <span class="math inline">\(\Pr[Q(a)]\)</span> 的推导</strong>未展开。</li>
+<li><strong>稳健方差估计量为什么保守</strong>、以及解析方差估计量的具体形式，书都没给，本页也没有补。</li>
+<li><strong>连续处理下 <span class="math inline">\(f(A\mid L)\)</span> 的正态假设有多可靠</strong>： 书只说「检查残差图后同方差看起来合理」「其它分布给出相似估计」，未给诊断细节。 边注列出的四篇更稳健权重估计的文献（Imai &amp; Ratkovic 2015、 Wang &amp; Zubizarreta 2020、Kallus &amp; Santacatterina 2018、 Avagyan &amp; Vansteelandt 2021）只记了出处。</li>
+<li><strong>Fine Point 12.1 提到的敏感性分析做法</strong>（Hernán et al.&nbsp;2008, Appendix 3）只记了出处。</li>
+<li><strong>§12.5 里 <span class="math inline">\(SW^A(V)\)</span> 方差更小的论证</strong>只记了直觉，未给证明。</li>
+<li>参考文献（Horvitz &amp; Thompson 1952、Hájek 1971、Hernán &amp; Robins 2006a、 Hernán et al.&nbsp;2008/2016 等）未整理成 <code>references.bib</code> 条目。</li>
+<li>本页两张图均为笔记作者绘制或改写，<strong>没有从 PDF 直接提取的原图</strong>； 需要引用原图时请回到 PDF。</li>
+</ul>
+</section>
+</div>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "已复制");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "已复制");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/hui950319\.github\.io\/causalR\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../notes/w03-why-model.html" class="pagination-link" aria-label="第 11 章 · 数据不会自己说话">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">第 11 章 · 数据不会自己说话</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/w03-ip-weighting-msm.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></div></div></footer></body></html>
