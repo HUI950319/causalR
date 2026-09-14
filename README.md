@@ -4,6 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 [![Study notes](https://img.shields.io/badge/study_notes-online-1b4079.svg)](https://hui950319.github.io/causalR/)
+[![Code site](https://img.shields.io/badge/code_site-cibookex--r-2b7489.svg)](https://hui950319.github.io/cibookex-r/)
 <!-- badges: end -->
 
 观察性研究的因果推断与**目标试验模拟（Target Trial Emulation, TTE）**工具包，
@@ -23,6 +24,17 @@
 |---|---|
 | [W1 · 第 1 章](https://hui950319.github.io/causalR/notes/w01-potential-outcomes.html) | 潜在结果框架与三大识别假设 |
 | [W1 · 第 2 章](https://hui950319.github.io/causalR/notes/w01-randomized-experiments.html) | 随机试验：可交换性、标准化与 IP 加权 |
+
+### 💻 配套代码站点
+
+**<https://hui950319.github.io/cibookex-r/>**
+
+原书**第二部分（第 11–17 章）**的 R 与 Stata 代码，已渲染成书（另含 PDF 与 EPUB）。
+fork 自 Tom Palmer 的 [cibookex-r](https://github.com/remlapmot/cibookex-r)，
+其中 R 代码原作者为 Joy Shi 与 Sean McGrath，Stata 代码原作者为 Eleanor Murray 与 Roger Logan。
+上面读书笔记中第 11–17 章的页顶，都有指向对应代码页的链接。
+
+> **该站点按 GPL-3 发布，与本仓库的 MIT 许可相互独立。**
 
 ---
 

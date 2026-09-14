@@ -697,7 +697,7 @@ gitcreds::gitcreds_set()         # 粘贴 token
 | TutorialCausalInferenceEstimators | 估计量演进全景，面向流行病学家，R/Stata/Python 三语言 | 一 | https://github.com/migariane/TutorialCausalInferenceEstimators |
 | causal-inference-visual-guides | 图解 g-computation / IPW / TMLE / SuperLearner，CC-BY 可改用 | 一、四 | https://github.com/kathoffman/causal-inference-visual-guides |
 | causal_inference_notebook | 《What If》第 2 部分 R 代码 | 一 | https://github.com/malcolmbarrett/causal_inference_notebook |
-| cibookex-r | 《What If》全书习题的 R 与 Stata 代码，已渲染成书 | 一、二 | https://remlapmot.github.io/cibookex-r/ |
+| cibookex-r | 《What If》第 11–17 章的 R 与 Stata 代码，已渲染成书；自建镜像 https://hui950319.github.io/cibookex-r/ | 一、二 | https://github.com/remlapmot/cibookex-r |
 | causal-inference-in-R | tidyverse 风格因果推断教材（Quarto 源码全开） | 一 | https://github.com/r-causal/causal-inference-in-R |
 | gfoRmula | 参数化 g-formula | 二 | https://github.com/CausalInference/gfoRmula |
 | TrialEmulation | 序贯试验 TTE 工业级实现（剑桥 MRC + Roche） | 三 | https://github.com/Causal-LDA/TrialEmulation |
