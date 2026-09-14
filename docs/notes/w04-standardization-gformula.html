@@ -1,0 +1,1859 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hans" xml:lang="zh-Hans"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>第 13 章 · 把模型挪到结局那一侧 – 因果推断读书笔记</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../notes/w04-g-estimation.html" rel="next">
+<link href="../notes/w03-ip-weighting-msm.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-4571e413af9019dfdcc70175faf53a1f.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-314b8f8b688a0fcdf2aa71489979e4ab.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-29851f4f32fd8eebc705f717ab5f629d.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-314b8f8b688a0fcdf2aa71489979e4ab.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "没有结果",
+    "search-matching-documents-text": "匹配的文档",
+    "search-copy-link-title": "复制搜索链接",
+    "search-hide-matches-text": "隐藏其它匹配结果",
+    "search-more-match-text": "更多匹配结果",
+    "search-more-matches-text": "更多匹配结果",
+    "search-clear-button-title": "清除",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "取消",
+    "search-submit-button-title": "提交",
+    "search-label": "搜索"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar docked quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../notes/w03-why-model.html">原书第二部分 · 有模型的因果推断</a></li><li class="breadcrumb-item"><a href="../notes/w04-standardization-gformula.html"><span class="chapter-title">第 13 章 · 把模型挪到结局那一侧</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="搜索" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header sidebar-header-stacked">
+      <a href="../index.html" class="sidebar-logo-link">
+      </a>
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../">因果推断读书笔记</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/HUI950319/causalR" title="源代码" class="quarto-navigation-tool px-1" aria-label="源代码"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="切换深色模式"><i class="bi"></i></a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="搜索"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">关于这份笔记</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/notation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">记号与约定</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/identifiability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">三条识别条件</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">阶段一 · 估计量全景</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-potential-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 1 章 · Zeus 的心脏移植</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-randomized-experiments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 2 章 · 一枚硬币，还是两枚</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-observational-studies.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 3 章 · 一枚硬币也没抛</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-effect-modification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 4 章 · 没有「治疗的因果效应」这种东西</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 5 章 · 两个处理，一起动手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-causal-diagrams.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 6 章 · 先画假设，再下结论</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-confounding.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 7 章 · 后门关上，可交换性才回来</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-selection-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 8 章 · 进了分析的人，未必还能互换</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-measurement-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 9 章 · 带星号的变量，与担不起因果的箭头</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-random-variability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 10 章 · 该不该撤稿</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">原书第二部分 · 有模型的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w03-why-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 11 章 · 数据不会自己说话</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w03-ip-weighting-msm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w04-standardization-gformula.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">第 13 章 · 把模型挪到结局那一侧</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w04-g-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 14 章 · 猜一个数，直到它与处理无关</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w05-outcome-regression-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 15 章 · 最常用的方法，为什么排在最后</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w05-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 16 章 · 不要求可交换性的那条路</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w06-causal-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 17 章 · 风险比里藏着一个碰撞变量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w06-variable-selection.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 18 章 · 调整得越多，不等于偏倚越小</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">原书第三部分 · 时变处理的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w07-time-varying-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 19 章 · 先说清策略，才有效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w07-treatment-confounder-feedback.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 20 章 · 调了混杂，反而更错</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w08-g-methods-time-varying.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 21 章 · 三条路线，同一个 0</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w11-target-trial-emulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 22 章 · 先写协议，再看数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w11-causal-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 23 章 · 把中介问题改写成能做的试验</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">目录</h2>
+   
+  <ul>
+  <li><a href="#用标准化替代-ip-加权同样的识别条件不同的建模假设" id="toc-用标准化替代-ip-加权同样的识别条件不同的建模假设" class="nav-link active" data-scroll-target="#用标准化替代-ip-加权同样的识别条件不同的建模假设">13.1 用标准化替代 IP 加权<span class="hook">：同样的识别条件，不同的建模假设</span></a>
+  <ul class="collapse">
+  <li><a href="#fine-point-13.1结构性正性下两条路的表现完全不同" id="toc-fine-point-13.1结构性正性下两条路的表现完全不同" class="nav-link" data-scroll-target="#fine-point-13.1结构性正性下两条路的表现完全不同">Fine Point 13.1：结构性正性下，两条路的表现完全不同</a></li>
+  </ul></li>
+  <li><a href="#用模型估计均值结局只欠一个-eya-c0-l" id="toc-用模型估计均值结局只欠一个-eya-c0-l" class="nav-link" data-scroll-target="#用模型估计均值结局只欠一个-eya-c0-l">13.2 用模型估计均值结局<span class="hook">：只欠一个 E[Y|A, C=0, L]</span></a>
+  <ul class="collapse">
+  <li><a href="#模型是什么样的" id="toc-模型是什么样的" class="nav-link" data-scroll-target="#模型是什么样的">模型是什么样的</a></li>
+  <li><a href="#结果长什么样" id="toc-结果长什么样" class="nav-link" data-scroll-target="#结果长什么样">结果长什么样</a></li>
+  </ul></li>
+  <li><a href="#把均值标准化到混杂因子的分布复制三份数据集" id="toc-把均值标准化到混杂因子的分布复制三份数据集" class="nav-link" data-scroll-target="#把均值标准化到混杂因子的分布复制三份数据集">13.3 把均值标准化到混杂因子的分布<span class="hook">：复制三份数据集</span></a>
+  <ul class="collapse">
+  <li><a href="#四步法先在-20-个人身上跑一遍" id="toc-四步法先在-20-个人身上跑一遍" class="nav-link" data-scroll-target="#四步法先在-20-个人身上跑一遍">四步法，先在 20 个人身上跑一遍</a></li>
+  <li><a href="#在真实数据上" id="toc-在真实数据上" class="nav-link" data-scroll-target="#在真实数据上">在真实数据上</a></li>
+  <li><a href="#technical-point-13.1bootstrap-的做法书到这里才给" id="toc-technical-point-13.1bootstrap-的做法书到这里才给" class="nav-link" data-scroll-target="#technical-point-13.1bootstrap-的做法书到这里才给">Technical Point 13.1：bootstrap 的做法，书到这里才给</a></li>
+  </ul></li>
+  <li><a href="#ip-加权还是标准化这个选择题的答案是都做" id="toc-ip-加权还是标准化这个选择题的答案是都做" class="nav-link" data-scroll-target="#ip-加权还是标准化这个选择题的答案是都做">13.4 IP 加权还是标准化？<span class="hook">：这个选择题的答案是「都做」</span></a>
+  <ul class="collapse">
+  <li><a href="#g-公式这个名字的来历" id="toc-g-公式这个名字的来历" class="nav-link" data-scroll-target="#g-公式这个名字的来历">g-公式这个名字的来历</a></li>
+  <li><a href="#答案不必选" id="toc-答案不必选" class="nav-link" data-scroll-target="#答案不必选">答案：不必选</a></li>
+  <li><a href="#fine-point-13.2双稳健插入式估计量" id="toc-fine-point-13.2双稳健插入式估计量" class="nav-link" data-scroll-target="#fine-point-13.2双稳健插入式估计量">Fine Point 13.2：双稳健插入式估计量</a></li>
+  <li><a href="#technical-point-13.213.3aipw二阶偏倚以及-tmle-的来历" id="toc-technical-point-13.213.3aipw二阶偏倚以及-tmle-的来历" class="nav-link" data-scroll-target="#technical-point-13.213.3aipw二阶偏倚以及-tmle-的来历">Technical Point 13.2–13.3：AIPW、二阶偏倚，以及 TMLE 的来历</a></li>
+  </ul></li>
+  <li><a href="#我们该多认真对待这些估计五个条件一条也保证不了" id="toc-我们该多认真对待这些估计五个条件一条也保证不了" class="nav-link" data-scroll-target="#我们该多认真对待这些估计五个条件一条也保证不了">13.5 我们该多认真对待这些估计？<span class="hook">：五个条件，一条也保证不了</span></a></li>
+  <li><a href="#这章停在哪里" id="toc-这章停在哪里" class="nav-link" data-scroll-target="#这章停在哪里">这章停在哪里</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/w04-standardization-gformula.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content page-columns page-full" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../notes/w03-why-model.html">原书第二部分 · 有模型的因果推断</a></li><li class="breadcrumb-item"><a href="../notes/w04-standardization-gformula.html"><span class="chapter-title">第 13 章 · 把模型挪到结局那一侧</span></a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-title">第 13 章 · 把模型挪到结局那一侧</span></h1>
+<p class="subtitle lead"><em>Standardization and the parametric g-formula</em> · 标准化与参数化 g-公式</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<blockquote class="blockquote">
+<p><strong>原书</strong>：Hernán &amp; Robins, <em>Causal Inference: What If</em>（2025-01-02 版）， 第 13 章，书页 169–180。本章是读书笔记，非原书译文。</p>
+</blockquote>
+<blockquote class="blockquote">
+<p><strong>配套代码</strong>：<a href="https://hui950319.github.io/cibookex-r/standardization-and-the-parametric-g-formula.html">R</a> · <a href="https://hui950319.github.io/cibookex-r/standardization-and-the-parametric-g-formula-stata.html">Stata</a> —— 来自 <a href="https://github.com/remlapmot/cibookex-r">cibookex-r</a>（Tom Palmer，GPL-3；R 代码原作者 Joy Shi 与 Sean McGrath）。</p>
+</blockquote>
+<p>本章和上一章是<strong>同一个问题、同一份数据、同一组识别条件</strong>， 只有一件事变了：<strong>模型建在哪一侧</strong>。</p>
+<blockquote class="blockquote">
+<p>在实践中，研究者常常要在 IP 加权与标准化之间做选择，作为从观察性数据得到效应估计的分析路径。 <strong>两种方法基于相同的识别条件，但基于不同的建模假设。</strong></p>
+<p>— <em>What If</em>, §13 章首, p.169</p>
+</blockquote>
+<p>这句话是本章的全部：识别条件不变，所以<strong>能不能做因果推断</strong>的答案不变； 建模假设变了，所以<strong>做出来的数会不一样</strong>——而这个差别本身， 在 §13.4 里被翻译成了一条可以写进脚本的诊断。</p>
+<div class="column-page">
+<div class="fig-frame map-frame">
+<svg viewbox="0 0 900 950" role="img" aria-labelledby="map13-t map13-d">
+        <title id="map13-t">第 13 章全章地图</title>
+        <desc id="map13-d">起点是第 12 章那个戒烟对体重增加的问题，数据、协变量与识别条件全部不变。
+        从这里分出两条路：第 12 章把模型建在处理上，估处理与删失的联合概率再取倒数做权重；
+        本章把模型建在结局上，估各层的条件均值再标准化。
+        标准化需要按混杂因子的分布加权，而那个分布有数百万个格子——
+        但根本不需要估它，用 L 的经验分布即可，这就是四步法：
+        把数据集复制三份、后两块的结局设成缺失、只有第一块参与拟合、预测后各自取平均。
+        结果是未戒烟 1.66、戒烟 5.18，差 3.5 公斤，区间靠一千次 bootstrap。
+        往下是本章的转折：有了模型之后，IP 加权与标准化不再必然相等，
+        两者差得远说明至少一个模型设错了。结论是两个都做，能用双稳健就用。
+        最后一格是第 13.5 节的五个条件：可交换性、正性、一致性、无测量误差、无模型设定错误，
+        五条都不可检验。</desc>
+
+        <defs>
+          <marker id="mk13" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6.5" markerheight="6.5" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" class="mk-fill"></path>
+          </marker>
+        </defs>
+
+        <g class="ln" marker-end="url(#mk13)">
+          <path d="M 450 64  L 450 108"></path>
+          <path d="M 450 166 L 450 186 L 240 186 L 240 206"></path>
+          <path d="M 450 166 L 450 186 L 660 186 L 660 206"></path>
+          <path d="M 660 288 L 660 308 L 450 308 L 450 330"></path>
+          <path d="M 450 388 L 450 428"></path>
+          <path d="M 450 556 L 450 596"></path>
+          <path d="M 450 654 L 450 694"></path>
+          <path d="M 450 752 L 450 792"></path>
+          <path d="M 450 838 L 450 868"></path>
+        </g>
+
+        <g class="nd">
+          <rect x="205" y="20" width="490" height="44" rx="22" class="n-entry"></rect>
+          <text x="450" y="48" class="t">戒烟对体重增加的平均因果效应？</text>
+
+          <rect x="190" y="108" width="520" height="58" class="n-core"></rect>
+          <text x="450" y="132" class="t">同一个问题、同一份 NHEFS、同一组识别条件</text>
+          <text x="450" y="155" class="t t-sub">1629 人中 1566 人未删失；同样那 9 个基线混杂因子</text>
+
+          <rect x="60" y="206" width="360" height="82" class="n-mortal"></rect>
+          <text x="240" y="230" class="t t-hd">第 12 章 · IP 加权</text>
+          <text x="240" y="254" class="t">模型建在处理那一侧</text>
+          <text x="240" y="277" class="t t-sub">Pr[A=a, C=0 | L] → 权重</text>
+
+          <rect x="480" y="206" width="360" height="82" class="n-core"></rect>
+          <text x="660" y="230" class="t t-hd">第 13 章 · 标准化</text>
+          <text x="660" y="254" class="t">模型建在结局那一侧</text>
+          <text x="660" y="277" class="t t-sub">E[Y|A=a,C=0,L] → 标准化均值</text>
+
+          <rect x="235" y="330" width="430" height="58" class="n-turn"></rect>
+          <text x="450" y="354" class="t t-turn">Pr[L=l]：数百万个格子</text>
+          <text x="450" y="377" class="t t-sub">但根本不需要估它——用 L 的经验分布</text>
+
+          <rect x="150" y="428" width="600" height="128" class="n-core"></rect>
+          <text x="450" y="452" class="t t-hd">§13.3 四步法</text>
+          <text x="450" y="475" class="t">① 数据集复制三份：原样 / 全设 A=0 / 全设 A=1</text>
+          <text x="450" y="498" class="t">② 后两块的 Y 设成缺失，只有第一块参与拟合</text>
+          <text x="450" y="521" class="t">③ 用拟合出的模型预测第二、三块的 Y</text>
+          <text x="450" y="544" class="t">④ 两块各自取平均 = 两个标准化均值</text>
+
+          <rect x="215" y="596" width="470" height="58" class="n-core"></rect>
+          <text x="450" y="620" class="t t-num">1.66 → 5.18，差 3.5 kg</text>
+          <text x="450" y="643" class="t t-sub">95% CI (2.6, 4.5)，来自 1000 次 bootstrap</text>
+
+          <rect x="195" y="694" width="510" height="58" class="n-turn"></rect>
+          <text x="450" y="718" class="t t-turn">有了模型，IP 加权与标准化不再相等</text>
+          <text x="450" y="741" class="t t-sub">差得远 = 至少一个模型错了；差得近只是安心，不是保证</text>
+
+          <rect x="175" y="792" width="550" height="46" class="n-final"></rect>
+          <text x="450" y="820" class="t t-final">两个都做；能用双稳健就用——两个模型，两次机会</text>
+
+          <rect x="150" y="868" width="600" height="70" class="n-side"></rect>
+          <text x="450" y="892" class="t t-side">§13.5 五个条件：可交换性 · 正性 · 一致性 · 无测量误差 · 无模型设定错误</text>
+          <text x="450" y="915" class="t t-side">五条都不可检验——估计有多可信，取决于条件有多可信</text>
+        </g>
+</svg>
+</div>
+<p class="fig-cap">
+<b>全章地图（笔记作者绘制，原书无此图）。</b>灰框是上一章走过的路，蓝框是本章。 <b>两条路从同一个方框分出去，又在同一个方框汇合</b>——这正是本章想让人看见的结构： 识别条件是共用的，分歧只发生在「模型建在哪一侧」， 而分歧的大小在 §13.4 被反过来当成了诊断工具。 最下面那个虚线框是 §13.5，它不属于任何一条技术路线， 却是全书第一部分的结论在真实数据上的落地。
+</p>
+</div>
+<section id="用标准化替代-ip-加权同样的识别条件不同的建模假设" class="level2">
+<h2 class="anchored" data-anchor-id="用标准化替代-ip-加权同样的识别条件不同的建模假设">13.1 用标准化替代 IP 加权<span class="hook">：同样的识别条件，不同的建模假设</span></h2>
+<p>估计对象和上一章完全一样，只是这里把删失显式写进了记号：</p>
+<blockquote class="blockquote">
+<p>我们把 <span class="math inline">\(E[Y^{a,c=0}]\)</span> 定义为：<strong>如果所有人都接受了处理水平 <span class="math inline">\(a\)</span>、并且没有任何人被删失</strong>， 本应观察到的平均体重增加。戒烟的平均因果效应可以表示为差 <span class="math inline">\(E[Y^{a=1,c=0}] - E[Y^{a=0,c=0}]\)</span>。</p>
+<p>— <em>What If</em>, §13.1, p.169（复述）</p>
+</blockquote>
+<p>数据仍是 NHEFS 中 <strong>1629 名 25–74 岁的吸烟者</strong>，其中 <strong>1566 人</strong>在随访访视测到了体重， 因而<strong>未被删失</strong>（<span class="math inline">\(C=0\)</span>）。<span class="math inline">\(L\)</span> 仍是那 9 个基线变量： 性别、年龄、种族、教育（5 类）、吸烟强度、吸烟年数、 日常体力活动（3 类）、业余锻炼（3 类）、体重。</p>
+<p>观察到的关联差 <span class="math inline">\(E[Y\mid A=1, C=0] - E[Y\mid A=0, C=0] = 2.5\)</span> （Table 12.1 那张基线特征表说明了为什么它不能当因果差看）。</p>
+<div class="pitfall">
+<p><span class="pitfall-label">边注里那句限定：<span class="math inline">\(L\)</span> 必须不受 <span class="math inline">\(A\)</span> 影响</span></p>
+<blockquote class="blockquote">
+<p>和上一章一样，我们将<strong>假定为调整 <span class="math inline">\(C\)</span> 所需的 <span class="math inline">\(L\)</span> 的分量不受 <span class="math inline">\(A\)</span> 影响</strong>。 否则，我们就需要用第三部分描述的那种更一般的方法。</p>
+<p>— <em>What If</em>, §13.1 边注, p.169</p>
+</blockquote>
+<p><em>这条边注在第二部分里会反复出现。它是「基线协变量」这四个字的真正含义： 不是「在基线测的」，而是「不可能被处理改变的」。 一旦 <span class="math inline">\(L\)</span> 里混进了被 <span class="math inline">\(A\)</span> 影响的变量，本章这一整套（以及上一章那一整套）都失效， 要等到第三部分的 g-方法。</em></p>
+</div>
+<p>两条路的分工，书写得很干净：</p>
+<ul>
+<li><strong>IP 加权</strong>造一个伪人群，其中 <span class="math inline">\(L\)</span> 的分布在处理组与未处理组相同； 它需要估计<strong>处理与删失的联合分布</strong> <span class="math inline">\(\Pr[A=a, C=0\mid L]\)</span>，把它放在权重的分母上。</li>
+<li><strong>标准化</strong>在可交换性与正性之下，用<strong>未删失的处理组中的标准化均值</strong> 一致地估计 <span class="math inline">\(E[Y^{a=1,c=0}]\)</span>；未删失的未处理组同理。</li>
+</ul>
+<p>标准化均值的算法是两步：<strong>先算每一层里的条件均值，再按层的大小加权平均</strong>。</p>
+<blockquote class="blockquote">
+<p>更紧凑地说，接受了处理水平 <span class="math inline">\(a\)</span> 的未删失者中的标准化均值是</p>
+<p><span class="math display">\[\sum_l E[Y\mid A=a,\ C=0,\ L=l]\ \Pr[L=l]\]</span></p>
+<p>当（像我们的例子里那样）<span class="math inline">\(L\)</span> 中有些变量是连续的， 就需要把 <span class="math inline">\(\Pr[L=l]\)</span> 换成概率密度函数 <span class="math inline">\(f_L[l]\)</span>，上面的求和变成积分。</p>
+<p>— <em>What If</em>, §13.1, p.170（复述）</p>
+</blockquote>
+<p><em>注意这个式子里有<strong>两类</strong>待估的量：条件均值 <span class="math inline">\(E[Y\mid A=a, C=0, L=l]\)</span> 和分布 <span class="math inline">\(\Pr[L=l]\)</span>。 §13.2 处理第一类，§13.3 处理第二类——而 §13.3 的答案是「不用估」。</em></p>
+<p>两条边注顺带补了两个「原来如此」：</p>
+<blockquote class="blockquote">
+<p><strong>Technical Point 2.3 证明了</strong>：在条件可交换性、正性与一致性之下， <strong>处理组中的标准化均值等于「如果所有人都被处理」的均值</strong>。 推广到删失是平凡的：把证明与定义里的 <span class="math inline">\(A=a\)</span> 换成 <span class="math inline">\((A=a, C=0)\)</span> 即可。</p>
+<p>— <em>What If</em>, §13.1 边注, p.170</p>
+</blockquote>
+<blockquote class="blockquote">
+<p><strong>处理组中的平均因果效应</strong>也可以用标准化估计（Technical Point 4.1）： 只需要把右边式子里的 <span class="math inline">\(\Pr[L=l]\)</span> 换成 <span class="math inline">\(\Pr[L=l\mid A=1]\)</span>。</p>
+<p>— <em>What If</em>, §13.1 边注, p.170</p>
+</blockquote>
+<p><em>换一个加权分布就换一个目标人群——这正是第 4 章 §4.6 讲的 ATE / ATT 之分， 在这里落成了式子里的一个下标。路线图 W3 那一周要区分的 ATE / ATT / ATO， 区别全在这一个位置。</em></p>
+<section id="fine-point-13.1结构性正性下两条路的表现完全不同" class="level3">
+<h3 class="anchored" data-anchor-id="fine-point-13.1结构性正性下两条路的表现完全不同">Fine Point 13.1：结构性正性下，两条路的表现完全不同</h3>
+<p>这一条是本章最实用的一段，也是 IP 加权与标准化<strong>第一次真正分岔</strong>的地方。</p>
+<blockquote class="blockquote">
+<p><strong>结构性正性缺失使得在使用 IP 加权时，整个人群的平均因果效应无法识别。 正性对标准化同样是必需的</strong>，因为当 <span class="math inline">\(\Pr[A=a\mid L=l] = 0\)</span> 而 <span class="math inline">\(\Pr[L=l] \neq 0\)</span> 时，条件均值结局 <span class="math inline">\(E[Y\mid A=a, L=l]\)</span> <strong>是没有定义的</strong>。</p>
+<p>— <em>What If</em>, Fine Point 13.1, p.170</p>
+</blockquote>
+<div class="pitfall warn">
+<p><span class="pitfall-label">提取陷阱：这里的 <span class="math inline">\(\neq\)</span> 被 <code>pdftotext</code> 吞成了 <span class="math inline">\(=\)</span>，语义正好反掉</span></p>
+<p>文本层读出来是「<span class="math inline">\(\Pr[A = a\mid L = l] = 0\)</span> <strong>and</strong> <span class="math inline">\(\Pr[L = l] = 0\)</span>」， 读起来完全通顺，但意思是错的：如果那一层根本不存在（<span class="math inline">\(\Pr[L=l]=0\)</span>）， 条件均值没有定义是<strong>无关紧要</strong>的，因为它在求和里的权重也是 0。</p>
+<p>真正的麻烦恰恰是<strong>那一层存在、却没有人接受该处理</strong>： <span class="math inline">\(\Pr[L=l] \neq 0\)</span> 而 <span class="math inline">\(\Pr[A=a\mid L=l] = 0\)</span>。已按 170 dpi 整页渲染 PDF 第 179 页确认原文印的是 <span class="math inline">\(\neq\)</span>。</p>
+<p><em>这是本仓库笔记里第二次踩中同一个坑（第 4 章有四处）。 规律很稳定：<code>≠</code> 在这本书里是零宽叠加字形，文本层只会吐出 <code>=</code>。 凡是读到「某概率 = 0 且另一概率 = 0」这种并列，一律整页渲染复核。</em></p>
+</div>
+<p>而实际影响的差别，书讲得非常直白：</p>
+<blockquote class="blockquote">
+<p>但<strong>偏离正性在依赖参数模型的 IP 加权估计与标准化估计之间，实际影响可能差别极大</strong>。 使用标准化时，<strong>只要你愿意依赖参数外推，就可以无视正性的缺失</strong>—— 也就是说，可以拟合一个 <span class="math inline">\(E[Y\mid A, L]\)</span> 的模型，让它<strong>在有结构零的层上平滑地铺过去</strong>。 <strong>这种平滑会给估计引入偏倚</strong>，因此名义上的 95% 置信区间覆盖真值的频率会低于 95%。</p>
+<p>— <em>What If</em>, Fine Point 13.1, p.170</p>
+</blockquote>
+<p>接着是一句值得单独抄下来的话：</p>
+<blockquote class="blockquote">
+<p>还要注意，在有结构性正性问题的场景里，<strong>建模的目的是不同的</strong>： 我们建模<strong>不是因为数据不够，而是因为我们想估计一个即使有无穷多数据也无法识别的量</strong> （因为结构性非正性）。<strong>这是一个重要的区分。</strong></p>
+<p>— <em>What If</em>, Fine Point 13.1, p.170</p>
+</blockquote>
+<p><em>第 11 章说「建模是为了借邻居的信息，因为每一层的人太少」——那是<strong>统计</strong>问题， 数据变多就会消失。这里说的是<strong>识别</strong>问题，数据再多也不会消失。 同一个 <code>glm()</code> 调用，两种完全不同的性质。</em></p>
+<div class="pitfall warn">
+<p><span class="pitfall-label">标准误更小，不等于更好</span></p>
+<blockquote class="blockquote">
+<p>一般来说，在正性被违反或接近被违反时，<strong>处理效应的标准误在标准化下会比在 IP 加权下更小</strong>。 <strong>这并不必然意味着标准化优于 IP 加权；偏倚上的差别可能远远盖过标准误上的差别。</strong></p>
+<p>— <em>What If</em>, Fine Point 13.1, p.170</p>
+</blockquote>
+<p><strong>IP 加权在正性接近违反时会给你一个警报</strong>：极端权重、宽得离谱的区间。 <strong>标准化则会安静地给你一个好看的数</strong>——模型把空格子平滑地填上了， 而你从输出里看不出那里原本没有人。</p>
+<p><em>所以「标准化的区间更窄」这件事，在正性有问题的时候，是症状而不是优点。 上一章自检①「看权重的范围」在这里没有对应物——这正是<strong>两个都做</strong>的理由之一。</em></p>
+</div>
+</section>
+</section>
+<section id="用模型估计均值结局只欠一个-eya-c0-l" class="level2">
+<h2 class="anchored" data-anchor-id="用模型估计均值结局只欠一个-eya-c0-l">13.2 用模型估计均值结局<span class="hook">：只欠一个 E[Y|A, C=0, L]</span></h2>
+<p>理想情况是<strong>非参数地</strong>估每一层的 <span class="math inline">\(E[Y\mid A=1, C=0, L=l]\)</span>， 就像第 2 章 §2.3 在 Table 2.2 上做的那样——那里全部信息都能从一张 20 行的表里数出来。</p>
+<blockquote class="blockquote">
+<p>但在我们当前这个例子里，<strong>非参数估计 <span class="math inline">\(E[Y\mid A=1, C=0, L=l]\)</span> 是不可能的</strong>： 高维数据、许多混杂因子、有些还有多个水平。 <strong>只有 403 个被处理的个体散布在数百万个层里</strong>时， 我们得不到有意义的层特异估计。<strong>只能求助于模型。</strong></p>
+<p>— <em>What If</em>, §13.2, p.171（复述）</p>
+</blockquote>
+<p><em>和上一章 §12.2 的论证一字不差，只是主语从 <span class="math inline">\(\Pr[A=1\mid L]\)</span> 换成了 <span class="math inline">\(E[Y\mid A, C=0, L]\)</span>。 维数灾难对两条路是<strong>同样</strong>致命的——它不是选择哪条路的理由。</em></p>
+<section id="模型是什么样的" class="level3">
+<h3 class="anchored" data-anchor-id="模型是什么样的">模型是什么样的</h3>
+<blockquote class="blockquote">
+<p>为了得到 <span class="math inline">\(E[Y\mid A=a, C=0, L=l]\)</span> 的参数估计，我们<strong>对平均体重增加拟合了一个线性回归模型</strong>， 把<strong>处理 <span class="math inline">\(A\)</span> 与 <span class="math inline">\(L\)</span> 中全部 9 个混杂因子</strong>作为协变量。 对（准）连续协变量——年龄、体重、吸烟强度与吸烟年数——<strong>用了线性项与二次项</strong>。 <strong>我们纳入了戒烟 <span class="math inline">\(A\)</span> 与吸烟强度之间的一个乘积项。</strong></p>
+<p>— <em>What If</em>, §13.2, p.171（复述）</p>
+</blockquote>
+<p>书紧接着把这两条设定翻译成了限制：</p>
+<ul>
+<li><strong>二次项</strong> ⟹ 连续协变量与均值结局的条件关系可以由一条<strong>抛物线</strong>表示；</li>
+<li><strong>乘积项</strong> ⟹ 每个协变量对均值的贡献<strong>不依赖于其它协变量的贡献</strong>， <strong>唯一的例外是：戒烟 <span class="math inline">\(A\)</span> 的贡献随既往吸烟强度线性变化</strong>。</li>
+</ul>
+<div class="pitfall">
+<p><span class="pitfall-label">两章的模型设定不对称，而书没有把这件事说破</span></p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th></th>
+<th>第 12 章的处理模型</th>
+<th>第 13 章的结局模型</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>被建模的量</td>
+<td><span class="math inline">\(\Pr[A=1\mid L]\)</span></td>
+<td><span class="math inline">\(E[Y\mid A, C=0, L]\)</span></td>
+</tr>
+<tr class="even">
+<td>连续协变量</td>
+<td>线性 + 二次项</td>
+<td>线性 + 二次项</td>
+</tr>
+<tr class="odd">
+<td>乘积项</td>
+<td><strong>完全没有</strong></td>
+<td><strong>有一个：<span class="math inline">\(A \times\)</span> 吸烟强度</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>那个乘积项不是可有可无的细节</strong>：它允许戒烟的效应随吸烟强度变化， 也就是允许<strong>吸烟强度成为效应修饰因子</strong>。 上一章要考察同一件事，靠的是在<strong>边际结构模型</strong>里加 <span class="math inline">\(V\)</span> 与 <span class="math inline">\(A\times V\)</span>（§12.5）； 本章靠的是在<strong>结局模型</strong>里加 <span class="math inline">\(A \times L_j\)</span>。</p>
+<p><em>两处加的是同一个东西，含义却不同： 边际结构模型里的乘积项<strong>定义了估计量</strong>（我要的是哪一个效应）， 结局模型里的乘积项只是<strong>对条件均值形状的一个限制</strong>（我允许它长什么样）。 标准化仍然会把结果平均回整个 <span class="math inline">\(L\)</span> 的分布，所以最终报告的还是那个<strong>边际</strong>效应。</em></p>
+</div>
+</section>
+<section id="结果长什么样" class="level3">
+<h3 class="anchored" data-anchor-id="结果长什么样">结果长什么样</h3>
+<blockquote class="blockquote">
+<p>在这些参数限制之下，我们对 <span class="math inline">\(A\)</span> 与 <span class="math inline">\(L\)</span> 的每一种取值组合都得到了一个估计 <span class="math inline">\(\widehat{E}[Y\mid A=a, C=0, L=l]\)</span>， 因而对研究人群中 <strong>403 名未删失的处理者</strong>（<span class="math inline">\(A=1, C=0\)</span>） 与 <strong>1163 名未删失的未处理者</strong>（<span class="math inline">\(A=0, C=0\)</span>）每人都有一个。</p>
+<p>— <em>What If</em>, §13.2, p.171（复述）</p>
+</blockquote>
+<p>书还给了一个具体的人：</p>
+<blockquote class="blockquote">
+<p>例如，我们估计具有以下组合的个体 「不戒烟、男性、白人、26 岁、大学肄业、每天 15 支、吸烟 12 年、中度锻炼、非常活跃、体重 112 公斤」 的<strong>平均体重增加为 0.34 公斤</strong>（唯一标识为 <strong>24770</strong> 的个体恰好具有这组取值，可以去看看他的预测值）。</p>
+<p>— <em>What If</em>, §13.2, p.171</p>
+</blockquote>
+<blockquote class="blockquote">
+<p>总体而言，<strong>估计出的体重增加的均值是 2.6 公斤，与观察到的体重增加的均值相同</strong>； 在不同的协变量组合上，它的取值范围是 <strong>−41.3 到 48.5 公斤</strong>。</p>
+<p>— <em>What If</em>, §13.2, p.171（复述）</p>
+</blockquote>
+<p><em>「预测值的均值等于观测值的均值」不是巧合，而是<strong>带截距的线性模型在最小二乘下的恒等式</strong>。 它是一条免费的自检：跑完 <code>glm()</code> 之后比一下这两个数， 对不上就说明模型或数据子集出了问题。而 <strong>−41.3 到 48.5 这个范围</strong>则提醒： <strong>平均之下是极宽的个体差异</strong>，标准化抹掉的正是这一层信息。</em></p>
+<div class="pitfall">
+<p><span class="pitfall-label">边注：为什么可以直接对观测到的 <span class="math inline">\(L\)</span> 取平均</span></p>
+<blockquote class="blockquote">
+<p>一般地，<span class="math inline">\(Y\)</span> 的标准化均值写作 <span class="math display">\[\int E[Y\mid A=a,\ C=0,\ L=l]\ dF_L(l)\]</span> 其中 <span class="math inline">\(F_L(\cdot)\)</span> 是 <span class="math inline">\(L\)</span> 中随机变量的联合累积分布函数（cdf）。 当像本章这样，<span class="math inline">\(L\)</span> 是一组<strong>不受处理影响的基线协变量</strong>时， 我们可以<strong>对 <span class="math inline">\(L\)</span> 的观测值取平均，从而非参数地估计这个积分</strong>。</p>
+<p>— <em>What If</em>, §13.2 边注, p.171</p>
+</blockquote>
+<p>这条边注就是 §13.3 那套四步法的全部理论依据，而且它把两条限制讲清楚了： <strong>「基线」与「不受处理影响」缺一不可</strong>。</p>
+</div>
+<p>对应原书 <strong>Program 13.1</strong>。</p>
+</section>
+</section>
+<section id="把均值标准化到混杂因子的分布复制三份数据集" class="level2">
+<h2 class="anchored" data-anchor-id="把均值标准化到混杂因子的分布复制三份数据集">13.3 把均值标准化到混杂因子的分布<span class="hook">：复制三份数据集</span></h2>
+<p>标准化均值是条件均值的加权平均，权重是 <span class="math inline">\(\Pr[L=l]\)</span>。 原则上这些比例可以非参数地从数据里算出来——这正是第 2 章 §2.3 做的事。 但对高维的 <span class="math inline">\(L\)</span>，这样做非常繁琐。</p>
+<p>书接下来的一句是本节的转折：</p>
+<blockquote class="blockquote">
+<p><strong>幸运的是，我们不需要估计 <span class="math inline">\(\Pr[L=l]\)</span>。</strong> 我们只需要对研究中每个个体 <span class="math inline">\(i\)</span> 的 <span class="math inline">\(l\)</span> 值估计 <span class="math inline">\(E[Y\mid A=a, C=0, L=l]\)</span>， 然后计算平均 <span class="math inline">\(\frac{1}{n}\sum_{i=1}^{n} \widehat{E}[Y\mid A=a, C=0, L_i]\)</span>。 这是因为加权均值 <span class="math inline">\(\sum_l E[Y\mid A=a,C=0,L=l]\Pr[L=l]\)</span> 也可以写成<strong>双重期望</strong> <span class="math inline">\(E\big[E[Y\mid A=a, C=0, L]\big]\)</span>。</p>
+<p>— <em>What If</em>, §13.3, p.172（复述）</p>
+</blockquote>
+<p><em>一句话：<strong>样本本身就是 <span class="math inline">\(L\)</span> 的一个无偏样本</strong>，所以对每个人算一遍再平均， 等价于按 <span class="math inline">\(\Pr[L=l]\)</span> 加权。这一步把「估计一个数百万维的分布」 换成了「做一次 <code>mean()</code>」，而且换得<strong>不付任何参数代价</strong>。</em></p>
+<section id="四步法先在-20-个人身上跑一遍" class="level3">
+<h3 class="anchored" data-anchor-id="四步法先在-20-个人身上跑一遍">四步法，先在 20 个人身上跑一遍</h3>
+<p>方法有 4 步：<strong>扩展数据集、结局建模、预测、按平均做标准化</strong>。 书先把它用在第 2 章 Table 2.2 的 20 个人上——那里没有删失、<span class="math inline">\(L\)</span> 只有两个水平、<span class="math inline">\(Y\)</span> 是二值的。</p>
+<div class="joint-table">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>步</th>
+<th>做什么</th>
+<th>在 Table 2.2 上的样子</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>① 扩展</td>
+<td>把数据复制三份，得到 3 块</td>
+<td>20 行 → <strong>60 行</strong>，每块 20 人</td>
+</tr>
+<tr class="even">
+<td></td>
+<td>第一块<strong>原样不动</strong></td>
+<td>就是 Table 2.2</td>
+</tr>
+<tr class="odd">
+<td></td>
+<td>第二块<strong>把所有人的 <span class="math inline">\(A\)</span> 设成 0</strong>，<span class="math inline">\(Y\)</span> 设成缺失</td>
+<td>「全都不处理」的世界</td>
+</tr>
+<tr class="even">
+<td></td>
+<td>第三块<strong>把所有人的 <span class="math inline">\(A\)</span> 设成 1</strong>，<span class="math inline">\(Y\)</span> 设成缺失</td>
+<td>「全都处理」的世界</td>
+</tr>
+<tr class="odd">
+<td>② 建模</td>
+<td>在 3 块数据上拟合 <span class="math inline">\(E[Y\mid A, L]\)</span>，加 <span class="math inline">\(A\times L\)</span> 使模型<strong>饱和</strong></td>
+<td><strong>只有第一块真正参与拟合</strong>——后两块的 <span class="math inline">\(Y\)</span> 是缺失的</td>
+</tr>
+<tr class="even">
+<td>③ 预测</td>
+<td>用第一块估出的参数，预测第二、三块的 <span class="math inline">\(Y\)</span></td>
+<td>即用 <span class="math inline">\((L, A)\)</span> 与回归估计<strong>填补</strong>缺失的 <span class="math inline">\(Y\)</span></td>
+</tr>
+<tr class="odd">
+<td>④ 平均</td>
+<td>第二块预测值的平均 = 未处理的标准化均值</td>
+<td>20 人中 <span class="math inline">\(L=1\)</span> 占 <strong>60%</strong>、<span class="math inline">\(L=0\)</span> 占 <strong>40%</strong>，平均自动按这个比例加权</td>
+</tr>
+<tr class="even">
+<td></td>
+<td>第三块预测值的平均 = 处理的标准化均值</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</div>
+<blockquote class="blockquote">
+<p>上述流程给出的标准化均值估计（<strong>两者都是 0.5</strong>） <strong>与 §2.3 的直接计算完全相同。两种做法都是完全非参数的。</strong> 本章并没有直接估计 <span class="math inline">\(L\)</span> 的分布，而是<strong>对 <span class="math inline">\(L\)</span> 的观测值取平均，即用它的经验分布</strong>。</p>
+<p>— <em>What If</em>, §13.3, p.173（复述）</p>
+</blockquote>
+<div class="pitfall">
+<p><span class="pitfall-label">最容易误解的一步：为什么复制出来的两块不会「污染」拟合</span></p>
+<blockquote class="blockquote">
+<p>注意<strong>只有数据集第一块（真实数据）里的行会对模型参数的估计有贡献</strong>， 因为第二、三块所有行的结局都是缺失的。</p>
+<p>— <em>What If</em>, §13.3, p.172</p>
+</blockquote>
+<p><strong>把 <span class="math inline">\(Y\)</span> 设成缺失不是装饰，它是整个技巧成立的机关。</strong> <code>glm()</code> 默认丢弃结局缺失的行，于是第二、三块只以「待预测的新数据」的身份存在； 把它们和真实数据放进同一个 <code>data.frame</code>，纯粹是为了<strong>省掉手工构造 <code>newdata</code> 的麻烦</strong>， 顺便保证因子水平、样条基、缺失处理三者在拟合与预测时完全一致。</p>
+<p><em>换句话说：四步法在统计上就是 <code>predict(fit, newdata = 把 A 全设成 a 的那份数据)</code> 再取均值。 书之所以写成「三块」，是因为这样在 SAS / Stata 里也能一次跑完。 <strong>在 R 里两种写法都可以，但三块写法有一个实际好处</strong>： bootstrap 时整个流程是一个函数，不必在重抽样循环里同步维护两份数据。</em></p>
+</div>
+</section>
+<section id="在真实数据上" class="level3">
+<h3 class="anchored" data-anchor-id="在真实数据上">在真实数据上</h3>
+<blockquote class="blockquote">
+<p>我们把第二、三块加进数据集，按上一节描述拟合 <span class="math inline">\(E[Y\mid A=a, C=0, L=l]\)</span> 的回归模型，并生成预测值。 <strong>第二块的平均预测值——未处理者的标准化均值——是 1.66</strong>； <strong>第三块的平均预测值——处理者的标准化均值——是 5.18</strong>。 因此我们对 <span class="math inline">\(E[Y^{a=1,c=0}] - E[Y^{a=0,c=0}]\)</span> 的估计是 <span class="math inline">\(5.18 - 1.66 = 3.5\)</span> 公斤。 ……<strong>我们估计戒烟使体重增加 3.5 公斤（95% 置信区间：2.6, 4.5）。</strong></p>
+<p>— <em>What If</em>, §13.3, p.173（复述）</p>
+</blockquote>
+<p>对应原书 <strong>Program 13.2–13.4</strong>。</p>
+</section>
+<section id="technical-point-13.1bootstrap-的做法书到这里才给" class="level3">
+<h3 class="anchored" data-anchor-id="technical-point-13.1bootstrap-的做法书到这里才给">Technical Point 13.1：bootstrap 的做法，书到这里才给</h3>
+<p>第 10 章讲了随机变异的<strong>概念</strong>，第 12 章用了稳健方差， 而<strong>「怎么算这个区间」的具体做法，书直到这里才写出来</strong>：</p>
+<blockquote class="blockquote">
+<p>从 1629 人的研究人群中<strong>有放回地抽取 1629 人</strong>， 于是有些人可能出现多次、有些人可能一次都不出现。 这个规模为 1629 的新样本称为一个「bootstrap 样本」。 在它上面用同样的方法计算感兴趣的效应……重复<strong>大量次（比如 1000 次）</strong>。 结果是：<strong>这 1000 个效应估计的标准差，一致地估计了研究人群中效应估计的标准误。</strong> 95% 置信区间再用通常的正态近似算：<span class="math inline">\(\pm 1.96\)</span> 倍标准误估计。</p>
+<p>— <em>What If</em>, Technical Point 13.1, p.174（复述）</p>
+</blockquote>
+<div class="pitfall">
+<p><span class="pitfall-label">这一条顺手回答了上一章留下的问题：稳健方差到底保守多少</span></p>
+<blockquote class="blockquote">
+<p>bootstrap 是一个适用于大样本的通用方法：一般地，当估计量的极限分布是正态时， <strong>以 bootstrap 估计的标准误为中心构造的 95% Wald 区间在大样本下是校准的</strong>。 因此，<strong>边际结构模型的 IP 加权估计的 95% Wald 区间， 若标准误由 bootstrap 估计则是校准的； 若由（稳健方差估计量的平方根）估计，则常常是保守且更宽的。</strong></p>
+<p>— <em>What If</em>, Technical Point 13.1, p.174（复述）</p>
+</blockquote>
+<p><em>上一章说稳健方差「保守」，但没有给出参照物。这里给了： <strong>bootstrap 是那个校准的基准，稳健方差是它的保守替代。</strong> 所以第 12 章那个 <span class="math inline">\((2.4, 4.5)\)</span> 与本章这个 <span class="math inline">\((2.6, 4.5)\)</span> 的宽度差别里， <strong>有一部分根本不是方法之差，而是方差估计法之差</strong>。</em></p>
+</div>
+<p>书还给了两条实操：</p>
+<ul>
+<li><strong>200–500 次很常见</strong>（bootstrap 对很大的数据集计算量太重）。 在本例中减到这个次数「会给出几乎相同的区间，但并不总是如此」。</li>
+<li>更好的出路是 <strong>“bag of little bootstraps”</strong>（Kleiner et al.&nbsp;2014）。</li>
+</ul>
+<p><em>落到 R 上：<code>boot::boot()</code> 最直接，但<strong>整个四步法必须整体进入重抽样循环</strong>—— 包括拟合模型这一步。只对预测值重抽样是错的，那样算出来的区间会太窄。</em></p>
+</section>
+</section>
+<section id="ip-加权还是标准化这个选择题的答案是都做" class="level2">
+<h2 class="anchored" data-anchor-id="ip-加权还是标准化这个选择题的答案是都做">13.4 IP 加权还是标准化？<span class="hook">：这个选择题的答案是「都做」</span></h2>
+<blockquote class="blockquote">
+<p>在我们的戒烟例子里，两者给出了<strong>几乎完全相同</strong>的效应估计。 事实上 Technical Point 2.3 证明了标准化均值<strong>等于</strong> IP 加权均值。</p>
+<p>那我们为什么还要在本章估这个标准化均值？ 原来，<strong>IP 加权均值与标准化均值只有在不使用模型估计它们时才恰好相等。 否则两者预期会有差别。</strong></p>
+<p>— <em>What If</em>, §13.4, p.173（复述）</p>
+</blockquote>
+<p>差别的来源是<strong>被建模的量不同</strong>：</p>
+<div class="joint-table">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th></th>
+<th>建的是什么模型</th>
+<th>上一章 / 本章怎么建的</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>IP 加权</td>
+<td><span class="math inline">\(\Pr[A=a,\ C=0\mid L]\)</span></td>
+<td>两个 logistic 回归：<span class="math inline">\(\Pr[A=a\mid L]\)</span> 与 <span class="math inline">\(\Pr[C=0\mid A=a, L]\)</span></td>
+</tr>
+<tr class="even">
+<td>标准化</td>
+<td><span class="math inline">\(E[Y\mid A=a,\ C=0,\ L=l]\)</span></td>
+<td>一个线性回归</td>
+</tr>
+<tr class="odd">
+<td><strong>两者都没建的</strong></td>
+<td><strong><span class="math inline">\(L\)</span> 的分布</strong></td>
+<td>IP 加权不需要；标准化用经验分布（非参数）</td>
+</tr>
+</tbody>
+</table>
+</div>
+<blockquote class="blockquote">
+<p>实践中，<strong>所有模型都不可避免地有某种程度的设定错误</strong>，而模型设定错误会引入偏倚。 但<strong>处理模型的设定错误（IP 加权）与结局模型的设定错误（标准化）， 一般不会导致相同大小与相同方向的偏倚</strong>。</p>
+<p>因此——<strong>IP 加权估计与标准化估计之间的巨大差别，会提醒我们至少其中一个估计存在严重的模型设定错误。 小的差别不能保证不存在严重的设定错误，但是令人安心的</strong>—— 虽然逻辑上可能，但两个都严重设错、却产生大小与方向都相近的偏倚，是不太可能的。</p>
+<p>— <em>What If</em>, §13.4, p.174（复述）</p>
+</blockquote>
+<div class="pitfall">
+<p><span class="pitfall-label">这是全章唯一一条「免费」的模型诊断</span></p>
+<p>它的成本只是把两条流水线都跑一遍，而它检出的是<strong>其它诊断查不到的东西</strong>： 平衡诊断只看处理模型，残差图只看结局模型， 而「两个数差多少」同时约束了<strong>两者</strong>。</p>
+<p><strong>但要注意它的不对称性</strong>： 「差得远」是<strong>有信息</strong>的（至少一个错了）； 「差得近」是<strong>弱信息</strong>的（书用的词是 reassuring，不是 guarantee）。 不要把两条估计吻合写成「模型设定正确」。</p>
+<p><em>在本例中：IP 加权 3.5、标准化 3.5，四舍五入到一位小数完全一致。 书的原话是「无论我们拟合的是处理 <span class="math inline">\(A\)</span> 的模型（IP 加权） 还是结局 <span class="math inline">\(Y\)</span> 的模型（标准化），估计出的戒烟导致的体重增加都是 3.5 公斤」。</em></p>
+</div>
+<section id="g-公式这个名字的来历" class="level3">
+<h3 class="anchored" data-anchor-id="g-公式这个名字的来历">g-公式这个名字的来历</h3>
+<div class="pitfall">
+<p><span class="pitfall-label">边注：为什么这本书只说 g-formula，不说 g-computation</span></p>
+<blockquote class="blockquote">
+<p><strong>Robins (1986) 描述了标准化向时变处理与时变混杂因子的推广， 并把它命名为 g-computation algorithm formula。</strong> 因为这个名字太长，有些作者缩写成 <strong>g-formula</strong>，另一些缩写成 <strong>g-computation</strong>。 尽管两者是同义词，<strong>本书只使用前一个术语，因为后者经常与 g-estimation 混淆——那是第 14 章描述的另一种方法。</strong></p>
+<p>— <em>What If</em>, §13.4 边注, p.175</p>
+</blockquote>
+<p><em>这条边注值得记牢：中文文献里「g-computation」「g-公式」「g-估计」三个词经常混用， 而 <strong>g-estimation 是完全不同的东西</strong>（下一章），不是 g-computation 的别名。 本仓库笔记从此统一沿用原书的用法：<strong>标准化 = g-公式的插入式估计量； g-估计 = 第 14 章结构嵌套模型那一套。</strong></em></p>
+</div>
+<p>于是有了本章标题里的两个词：</p>
+<blockquote class="blockquote">
+<p>我们说标准化是一个<strong>插入式 g-公式估计量</strong>（plug-in g-formula estimator）， 因为它只是<strong>把 g-公式中的条件均值结局换成了它的估计值</strong>。 当这些估计值像本章这样来自参数模型时，我们把这个方法称为<strong>参数化 g-公式</strong>。</p>
+<p>— <em>What If</em>, §13.4, p.175（复述）</p>
+</blockquote>
+<blockquote class="blockquote">
+<p>更一般地，（针对概率密度函数的）参数化 g-公式<strong>需要估计 <span class="math inline">\(A\)</span> 与 <span class="math inline">\(L\)</span> 各水平下结局的条件分布</strong>， 才能计算其标准化值。在没有时变混杂因子时（见第三部分）， <strong>参数化 g-公式不需要对混杂因子的分布做参数建模。</strong></p>
+<p>— <em>What If</em>, §13.4, p.175（复述）</p>
+</blockquote>
+<p><em>本章只要平均因果效应，所以只参数化地估了条件<strong>均值</strong>； 如果要的是整个反事实分布（比如分位数、风险比的非崩溃版本），就得估条件<strong>分布</strong>。 这个区别在第 17 章（生存分析）会变得重要。</em></p>
+</section>
+<section id="答案不必选" class="level3">
+<h3 class="anchored" data-anchor-id="答案不必选">答案：不必选</h3>
+<blockquote class="blockquote">
+<p><strong>常常没有必要在 IP 加权与参数化 g-公式之间做选择。当两种方法都能用来估计某个因果效应时，就两种都用。</strong> 另外，<strong>只要可能，就使用把处理模型与结局模型结合进同一个估计量的双稳健方法。</strong> 在给定 <span class="math inline">\(L\)</span> 的可交换性与正性之下，<strong>双稳健估计量在处理模型与结局模型中 只要有一个是正确的（而且不需要知道是哪一个），就能一致地估计平均因果效应。</strong></p>
+<p>— <em>What If</em>, §13.4, p.175（复述）</p>
+</blockquote>
+<p>最后一句顺带回答了「效应修饰怎么办」：</p>
+<blockquote class="blockquote">
+<p>注意我们用参数化 g-公式估计的是<strong>整个目标人群</strong>中的平均因果效应。 如果我们感兴趣的是某个子集中的平均因果效应，可以把计算限制在那个子集上。 例如，若关心按性别的效应修饰，<strong>就分别在男性和女性中估计标准化均值</strong>。</p>
+<p>— <em>What If</em>, §13.4, p.175（复述）</p>
+</blockquote>
+</section>
+<section id="fine-point-13.2双稳健插入式估计量" class="level3">
+<h3 class="anchored" data-anchor-id="fine-point-13.2双稳健插入式估计量">Fine Point 13.2：双稳健插入式估计量</h3>
+<blockquote class="blockquote">
+<p><strong>有没有一种方法，只要求处理 <span class="math inline">\(A\)</span> 的模型或结局 <span class="math inline">\(Y\)</span> 的模型之一是正确的？ 这正是双稳健估计所做的事。</strong>……<strong>双稳健估计量给了我们两次做对的机会。</strong></p>
+<p>— <em>What If</em>, Fine Point 13.2, p.176（复述）</p>
+</blockquote>
+<p>Bang &amp; Robins (2005) 的那一个（无删失场景）只有三步：</p>
+<ol type="1">
+<li>按上一章的做法估出 IP 权重 <span class="math inline">\(W^A = 1/f(A\mid L)\)</span>；</li>
+<li>拟合一个<strong>带典则连接的广义线性模型</strong> <span class="math inline">\(E[Y\mid A, L, R]\)</span>， 其中<strong>多加一个协变量</strong> <span class="math inline">\(R\)</span>：<span class="math inline">\(A=1\)</span> 时 <span class="math inline">\(R = W^A\)</span>，<span class="math inline">\(A=0\)</span> 时 <span class="math inline">\(R = -W^A\)</span>；</li>
+<li>用这个结局模型，把所有人的 <span class="math inline">\(A\)</span> 分别设成 1 和 0 去预测，取两个标准化均值，相减。</li>
+</ol>
+<p><em>就是<strong>在本章的结局模型里塞进一个由上一章的权重构造出来的协变量</strong>。 两条流水线的接口只有 <span class="math inline">\(R\)</span> 这一列——这是我见过的对「双稳健」最短的操作性解释。</em></p>
+</section>
+<section id="technical-point-13.213.3aipw二阶偏倚以及-tmle-的来历" class="level3">
+<h3 class="anchored" data-anchor-id="technical-point-13.213.3aipw二阶偏倚以及-tmle-的来历">Technical Point 13.2–13.3：AIPW、二阶偏倚，以及 TMLE 的来历</h3>
+<p>记 <span class="math inline">\(b(L) = E[Y\mid A=1, L]\)</span>、<span class="math inline">\(\pi(L) = \Pr[A=1\mid L]\)</span>，则 <span class="math inline">\(E[Y^{a=1}]\)</span> 有两种写法： <span class="math inline">\(E[b(L)]\)</span>（插入式）与 <span class="math inline">\(E\!\left[\frac{AY}{\pi(L)}\right]\)</span>（Horvitz-Thompson）。 两者各自的失效条件是对称的：</p>
+<div class="joint-table">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>估计量</th>
+<th>形式</th>
+<th>偏倚大，当……</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>插入式 g-公式</td>
+<td><span class="math inline">\(\frac{1}{n}\sum_i \hat b(L_i)\)</span></td>
+<td><span class="math inline">\(\hat b(L)\)</span> 离 <span class="math inline">\(b(L)\)</span> 远</td>
+</tr>
+<tr class="even">
+<td>Horvitz-Thompson IP 加权</td>
+<td><span class="math inline">\(\frac{1}{n}\sum_i \frac{A_i Y_i}{\hat\pi(L_i)}\)</span></td>
+<td><span class="math inline">\(\hat\pi(L)\)</span> 离 <span class="math inline">\(\pi(L)\)</span> 远</td>
+</tr>
+<tr class="odd">
+<td><strong>增广 IP 加权（AIPW）</strong></td>
+<td><span class="math inline">\(\frac{1}{n}\sum_i\left[\hat b(L_i) + \frac{A_i}{\hat\pi(L_i)}\big(Y_i - \hat b(L_i)\big)\right]\)</span></td>
+<td><strong>两个都远</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>AIPW 那个式子可以整理成 <span class="math inline">\(\frac{1}{n}\sum_i\left[\frac{A_iY_i}{\hat\pi(L_i)} - \left(\frac{A_i}{\hat\pi(L_i)} - 1\right)\hat b(L_i)\right]\)</span>—— <strong>「用结局模型去校正 Horvitz-Thompson 估计量」</strong>， 这也是 <em>augmented</em>（增广）这个名字的来历。</p>
+<p>而真正指向第 18 章的是下面这条性质：</p>
+<blockquote class="blockquote">
+<p>所有双稳健估计量都有这样一条性质：<strong>偏倚取决于 <span class="math inline">\(\frac{1}{\pi(l)} - \frac{1}{\hat\pi(l)}\)</span> 这个误差与 <span class="math inline">\(b(l) - \hat b(l)\)</span> 那个误差的乘积。</strong> 正如我们将在第 18 章讨论的，<strong>这条被称为二阶偏倚（second-order bias）的性质， 使我们可以用机器学习估计量（而不是标准参数模型）来估 <span class="math inline">\(\pi(l)\)</span> 与 <span class="math inline">\(b(l)\)</span>， 从而构造出偏倚可能很小的双稳健估计量。</strong></p>
+<p>— <em>What If</em>, Technical Point 13.2, p.178（复述）</p>
+</blockquote>
+<p><em>这是一条<strong>乘积</strong>而不是求和：两个误差各自都不必很小，只要<strong>乘起来</strong>小就够。 机器学习估计量通常收敛得比 <span class="math inline">\(\sqrt{n}\)</span> 慢，单独用任何一个都不行； 但两个 <span class="math inline">\(n^{-1/4}\)</span> 量级的误差相乘就是 <span class="math inline">\(n^{-1/2}\)</span>—— 这正是第 18 章 §18.4 「双稳健机器学习估计量」的全部立足点。</em></p>
+<p>Technical Point 13.3 再把 AIPW 与 Fine Point 13.2 的插入式版本对上： 要让插入式估计量<strong>同时</strong>是双稳健的，需要结局模型里那个多出来的项恰好使某个得分方程在每个样本中为零； 用 IRLS 拟合带「<span class="math inline">\(\frac{I(A=1) - I(A=0)}{f(A\mid L)}\)</span>」这一项的模型即可做到。</p>
+<blockquote class="blockquote">
+<p>由此得到的插入式估计量<strong>正是 Fine Point 13.2 里的那个估计量</strong>。 这个估计量是一个<strong>靶向最小损失估计量（TMLE）</strong>，也称靶向最大似然估计量， 而 <span class="math inline">\(\frac{I(A=1)-I(A=0)}{f(A\mid L)} = \frac{A}{\pi(L)} - \frac{1-A}{1-\pi(L)}\)</span> 就是 van der Laan &amp; Rubin (2006) 后来引入的术语里的<strong>「聪明协变量」（clever covariate）</strong>。</p>
+<p>— <em>What If</em>, Technical Point 13.3, p.179（复述）</p>
+</blockquote>
+<p>书还提了<strong>两个聪明协变量</strong>的版本（把那一项拆成 <span class="math inline">\(\frac{A}{\pi(L)}\)</span> 与 <span class="math inline">\(\frac{1-A}{1-\pi(L)}\)</span> 两项、各估一个系数）： 它的好处是<strong>两个标准化均值各自也是双稳健的</strong>，而不只是它们的差。</p>
+<p><em>于是本章末尾这三条边栏其实是一条完整的线： Fine Point 13.2 给操作，Technical Point 13.2 给形式与二阶偏倚， Technical Point 13.3 说明它就是 TMLE。 路线图 W5「双稳健估计入门」的全部理论前提，书在第 13 章就已经交完了。</em></p>
+</section>
+</section>
+<section id="我们该多认真对待这些估计五个条件一条也保证不了" class="level2">
+<h2 class="anchored" data-anchor-id="我们该多认真对待这些估计五个条件一条也保证不了">13.5 我们该多认真对待这些估计？<span class="hook">：五个条件，一条也保证不了</span></h2>
+<p>这一节没有公式，是全书第一次把前 12 章的全部警告压到一次真实分析上。</p>
+<blockquote class="blockquote">
+<p>我们用第一部分整整一部分回顾了平均因果效应的定义、估计它所需的假设，以及许多潜在偏倚。 那些讨论是纯概念性的，数据例子是<strong>极度简化</strong>的。 一条关键讯息是：<strong>观察性数据的因果分析，在明确模拟一个（假想的）随机试验——目标试验——时更加锐利。</strong></p>
+<p>— <em>What If</em>, §13.5, p.175（复述）</p>
+</blockquote>
+<blockquote class="blockquote">
+<p>本章与上一章的分析是我们<strong>第一次尝试从真实数据估计因果效应</strong>。 用 IP 加权和参数化 g-公式，我们估计<strong>如果所有人都戒烟，平均体重增加会是 5.2 公斤； 如果没有人戒烟，则是 1.7 公斤</strong>。 两种方法都估计<strong>戒烟使体重平均增加 3.5 公斤（95% 置信区间：2.5, 4.5）</strong>。 在接下来的几章里我们会看到，<strong>g-估计、结局回归与倾向评分也给出相似的估计</strong>。</p>
+<p>— <em>What If</em>, §13.5, p.175（复述）</p>
+</blockquote>
+<div class="pitfall">
+<p><span class="pitfall-label">这里报的区间是上一章的那条，不是本章的那条</span></p>
+<p>§13.3 给标准化的区间是 <span class="math inline">\((2.6,\ 4.5)\)</span>（1000 次 bootstrap）； §13.5 给「两种方法」的区间是 <span class="math inline">\((2.5,\ 4.5)\)</span>—— 这正是第 12 章 §12.6 用<strong>稳健方差</strong>给出的那条 IP 加权区间。</p>
+<p><strong>点估计确实两条路都是 3.5，区间却是两条不同的算法算出来的</strong>， 其中一条还按 Technical Point 13.1 的说法是偏保守的。 报告时值得把两条并列写出来，而不是合成一条。</p>
+<p><em>已渲染 PDF 第 182、184 页确认两处数字都是这样印的——这不是提取错误。</em></p>
+</div>
+<blockquote class="blockquote">
+<p>各方法估计的相容性是令人安心的，<strong>因为每种方法的估计基于不同的建模假设</strong>。 然而，<strong>观察性的效应估计永远面向严肃的批评敞开。</strong></p>
+<p>— <em>What If</em>, §13.5, p.175</p>
+</blockquote>
+<p>于是有了本节的主体：把有效性所需的条件分成三组。</p>
+<div class="joint-table">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>组</th>
+<th>条件</th>
+<th>在本例中具体是什么</th>
+<th>出处</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>一 · 识别</td>
+<td><strong>可交换性</strong></td>
+<td>戒烟者与不戒烟者在那 9 个已测协变量上条件可交换</td>
+<td>第 3、7、8 章</td>
+</tr>
+<tr class="even">
+<td></td>
+<td><strong>正性</strong></td>
+<td>戒烟者的 <span class="math inline">\(L\)</span> 分布与不戒烟者<strong>完全重叠</strong></td>
+<td>Fine Point 13.1</td>
+</tr>
+<tr class="odd">
+<td></td>
+<td><strong>一致性</strong></td>
+<td>戒烟有多个版本（渐进戒 / 骤然戒），不戒烟也有（每天多抽 2 支 / 减量但不戒）</td>
+<td>第 3 章</td>
+</tr>
+<tr class="even">
+<td>二 · 测量</td>
+<td><strong>无测量误差</strong></td>
+<td><span class="math inline">\(A\)</span>、<span class="math inline">\(Y\)</span>、<span class="math inline">\(L\)</span> 都测准；实际上<strong>某种程度的错测不可避免</strong></td>
+<td>第 9 章</td>
+</tr>
+<tr class="odd">
+<td>三 · 模型</td>
+<td><strong>无模型设定错误</strong></td>
+<td>比如年龄的正确函数形式可能不是抛物线而是复杂多项式</td>
+<td>第 11 章</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>三条里有两句话特别值得单独抄：</p>
+<blockquote class="blockquote">
+<p>我们的效应估计对应的是目标人群中一个<strong>多少有些含糊的假想干预</strong>： 它<strong>按这些处理版本在研究人群中实际出现的频率，随机地把它们分配下去</strong>。 <strong>其它假想干预可能给出不同的效应估计。</strong></p>
+<p>— <em>What If</em>, §13.5, p.176（复述）</p>
+</blockquote>
+<blockquote class="blockquote">
+<p><strong>模型设定错误的效果，与混杂因子的测量误差是类似的。</strong></p>
+<p>— <em>What If</em>, §13.5, p.177</p>
+</blockquote>
+<p><em>第二句把第三组塞回了第二组：<strong>设错的模型 = 被错测的混杂因子</strong>。 所以「我调整了 <span class="math inline">\(L\)</span>」这句话其实要求两件事同时成立—— <span class="math inline">\(L\)</span> 测得准，<strong>并且</strong> <span class="math inline">\(L\)</span> 进模型的形式是对的。第 9 章的全部结论因而自动适用于第 11 章。</em></p>
+<p>边注还给了三条指针：</p>
+<ul>
+<li><strong>基于结局回归的方法（包括双稳健方法）可以在正性缺失时使用</strong>， 前提是假定结局模型设定正确从而可以外推到数据之外（回到 Fine Point 13.1）。</li>
+<li><strong>估计值对「究竟是哪个干预」的数值依赖</strong>，在估计用于指导公共政策或临床决策时很重要（Hernán 2016）。</li>
+<li>存在未测量混杂时，<strong>替代的识别条件</strong>有近端因果推断（Technical Point 7.3）与前门准则（Technical Point 7.4）。</li>
+</ul>
+<p>然后是那句压在全章底下的话：</p>
+<blockquote class="blockquote">
+<p><strong>确保这些条件——至少近似地——成立，是研究者最重要的任务。 如果这些条件能被保证成立，数据分析就会是平凡的。 问题当然在于，人们永远不能指望其中任何一条完美成立。</strong></p>
+<p>— <em>What If</em>, §13.5, p.177</p>
+</blockquote>
+<blockquote class="blockquote">
+<p>这些条件<strong>不可经验检验</strong>，因为我们缺少反事实结局分布的数据。 因此在实践中我们<strong>假定</strong>上述条件近似满足，而<strong>这个假定需要由专业知识支持</strong>， 正如 §7.6 讨论缺乏可交换性时所说的那样。</p>
+<p>— <em>What If</em>, §13.5, p.177（复述）</p>
+</blockquote>
+<blockquote class="blockquote">
+<p><strong>然而，专业知识是不完整的。</strong>……因此在实践中， <strong>我们需要在不同的假设之下做分析，以探索效应估计对原假设的敏感性。</strong></p>
+<p>— <em>What If</em>, §13.5, p.177（复述）</p>
+</blockquote>
+<p>书顺手把全书的敏感性分析索引列在了一处，这份清单本身就值得留存：</p>
+<div class="joint-table">
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>针对什么</th>
+<th>手段</th>
+<th>在哪一章</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>混杂</td>
+<td>敏感性分析的文献</td>
+<td>Fine Point 7.1</td>
+</tr>
+<tr class="even">
+<td>混杂</td>
+<td><strong>阴性对照结局</strong></td>
+<td>Technical Point 7.5</td>
+</tr>
+<tr class="odd">
+<td>混杂</td>
+<td><strong>g-估计</strong></td>
+<td>Fine Point 14.2（下一章）</td>
+</tr>
+<tr class="even">
+<td>选择偏倚</td>
+<td>处理缺失的敏感性分析</td>
+<td>Fine Point 12.1</td>
+</tr>
+<tr class="odd">
+<td>模型设定错误</td>
+<td>偏倚–方差权衡</td>
+<td>§11.5</td>
+</tr>
+<tr class="even">
+<td>以上全部</td>
+<td><strong>定量偏倚分析</strong></td>
+<td>Fine Point 10.2</td>
+</tr>
+<tr class="odd">
+<td>未测量混杂</td>
+<td>换一组不可验证条件：<strong>工具变量</strong></td>
+<td>第 16 章</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><em>这张表几乎就是路线图 <strong>W6「敏感性分析与偏倚量化」</strong>的教学大纲， 而且它给出了那一周该用哪个工具的书内依据： <code>tipr</code> 对应 Fine Point 10.2 的定量偏倚分析，E-value 是它的一个特例， 阴性对照结局对应 Technical Point 7.5。</em></p>
+<p>全章、也是全书第二部分开头这一段论证的落点，是这句话：</p>
+<blockquote class="blockquote">
+<p><strong>对从观察性数据得出的因果推断保持一种健康的怀疑是必要的。</strong> 为了使这种怀疑富有成效，它需要建立在关于我们假设之有效性的专业知识之上。 走向「不那么随意的因果推断」的关键一步，是认识到<strong>讨论应当主要围绕上述每一个假设展开</strong>。 <strong>我们对效应估计的认真程度，只能等同于我们对那些赋予它因果解释的条件的认真程度。</strong></p>
+<p>— <em>What If</em>, §13.5, p.177</p>
+</blockquote>
+</section>
+<section id="这章停在哪里" class="level2">
+<h2 class="anchored" data-anchor-id="这章停在哪里">这章停在哪里</h2>
+<p>第 13 章拆开看，新零件同样只有一个：</p>
+<div class="joint-table">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>零件</th>
+<th>来自</th>
+<th>本章做的事</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>标准化的定义</td>
+<td>第 2 章 §2.3</td>
+<td>不变</td>
+</tr>
+<tr class="even">
+<td>「高维下必须建模」</td>
+<td>第 10 章 §10.5、第 11 章</td>
+<td><strong>把 <span class="math inline">\(E[Y\mid A,C{=}0,L]\)</span> 换成线性回归的输出</strong></td>
+</tr>
+<tr class="odd">
+<td>把删失当第二个处理</td>
+<td>第 8 章 §8.4、第 12 章 §12.6</td>
+<td>改成「在 <span class="math inline">\(C=0\)</span> 上建条件均值」，不再需要删失权重</td>
+</tr>
+<tr class="even">
+<td>识别条件三件套</td>
+<td>第 3 章</td>
+<td>§13.5 把它扩成<strong>五条</strong>（加测量与模型）</td>
+</tr>
+<tr class="odd">
+<td>效应修饰</td>
+<td>第 4 章、第 12 章 §12.5</td>
+<td><strong>分层分别标准化</strong>，或在结局模型里加 <span class="math inline">\(A\times L_j\)</span></td>
+</tr>
+<tr class="even">
+<td>bootstrap</td>
+<td>第 10 章只讲了随机变异的概念</td>
+<td><strong>Technical Point 13.1 第一次给出做法</strong>，并说明它是稳健方差的校准基准</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>唯一真正新的东西是「双稳健」这个提法</strong>——两个模型放进同一个估计量， 只要有一个对就行，而且不需要知道是哪一个。 它的三条边栏（Fine Point 13.2、Technical Point 13.2–13.3） 把 AIPW、二阶偏倚与 TMLE 一次交完，直接指向第 18 章与路线图 W5。</p>
+<div class="qa">
+<p><span class="q">自检① 四步法里，第二、三块数据为什么不会影响模型拟合？</span></p>
+<p>因为<strong>它们的结局 <span class="math inline">\(Y\)</span> 被设成了缺失</strong>，而回归拟合只用完整观测的行。 把它们放进同一个数据框，纯粹是为了让「拟合」和「预测」共享同一套 因子水平、多项式基与缺失处理，并且让整个流程成为<strong>一个函数</strong>，方便 bootstrap。</p>
+<p><strong>验证方法</strong>：只用第一块拟合、再对复制块 <code>predict()</code>， 系数与两个标准化均值应当一模一样。对不上就说明缺失值没有被正确丢弃 （例如结局列被填补成了 0）。</p>
+<p><em>常见错误还有一个：<strong>把 <code>interv</code> 这类块标记变量放进了模型公式</strong>。 一旦放进去，第二、三块就不再只是「新数据」了。</em></p>
+</div>
+<div class="qa">
+<p><span class="q">自检② IP 加权与标准化什么时候相等，什么时候不等？</span></p>
+<ul>
+<li><strong>不用模型时恒等</strong>：Technical Point 2.3 证明了标准化均值 <span class="math inline">\(=\)</span> IP 加权均值。 第 2 章那 20 个人的例子里两者都给 0.5，这不是巧合。</li>
+<li><strong>一旦任何一侧用了参数模型就不再恒等</strong>： 两者建的是不同的量（<span class="math inline">\(\Pr[A,C\mid L]\)</span> vs <span class="math inline">\(E[Y\mid A,C,L]\)</span>）， 设定错误的大小与方向一般不同。</li>
+<li><strong>本例中两者都是 3.5</strong>（四舍五入到一位小数），令人安心； 但书明确说这<strong>不是</strong>「模型设定正确」的证明。</li>
+</ul>
+<p><strong>怎么用这条差别</strong>：把它当成一个<strong>免费但不对称</strong>的诊断—— 差得远是硬信息，差得近是软信息。</p>
+<p><em>再补一句上一章埋下的伏笔：IP 加权把赌注押在处理模型上， 标准化押在结局模型上，<strong>双稳健是唯一一个「押两次」的玩法</strong>。</em></p>
+</div>
+<div class="qa">
+<p><span class="q">自检③ 正性被结构性违反时，标准化能算出一个数——这是好事吗？</span></p>
+<p><strong>不是。</strong> 这正是 Fine Point 13.1 那条警告：</p>
+<ol type="1">
+<li>IP 加权在这里<strong>算不出来</strong>（或者给出极端权重、极宽区间），它在报警；</li>
+<li>标准化会<strong>照常给你一个漂亮的点估计与一条更窄的区间</strong>， 因为参数模型平滑地铺过了那些结构零的层；</li>
+<li>那个数<strong>依赖于纯粹的外推</strong>，名义 95% 区间的实际覆盖率会低于 95%。</li>
+</ol>
+<p>书的判断是：这时「标准误更小」<strong>不等于</strong>「方法更好」， 因为<strong>偏倚的差别可能远远盖过标准误的差别</strong>。</p>
+<p><strong>实操</strong>：先按几个关键混杂因子交叉制表找零格（上一章自检①第 3 条）， 分清<strong>结构零</strong>与<strong>随机零</strong>；结构零存在时， 要么把推断限制在正性成立的子人群上，要么<strong>明确声明结果依赖外推</strong>。</p>
+<p><em>而 §13.5 的答案更一般：我们对估计的认真程度， 只能等同于我们对那五个条件的认真程度。</em></p>
+</div>
+<p>下一章讲同一个问题的<strong>第三条</strong>路线：<strong>第 14 章「结构嵌套模型的 g-估计」</strong>。 它既不是给处理建模、也不是给结局建模，而是给<strong>效应本身</strong>建模， 并且——按 §13.5 那张敏感性分析表里的那一行—— 它还是本书用来做<strong>未测量混杂敏感性分析</strong>的工具（Fine Point 14.2）。</p>
+<p>代码那一侧，本章对应原书 Program 13.1–13.4。整条流水线用 R 写出来是这样的：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 1. 扩展：三块数据。第一块原样，第二块全设 A=0，第三块全设 A=1</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>nhefs<span class="sc">$</span>interv <span class="ot">&lt;-</span> <span class="sc">-</span><span class="dv">1</span>                                  <span class="co"># 第一块：真实数据</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>b2 <span class="ot">&lt;-</span> <span class="fu">transform</span>(nhefs, <span class="at">interv =</span> <span class="dv">0</span>, <span class="at">qsmk =</span> <span class="dv">0</span>, <span class="at">wt82_71 =</span> <span class="cn">NA</span>)</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>b3 <span class="ot">&lt;-</span> <span class="fu">transform</span>(nhefs, <span class="at">interv =</span> <span class="dv">1</span>, <span class="at">qsmk =</span> <span class="dv">1</span>, <span class="at">wt82_71 =</span> <span class="cn">NA</span>)</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>onesample <span class="ot">&lt;-</span> <span class="fu">rbind</span>(nhefs, b2, b3)                   <span class="co"># 后两块的结局是缺失的</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. 建模：只有第一块参与拟合（后两块 wt82_71 = NA 会被丢弃）</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="co">#    注意 interv 不进公式；唯一的乘积项是 A × 吸烟强度</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>fit <span class="ot">&lt;-</span> <span class="fu">glm</span>(wt82_71 <span class="sc">~</span> qsmk <span class="sc">+</span> sex <span class="sc">+</span> race <span class="sc">+</span> age <span class="sc">+</span> <span class="fu">I</span>(age<span class="sc">^</span><span class="dv">2</span>) <span class="sc">+</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>             <span class="fu">as.factor</span>(education) <span class="sc">+</span> smokeintensity <span class="sc">+</span> <span class="fu">I</span>(smokeintensity<span class="sc">^</span><span class="dv">2</span>) <span class="sc">+</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>             smokeyrs <span class="sc">+</span> <span class="fu">I</span>(smokeyrs<span class="sc">^</span><span class="dv">2</span>) <span class="sc">+</span> <span class="fu">as.factor</span>(exercise) <span class="sc">+</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>             <span class="fu">as.factor</span>(active) <span class="sc">+</span> wt71 <span class="sc">+</span> <span class="fu">I</span>(wt71<span class="sc">^</span><span class="dv">2</span>) <span class="sc">+</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>             qsmk<span class="sc">:</span>smokeintensity,</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>           <span class="at">data =</span> onesample)</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="fu">mean</span>(<span class="fu">fitted</span>(fit))                    <span class="co"># ← 自检：应等于观测结局的均值，本例 2.6</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. 预测 + 4. 各块取平均 = 两个标准化均值</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>onesample<span class="sc">$</span>pred <span class="ot">&lt;-</span> <span class="fu">predict</span>(fit, onesample)</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="fu">mean</span>(onesample<span class="sc">$</span>pred[onesample<span class="sc">$</span>interv <span class="sc">==</span> <span class="dv">0</span>])   <span class="co"># 全不戒烟：1.66</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="fu">mean</span>(onesample<span class="sc">$</span>pred[onesample<span class="sc">$</span>interv <span class="sc">==</span> <span class="dv">1</span>])   <span class="co"># 全戒烟：  5.18</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="co"># 区间只能 bootstrap，而且「拟合」这一步必须在重抽样循环内</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(boot)</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>gcomp <span class="ot">&lt;-</span> <span class="cf">function</span>(data, idx) {</span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>  d  <span class="ot">&lt;-</span> data[idx, ]</span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>  d<span class="sc">$</span>interv <span class="ot">&lt;-</span> <span class="sc">-</span><span class="dv">1</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>  s  <span class="ot">&lt;-</span> <span class="fu">rbind</span>(d, <span class="fu">transform</span>(d, <span class="at">interv =</span> <span class="dv">0</span>, <span class="at">qsmk =</span> <span class="dv">0</span>, <span class="at">wt82_71 =</span> <span class="cn">NA</span>),</span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>                 <span class="fu">transform</span>(d, <span class="at">interv =</span> <span class="dv">1</span>, <span class="at">qsmk =</span> <span class="dv">1</span>, <span class="at">wt82_71 =</span> <span class="cn">NA</span>))</span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>  f  <span class="ot">&lt;-</span> <span class="fu">glm</span>(<span class="fu">formula</span>(fit), <span class="at">data =</span> s)</span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>  p  <span class="ot">&lt;-</span> <span class="fu">predict</span>(f, s)</span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mean</span>(p[s<span class="sc">$</span>interv <span class="sc">==</span> <span class="dv">1</span>]) <span class="sc">-</span> <span class="fu">mean</span>(p[s<span class="sc">$</span>interv <span class="sc">==</span> <span class="dv">0</span>])</span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a><span class="fu">boot</span>(nhefs, gcomp, <span class="at">R =</span> <span class="dv">1000</span>)         <span class="co"># 本例 3.5 kg (95% CI 2.6, 4.5)</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>包版的等价物是 <code>marginaleffects::avg_comparisons(fit, variables = "qsmk")</code>—— 它做的正是上面的第 3、4 步。路线图 W4 要求「手写版与包版结果一致」， 对照的就是这两段。</em></p>
+<div class="provenance">
+<section id="关于这份笔记" class="level3">
+<h3 class="anchored" data-anchor-id="关于这份笔记">关于这份笔记</h3>
+<dl>
+<dt>来源</dt>
+<dd>
+Hernán MA, Robins JM. <em>Causal Inference: What If</em>. 2025-01-02 版， 第 13 章（书页 169–180，PDF 第 178–189 页）。本页是读书笔记，非原书译文。
+</dd>
+<dt>核对方式</dt>
+<dd>
+<span class="ck">①</span> <strong>本章没有任何插图。</strong> 用 <code>pdfimages -png -f 178 -l 189</code> 抽取， <strong>抽出 0 张嵌入位图</strong>，与正文一致——第 13 章确实一张 Figure 都没有， 全部内容是文字、公式与两处边注框。因此本页不存在「原图未重绘」的缺口。
+</dd>
+<dd>
+<p><span class="ck">②</span> <strong>正文中的全部数字逐个照录并交叉验算</strong>： 样本量 <span class="math inline">\(1629\)</span> 与未删失 <span class="math inline">\(1566\)</span>；未删失处理者 <span class="math inline">\(403\)</span> 与未删失未处理者 <span class="math inline">\(1163\)</span> （<span class="math inline">\(403 + 1163 = 1566\)</span> <strong>✓</strong>）；关联差 <span class="math inline">\(2.5\)</span>； 个体 24770 的预测值 <span class="math inline">\(0.34\)</span> kg；预测值均值 <span class="math inline">\(2.6\)</span> kg 与范围 <span class="math inline">\(-41.3\)</span> 到 <span class="math inline">\(48.5\)</span>； 标准化均值 <span class="math inline">\(1.66\)</span> 与 <span class="math inline">\(5.18\)</span>；<span class="math inline">\(5.18 - 1.66 = 3.52 \to 3.5\)</span> kg <strong>✓</strong>； §13.5 的 <span class="math inline">\(5.2\)</span> 与 <span class="math inline">\(1.7\)</span> 正是 <span class="math inline">\(5.18\)</span> 与 <span class="math inline">\(1.66\)</span> 的一位小数 <strong>✓</strong>； bootstrap 次数 <span class="math inline">\(1000\)</span> 与常见的 <span class="math inline">\(200\)</span>–<span class="math inline">\(500\)</span>。 Table 2.2 那个演示的 <span class="math inline">\(60\%\)</span> / <span class="math inline">\(40\%\)</span> 与第 2 章的分组人数 （20 人中 <span class="math inline">\(L=1\)</span> 有 12 人 <span class="math inline">\(=60\%\)</span>、<span class="math inline">\(L=0\)</span> 有 8 人 <span class="math inline">\(=40\%\)</span>）<strong>一致</strong>， 两块预测值的平均都得 <span class="math inline">\(0.5\)</span>，与 §2.3 的直接计算<strong>一致</strong>。</p>
+</dd>
+<dd>
+<p><span class="ck">③</span> <strong><code>≠</code> 被吞成 <code>=</code> 命中一处，已整页渲染复核</strong>： Fine Point 13.1（书页 170 / PDF 179）文本层读出 「when <span class="math inline">\(\Pr[A=a|L=l] = 0\)</span> <strong>and</strong> <span class="math inline">\(\Pr[L=l] = 0\)</span>」， 以 170 dpi 渲染该页确认原文印的是 <span class="math inline">\(\Pr[L=l] \neq 0\)</span>。 <strong>语义正好反掉</strong>：条件均值无定义的麻烦恰恰发生在「该层存在、却没人接受该处理」时。</p>
+</dd>
+<dd>
+<p><span class="ck">④</span> <strong>两处置信区间不一致，已渲染确认不是提取错误</strong>： §13.3（书页 173 / PDF 182）给标准化的区间是 <span class="math inline">\((2.6,\ 4.5)\)</span>； §13.5（书页 175 / PDF 184）说「两种方法都是 3.5 公斤（95% CI <span class="math inline">\(2.5,\ 4.5\)</span>）」。 后者与第 12 章 §12.6 用稳健方差得到的 IP 加权区间 <span class="math inline">\((2.5,\ 4.5)\)</span> 相同， 因此这是<strong>把上一章的区间用在了两种方法上</strong>，而非本章 bootstrap 的结果。 本页两处并列写出，未合并。</p>
+</dd>
+<dd>
+<p><span class="ck">⑤</span> <strong>一处原书排版问题</strong>：书页 175（PDF 184） 「the parametric g-formula for the probability density function or PDF)」 括号不配对（缺左括号），已渲染确认。不影响语义，本页未照搬。 <em>这是本仓库笔记迄今记录到的原书第五处问题 （前四处在第 7 章 §7.6、第 9 章 §9.3 与 Fine Point 9.6、第 12 章 §12.5）。</em></p>
+</dd>
+<dd>
+<p>本章 <code>pdftotext -layout</code> 的其它已知损坏：上下标全丢 （<code>Y a=1,c=0</code> 即 <span class="math inline">\(Y^{a=1,c=0}\)</span>、<code>E[Y |A = a, C = 0, L = l]</code> 的帽号丢失、 <code>^b(L)</code> 即 <span class="math inline">\(\hat b(L)\)</span>、<code>(L)</code> 处的 <span class="math inline">\(\pi\)</span> 被吞）， Technical Point 13.2–13.3 的多行公式被拆成不可读的碎片。 这两条 Technical Point 本页<strong>只保留了能与正文交叉验证的部分</strong> （AIPW 的两种等价写法、二阶偏倚是乘积、TMLE 与聪明协变量）， 偏倚极限那个含 <span class="math inline">\(\pi\)</span> 与 <span class="math inline">\(b\)</span> 的收敛式<strong>未照抄</strong>，因为文本层已不可信。</p>
+</dd>
+<dd>
+<p>直接引用的英文原句逐字核对、页码逐条确认。标注为「复述」的几处， 是把书的多句话压成一句，非逐字引用。</p>
+</dd>
+</dl>
+</section>
+<section id="哪些是我的改动不是原书" class="level3">
+<h3 class="anchored" data-anchor-id="哪些是我的改动不是原书">哪些是我的改动，不是原书</h3>
+<ul>
+<li><strong>全章地图</strong>：完全由笔记作者绘制，原书没有这张图。 把第 12 章与第 13 章画成「从同一个方框分出、又汇合到同一个方框」， 以及把 §13.5 画成脱离技术路线的虚线框，都是笔记的组织。</li>
+<li><strong>§13.2 里「两章模型设定不对称」那张对照表</strong>： 书分别在 §12.2 和 §13.2 描述了两个模型的设定，<strong>把它们并排、 并指出「第 12 章无乘积项、第 13 章有一个」是笔记的比较</strong>； 「边际结构模型里的乘积项定义估计量、结局模型里的只是形状限制」这条区分也是笔记的判断。</li>
+<li><strong>§13.3 的四步法表</strong>：书是连续行文（四步 + Table 2.2 的演示），压成一张表是笔记的整理。</li>
+<li><strong>「把 <span class="math inline">\(Y\)</span> 设成缺失是整个技巧的机关」</strong>： 书只写了「只有第一块会对参数估计有贡献，因为后两块结局缺失」这一句， 把它提升成一条陷阱、并补上「等价于 <code>predict(newdata=)</code>」「三块写法在 bootstrap 时更省事」 是笔记加的。</li>
+<li><strong>§13.4 的「被建模的量」三行表</strong>：书是连续行文，压成表是笔记的整理； 末行「两者都没建 <span class="math inline">\(L\)</span> 的分布」是书的原话，放进表里是笔记的排布。</li>
+<li><strong>「差得远是硬信息、差得近是软信息」</strong>： 书用了 alert us / reassuring / do not guarantee 这几个词， 把它概括成不对称的诊断规则是笔记的说法。</li>
+<li><strong>Technical Point 13.2 的三行估计量对照表</strong>：书是连续行文，压成表是笔记的整理。</li>
+<li><strong>「二阶偏倚是乘积不是求和，所以两个 <span class="math inline">\(n^{-1/4}\)</span> 相乘得到 <span class="math inline">\(n^{-1/2}\)</span>」</strong>： 书只说了「偏倚取决于两个误差的乘积」并指向第 18 章， <strong>收敛速度这一步的解释是笔记加的</strong>。</li>
+<li><strong>§13.5 的三组条件表与敏感性分析索引表</strong>： 书把五个条件写成三段正文加一个边注列表，把敏感性分析的七个指针写成一句长句； <strong>压成两张表是笔记的整理</strong>，最后一列的出处是笔记逐条回查后补的。</li>
+<li><strong>「设错的模型 = 被错测的混杂因子，所以第 9 章的结论自动适用于第 11 章」</strong>： 书只写了「模型设定错误的效果与混杂因子的测量误差类似」这一句，推论是笔记的。</li>
+<li><strong>「§13.5 的敏感性分析表几乎就是路线图 W6 的大纲」</strong>：笔记的判断。</li>
+<li><strong>末尾那段 R 代码</strong>：原书官网提供的是 Program 13.1–13.4，本页<strong>没有照抄</strong>； 这段是笔记按本章描述的四步法与模型设定自己写的最小复现骨架， 变量名沿用 NHEFS 公开数据集的列名， <code>mean(fitted(fit))</code> 那条自检与 <code>marginaleffects</code> 的对照是笔记加的。</li>
+<li>所有小标题措辞，以及与路线图 W4（手写 g-computation 与包版对照）、 W5（双稳健）、W6（敏感性分析）的关联，均为笔记作者的判断。</li>
+</ul>
+</section>
+<section id="哪些内容是缺的" class="level3">
+<h3 class="anchored" data-anchor-id="哪些内容是缺的">哪些内容是缺的</h3>
+<ul>
+<li><strong>原书 Program 13.1–13.4 的代码本身未收录</strong>，只在末尾给了一段等价的 R 骨架； 官网的 SAS / Stata / Python 版本未涉及。</li>
+<li><strong>NHEFS 数据本身未纳入本仓库</strong>，本页所有数字均转录自原书正文，<strong>未独立复算</strong>。 个体 24770 的预测值 <span class="math inline">\(0.34\)</span> kg 没有条件核对。</li>
+<li><strong>Technical Point 13.2 中双稳健估计量偏倚极限的那个收敛式未收录</strong> （文本层已损坏，见核对说明），只保留了「乘积 / 二阶偏倚」这条结论。</li>
+<li><strong>Technical Point 13.3 的推导未展开</strong>： 为什么那条得分方程在 IRLS 下恰好为零、 以及一个聪明协变量与两个聪明协变量版本的方差差别，本页只记了结论。</li>
+<li><strong>bootstrap 的理论</strong>（为何 1000 个估计的标准差一致地估计标准误）书只给了出处 Wasserman (2004)，本页也只记了出处； <strong>“bag of little bootstraps”</strong>（Kleiner et al.&nbsp;2014）同样只记了出处。</li>
+<li><strong>近端因果推断（Technical Point 7.3）与前门准则（Technical Point 7.4）</strong> 作为未测量混杂下的替代识别条件，本页只记了指针，未展开。</li>
+<li><strong>Fine Point 14.2（用 g-估计做未测量混杂的敏感性分析）</strong>在本章被引用了两次， 内容留到第 14 章笔记。</li>
+<li>参考文献（Robins 1986、Bang &amp; Robins 2005、Robins et al.&nbsp;1994、 Robins &amp; Ritov 1997、Scharfstein et al.&nbsp;1999、van der Laan &amp; Rubin 2006、 Kleiner et al.&nbsp;2014、Wasserman 2004、Hernán 2016）未整理成 <code>references.bib</code> 条目。</li>
+</ul>
+</section>
+</div>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "已复制");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "已复制");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/hui950319\.github\.io\/causalR\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../notes/w03-ip-weighting-msm.html" class="pagination-link" aria-label="第 12 章 · 把权重交给模型去估">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../notes/w04-g-estimation.html" class="pagination-link" aria-label="第 14 章 · 猜一个数，直到它与处理无关">
+        <span class="nav-page-text"><span class="chapter-title">第 14 章 · 猜一个数，直到它与处理无关</span></span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/w04-standardization-gformula.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></div></div></footer></body></html>

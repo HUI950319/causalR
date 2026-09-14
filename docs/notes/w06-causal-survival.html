@@ -1,0 +1,1972 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hans" xml:lang="zh-Hans"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>第 17 章 · 风险比里藏着一个碰撞变量 – 因果推断读书笔记</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../notes/w06-variable-selection.html" rel="next">
+<link href="../notes/w05-instrumental-variables.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-4571e413af9019dfdcc70175faf53a1f.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-314b8f8b688a0fcdf2aa71489979e4ab.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-29851f4f32fd8eebc705f717ab5f629d.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-314b8f8b688a0fcdf2aa71489979e4ab.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "没有结果",
+    "search-matching-documents-text": "匹配的文档",
+    "search-copy-link-title": "复制搜索链接",
+    "search-hide-matches-text": "隐藏其它匹配结果",
+    "search-more-match-text": "更多匹配结果",
+    "search-more-matches-text": "更多匹配结果",
+    "search-clear-button-title": "清除",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "取消",
+    "search-submit-button-title": "提交",
+    "search-label": "搜索"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar docked quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../notes/w03-why-model.html">原书第二部分 · 有模型的因果推断</a></li><li class="breadcrumb-item"><a href="../notes/w06-causal-survival.html"><span class="chapter-title">第 17 章 · 风险比里藏着一个碰撞变量</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="搜索" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header sidebar-header-stacked">
+      <a href="../index.html" class="sidebar-logo-link">
+      </a>
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../">因果推断读书笔记</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/HUI950319/causalR" title="源代码" class="quarto-navigation-tool px-1" aria-label="源代码"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="切换深色模式"><i class="bi"></i></a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="搜索"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">关于这份笔记</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/notation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">记号与约定</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/identifiability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">三条识别条件</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">阶段一 · 估计量全景</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-potential-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 1 章 · Zeus 的心脏移植</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-randomized-experiments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 2 章 · 一枚硬币，还是两枚</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-observational-studies.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 3 章 · 一枚硬币也没抛</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-effect-modification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 4 章 · 没有「治疗的因果效应」这种东西</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 5 章 · 两个处理，一起动手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-causal-diagrams.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 6 章 · 先画假设，再下结论</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-confounding.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 7 章 · 后门关上，可交换性才回来</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-selection-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 8 章 · 进了分析的人，未必还能互换</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-measurement-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 9 章 · 带星号的变量，与担不起因果的箭头</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-random-variability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 10 章 · 该不该撤稿</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">原书第二部分 · 有模型的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w03-why-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 11 章 · 数据不会自己说话</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w03-ip-weighting-msm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w04-standardization-gformula.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 13 章 · 把模型挪到结局那一侧</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w04-g-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 14 章 · 猜一个数，直到它与处理无关</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w05-outcome-regression-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 15 章 · 最常用的方法，为什么排在最后</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w05-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 16 章 · 不要求可交换性的那条路</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w06-causal-survival.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">第 17 章 · 风险比里藏着一个碰撞变量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w06-variable-selection.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 18 章 · 调整得越多，不等于偏倚越小</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">原书第三部分 · 时变处理的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w07-time-varying-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 19 章 · 先说清策略，才有效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w07-treatment-confounder-feedback.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 20 章 · 调了混杂，反而更错</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w08-g-methods-time-varying.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 21 章 · 三条路线，同一个 0</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w11-target-trial-emulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 22 章 · 先写协议，再看数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w11-causal-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 23 章 · 把中介问题改写成能做的试验</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">目录</h2>
+   
+  <ul>
+  <li><a href="#风险率与风险两个分母两种东西" id="toc-风险率与风险两个分母两种东西" class="nav-link active" data-scroll-target="#风险率与风险两个分母两种东西">17.1 风险率与风险<span class="hook">：两个分母，两种东西</span></a>
+  <ul class="collapse">
+  <li><a href="#行政删失" id="toc-行政删失" class="nav-link" data-scroll-target="#行政删失">行政删失</a></li>
+  <li><a href="#fine-point-17.1竞争事件没有令人满意的解法" id="toc-fine-point-17.1竞争事件没有令人满意的解法" class="nav-link" data-scroll-target="#fine-point-17.1竞争事件没有令人满意的解法">Fine Point 17.1：竞争事件没有令人满意的解法</a></li>
+  <li><a href="#三个量" id="toc-三个量" class="nav-link" data-scroll-target="#三个量">三个量</a></li>
+  </ul></li>
+  <li><a href="#从风险率到风险人-时格式与连乘" id="toc-从风险率到风险人-时格式与连乘" class="nav-link" data-scroll-target="#从风险率到风险人-时格式与连乘">17.2 从风险率到风险<span class="hook">：人-时格式与连乘</span></a>
+  <ul class="collapse">
+  <li><a href="#用-logistic-回归把风险率平滑掉" id="toc-用-logistic-回归把风险率平滑掉" class="nav-link" data-scroll-target="#用-logistic-回归把风险率平滑掉">用 logistic 回归把风险率平滑掉</a></li>
+  </ul></li>
+  <li><a href="#删失为什么要紧0.405-和-0.81-的差别" id="toc-删失为什么要紧0.405-和-0.81-的差别" class="nav-link" data-scroll-target="#删失为什么要紧0.405-和-0.81-的差别">17.3 删失为什么要紧<span class="hook">：0.405 和 0.81 的差别</span></a></li>
+  <li><a href="#边际结构模型的-ip-加权把第-12-章搬到每一个月" id="toc-边际结构模型的-ip-加权把第-12-章搬到每一个月" class="nav-link" data-scroll-target="#边际结构模型的-ip-加权把第-12-章搬到每一个月">17.4 边际结构模型的 IP 加权<span class="hook">：把第 12 章搬到每一个月</span></a>
+  <ul class="collapse">
+  <li><a href="#结果" id="toc-结果" class="nav-link" data-scroll-target="#结果">结果</a></li>
+  </ul></li>
+  <li><a href="#参数化-g-公式把第-13-章搬到每一个月" id="toc-参数化-g-公式把第-13-章搬到每一个月" class="nav-link" data-scroll-target="#参数化-g-公式把第-13-章搬到每一个月">17.5 参数化 g-公式<span class="hook">：把第 13 章搬到每一个月</span></a>
+  <ul class="collapse">
+  <li><a href="#结果-1" id="toc-结果-1" class="nav-link" data-scroll-target="#结果-1">结果</a></li>
+  </ul></li>
+  <li><a href="#结构嵌套模型的-g-估计只能换成-aft还得人为删失" id="toc-结构嵌套模型的-g-估计只能换成-aft还得人为删失" class="nav-link" data-scroll-target="#结构嵌套模型的-g-估计只能换成-aft还得人为删失">17.6 结构嵌套模型的 g-估计<span class="hook">：只能换成 AFT，还得人为删失</span></a>
+  <ul class="collapse">
+  <li><a href="#为什么-g-估计在这里用不上原来那一套" id="toc-为什么-g-估计在这里用不上原来那一套" class="nav-link" data-scroll-target="#为什么-g-估计在这里用不上原来那一套">为什么 g-估计在这里用不上原来那一套</a></li>
+  <li><a href="#aft-模型" id="toc-aft-模型" class="nav-link" data-scroll-target="#aft-模型">AFT 模型</a></li>
+  <li><a href="#真正新的东西人为删失" id="toc-真正新的东西人为删失" class="nav-link" data-scroll-target="#真正新的东西人为删失">真正新的东西：人为删失</a></li>
+  <li><a href="#结果-2" id="toc-结果-2" class="nav-link" data-scroll-target="#结果-2">结果</a></li>
+  </ul></li>
+  <li><a href="#这章停在哪里" id="toc-这章停在哪里" class="nav-link" data-scroll-target="#这章停在哪里">这章停在哪里</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/w06-causal-survival.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content page-columns page-full" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../notes/w03-why-model.html">原书第二部分 · 有模型的因果推断</a></li><li class="breadcrumb-item"><a href="../notes/w06-causal-survival.html"><span class="chapter-title">第 17 章 · 风险比里藏着一个碰撞变量</span></a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-title">第 17 章 · 风险比里藏着一个碰撞变量</span></h1>
+<p class="subtitle lead"><em>Causal survival analysis</em> · 因果生存分析</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<blockquote class="blockquote">
+<p><strong>原书</strong>：Hernán &amp; Robins, <em>Causal Inference: What If</em>（2025-01-02 版）， 第 17 章，书页 221–234。本章是读书笔记，非原书译文。</p>
+</blockquote>
+<blockquote class="blockquote">
+<p><strong>配套代码</strong>：<a href="https://hui950319.github.io/cibookex-r/causal-survival-analysis.html">R</a> · <a href="https://hui950319.github.io/cibookex-r/causal-survival-analysis-stata.html">Stata</a> —— 来自 <a href="https://github.com/remlapmot/cibookex-r">cibookex-r</a>（Tom Palmer，GPL-3；R 代码原作者 Joy Shi 与 Sean McGrath）。</p>
+</blockquote>
+<blockquote class="blockquote">
+<p>在前面各章里，我们关心的是处理对<strong>发生在某个特定时点上的结局</strong>的效应。 然而<strong>许多因果问题关心的是处理对「到感兴趣事件发生为止的时间」的效应</strong>。 例如我们可能想估计戒烟对<strong>到死亡为止的时间</strong>的因果效应——无论死亡何时发生。 这就是一个<strong>生存分析</strong>的例子。</p>
+<p>「生存」这个词<strong>并不意味着感兴趣的事件必须是死亡</strong>。 「生存分析」——或等价的「失效时间分析」——适用于任何关于「到事件发生的时间」的分析， 事件可以是死亡、结婚、入狱、癌症、流感感染等等。</p>
+<p>— <em>What If</em>, §17 章首, p.221（复述）</p>
+</blockquote>
+<p>本章把第 12–14 章那三台机器<strong>原样搬到生存结局上</strong>， 真正新的东西只有两件：<strong>删失</strong>，以及<strong>风险比这个度量本身的毛病</strong>。</p>
+<div class="column-page">
+<div class="fig-frame map-frame">
+<svg viewbox="0 0 900 810" role="img" aria-labelledby="map17-t map17-d">
+        <title id="map17-t">第 17 章全章地图</title>
+        <desc id="map17-d">起点是把同一批方法搬到「到事件发生的时间」这种结局上。
+        第 17.1 节先分清三个量：生存率、风险、以及风险率，
+        风险只增不减，风险率可升可降。
+        紧接着是 Fine Point 17.2 指出风险比的两个毛病：
+        它随时间变化，报一个数其实是难以解释的加权平均；
+        而且它条件在「活到 k」上，那是一个碰撞变量，因此自带选择偏倚。
+        第 17.2 节给出算法：把数据摊成人-时格式，生存率等于各期一减风险率的连乘，
+        风险率用 logistic 回归拟合，时间进模型。
+        第 17.3 节说明删失为什么要紧：直接算「未删失且存活」的比例会得到 0.405，
+        而正确答案是 0.81。
+        然后三种方法并列：IP 加权给出 80.7 对 80.5，参数化 g-公式给出 80.4 对 80.6，
+        g-估计只能改走加速失效时间模型并且需要人为删失，给出生存时间比 1.05。
+        结论是未调整时 76.2 对 82.0，调整之后两条曲线几乎重合，混杂来自年龄。</desc>
+
+        <defs>
+          <marker id="mk17" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6.5" markerheight="6.5" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" class="mk-fill"></path>
+          </marker>
+        </defs>
+
+        <g class="ln" marker-end="url(#mk17)">
+          <path d="M 450 64  L 450 108"></path>
+          <path d="M 450 212 L 450 254"></path>
+          <path d="M 450 336 L 450 378"></path>
+          <path d="M 450 460 L 450 502"></path>
+          <path d="M 450 560 L 450 580 L 160 580 L 160 602"></path>
+          <path d="M 450 560 L 450 602"></path>
+          <path d="M 450 560 L 450 580 L 740 580 L 740 602"></path>
+          <path d="M 160 706 L 160 726 L 450 726 L 450 748"></path>
+          <path d="M 450 706 L 450 748"></path>
+          <path d="M 740 706 L 740 726 L 450 726 L 450 748"></path>
+        </g>
+
+        <g class="nd">
+          <rect x="175" y="20" width="550" height="44" rx="22" class="n-entry"></rect>
+          <text x="450" y="48" class="t">同一批方法，结局换成「到事件发生的时间」</text>
+
+          <rect x="120" y="108" width="660" height="104" class="n-core"></rect>
+          <text x="450" y="132" class="t t-hd">§17.1 三个量，别混</text>
+          <text x="450" y="156" class="t">生存率 Pr[T &gt; k] · 风险 Pr[T ≤ k] = 1 − 生存率</text>
+          <text x="450" y="179" class="t">风险率 Pr[T = k | T &gt; k−1]：分母是「活到 k 的人」</text>
+          <text x="450" y="202" class="t t-sub">风险只增不减；风险率可升可降——本例大致是个 M 形</text>
+
+          <rect x="145" y="254" width="610" height="82" class="n-turn"></rect>
+          <text x="450" y="278" class="t t-hd">Fine Point 17.2 风险比的两个毛病</text>
+          <text x="450" y="302" class="t t-turn">① 随时间变，报一个数是加权平均，权重难解释</text>
+          <text x="450" y="325" class="t t-turn">② 条件在「活到 k」上 = 条件在碰撞变量上</text>
+
+          <rect x="175" y="378" width="550" height="82" class="n-core"></rect>
+          <text x="450" y="402" class="t t-hd">§17.2 人-时格式</text>
+          <text x="450" y="426" class="t">生存率 = 各期 (1 − 风险率) 的连乘</text>
+          <text x="450" y="449" class="t t-sub">1629 人 → 176,764 行；风险率用 logistic 拟合，时间进模型</text>
+
+          <rect x="205" y="502" width="490" height="58" class="n-turn"></rect>
+          <text x="450" y="526" class="t t-turn">§17.3 算「未删失且存活」的比例是错的</text>
+          <text x="450" y="549" class="t t-num">0.9 × 0.5 × 0.9 = 0.405，正确答案是 0.81</text>
+
+          <rect x="25" y="602" width="270" height="104" class="n-core"></rect>
+          <text x="160" y="626" class="t t-hd">§17.4 IP 加权</text>
+          <text x="160" y="650" class="t t-sub">第 12 章，逐月拟合</text>
+          <text x="160" y="673" class="t t-num">80.7 vs 80.5</text>
+          <text x="160" y="696" class="t t-sub">差 0.2 个百分点</text>
+
+          <rect x="315" y="602" width="270" height="104" class="n-core"></rect>
+          <text x="450" y="626" class="t t-hd">§17.5 参数化 g-公式</text>
+          <text x="450" y="650" class="t t-sub">第 13 章，逐月拟合</text>
+          <text x="450" y="673" class="t t-num">80.4 vs 80.6</text>
+          <text x="450" y="696" class="t t-sub">差 0.2 个百分点</text>
+
+          <rect x="605" y="602" width="270" height="104" class="n-core"></rect>
+          <text x="740" y="626" class="t t-hd">§17.6 g-估计</text>
+          <text x="740" y="650" class="t t-sub">只能改走 AFT 模型</text>
+          <text x="740" y="673" class="t t-num">exp(−ψ̂) = 1.05</text>
+          <text x="740" y="696" class="t t-sub">还要做「人为删失」</text>
+
+          <rect x="130" y="748" width="640" height="46" class="n-final"></rect>
+          <text x="450" y="776" class="t t-final">未调整 76.2 vs 82.0；调整后几乎重合——混杂来自年龄</text>
+        </g>
+</svg>
+</div>
+<p class="fig-cap">
+<b>全章地图（笔记作者绘制，原书无此图）。</b> 中间那一竖列是<strong>本章唯一真正新的内容</strong>：三个量的区分、风险比的毛病、连乘、删失。 底下三个并列的框只是把第 12、13、14 章<strong>原样搬过来</strong>—— 连参数设定、连 NHEFS 的那 9 个协变量都没变。 <b>而最下面那一行才是本章的实质结论</b>： 未调整时戒烟看起来使人早死 5.8 个百分点，调整之后差别只剩 0.2—— 差的那 5.6 个百分点全部是年龄。
+</p>
+</div>
+<section id="风险率与风险两个分母两种东西" class="level2 page-columns page-full">
+<h2 class="anchored" data-anchor-id="风险率与风险两个分母两种东西">17.1 风险率与风险<span class="hook">：两个分母，两种东西</span></h2>
+<section id="行政删失" class="level3">
+<h3 class="anchored" data-anchor-id="行政删失">行政删失</h3>
+<blockquote class="blockquote">
+<p>在大多数随访研究中，感兴趣的事件并不会在所有人、甚至大多数人身上被观察到发生。 这是因为大多数随访研究都有一个日期，在那之后就没有任何个体的信息了：<strong>行政随访终点</strong>。</p>
+<p>— <em>What If</em>, §17.1, p.221（复述）</p>
+</blockquote>
+<p>本章的例子：NHEFS 中<strong>基线时 25–74 岁、且活过 1982 年</strong>的 <strong>1629 名吸烟者</strong>； 随访起点统一是 <strong>1983 年 1 月 1 日</strong>，行政随访终点统一是 <strong>1992 年 12 月 31 日</strong>， 因此<strong>所有人的行政删失时间都是 120 个月</strong>。</p>
+<blockquote class="blockquote">
+<p>1629 人中<strong>只有 318 人</strong>在 1992 年底前死亡，因此其余 <strong>1311 人</strong>的生存时间被行政删失。</p>
+<p>— <em>What If</em>, §17.1, p.221（复述）</p>
+</blockquote>
+<div class="pitfall">
+<p><span class="pitfall-label">本章刻意把范围缩到「行政删失」</span></p>
+<blockquote class="blockquote">
+<p>与任何其它因果分析一样，生存分析可能还需要处理<strong>非行政性的删失</strong>， 例如<strong>失访</strong>与<strong>竞争事件</strong>（Fine Point 17.1）。 前面各章已经讨论过如何通过标准化或 IP 加权来调整非行政删失带来的选择偏倚， <strong>同样的做法可以用在生存分析上</strong>。 因此本章<strong>聚焦于行政删失</strong>，把非行政删失留到第三部分—— 因为<strong>非行政删失一般是一个时变过程，而行政删失的时间在基线就已固定</strong>。</p>
+<p>— <em>What If</em>, §17.1, p.222（复述）</p>
+</blockquote>
+<p><em>这句话给出了「什么时候可以不必等到第三部分」的判据： <strong>删失时间在基线就定死 = 可以当成一个基线变量处理； 删失与否随时间由病人自己决定 = 必须用时变的 g-方法。</strong></em></p>
+</div>
+</section>
+<section id="fine-point-17.1竞争事件没有令人满意的解法" class="level3">
+<h3 class="anchored" data-anchor-id="fine-point-17.1竞争事件没有令人满意的解法">Fine Point 17.1：竞争事件没有令人满意的解法</h3>
+<blockquote class="blockquote">
+<p>在生存分析中，<strong>关键的决定是要不要把竞争事件当作一种非行政删失</strong>。</p>
+<p>— <em>What If</em>, Fine Point 17.1, p.222</p>
+</blockquote>
+<div class="joint-table">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>做法</th>
+<th>实际上在做什么</th>
+<th>问题</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>当作删失事件</strong></td>
+<td>试图模拟一个「<strong>死于其它原因这件事被取消、或与中风的危险因素独立</strong>」的人群</td>
+<td>效应估计<strong>难以解释</strong>，可能不对应任何有意义的估计量；而且<strong>在零假设下也可能引入选择偏倚</strong>，需要用已测危险因素做 IP 加权调整</td>
+</tr>
+<tr class="even">
+<td><strong>不当作删失事件</strong></td>
+<td>等于把事件时间设成<strong>无穷大</strong>——死者被认为在死后到随访终点之间发生中风的概率为 0</td>
+<td>非零估计<strong>可能来自处理对死亡的直接效应</strong>（死亡阻止了中风的发生）</td>
+</tr>
+<tr class="odd">
+<td><strong>做成复合事件</strong>（死亡 + 中风）</td>
+<td>消灭了竞争事件</td>
+<td><strong>从根本上改变了因果问题</strong>；非零估计可能来自对中风的效应，也可能来自对死亡的效应</td>
+</tr>
+<tr class="even">
+<td><strong>限制在主分层上</strong>（无论处理与否都不会死的那些人）</td>
+<td>一种局部平均效应（第 16 章意义上的）</td>
+<td><strong>解释与有效估计都格外困难</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<blockquote class="blockquote">
+<p><strong>以上策略没有一个给出令人满意的解决方案。</strong> 事实上，<strong>竞争事件的存在提出的是关于因果估计量含义的逻辑问题， 而这些问题无法靠统计技术绕开。</strong></p>
+<p>— <em>What If</em>, Fine Point 17.1, p.222</p>
+</blockquote>
+<p><em>详细讨论见 Young et al.&nbsp;(2019)； Stensrud et al.&nbsp;(2020, 2021) 提出了基于<strong>可分离效应</strong>（separable effects）的路线， 那个概念在第 23 章 Technical Point 23.3。</em></p>
+</section>
+<section id="三个量" class="level3 page-columns page-full">
+<h3 class="anchored" data-anchor-id="三个量">三个量</h3>
+<div class="joint-table">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>量</th>
+<th>定义</th>
+<th>分母</th>
+<th>分子</th>
+<th>随 <span class="math inline">\(k\)</span> 怎么变</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>生存率</strong></td>
+<td><span class="math inline">\(\Pr[T &gt; k]\)</span></td>
+<td>基线全体，<strong>不变</strong></td>
+<td>累积</td>
+<td><strong>单调不增</strong></td>
+</tr>
+<tr class="even">
+<td><strong>风险</strong>（累积发病率）</td>
+<td><span class="math inline">\(\Pr[T \leq k] = 1 - \Pr[T&gt;k]\)</span></td>
+<td>基线全体，<strong>不变</strong></td>
+<td>累积</td>
+<td><strong>单调不减</strong></td>
+</tr>
+<tr class="odd">
+<td><strong>风险率</strong>（hazard）</td>
+<td><span class="math inline">\(\Pr[T = k\mid T &gt; k-1]\)</span></td>
+<td><strong>活到 <span class="math inline">\(k\)</span> 的人，随时间变</strong></td>
+<td><strong>只含本期事件</strong></td>
+<td><strong>可升可降</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<blockquote class="blockquote">
+<p>风险与风险率是<strong>不同的</strong>度量。……在我们的例子里， 120 个月处的风险率在戒烟者中是 <strong>0%</strong>（因为这一组最后一例死亡发生在第 <strong>113</strong> 个月）， 在未戒烟者中是 <strong><span class="math inline">\(1/986 = 0.10\%\)</span></strong>； 而 0 到 120 个月之间的风险率曲线<strong>大致是字母 M 的形状</strong>。</p>
+<p>— <em>What If</em>, §17.1, p.223（复述）</p>
+</blockquote>
+<p>在<strong>暂且假定</strong>戒烟者与未戒烟者边际可交换的前提下（这个假定一直用到 §17.4）：</p>
+<div class="joint-table">
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>120 个月时</th>
+<th>戒烟者 <span class="math inline">\(A=1\)</span></th>
+<th>未戒烟者 <span class="math inline">\(A=0\)</span></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>生存率</strong></td>
+<td><span class="math inline">\(76.2\%\)</span></td>
+<td><span class="math inline">\(82.0\%\)</span></td>
+</tr>
+<tr class="even">
+<td><strong>风险</strong></td>
+<td><span class="math inline">\(23.8\%\)</span></td>
+<td><span class="math inline">\(18.0\%\)</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><em>（对数秩检验给出 <span class="math inline">\(P = 0.005\)</span>。）</em></p>
+<div class="pitfall warn">
+<p><span class="pitfall-label">Fine Point 17.2：「风险比的风险」——本章最重要的一条</span></p>
+<p><strong>毛病一：它随时间变，而人们只报一个数。</strong></p>
+<blockquote class="blockquote">
+<p>因为风险率随时间变化，<strong>风险比一般也随时间变化</strong>。 然而<strong>许多已发表的生存分析只报告一个风险比</strong>， 这通常是拟合了一个「假定风险比恒定、忽略与时间的交互」的 Cox 比例风险模型的后果。 <strong>报告出来的那个风险比是各时点风险比的一个加权平均，这使它难以解释。</strong></p>
+<p>如果风险是罕见的、且删失只发生在共同的行政删失时间 <span class="math inline">\(k_{end}\)</span>， 那么<strong>时点 <span class="math inline">\(k\)</span> 的风险比的权重，正比于未处理者中在 <span class="math inline">\(k\)</span> 发生的事件总数</strong>。 <strong>因为它是一个加权平均，报告出来的风险比可以等于 1，即使两条生存曲线并不相同。</strong></p>
+<p>— <em>What If</em>, Fine Point 17.2, p.225（复述）</p>
+</blockquote>
+<p>与之相对：<strong>生存率与风险的比值和差值，都是相对于一个固定时间段定义的</strong>—— 「5 年生存率差」「120 个月风险比」。</p>
+<p><strong>毛病二：它自带选择偏倚。</strong></p>
+<blockquote class="blockquote">
+<p>设想处理在时点 <span class="math inline">\(k\)</span> 之前<strong>杀死了所有高危个体</strong>，而对其他人没有效应。 那么 <span class="math inline">\(k+1\)</span> 处的风险比比较的是<strong>活过了 <span class="math inline">\(k\)</span> 的处理者与未处理者</strong>。 在处理组里，幸存者<strong>全是低危个体</strong>（高危的已经被处理杀掉了）； 在未处理组里，幸存者是<strong>高危与低危的混合</strong>（处理没有把前者筛掉）。 <strong>结果是 <span class="math inline">\(k+1\)</span> 处的风险比会小于 1——尽管处理对任何个体都没有益处。</strong></p>
+<p><strong>这个表观悖论是「条件在一个受处理影响的处理后变量（即『在 <span class="math inline">\(k\)</span> 时还活着』）上」 所造成的选择偏倚的一个例子。</strong></p>
+<p>— <em>What If</em>, Fine Point 17.2, p.225（复述）</p>
+</blockquote>
+</div>
+<p>这件事画成因果图就一目了然：</p>
+<div class="column-page">
+<div class="fig-frame dag-frame">
+<svg viewbox="0 0 900 240" role="img" aria-labelledby="f172-t f172-d">
+        <title id="f172-t">Figure 17.2 与 Figure 17.3</title>
+        <desc id="f172-d">左图里处理 A 分别指向时点 1 与时点 2 的事件指示 D1 与 D2，
+        未测量的易感性因素 U 也分别指向 D1 与 D2。
+        右图是同一张图，但 D1 被方框框住表示条件化于它；
+        由于 D1 是 A 与 U 的共同结果，条件化于它会打开 A 到 D1 到 U 再到 D2 的通路，
+        于是在活过时点 1 的人当中，A 与 D2 之间凭空出现关联。</desc>
+        <defs>
+          <marker id="mkd17" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" class="mk-dg"></path>
+          </marker>
+        </defs>
+
+        <g class="dg" marker-end="url(#mkd17)">
+          <path d="M 108 96 L 188 96"></path>
+          <path d="M 116 84 C 180 36, 290 36, 342 82"></path>
+          <path d="M 210 158 L 210 114"></path>
+          <path d="M 228 162 L 344 110"></path>
+
+          <path d="M 568 96 L 640 96"></path>
+          <path d="M 576 84 C 640 36, 750 36, 802 82"></path>
+          <path d="M 664 158 L 664 120"></path>
+          <path d="M 688 162 L 804 110"></path>
+        </g>
+
+        <text x="95" y="103" class="dg-v">A</text>
+        <text x="205" y="103" class="dg-v">D<tspan dy="5" class="sup">1</tspan></text>
+        <text x="360" y="103" class="dg-v">D<tspan dy="5" class="sup">2</tspan></text>
+        <text x="210" y="181" class="dg-v">U</text>
+
+        <text x="555" y="103" class="dg-v">A</text>
+        <rect x="640" y="76" width="48" height="34" class="dg-box"></rect>
+        <text x="664" y="103" class="dg-v">D<tspan dy="5" class="sup">1</tspan></text>
+        <text x="820" y="103" class="dg-v">D<tspan dy="5" class="sup">2</tspan></text>
+        <text x="664" y="181" class="dg-v">U</text>
+
+        <text x="230" y="212" class="dg-note">A 与 U 各自影响两期的事件</text>
+        <text x="230" y="234" class="dg-ref">Figure 17.2</text>
+        <text x="680" y="212" class="dg-note">条件在 D₁ 上 = 条件在碰撞变量上</text>
+        <text x="680" y="234" class="dg-ref">Figure 17.3</text>
+        <path d="M 450 24 L 450 236" class="dg-sep"></path>
+</svg>
+</div>
+<p class="fig-cap">
+<b>照原图重绘（原书 Figure 17.2 与 17.3，书页 224–225）。</b> 节点与箭头走向与原图一致，只换了字体与配色； <b>右图 <span class="math inline">\(D_1\)</span> 外面那个方框（表示「条件化于该变量」）沿用本仓库第 6–8 章笔记的约定</b>， 下面两行说明文字是笔记加的。 读法：<span class="math inline">\(k=2\)</span> 处的风险比是 <span class="math inline">\(\Pr[D_2=1\mid D_1=0,\ A]\)</span>， 它<strong>必然</strong>条件在 <span class="math inline">\(D_1\)</span> 上；而 <span class="math inline">\(D_1\)</span> 是 <span class="math inline">\(A\)</span> 与 <span class="math inline">\(U\)</span> 的共同结果， 所以通路 <span class="math inline">\(A \to D_1 \leftarrow U \to D_2\)</span> 被打开。 <b>这不是某个分析做错了，而是「风险比」这个量的定义里就带着的</b>—— 除非两组生存曲线完全相同（即没有从 <span class="math inline">\(A\)</span> 指向事件指示的箭头），否则偏倚一定在。
+</p>
+</div>
+<p><em>所以本书的立场是：<strong>生存分析里优先看生存率 / 风险，而不是风险比</strong>； 但也不必完全无视风险率——<strong>估计风险率往往是估计生存率的有用中间步骤</strong>， 这正是下一节的内容。（Hernán 2010 给了一个真实的例子。）</em></p>
+</section>
+</section>
+<section id="从风险率到风险人-时格式与连乘" class="level2">
+<h2 class="anchored" data-anchor-id="从风险率到风险人-时格式与连乘">17.2 从风险率到风险<span class="hook">：人-时格式与连乘</span></h2>
+<p>生存分析的数据有两种摆法：</p>
+<ul>
+<li><strong>「宽」格式</strong>：一行一个人。前面各章一直用的就是这个，本例 <strong>1629 行</strong>。</li>
+<li><strong>「长」（人-时）格式</strong>：一行一个「人-月」。 本例的人-时数据集有 <strong>176,764 行</strong>。</li>
+</ul>
+<p>定义时变的事件指示 <span class="math inline">\(D_k\)</span>：<span class="math inline">\(T\leq k\)</span> 时取 1，<span class="math inline">\(T&gt;k\)</span> 时取 0。<strong>按定义人人 <span class="math inline">\(D_0 = 0\)</span>。</strong> 于是：</p>
+<p><span class="math display">\[\text{生存率} = \Pr[D_k=0],\quad \text{风险} = \Pr[D_k=1],\quad
+\text{风险率} = \Pr[D_k = 1\mid D_{k-1}=0]\]</span></p>
+<div class="pitfall">
+<p><span class="pitfall-label">整章的算法只有这一个公式</span></p>
+<p><span class="math display">\[\Pr[D_k = 0] = \prod_{m=1}^{k}\Pr[D_m = 0\mid D_{m-1}=0]\]</span></p>
+<blockquote class="blockquote">
+<p>也就是说，<strong><span class="math inline">\(k\)</span> 处的生存率等于此前所有时点上「1 减去风险率」的连乘</strong>。 <strong>如果我们知道到 <span class="math inline">\(k\)</span> 为止的各期风险率，就能轻易算出 <span class="math inline">\(k\)</span> 处的生存率</strong>（或风险，它就是 1 减生存率）。</p>
+<p>— <em>What If</em>, §17.2, p.224（复述）</p>
+</blockquote>
+<p>把各期风险率用「本期事件数 ÷ 上期末存活人数」非参数地估出来再代进去， 得到的就是 <strong>Kaplan-Meier（乘积极限）估计量</strong>。 <em>本章的 Figure 17.1 就是这样画出来的。</em></p>
+<p><strong>注意 <span class="math inline">\(k=1\)</span> 时风险率等于风险</strong>，因为按定义人人在 <span class="math inline">\(k=0\)</span> 时还活着。</p>
+</div>
+<section id="用-logistic-回归把风险率平滑掉" class="level3">
+<h3 class="anchored" data-anchor-id="用-logistic-回归把风险率平滑掉">用 logistic 回归把风险率平滑掉</h3>
+<blockquote class="blockquote">
+<p>典型情况下，每个区间内的事件数很少（甚至是零）， 因此风险率的非参数估计<strong>会非常不稳定</strong>。 如果我们关心某个特定 <span class="math inline">\(k\)</span> 处的风险率，<strong>可能需要用参数模型做平滑</strong>。</p>
+<p>— <em>What If</em>, §17.2, p.225（复述）</p>
+</blockquote>
+<p>做法是在人-时数据上拟合一个 logistic 模型：</p>
+<p><span class="math display">\[\operatorname{logit}\Pr[D_{k+1}=1\mid D_k=0,\ A] = \theta_{0,k} + \theta_1 A + \theta_2 A\cdot k + \theta_3 A\cdot k^2\]</span></p>
+<p>其中<strong>时变截距</strong> <span class="math inline">\(\theta_{0,k}\)</span> 本身用一个灵活的时间函数来估，例如 <span class="math inline">\(\theta_{0,k} = \theta_0 + \theta_4 k + \theta_5 k^2\)</span>。</p>
+<ul>
+<li><strong>时变截距</strong>允许<strong>风险率随时间变化</strong>；</li>
+<li><strong><span class="math inline">\(A\)</span> 与时间的乘积项</strong>（<span class="math inline">\(\theta_2 A\cdot k + \theta_3 A\cdot k^2\)</span>）允许<strong>风险比随时间变化</strong>。</li>
+</ul>
+<p><em>这两条设定正好对应 Fine Point 17.2 的两个毛病里的第一个： <strong>比例风险假定不是必需的，它只是你没写那两个乘积项。</strong></em></p>
+<div class="pitfall">
+<p><span class="pitfall-label">Technical Point 17.1：logistic 模型为什么能近似风险率模型</span></p>
+<p>风险率模型 <span class="math inline">\(\Pr[D_{k+1}=1\mid D_k=0,A] = \Pr[D_{k+1}=1\mid D_k=0,A=0]\times\exp(\beta_1 A)\)</span> 取对数得 <span class="math inline">\(\log\Pr[\cdot] = \beta_{0,k} + \beta_1 A\)</span>。</p>
+<blockquote class="blockquote">
+<p>假设 <span class="math inline">\(k+1\)</span> 处的风险率很小，即 <span class="math inline">\(\Pr[D_{k+1}=1\mid D_k=0,A]\approx 0\)</span>。 那么「1 减风险率」接近 1，<strong>风险率就近似等于比值（odds）</strong>，于是</p>
+<p><span class="math display">\[\operatorname{logit}\Pr[D_{k+1}=1\mid D_k=0,A] \approx \beta_{0,k} + \beta_1 A\]</span></p>
+<p>也就是说，<strong>若风险率接近零，就可以用 logistic 模型里的 <span class="math inline">\(\theta_1\)</span> 近似对数风险比 <span class="math inline">\(\beta_1\)</span></strong> （Thompson 1977）。 <strong>一条经验法则是：当所有 <span class="math inline">\(k\)</span> 都有 <span class="math inline">\(\Pr[D_{k+1}=1\mid D_k=0,A] &lt; 0.1\)</span> 时，这个近似通常被认为足够准确。</strong></p>
+<p>— <em>What If</em>, Technical Point 17.1, p.227（复述）</p>
+</blockquote>
+<p>而关键的一句是：</p>
+<blockquote class="blockquote">
+<p><strong>这个罕见事件条件几乎总能被保证成立：我们只需要把时间单位 <span class="math inline">\(k\)</span> 定义得足够短。</strong> 如果 <span class="math inline">\(D_k\)</span> 是肺癌，<span class="math inline">\(k\)</span> 可以按年；如果 <span class="math inline">\(D_k\)</span> 是感染普通感冒病毒，<span class="math inline">\(k\)</span> 可以按天。 <strong>时间单位越短，用来拟合 logistic 模型的人-时数据行数就越多。</strong></p>
+<p>— <em>What If</em>, Technical Point 17.1, p.227（复述）</p>
+</blockquote>
+<p><em>这是一条非常实用的结论：<strong>「罕见事件假定」在这里不是关于疾病的，而是关于你切多细的。</strong> 代价只是数据集变大——本例 1629 人按月切就是 176,764 行。</em></p>
+<p>一条边注还回答了「同一个人出现在很多行里，标准误会不会错」：</p>
+<blockquote class="blockquote">
+<p>尽管每个人出现在人-时数据结构的多行中， <strong>只要风险率模型是正确的，常规 logistic 回归程序输出的参数估计标准误就是正确的。</strong></p>
+<p>— <em>What If</em>, §17.2 边注, p.226</p>
+</blockquote>
+</div>
+<p>把 logistic 模型给出的各期风险率代进连乘公式，就得到平滑后的生存曲线（Figure 17.4）：</p>
+<blockquote class="blockquote">
+<p>这个程序的有效性要求<strong>风险率模型没有设定错误</strong>。 在我们的例子里这个假定看起来是合理的， 因为<strong>我们得到了与上一节完全非参数估计基本相同的生存估计</strong>。 生存估计的 95% 置信区间可以<strong>通过对人群中的个体做 bootstrap</strong> 轻松构造。</p>
+<p>— <em>What If</em>, §17.2, p.226（复述）</p>
+</blockquote>
+<div class="pitfall">
+<p><span class="pitfall-label">Fine Point 17.3：生存分析模型的三分法</span></p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>类别</th>
+<th>对失效时间 / 风险率的分布假定</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>非参数</strong></td>
+<td>不作任何假定</td>
+<td>Kaplan-Meier 曲线</td>
+</tr>
+<tr class="even">
+<td><strong>参数</strong></td>
+<td>假定一个特定的统计分布</td>
+<td>指数、Weibull；<strong>本章正文那个 logistic 风险率模型也属于这一类</strong></td>
+</tr>
+<tr class="odd">
+<td><strong>半参数</strong></td>
+<td><strong>不</strong>假定分布，但<strong>对基线风险率与其它协变量组合下风险率之间的关系施加先验限制</strong></td>
+<td><strong>Cox 比例风险模型</strong>、<strong>加速失效时间（AFT）模型</strong></td>
+</tr>
+</tbody>
+</table>
+<p><em>所以「Cox 模型不需要分布假定」这句话只说了一半： <strong>它不假定基线风险率的形状，但它假定了各条风险率曲线之间的关系。</strong> 本章 §17.6 用的 AFT 模型同样属于半参数这一类。</em></p>
+<p>应用综述见 Hosmer, Lemeshow &amp; May (2008)； 更形式化的处理见 Fleming &amp; Harrington (2005) 与 Kalbfleisch &amp; Prentice (2002)。</p>
+</div>
+<p>对应原书 <strong>Program 17.1–17.2</strong>。</p>
+</section>
+</section>
+<section id="删失为什么要紧0.405-和-0.81-的差别" class="level2">
+<h2 class="anchored" data-anchor-id="删失为什么要紧0.405-和-0.81-的差别">17.3 删失为什么要紧<span class="hook">：0.405 和 0.81 的差别</span></h2>
+<p>本例里<strong>所有人的行政删失时间都一样</strong>（<span class="math inline">\(k_{end}=120\)</span>）， 所以 §17.2 那套程序其实是杀鸡用牛刀—— 直接算「接受了处理 <span class="math inline">\(a\)</span> 且活到 <span class="math inline">\(k+1\)</span> 的人的比例」就行。</p>
+<p><strong>但一旦有错开入组（staggered entry）</strong>，情况就变了： 行政随访终点相同、随访起点不同 ⟹ <strong>每个人的行政删失时间不同</strong>。 这时需要一个时变的删失指示 <span class="math inline">\(C_k\)</span>。</p>
+<div class="pitfall warn">
+<p><span class="pitfall-label">一个 4 行的数值例子，说明「直接算比例」为什么是错的</span></p>
+<blockquote class="blockquote">
+<p>我们不能通过简单计算「接受了处理 <span class="math inline">\(a\)</span>、并且<strong>既存活又未被删失</strong>到 <span class="math inline">\(k\)</span> 的个体比例」 来有效地估计 <span class="math inline">\(\Pr[D_k=0\mid A=a]\)</span>。 <strong>这个比例是联合概率 <span class="math inline">\(\Pr[C_{k+1}=0,\ D_{k+1}=0\mid A=a]\)</span> 的有效估计量，而那不是我们想要的。</strong></p>
+<p>— <em>What If</em>, §17.3, p.227（复述）</p>
+</blockquote>
+<p>书给的例子（<span class="math inline">\(k_{end}=2\)</span>）：</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th></th>
+<th>设定</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><span class="math inline">\(\Pr[C_1=0] = 1\)</span></td>
+<td>到 <span class="math inline">\(k=1\)</span> 没有人被删失</td>
+</tr>
+<tr class="even">
+<td><span class="math inline">\(\Pr[D_1=0\mid C_0=0] = 0.9\)</span></td>
+<td>90% 的人活过 <span class="math inline">\(k=1\)</span></td>
+</tr>
+<tr class="odd">
+<td><span class="math inline">\(\Pr[C_2=0\mid D_1=0, C_1=0] = 0.5\)</span></td>
+<td><strong>随机的一半</strong>幸存者在 <span class="math inline">\(k=2\)</span> 被删失</td>
+</tr>
+<tr class="even">
+<td><span class="math inline">\(\Pr[D_2=0\mid C_2=0,D_1=0,C_1=0] = 0.9\)</span></td>
+<td>剩下的人里 90% 活过 <span class="math inline">\(k=2\)</span></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>「未删失且存活」的比例</strong>：<span class="math inline">\(1\times 0.9\times 0.5\times 0.9 = \mathbf{0.405}\)</span></li>
+<li><strong>如果没有人被删失</strong>，生存率本应是：<span class="math inline">\(1\times 0.9\times 1\times 0.9 = \mathbf{0.81}\)</span></li>
+</ul>
+<p><strong>那个 <span class="math inline">\(0.5\)</span> 根本不该进来</strong>——它是删失概率，不是死亡概率。</p>
+</div>
+<p>正确的做法就是 §17.2 那个连乘，只是每一项都<strong>额外条件在「本期未被删失」上</strong>：</p>
+<p><span class="math display">\[\Pr[D_k=0\mid A=a] = \prod_{m=1}^{k}\Pr[D_m=0\mid D_{m-1}=0,\ C_m=0,\ A=a],\quad k &lt; k_{end}\]</span></p>
+<p>即：<strong>把非参数估计或 logistic 模型换成「病因特异风险率」 <span class="math inline">\(\Pr[D_{k+1}=1\mid D_k=0,\ C_{k+1}=0,\ A=a]\)</span></strong>，其余一模一样。</p>
+<div class="pitfall">
+<p><span class="pitfall-label">但「随机删失」这个前提常常不成立</span></p>
+<blockquote class="blockquote">
+<p><strong>我们常常不愿意假定删失是如同随机分配的。</strong> 有错开入组时，个体的行政删失时间取决于<strong>入组时的日历时间</strong> （入组晚的人 <span class="math inline">\(k_{end}\)</span> 更短），<strong>而日历时间本身可能与结局相关</strong>。 因此上面那个程序<strong>需要针对基线日历时间做调整</strong>。 此外还可能有其它在处理组间分布不均的基线预后因素，<strong>同样需要调整</strong>。</p>
+<p>— <em>What If</em>, §17.3, p.228（复述）</p>
+</blockquote>
+<p><em>这就是接下来三节的任务：<strong>把第 12、13、14 章的调整手段接到这个连乘上</strong>。</em></p>
+</div>
+</section>
+<section id="边际结构模型的-ip-加权把第-12-章搬到每一个月" class="level2">
+<h2 class="anchored" data-anchor-id="边际结构模型的-ip-加权把第-12-章搬到每一个月">17.4 边际结构模型的 IP 加权<span class="hook">：把第 12 章搬到每一个月</span></h2>
+<blockquote class="blockquote">
+<p>在我们的戒烟例子里，我们估计出 120 个月生存率在戒烟者中<strong>低于</strong>非戒烟者（<span class="math inline">\(76.2\%\)</span> vs <span class="math inline">\(82.0\%\)</span>）， <strong>但这并不必然意味着戒烟增加死亡率</strong>。 <strong>年长者更可能戒烟，也更可能死亡。</strong> 这种由年龄造成的混杂让戒烟看起来很糟，因为戒烟者中年长者的比例更大。</p>
+<p>— <em>What If</em>, §17.4, p.228（复述）</p>
+</blockquote>
+<p>估计目标写成反事实的形式：<span class="math inline">\(\Pr[D_{k+1}^{a=1}=0]\)</span> vs <span class="math inline">\(\Pr[D_{k+1}^{a=0}=0]\)</span>，<span class="math inline">\(k=0,\dots,k_{end}-1\)</span>。</p>
+<p>程序<strong>只有两步，而且两步都是旧的</strong>：</p>
+<div class="joint-table">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>步</th>
+<th>做什么</th>
+<th>来自哪一章</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>①</td>
+<td>估计<strong>稳定化权重 <span class="math inline">\(SW^A\)</span></strong>：分母 <span class="math inline">\(\widehat{\Pr}[A=1\mid L]\)</span>（未处理者用 <span class="math inline">\(1-\widehat{\Pr}\)</span>），分子 <span class="math inline">\(\widehat{\Pr}[A=1]\)</span></td>
+<td><strong>第 12 章，一字未改</strong></td>
+</tr>
+<tr class="even">
+<td>②</td>
+<td>在<strong>人-时格式</strong>上拟合 §17.2 那个风险率模型，<strong>每个人按其 <span class="math inline">\(SW^A\)</span> 加权</strong>，再把 <span class="math inline">\((1-\text{风险率})\)</span> 连乘</td>
+<td>第 12 章 + §17.2</td>
+</tr>
+</tbody>
+</table>
+</div>
+<blockquote class="blockquote">
+<p>在我们的例子里，<strong>权重的均值是 1（如预期），范围从 0.33 到 4.21。</strong></p>
+<p>— <em>What If</em>, §17.4, p.229</p>
+</blockquote>
+<p><em>和第 12 章那组权重（<span class="math inline">\(SW^A\)</span>：<span class="math inline">\(0.33\)</span>–<span class="math inline">\(4.30\)</span>，均值 <span class="math inline">\(1.00\)</span>）<strong>几乎一样但不完全相同</strong>—— 因为这里的分析人群是「活过 1982 年的 1629 人」，而第 12 章是「1982 年测到体重的 1566 人」。 均值为 1 这条自检在这里照样适用。</em></p>
+<p>加权后的 logistic 模型估的是<strong>边际结构 logistic 模型</strong>的参数：</p>
+<p><span class="math display">\[\operatorname{logit}\Pr\big[D_{k+1}^{a}=0\ \big|\ D_k^{a}=0\big] = \theta_{0,k} + \theta_1 a + \theta_2 a\cdot k + \theta_3 a\cdot k^2\]</span></p>
+<blockquote class="blockquote">
+<p>也就是说，<strong>IP 加权模型估计的是「如果研究人群中所有人都被处理」以及 「如果他们都未被处理」时本应观察到的时变风险率。</strong></p>
+<p>— <em>What If</em>, §17.4, p.229（复述）</p>
+</blockquote>
+<section id="结果" class="level3">
+<h3 class="anchored" data-anchor-id="结果">结果</h3>
+<blockquote class="blockquote">
+<p>在我们的例子里，<strong>120 个月生存率的估计是：戒烟下 <span class="math inline">\(80.7\%\)</span>、不戒烟下 <span class="math inline">\(80.5\%\)</span>； 差 <span class="math inline">\(0.2\%\)</span>（95% 置信区间 <span class="math inline">\(-4.1\%\)</span> 到 <span class="math inline">\(3.7\%\)</span>，基于 500 个 bootstrap 样本）。</strong> 尽管处理下的生存曲线在大部分随访期间低于无处理下的曲线， <strong>最大差别从未超过 <span class="math inline">\(-1.4\%\)</span>（95% 置信区间 <span class="math inline">\(-3.4\%\)</span> 到 <span class="math inline">\(0.7\%\)</span>）。</strong> 也就是说，<strong>在通过 IP 加权调整了协变量 <span class="math inline">\(L\)</span> 之后， 我们几乎没有发现戒烟在随访期间任何时点上对死亡率有效应的证据。</strong></p>
+<p>— <em>What If</em>, §17.4, p.229（复述）</p>
+</blockquote>
+<blockquote class="blockquote">
+<p>这个程序的有效性要求<strong>处理模型与边际风险率模型两者都没有设定错误</strong>。</p>
+<p>— <em>What If</em>, §17.4, p.229</p>
+</blockquote>
+</section>
+</section>
+<section id="参数化-g-公式把第-13-章搬到每一个月" class="level2">
+<h2 class="anchored" data-anchor-id="参数化-g-公式把第-13-章搬到每一个月">17.5 参数化 g-公式<span class="hook">：把第 13 章搬到每一个月</span></h2>
+<p>同样是两步，同样全是旧零件：</p>
+<p><span class="math display">\[\Pr[D_{k+1}^{a}=0] = \sum_{l}\Pr[D_{k+1}=0\mid L=l,\ A=a]\ \Pr[L=l]\]</span></p>
+<div class="joint-table">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>步</th>
+<th>做什么</th>
+<th>来自哪一章</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>①</td>
+<td>拟合 §17.2 那个风险率模型，<strong>但把 <span class="math inline">\(L\)</span> 中的变量也放进协变量</strong>，得到 <span class="math inline">\(\Pr[D_{k+1}=1\mid D_k=0, L, A]\)</span>，连乘得到<strong>条件</strong>生存率</td>
+<td>§17.2 + 第 13 章 §13.2</td>
+</tr>
+<tr class="even">
+<td>②</td>
+<td>把条件生存率<strong>按 <span class="math inline">\(L\)</span> 的分布做加权平均</strong>——用第 13 章 §13.3 那套「扩展数据集 → 结局建模 → 预测 → 平均」</td>
+<td><strong>第 13 章 §13.3，一字未改</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>一条边注顺手把第 12 章的术语接上了：</p>
+<blockquote class="blockquote">
+<p>在第 12 章我们把<strong>条件在所有协变量 <span class="math inline">\(L\)</span> 上</strong>的模型称为<strong>假边际结构模型</strong>。</p>
+<p>— <em>What If</em>, §17.5 边注, p.230</p>
+</blockquote>
+<p><em>于是本章那台「条件风险率模型」正是第 15 章 §15.1 说的那个东西： <strong>加满了协变量的结构模型，也就是一个普通的结局回归</strong>—— 只不过这里的「结局」是每个人-月的事件指示。</em></p>
+<section id="结果-1" class="level3">
+<h3 class="anchored" data-anchor-id="结果-1">结果</h3>
+<blockquote class="blockquote">
+<p>在我们的例子里，<strong>处理下的生存曲线在整个随访期间都低于无处理下的曲线， 但最大差别从未超过 <span class="math inline">\(-2.0\%\)</span>（95% 置信区间 <span class="math inline">\(-5.6\%\)</span> 到 <span class="math inline">\(1.8\%\)</span>）。 120 个月生存率的估计是：戒烟下 <span class="math inline">\(80.4\%\)</span>、不戒烟下 <span class="math inline">\(80.6\%\)</span>； 差 <span class="math inline">\(0.2\%\)</span>（95% 置信区间 <span class="math inline">\(-4.6\%\)</span> 到 <span class="math inline">\(4.1\%\)</span>）。</strong></p>
+<p>— <em>What If</em>, §17.5, p.231（复述）</p>
+</blockquote>
+<div class="pitfall">
+<p><span class="pitfall-label">两条路线为什么「相似但不相同」——第 13 章 §13.4 那条诊断又用了一次</span></p>
+<blockquote class="blockquote">
+<p>注意通过 IP 加权（上一节）与参数化 g-公式（本节）估计出的生存曲线<strong>相似但不相同， 因为它们依赖不同的参数假设</strong>： <strong>IP 加权估计要求「处理模型」与「无条件风险率模型」都没有设定错误； 参数化 g-公式估计要求「条件风险率模型」没有设定错误。</strong></p>
+<p>— <em>What If</em>, §17.5, p.231（复述）</p>
+</blockquote>
+<p><em>和第 13 章 §13.4 完全同构，只是量从「体重增加的均值」换成了「每期的风险率」。 <strong>差别（<span class="math inline">\(80.7/80.5\)</span> vs <span class="math inline">\(80.4/80.6\)</span>，即 0.3 与 0.1 个百分点）很小 → 令人安心，但不是保证。</strong></em></p>
+</div>
+<p>对应原书 <strong>Program 17.3–17.4</strong>。</p>
+</section>
+</section>
+<section id="结构嵌套模型的-g-估计只能换成-aft还得人为删失" class="level2">
+<h2 class="anchored" data-anchor-id="结构嵌套模型的-g-估计只能换成-aft还得人为删失">17.6 结构嵌套模型的 g-估计<span class="hook">：只能换成 AFT，还得人为删失</span></h2>
+<section id="为什么-g-估计在这里用不上原来那一套" class="level3">
+<h3 class="anchored" data-anchor-id="为什么-g-估计在这里用不上原来那一套">为什么 g-估计在这里用不上原来那一套</h3>
+<blockquote class="blockquote">
+<p>结构嵌套模型是<strong>条件因果对比</strong>的模型（例如协变量特异的均值之差或之比）， <strong>而不是那些对比的各个组成部分的模型</strong>（例如不同处理水平下的各个均值）。 <strong>因此我们不能用结构嵌套模型来估计生存率或风险率。</strong></p>
+<p>— <em>What If</em>, §17.6, p.231（复述）</p>
+</blockquote>
+<p>书给了三条替代，并且都点了各自的适用边界：</p>
+<div class="joint-table">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>模型</th>
+<th>建模对象</th>
+<th>适用边界</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>结构嵌套累积失效时间（CFT）模型</strong></td>
+<td>不同处理下<strong>风险之比</strong></td>
+<td><strong>只适合罕见事件</strong>——对数线性模型不会自然地把风险压在 1 以下</td>
+</tr>
+<tr class="even">
+<td><strong>结构嵌套累积生存时间（CST）模型</strong></td>
+<td>不同处理下<strong>生存率之比</strong></td>
+<td><strong>只适合「生存是罕见的」</strong>——同样的上界问题</td>
+</tr>
+<tr class="odd">
+<td><strong>结构嵌套加速失效时间（AFT）模型</strong></td>
+<td>不同处理下<strong>生存时间之比</strong></td>
+<td><strong>更一般的选项</strong>，本节采用</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><em>Technical Point 17.2 补了两条： <strong>CFT 与 CST 只差「对风险建乘法模型」还是「对生存率建乘法模型」， 但 <span class="math inline">\(\gamma_k(L,A;\beta)\)</span> 的含义并不相同</strong>——只要效应非零， 风险的乘法模型就不是生存率的乘法模型； 以及当时间指标取连续值时，<strong>CST 模型等价于结构加性风险率模型</strong>（Tchetgen Tchetgen et al.&nbsp;2015）。 在「罕见失效」这个前提成立时，<strong>CFT 模型相对 AFT 有一个实际优势</strong>： 它容许<strong>对参数可导</strong>的无偏估计方程，因而容易求解。</em></p>
+</section>
+<section id="aft-模型" class="level3">
+<h3 class="anchored" data-anchor-id="aft-模型">AFT 模型</h3>
+<p>记 <span class="math inline">\(T_i^a\)</span> 为个体 <span class="math inline">\(i\)</span> 在处理水平 <span class="math inline">\(a\)</span> 下的反事实生存时间。 效应用比值 <span class="math inline">\(T_i^{a=1}/T_i^{a=0}\)</span> 度量：<span class="math inline">\(&gt;1\)</span> 有益，<span class="math inline">\(&lt;1\)</span> 有害，<span class="math inline">\(=1\)</span> 无效应。</p>
+<p><span class="math display">\[\frac{T_i^{a}}{T_i^{a=0}} = \exp(-\psi_1 a)
+\quad\Longleftrightarrow\quad
+T_i^{a=0} = T_i^{a}\exp(\psi_1 a)\]</span></p>
+<p>一条边注解释了那个负号：</p>
+<blockquote class="blockquote">
+<p><span class="math inline">\(\psi\)</span> 前面的负号<strong>保持了「正参数表示有害、负参数表示有益」这一通常的解释</strong>。</p>
+<p>— <em>What If</em>, §17.6 边注, p.232</p>
+</blockquote>
+<p>由一致性（<span class="math inline">\(T^{A} = T\)</span>），模型化为 <span class="math inline">\(T_i^{a=0} = T_i\exp(\psi_1 A_i)\)</span>—— <strong>与第 14 章 §14.5 的 <span class="math inline">\(Y^{a=0} = Y - \psi_1 A\)</span> 完全同构，只是加法换成了乘法。</strong></p>
+<div class="pitfall warn">
+<p><span class="pitfall-label">秩保持这根脚手架又搭了一次，理由也一样</span></p>
+<blockquote class="blockquote">
+<p>上面这个结构 AFT 是不现实的，因为它<strong>既是确定性的，又是秩保持的</strong>。 说它确定性，是因为它假定每个个体在无处理下的反事实生存时间 <span class="math inline">\(T^{a=0}\)</span> <strong>可以由观测到的 <span class="math inline">\(T\)</span>、<span class="math inline">\(A\)</span>、<span class="math inline">\(L\)</span> 无误差地算出来</strong>。 说它秩保持，是因为在这个模型下， 若 <span class="math inline">\(i\)</span> 在两人都未处理时先于 <span class="math inline">\(j\)</span> 死亡，则 <span class="math inline">\(i\)</span> 在两人都被处理时也先于 <span class="math inline">\(j\)</span> 死亡。</p>
+<p><strong>由于秩保持的不可信，一般不应使用依赖它的因果推断方法</strong>…… <strong>而我们在这里仍然用它，因为对秩保持模型来说 g-估计更容易理解， 而且 g-估计的程序对秩保持与非秩保持模型是一样的。</strong></p>
+<p>— <em>What If</em>, §17.6, p.232–233（复述）</p>
+</blockquote>
+<p><em>和第 14 章 §14.4 一字不差的措辞。<strong>非确定性、非秩保持的结构嵌套 AFT 模型</strong> 见 Robins (1997b)。</em></p>
+</div>
+</section>
+<section id="真正新的东西人为删失" class="level3">
+<h3 class="anchored" data-anchor-id="真正新的东西人为删失">真正新的东西：人为删失</h3>
+<p>如果能观察到所有人的 <span class="math inline">\(T\)</span>，g-估计的程序<strong>就是第 14 章 §14.5 那一套</strong>： 构造候选 <span class="math inline">\(H_i(\psi) = T_i\exp(\psi A_i)\)</span>， 找使它在给定 <span class="math inline">\(L\)</span> 时与 <span class="math inline">\(A\)</span> 独立的那个 <span class="math inline">\(\psi\)</span>。</p>
+<p><strong>但行政删失让 <span class="math inline">\(H_i(\psi)\)</span> 对未观察到 <span class="math inline">\(T_i\)</span> 的人算不出来</strong>， 而「只用观察到死亡时间的人」会<strong>制造选择偏倚</strong>。书用一个三行的例子说明：</p>
+<div class="pitfall warn">
+<p><span class="pitfall-label">Table 17.1：为什么必须把一部分未删失的人也扔掉</span></p>
+<p>一项 <strong>60 个月</strong>的随机试验（<span class="math inline">\(K=60\)</span>），只有三类人：</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th></th>
+<th>类型 1</th>
+<th>类型 2</th>
+<th>类型 3</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><span class="math inline">\(T^{a=0}\)</span></td>
+<td><span class="math inline">\(36\)</span></td>
+<td><span class="math inline">\(72\)</span></td>
+<td><span class="math inline">\(108\)</span></td>
+</tr>
+<tr class="even">
+<td><span class="math inline">\(T^{a=1}\)</span></td>
+<td><span class="math inline">\(24\)</span></td>
+<td><span class="math inline">\(48\)</span></td>
+<td><span class="math inline">\(72\)</span></td>
+</tr>
+<tr class="odd">
+<td>分到 <span class="math inline">\(A=0\)</span> 时</td>
+<td><strong>观察到</strong></td>
+<td>被删失</td>
+<td>被删失</td>
+</tr>
+<tr class="even">
+<td>分到 <span class="math inline">\(A=1\)</span> 时</td>
+<td><strong>观察到</strong></td>
+<td><strong>观察到</strong></td>
+<td>被删失</td>
+</tr>
+</tbody>
+</table>
+<blockquote class="blockquote">
+<p>类型 2 个体的死亡<strong>只有在被分配到 <span class="math inline">\(A=1\)</span> 时才会被观察到</strong>。 因此，一个「欢迎所有非行政删失死亡时间」的分析， 在处理组与未处理组之间<strong>会有个体类型的失衡</strong>： <strong><span class="math inline">\(A=1\)</span> 组将包含类型 1 与类型 2，而 <span class="math inline">\(A=0\)</span> 组只包含类型 1。</strong> <span class="math inline">\(A=0\)</span> 组的个体平均而言预后更差，<strong>这会让处理看起来比它实际更好</strong>。 <strong>这种选择偏倚在处理对生存时间有非零效应时出现。</strong></p>
+<p>— <em>What If</em>, §17.6, p.233（复述）</p>
+</blockquote>
+<p><strong>解法</strong>：只保留那些<strong>无论被处理还是未被处理、死亡时间都会在随访结束前被观察到</strong>的人， 即 <span class="math inline">\(T_i^{a=0}\leq K\)</span> <strong>且</strong> <span class="math inline">\(T_i^{a=1}\leq K\)</span> 的人。 在这个例子里就是<strong>把类型 2 全部排除</strong>—— <strong>不仅排除 <span class="math inline">\(T_i &gt; K\)</span> 的行政删失者，还要排除一部分 <span class="math inline">\(T_i\leq K\)</span> 的未删失者</strong>。</p>
+<p>这就是<strong>人为删失</strong>（artificial censoring）。 定义指示 <span class="math inline">\(\Delta(\psi)\)</span>：被排除取 0、保留取 1， 然后<strong>把 g-估计程序里的 <span class="math inline">\(H(\psi)\)</span> 换成 <span class="math inline">\(\Delta(\psi)\)</span></strong> （技术上是在第 14 章 Technical Point 14.2 的估计方程里做替换）。</p>
+<p><em>Technical Point 17.3 给了 <span class="math inline">\(\Delta(\psi)\)</span> 的构造： 令 <span class="math inline">\(K(\psi)\)</span> 为「实际在 <span class="math inline">\(K\)</span> 时死亡的人所可能对应的、无处理下的最小生存时间」， 二值处理下 <span class="math inline">\(K(\psi) = \inf\{K\exp(\psi A)\}\)</span>，于是 <strong><span class="math inline">\(\psi &gt; 0\)</span>（处理压缩生存时间）时 <span class="math inline">\(K(\psi) = K\)</span>； <span class="math inline">\(\psi &lt; 0\)</span>（处理延长生存时间）时 <span class="math inline">\(K(\psi) = K\exp(\psi)\)</span>； <span class="math inline">\(\psi = 0\)</span> 时 <span class="math inline">\(K(\psi) = K\)</span></strong>。 所有行政删失者都有 <span class="math inline">\(\Delta(\psi) = 0\)</span>。 实操细节见 Hernán et al.&nbsp;(2005) 的附录。</em></p>
+</div>
+</section>
+<section id="结果-2" class="level3">
+<h3 class="anchored" data-anchor-id="结果-2">结果</h3>
+<blockquote class="blockquote">
+<p>在我们的例子里，秩保持结构 AFT 模型 <span class="math inline">\(T_i^{a=0} = T_i\exp(\psi A_i)\)</span> 的 g-估计 <span class="math inline">\(\hat\psi\)</span> 是 <strong><span class="math inline">\(-0.047\)</span>（95% 置信区间：<span class="math inline">\(-0.223\)</span> 到 <span class="math inline">\(0.333\)</span>）</strong>。 <strong><span class="math inline">\(\exp(-\hat\psi) = 1.05\)</span></strong> 可以解释为 「如果研究中所有人都接受 <span class="math inline">\(a=1\)</span> 时本应观察到的<strong>中位生存时间</strong>」 除以「如果所有人都接受 <span class="math inline">\(a=0\)</span> 时的中位生存时间」。 <strong>这个生存时间比提示戒烟对死亡时间几乎没有效应。</strong></p>
+<p>— <em>What If</em>, §17.6, p.234（复述）</p>
+</blockquote>
+<p>一条边注说明了点估计与区间是怎么来的：</p>
+<blockquote class="blockquote">
+<p><span class="math inline">\(\psi\)</span> 的点估计是<strong>使 Technical Point 17.3 所述估计函数取最小值</strong>的那个值； 95% 置信区间的界限是使该估计函数等于 <strong>3.84</strong>（自由度为 1 的 <span class="math inline">\(\chi^2\)</span>）的那些值。</p>
+<p>— <em>What If</em>, §17.6 边注, p.234（复述）</p>
+</blockquote>
+<div class="pitfall warn">
+<p><span class="pitfall-label">书对这套方法的实践评价相当悲观</span></p>
+<blockquote class="blockquote">
+<p>正如第 14 章所说，<strong>结构嵌套模型（包括 AFT 模型）在实践中很少被使用</strong>。 一个实际障碍是<strong>缺少用户友好的软件</strong>。 <strong>在生存分析场景里，一个更严重的障碍是：结构 AFT 模型的参数必须通过 「不保证找到唯一解」的搜索算法来估计。</strong> 这个问题在有两个或更多参数 <span class="math inline">\(\psi\)</span> 的模型里更严重。 结果是，<strong>为数不多的已发表应用倾向于使用简单化的 AFT 模型， 不允许处理效应随协变量取值变化。</strong></p>
+<p><strong>这种状况是令人遗憾的</strong>，因为专业知识（例如生物学机制） <strong>更容易被翻译成结构 AFT 模型的参数，而不是结构风险率模型的参数</strong>—— 在使用非确定性、非秩保持的结构 AFT 模型时尤其如此。</p>
+<p>— <em>What If</em>, §17.6, p.234（复述）</p>
+</blockquote>
+<p><em>另一条边注还把这条线接回了上一章： <strong>Tchetgen Tchetgen et al.&nbsp;(2015) 与 Robins (1997b) 描述了工具变量下的生存分析， 它们表现出与这里类似的问题。</strong></em></p>
+</div>
+<p>对应原书 <strong>Program 17.5</strong>。</p>
+</section>
+</section>
+<section id="这章停在哪里" class="level2">
+<h2 class="anchored" data-anchor-id="这章停在哪里">这章停在哪里</h2>
+<div class="joint-table">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>零件</th>
+<th>来自</th>
+<th>本章做的事</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>稳定化 IP 权重 <span class="math inline">\(SW^A\)</span></td>
+<td>第 12 章</td>
+<td><strong>一字未改</strong>，只是拟合的模型换成风险率模型</td>
+</tr>
+<tr class="even">
+<td>「扩展数据集 → 建模 → 预测 → 平均」</td>
+<td>第 13 章 §13.3</td>
+<td><strong>一字未改</strong>，只是要对每一个 <span class="math inline">\(k\)</span> 做一遍</td>
+</tr>
+<tr class="odd">
+<td>假边际结构模型</td>
+<td>第 12 章 §12.5、第 15 章 §15.1</td>
+<td>就是本章的「条件风险率模型」</td>
+</tr>
+<tr class="even">
+<td>g-估计 + 秩保持脚手架</td>
+<td>第 14 章 §14.4–14.5</td>
+<td>加法换成乘法（AFT），<strong>并加上人为删失</strong></td>
+</tr>
+<tr class="odd">
+<td>把删失当第二个处理</td>
+<td>第 8 章、第 12 章 §12.6</td>
+<td>行政删失可以只当基线变量；非行政删失留到第三部分</td>
+</tr>
+<tr class="even">
+<td>碰撞偏倚</td>
+<td>第 8 章</td>
+<td><strong>落在了「风险比」这个度量本身上</strong>（Fine Point 17.2）</td>
+</tr>
+<tr class="odd">
+<td>「两条路线差得远 = 至少一个模型错了」</td>
+<td>第 13 章 §13.4</td>
+<td>又用了一次：<span class="math inline">\(80.7/80.5\)</span> vs <span class="math inline">\(80.4/80.6\)</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>本章真正新的东西有三件</strong>： <strong>连乘公式</strong>（风险率 → 生存率）、 <strong>风险比自带的选择偏倚</strong>（Fine Point 17.2 + Figure 17.3）， 以及 g-估计在生存场景下必须做的<strong>人为删失</strong>。</p>
+<div class="qa">
+<p><span class="q">自检① 为什么这本书不建议报告风险比？</span></p>
+<p>两条理由，都在 Fine Point 17.2：</p>
+<ol type="1">
+<li><strong>它随时间变，而 Cox 模型默认报一个数。</strong> 那个数是各时点风险比的<strong>加权平均</strong>，权重（在罕见事件 + 共同行政删失下） 正比于<strong>未处理者中在该时点发生的事件数</strong>—— <strong>一个由「对照组什么时候死人」决定的权重</strong>。 后果：<strong>风险比可以等于 1，而两条生存曲线并不相同。</strong></li>
+<li><strong>它自带选择偏倚。</strong> <span class="math inline">\(k+1\)</span> 处的风险比必然条件在「活过 <span class="math inline">\(k\)</span>」上，而这是一个<strong>受处理影响的处理后变量</strong>， 也是 <span class="math inline">\(A\)</span> 与 <span class="math inline">\(U\)</span> 的<strong>碰撞变量</strong>（Figure 17.3）。 极端例子：处理在 <span class="math inline">\(k\)</span> 前杀光了高危者、对其他人无影响， <span class="math inline">\(k+1\)</span> 处的风险比<strong>会小于 1</strong>——尽管处理对任何人都没有好处。</li>
+</ol>
+<p><strong>替代</strong>：报告<strong>固定时间段上的生存率 / 风险的差与比</strong> （「120 个月生存率差 <span class="math inline">\(0.2\%\)</span>」「5 年风险比」）， 它们的定义里不含「条件在存活上」这一步。</p>
+<p><em>但不要走到另一个极端：<strong>估计风险率仍然是估计生存率的有用中间步骤</strong>， 本章整条流水线都建立在它上面。问题出在把风险<strong>比</strong>当成效应度量去报告。</em></p>
+</div>
+<div class="qa">
+<p><span class="q">自检② 什么时候可以不把删失当成时变过程？</span></p>
+<p>判据在 §17.1 那句话里：<strong>删失时间是不是在基线就已经定死。</strong></p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>情形</th>
+<th>处理方式</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>所有人共同的行政终点</strong>（本例，<span class="math inline">\(k_{end}=120\)</span>）</td>
+<td>最简单：直接算比例即可，§17.2 那套是杀鸡用牛刀</td>
+</tr>
+<tr class="even">
+<td><strong>错开入组</strong>（终点相同、起点不同）</td>
+<td>行政删失时间因人而异，但<strong>仍由基线的日历时间决定</strong> → 当成<strong>基线协变量</strong>调整</td>
+</tr>
+<tr class="odd">
+<td><strong>失访、竞争事件</strong></td>
+<td><strong>一般是时变过程</strong> → 留到第三部分；本章不处理</td>
+</tr>
+</tbody>
+</table>
+<p><strong>还要记住那个 4 行的算术</strong>：<span class="math inline">\(0.9\times 0.5\times 0.9 = 0.405\)</span> 而正确答案是 <span class="math inline">\(0.81\)</span>—— <strong>「未删失且存活」的比例估的是一个联合概率，不是生存率</strong>。 即使删失是完全随机的，直接算比例也是错的。</p>
+<p><em>顺带一条：<strong>行政删失与「竞争事件」是两回事</strong>。 后者按 Fine Point 17.1，<strong>没有令人满意的解法</strong>， 而且它提出的是关于估计量含义的<strong>逻辑问题</strong>，不是统计技术问题。</em></p>
+</div>
+<div class="qa">
+<p><span class="q">自检③ 未调整 5.8 个百分点、调整后 0.2 个百分点——这个结果该怎么讲？</span></p>
+<p><strong>先把四个数放在一起</strong>：</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th></th>
+<th>戒烟 <span class="math inline">\(a=1\)</span></th>
+<th>不戒烟 <span class="math inline">\(a=0\)</span></th>
+<th>差</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>未调整（§17.1）</td>
+<td><span class="math inline">\(76.2\%\)</span></td>
+<td><span class="math inline">\(82.0\%\)</span></td>
+<td><span class="math inline">\(-5.8\)</span> 个百分点</td>
+</tr>
+<tr class="even">
+<td>IP 加权（§17.4）</td>
+<td><span class="math inline">\(80.7\%\)</span></td>
+<td><span class="math inline">\(80.5\%\)</span></td>
+<td><span class="math inline">\(+0.2\)</span></td>
+</tr>
+<tr class="odd">
+<td>参数化 g-公式（§17.5）</td>
+<td><span class="math inline">\(80.4\%\)</span></td>
+<td><span class="math inline">\(80.6\%\)</span></td>
+<td><span class="math inline">\(-0.2\)</span></td>
+</tr>
+</tbody>
+</table>
+<p><strong>该讲的</strong>：粗比较里那 <span class="math inline">\(5.8\)</span> 个百分点<strong>几乎全部来自年龄</strong>—— 「年长者更可能戒烟，也更可能死亡」（§17.4）。 两条独立的调整路线把它压到 <span class="math inline">\(0.2\)</span> 个百分点以内，<strong>且彼此吻合</strong>， 按第 13 章 §13.4 的诊断这是令人安心的。</p>
+<p><strong>不该讲的</strong>：</p>
+<ul>
+<li><strong>不能说「戒烟不影响死亡」</strong>。区间是 <span class="math inline">\((-4.1\%,\ 3.7\%)\)</span> 与 <span class="math inline">\((-4.6\%,\ 4.1\%)\)</span>， <strong>兼容于 4 个百分点上下的效应</strong>。书自己的措辞是「几乎没有发现效应的证据」，不是「没有效应」。</li>
+<li><strong>不能忽略 Fine Point 12.1 那条</strong>：本章边注明确说「<strong>为简化起见我们忽略 Fine Point 12.1 描述的问题</strong>」—— 也就是第 12 章那条<strong>随访起点与入选资格错位</strong>的选择偏倚。它在这里仍然在。</li>
+<li><strong>不能忽略「只纳入活过 1982 年的人」</strong>：这本身就是一次按处理后事件做的选择。</li>
+</ul>
+<p><em>而 §17.6 的 AFT 给出的 <span class="math inline">\(\exp(-\hat\psi) = 1.05\)</span>（中位生存时间比） 与前两条路线在方向上一致，但它的区间 <span class="math inline">\((-0.223,\ 0.333)\)</span> 换算成生存时间比大约是 <span class="math inline">\((0.72,\ 1.25)\)</span>——<strong>同样兼容于相当大的效应</strong>。</em></p>
+</div>
+<p>第二部分到此结束。下一章是它的收尾：<strong>第 18 章「变量选择与高维数据」</strong>—— 第 15 章 §15.5 那句「把预测的习惯带进因果推断会出事」在那里会被完整展开， 第 13 章 Technical Point 13.2 那条「二阶偏倚是乘积」也会在那里兑现成 <strong>双稳健机器学习估计量</strong>。</p>
+<p>代码那一侧，本章对应原书 Program 17.1–17.5：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 0. 人-时格式：1629 行 → 176,764 行</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dplyr); <span class="fu">library</span>(tidyr)</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>pt <span class="ot">&lt;-</span> nhefs <span class="sc">%&gt;%</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">k_max =</span> <span class="fu">ifelse</span>(death <span class="sc">==</span> <span class="dv">1</span>, survtime <span class="sc">-</span> <span class="dv">1</span>, <span class="dv">119</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rowwise</span>() <span class="sc">%&gt;%</span> <span class="fu">do</span>(<span class="fu">data.frame</span>(., <span class="at">k =</span> <span class="dv">0</span><span class="sc">:</span>.<span class="sc">$</span>k_max)) <span class="sc">%&gt;%</span> <span class="fu">ungroup</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">D =</span> <span class="fu">ifelse</span>(death <span class="sc">==</span> <span class="dv">1</span> <span class="sc">&amp;</span> k <span class="sc">==</span> survtime <span class="sc">-</span> <span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">0</span>))   <span class="co"># D_{k+1}</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="co"># 1. §17.2 风险率模型：时变截距 + A 与时间的乘积项（不假定比例风险）</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>haz <span class="ot">&lt;-</span> <span class="fu">glm</span>(D <span class="sc">~</span> qsmk <span class="sc">+</span> <span class="fu">I</span>(qsmk<span class="sc">*</span>k) <span class="sc">+</span> <span class="fu">I</span>(qsmk<span class="sc">*</span>k<span class="sc">^</span><span class="dv">2</span>) <span class="sc">+</span> k <span class="sc">+</span> <span class="fu">I</span>(k<span class="sc">^</span><span class="dv">2</span>),</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>           <span class="at">family =</span> <span class="fu">binomial</span>(), <span class="at">data =</span> pt)</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. 连乘：生存率 = 各期 (1 − 风险率) 的累乘</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>surv <span class="ot">&lt;-</span> <span class="cf">function</span>(fit, newdat) <span class="fu">cumprod</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">predict</span>(fit, newdat, <span class="at">type =</span> <span class="st">"response"</span>))</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. §17.4 IP 加权：权重来自第 12 章那个模型，一字未改</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>sw  <span class="ot">&lt;-</span> ...                                   <span class="co"># 见第 12 章笔记；本例均值 1，范围 0.33–4.21</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>hazw <span class="ot">&lt;-</span> <span class="fu">glm</span>(D <span class="sc">~</span> qsmk <span class="sc">+</span> <span class="fu">I</span>(qsmk<span class="sc">*</span>k) <span class="sc">+</span> <span class="fu">I</span>(qsmk<span class="sc">*</span>k<span class="sc">^</span><span class="dv">2</span>) <span class="sc">+</span> k <span class="sc">+</span> <span class="fu">I</span>(k<span class="sc">^</span><span class="dv">2</span>),</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>            <span class="at">family =</span> <span class="fu">binomial</span>(), <span class="at">weights =</span> sw, <span class="at">data =</span> pt)</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="co">#    再对 a = 1 与 a = 0 各连乘一次 → 80.7% / 80.5%</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="co"># 4. §17.5 参数化 g-公式：把 L 放进风险率模型，再按第 13 章那套标准化</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>hazc <span class="ot">&lt;-</span> <span class="fu">glm</span>(D <span class="sc">~</span> qsmk <span class="sc">+</span> <span class="fu">I</span>(qsmk<span class="sc">*</span>k) <span class="sc">+</span> <span class="fu">I</span>(qsmk<span class="sc">*</span>k<span class="sc">^</span><span class="dv">2</span>) <span class="sc">+</span> k <span class="sc">+</span> <span class="fu">I</span>(k<span class="sc">^</span><span class="dv">2</span>) <span class="sc">+</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>              sex <span class="sc">+</span> race <span class="sc">+</span> age <span class="sc">+</span> <span class="fu">I</span>(age<span class="sc">^</span><span class="dv">2</span>) <span class="sc">+</span> <span class="fu">as.factor</span>(education) <span class="sc">+</span> ...,</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>            <span class="at">family =</span> <span class="fu">binomial</span>(), <span class="at">data =</span> pt)</span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a><span class="co">#    对每个人算两条条件生存曲线（qsmk 全设 1 / 全设 0），再逐时点取平均 → 80.4% / 80.6%</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a><span class="co"># 区间一律 bootstrap（书用了 500 个样本），而且必须重抽「人」，不是重抽「人-月」</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>最后那条注释是这一章最容易出错的地方： <strong>人-时数据里一个人占很多行，bootstrap 必须按 <code>seqn</code> 整人重抽</strong>， 否则区间会假性变窄。 （与之对照，<strong>点估计的标准误</strong>——按 §17.2 那条边注—— 只要风险率模型正确，常规 logistic 回归的输出就是对的。）</em></p>
+<div class="provenance">
+<section id="关于这份笔记" class="level3">
+<h3 class="anchored" data-anchor-id="关于这份笔记">关于这份笔记</h3>
+<dl>
+<dt>来源</dt>
+<dd>
+Hernán MA, Robins JM. <em>Causal Inference: What If</em>. 2025-01-02 版， 第 17 章（书页 221–234，PDF 第 230–243 页）。本页是读书笔记，非原书译文。
+</dd>
+<dt>核对方式</dt>
+<dd>
+<span class="ck">①</span> <strong>本章共 7 张图，已用 <code>pdfimages -png -f 230 -l 243</code> 全部抽出</strong>： 恰好 <strong>7 张</strong>嵌入位图，与正文引用的 Figure 17.1–17.7 一一对应，没有多余图像。 <strong>本页只重绘了 Figure 17.2 与 17.3</strong>（两张因果图）—— 它们是本章唯一承载论证的图； <strong>Figure 17.1、17.4、17.6、17.7 是四张生存曲线图，本页未重绘</strong>， 理由是曲线的逐点取值书中未给出，重绘只能是臆造； 本页改用「120 个月生存率」这四个书中明确印出的数字来呈现同一结论。 <strong>Figure 17.5（含 <span class="math inline">\(L\)</span> 的因果图）未重绘</strong>，它与第 7 章 Figure 7.1 同构。
+</dd>
+<dd>
+<p><span class="ck">②</span> <strong>正文中的全部数字逐个照录并交叉验算</strong>： 样本量 <span class="math inline">\(1629\)</span>；死亡 <span class="math inline">\(318\)</span>，其中处理者 <span class="math inline">\(102\)</span>、未处理者 <span class="math inline">\(216\)</span>—— <strong><span class="math inline">\(102 + 216 = 318\)</span> ✓</strong>；行政删失 <span class="math inline">\(1311\)</span>——<strong><span class="math inline">\(318 + 1311 = 1629\)</span> ✓</strong>； 随访 <span class="math inline">\(120\)</span> 个月；人-时数据 <span class="math inline">\(176{,}764\)</span> 行； 120 个月生存率 <span class="math inline">\(76.2\%\)</span> / <span class="math inline">\(82.0\%\)</span> 与风险 <span class="math inline">\(23.8\%\)</span> / <span class="math inline">\(18.0\%\)</span>—— <strong><span class="math inline">\(1-0.762 = 0.238\)</span> ✓、<span class="math inline">\(1-0.820 = 0.180\)</span> ✓</strong>； 对数秩检验 <span class="math inline">\(P = 0.005\)</span>； 120 个月风险率 <span class="math inline">\(0\%\)</span>（戒烟组最后一例死亡在第 <span class="math inline">\(113\)</span> 月）与 <span class="math inline">\(1/986 = 0.10\%\)</span>—— <strong><span class="math inline">\(1/986 = 0.001014\)</span> ✓</strong>； 权重均值 <span class="math inline">\(1\)</span>、范围 <span class="math inline">\(0.33\)</span>–<span class="math inline">\(4.21\)</span>； IP 加权 <span class="math inline">\(80.7\%\)</span> / <span class="math inline">\(80.5\%\)</span>、最大差 <span class="math inline">\(-1.4\%\)</span> <span class="math inline">\((-3.4\%, 0.7\%)\)</span>、<span class="math inline">\(500\)</span> 个 bootstrap 样本； g-公式 <span class="math inline">\(80.4\%\)</span> / <span class="math inline">\(80.6\%\)</span>、最大差 <span class="math inline">\(-2.0\%\)</span> <span class="math inline">\((-5.6\%, 1.8\%)\)</span>； <span class="math inline">\(\hat\psi = -0.047\)</span> 与 <span class="math inline">\(\exp(0.047) = 1.048 \to \mathbf{1.05}\)</span> ✓；<span class="math inline">\(\chi^2\)</span> 临界值 <span class="math inline">\(3.84\)</span> ✓。</p>
+</dd>
+<dd>
+<p><span class="ck">③</span> <strong>Table 17.1 的六个数已用模型自洽性交叉验算</strong>： <span class="math inline">\(T^{a=0} = 36,\ 72,\ 108\)</span> 与 <span class="math inline">\(T^{a=1} = 24,\ 48,\ 72\)</span>， 三对的比值<strong>全都是 <span class="math inline">\(2/3\)</span></strong> ✓——与「秩保持 AFT 模型下所有个体共享同一个 <span class="math inline">\(\psi\)</span>」一致 （对应 <span class="math inline">\(\exp(-\psi) = 2/3\)</span>，即 <span class="math inline">\(\psi = \ln 1.5 \approx 0.405\)</span>）。 以 <span class="math inline">\(K = 60\)</span> 代入：类型 1 两种处理下都 <span class="math inline">\(&lt;60\)</span>（观察到）、 类型 3 都 <span class="math inline">\(&gt;60\)</span>（删失）、<strong>类型 2 只在 <span class="math inline">\(a=1\)</span> 下 <span class="math inline">\(&lt;60\)</span></strong>—— <strong>与正文「只有类型 2 的死亡仅在被分配到 <span class="math inline">\(A=1\)</span> 时才被观察到」完全一致</strong> ✓。</p>
+</dd>
+<dd>
+<p><span class="ck">④</span> <strong>一处符号不一致，已如实标出</strong>： §17.4 报「<span class="math inline">\(80.7\%\)</span> 与 <span class="math inline">\(80.5\%\)</span>，差 <span class="math inline">\(0.2\%\)</span>」（即 <span class="math inline">\(+0.2\)</span>）， §17.5 报「<span class="math inline">\(80.4\%\)</span> 与 <span class="math inline">\(80.6\%\)</span>，差 <span class="math inline">\(0.2\%\)</span>」（按同样的相减顺序应为 <span class="math inline">\(-0.2\)</span>）。 <strong>两处都写成「difference 0.2%」，报的是绝对值。</strong> 本页在自检③的表里<strong>按同一相减顺序写出带符号的值</strong>，并保留原书的措辞。</p>
+</dd>
+<dd>
+<p><span class="ck">⑤</span> 本章 <code>pdftotext -layout</code> 的已知损坏： 上下标全丢（<code>Dk</code> 即 <span class="math inline">\(D_k\)</span>、<code>Dka+1</code> 即 <span class="math inline">\(D_{k+1}^{a}\)</span>、<code>T a=0</code> 即 <span class="math inline">\(T^{a=0}\)</span>、 <code>Ha i ()</code> 即 <span class="math inline">\(H_i(\psi)\)</span>）， 希腊字母 <span class="math inline">\(\theta\)</span> / <span class="math inline">\(\beta\)</span> / <span class="math inline">\(\psi\)</span> / <span class="math inline">\(\Delta\)</span> 被整体吞掉（只剩下标数字或括号）， 连乘号 <span class="math inline">\(\prod\)</span> 与不等号被吐成空白或散落的 <code>m=1</code>。 已按公式所在位置逐处还原： 风险率 logistic 模型里的系数记 <span class="math inline">\(\theta\)</span>、风险率模型里的记 <span class="math inline">\(\beta\)</span>、 AFT 模型的因果参数记 <span class="math inline">\(\psi\)</span>、人为删失指示记 <span class="math inline">\(\Delta(\psi)\)</span>—— <strong>与第 14 章笔记的记号保持一致</strong>。 <strong>本章未发现 <code>≠</code> 被吞成 <code>=</code> 的处所。</strong></p>
+</dd>
+<dd>
+<p><span class="ck">⑥</span> <strong>Technical Point 17.2 的两个模型式已按数学一致性复核</strong> （CFT 是对 <span class="math inline">\(\Pr[D_k^a=1]\)</span> 建乘法模型、CST 是对 <span class="math inline">\(\Pr[D_k^a=0]\)</span> 建乘法模型）， 但<strong>未整页渲染逐符号比对</strong>。 Technical Point 17.3 中 <span class="math inline">\(K(\psi) = \inf\{K\exp(\psi A)\}\)</span> 的三种取值 已代入 <span class="math inline">\(A\in\{0,1\}\)</span> 验算 ✓。</p>
+</dd>
+<dd>
+<p>直接引用的英文原句逐字核对、页码逐条确认。标注为「复述」的几处， 是把书的多句话压成一句，非逐字引用。</p>
+</dd>
+</dl>
+</section>
+<section id="哪些是我的改动不是原书" class="level3">
+<h3 class="anchored" data-anchor-id="哪些是我的改动不是原书">哪些是我的改动，不是原书</h3>
+<ul>
+<li><strong>全章地图</strong>：完全由笔记作者绘制，原书没有这张图。 「中间一竖列是新内容、底下三个框只是把前三章搬过来」是笔记的判断。</li>
+<li><strong>Figure 17.2 / 17.3 的重绘</strong>：节点与箭头照原图， <strong><span class="math inline">\(D_1\)</span> 外面那个「条件化」方框沿用本仓库第 6–8 章笔记的画法</strong> （原书用的是同样的约定），<strong>两图并置、分隔线与下方说明文字是笔记加的</strong>； 「这不是某个分析做错了，而是风险比这个量的定义里就带着的」是笔记的说法。</li>
+<li><strong>四张生存曲线图未重绘，改以四个 120 个月生存率数字呈现</strong>： 这是本页对原书图示最大的一处取舍，理由见核对说明。</li>
+<li><strong>§17.1 的三行「三个量」表</strong>：书是连续行文，压成表是笔记的整理； 「两个分母，两种东西」是笔记的说法。</li>
+<li><strong>Fine Point 17.1 的四行竞争事件表</strong>：书是四段正文（三段加一段「另一个替代」）， 压成表是笔记的整理。</li>
+<li><strong>Fine Point 17.3 的三行模型分类表</strong>：书是三段正文，压成表是笔记的整理； 「『Cox 不需要分布假定』这句话只说了一半」是笔记的评论。</li>
+<li><strong>§17.4 与 §17.5 的两张「两步表」以及最后一列「来自哪一章」</strong>： 书没有这样标注来源，<strong>指出「一字未改」是笔记的判断</strong>。</li>
+<li><strong>Table 17.1 的表被扩成四行</strong>（加了「分到 <span class="math inline">\(A=0\)</span> / <span class="math inline">\(A=1\)</span> 时是否观察到」两行）： 原书表只有 <span class="math inline">\(T^{a=0}\)</span> 与 <span class="math inline">\(T^{a=1}\)</span> 两行，<strong>后两行是笔记按 <span class="math inline">\(K=60\)</span> 推出来并补上的</strong>。</li>
+<li><strong>「零件表」</strong>：书没有这张表，是笔记对本章与前面各章关系的归纳。</li>
+<li><strong>自检三问</strong>：原书没有这些设问。 自检③里那句「不能说戒烟不影响死亡」以及对 Fine Point 12.1、 「只纳入活过 1982 年的人」这两条残余偏倚的提醒，是笔记加的 （书确实在边注里写了「为简化起见忽略 Fine Point 12.1 的问题」， 把它提到结论旁边是笔记的判断）； AFT 区间换算成生存时间比 <span class="math inline">\((0.72,\ 1.25)\)</span> 是<strong>笔记代入 <span class="math inline">\(\exp(-\psi)\)</span> 算的</strong>，书未给出。</li>
+<li><strong>末尾那段 R 代码</strong>：原书官网提供的是 Program 17.1–17.5，本页<strong>没有照抄</strong>； 这段是笔记按本章描述自己写的骨架， <strong>「bootstrap 必须按人整人重抽，不是重抽人-月」这条注释是笔记加的</strong> （书只说了「对人群中的个体做 bootstrap」）。</li>
+<li>所有小标题措辞均为笔记作者的判断。</li>
+</ul>
+</section>
+<section id="哪些内容是缺的" class="level3">
+<h3 class="anchored" data-anchor-id="哪些内容是缺的">哪些内容是缺的</h3>
+<ul>
+<li><strong>原书 Program 17.1–17.5 的代码本身未收录</strong>，只在末尾给了骨架； 所有数字均转录自原书正文，<strong>未在真实数据上复算</strong>。</li>
+<li><strong>四张生存曲线图未重绘</strong>（见核对说明）， 风险率曲线「大致是 M 形」这一描述<strong>无法从本页的任何图中看出</strong>， 需要回到 PDF 的 Figure 17.1。</li>
+<li><strong>Technical Point 17.2 的细节未展开</strong>： <span class="math inline">\(\gamma_k(L,A;\beta)\)</span> 的一般形式、CST 模型与结构加性风险率模型的等价性、 以及「罕见失效」条件的精确表述，只记了要点 （Page 2005；Picciotto et al.&nbsp;2012；Tchetgen Tchetgen et al.&nbsp;2015）。</li>
+<li><strong>Technical Point 17.3 的实操细节</strong>（估计方程中如何用 <span class="math inline">\(\Delta(\psi)\)</span> 替换 <span class="math inline">\(H(\psi)\)</span>、 搜索算法的实现）只记了要点，Hernán et al.&nbsp;(2005) 的附录未展开。</li>
+<li><strong>非确定性、非秩保持的结构嵌套 AFT 模型</strong>（Robins 1997b）只记了出处。</li>
+<li><strong>竞争事件的可分离效应路线</strong>（Stensrud et al.&nbsp;2020, 2021；第 23 章 Technical Point 23.3） 与 Young et al.&nbsp;(2019) 的综述只记了出处。</li>
+<li><strong>非行政删失（失访）的处理</strong>书明确留到第三部分，本页同样只记了指针。</li>
+<li><strong>工具变量下的生存分析</strong>（Tchetgen Tchetgen et al.&nbsp;2015；Robins 1997b）只记了出处。</li>
+<li>参考文献（Thompson 1977、Hernán 2010、Hernán et al.&nbsp;2005、 Robins 1994/1997b、Page 2005、Picciotto et al.&nbsp;2012、 Hosmer/Lemeshow/May 2008、Fleming &amp; Harrington 2005、 Kalbfleisch &amp; Prentice 2002、Young et al.&nbsp;2019、Stensrud et al.&nbsp;2020/2021） 未整理成 <code>references.bib</code> 条目。</li>
+</ul>
+</section>
+</div>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "已复制");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "已复制");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/hui950319\.github\.io\/causalR\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../notes/w05-instrumental-variables.html" class="pagination-link" aria-label="第 16 章 · 不要求可交换性的那条路">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">第 16 章 · 不要求可交换性的那条路</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../notes/w06-variable-selection.html" class="pagination-link" aria-label="第 18 章 · 调整得越多，不等于偏倚越小">
+        <span class="nav-page-text"><span class="chapter-title">第 18 章 · 调整得越多，不等于偏倚越小</span></span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/w06-causal-survival.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></div></div></footer></body></html>
