@@ -210,11 +210,500 @@ $c'$ 路径 $e^{-0.414}\approx 0.66$。讲义 p10 给的 OR 值正是这几个�
 所以总效应的 E-value 高，不代表中介比例可信——这两件事要分开报。
 :::
 
+## R 代码[：课程原件，可滚动阅读也可下载]{.hook}
+
+以下是课程发的 R 脚本原件，**未作任何修改**。
+
+::: {.pitfall}
+[跑之前先改路径]{.pitfall-label}
+
+脚本里的工作目录是课程作者本机的绝对路径，直接跑必然失败——
+先把 `setwd()` 改成自己的目录，或把 `read.csv()` 换成完整路径。
+各周的硬编码位置在 `learn/courses/README.md` 里逐条列了。
+:::
+
+### `mediation` 包[：161 行]{.hook}
+
+参数化 G 公式路线，输出 ACME / ADE / Total Effect 与中介比例。
+
+::: {.slide-embed}
+
+::: {.code-frame}
+```r
+# ============================================================================
+# ============================================================================
+# 课程演示：因果中介分析 (Causal Mediation Analysis) 
+# 研究问题：身体活动量(PA_CAT)是否通过抑郁症状(CESD_CAT)影响慢性肺病(Lung)？
+# 变量说明：
+#   - 结局变量(Y): lungfun      (慢性肺病      0：未患慢性肺病；1：患有慢性肺病)#   
+#   - 暴露变量(X): PA_CAT       (身体活动量     0: 低           1: 正常， )
+#   - 中介变量(M): CESD_CAT     (抑郁症状评分   0：未抑郁       1：抑郁) 
+#   - 协变量(C): sex, age       (性别 0: 女性 1: 男性;  年龄(岁))
+# ============================================================================
+# ----------------------------
+# 1.安装和加载必要的R包
+# ============================================================================
+# 安装包（如果尚未安装）
+install.packages("mediation")  # 核心中介分析包
+install.packages("tidyverse")  # 数据整理和可视化工具集
+install.packages("broom")      # 整理模型结果
+install.packages("EValue")     # E-value敏感性分析
+
+# 加载所有需要的包
+library(mediation)     # 用于中介效应分析
+library(tidyverse)     # 包含dplyr(数据处理)、ggplot2(绘图)等
+library(broom)         # 将模型结果转为整洁的数据框
+library(EValue)        # 进行敏感性分析的E-value计算（备选方法）
+
+
+#2.数据准备
+# 查看当前工作空间
+getwd()
+
+# 设置工作空间
+setwd("C:/机器学习因果推断课程中介分析王老师")
+
+#3.导入数据
+data<- read.csv("data.csv")
+# 查看数据结构
+str(data)
+head(data)
+# 3. 建立中介模型
+# ----------------------------
+# 注意：mediation包需要两个回归模型
+
+# 模型1: 中介变量模型 (M ~ X + covariates)
+# 使用逻辑回归，因为M是二分类变量
+med_model <- glm(
+  formula = CESD_CAT ~ PA_CAT + sex + age,          # 中介变量受自变量和协变量影响
+  family = binomial(link = "logit"),  # 二分类变量使用logit连接
+  data = data
+)
+
+# 查看中介模型的系数
+summary(med_model)
+tidy(med_model)  # 使用broom包整理结果
+
+# 模型2: 因变量模型 (Y ~ X + M + covariates)
+# 使用逻辑回归，因为Y是二分类变量
+out_model <- glm(
+  formula = lungfun ~ PA_CAT+ CESD_CAT + sex + age,      # 因变量受自变量、中介变量和协变量影响
+  family = binomial(link = "logit"),  # 二分类变量使用logit连接
+  data = data
+)
+
+# 查看因变量模型的系数
+summary(out_model)
+tidy(out_model)  # 使用broom包整理结果
+
+# ----------------------------
+# 4. 进行中介效应分析
+# ----------------------------
+# 使用mediate()函数计算中介效应
+
+med_result <- mediate(
+  model.m = med_model,    # 中介变量模型
+  model.y = out_model,    # 结果变量模型
+  treat = "PA_CAT",            # 自变量的名称
+  mediator = "CESD_CAT",         # 中介变量的名称
+  sims = 100,            # Bootstrap重复次数，建议1000次以上
+  boot = TRUE,            # 使用非参数bootstrap
+  robustSE = TRUE,        # 使用稳健标准误（对二分类变量推荐）
+  treat.value = 1,        # 处理组值（用于计算效应）
+  control.value = 0,      # 对照组值（用于计算效应）
+  boot.ci.type = "perc"   # Bootstrap置信区间类型："perc"百分位法
+)
+
+# 查看详细的中介分析结果
+summary(med_result)
+
+
+# 解释输出：
+# ACME (Average Causal Mediation Effect): 平均中介效应（间接效应）
+# ADE (Average Direct Effect): 平均直接效应
+# Total Effect: 总效应 = 间接效应 + 直接效应
+# Prop. Mediated: 中介效应占总效应的比例
+
+# ----------------------------
+# 5. 结果可视化
+# ----------------------------
+# 绘制中介效应图
+
+#自定义绘图（使用ggplot2）
+# 提取Bootstrap分布结果
+if(!is.null(med_result$d0.sims)) {
+  effect_data <- data.frame(
+    ACME = med_result$d0.sims,  # 中介效应分布
+    ADE = med_result$z0.sims    # 直接效应分布
+  )
+  
+  # 绘制中介效应和直接效应的分布
+  p <- effect_data %>%
+    pivot_longer(cols = everything(), names_to = "Effect", values_to = "Value") %>%
+    ggplot(aes(x = Value, fill = Effect)) +
+    geom_density(alpha = 0.5) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+    facet_wrap(~ Effect, scales = "free") +
+    labs(title = "中介效应和直接效应的Bootstrap分布",
+         x = "效应大小", y = "密度") +
+    theme_minimal()
+  print(p)
+}
+
+# ----------------------------
+# 6. 敏感性分析
+# ----------------------------
+# 对于二分类中介变量，mediation包的medsens()函数不适用
+
+# 使用E-value进行敏感性分析
+# E-value表示需要多强的未观测混淆才能解释观察到的效应
+# 注意：这需要将效应大小转换为风险比(risk ratio)
+
+# 首先，我们需要获得效应估计
+
+# 计算总效应、间接效应、直接效应E-value
+total_effect <- med_result$tau.coef  # 总效应估计值
+indirect_effect<- med_result$d0#间接效应估计值
+direct_effect<- med_result$z0#直接效应估计值
+# 将log-odds转换为近似的风险比（近似公式）
+# 注意：这是近似计算，严格来说需要得到风险比
+# 计算总效应的E-value
+evalue_result_total <- EValue::evalues.RR(
+  est = exp(total_effect),  # 估计的风险比
+  lo = exp(med_result$tau.ci[1]),  # 置信区间下限
+  hi = exp(med_result$tau.ci[2])   # 置信区间上限
+)
+# 计算间接效应的E-value
+evalue_result_indirect <- EValue::evalues.RR(
+  est = exp(indirect_effect),  # 估计的风险比
+  lo = exp(med_result$d0.ci[1]),  # 置信区间下限
+  hi = exp(med_result$d0.ci[2])   # 置信区间上限
+)
+# 计算直接效应的E-value
+evalue_result_direct <- EValue::evalues.RR(
+  est = exp(direct_effect),  # 估计的风险比
+  lo = exp(med_result$z0.ci[1]),  # 置信区间下限
+  hi = exp(med_result$z0.ci[2])   # 置信区间上限
+)
+
+# E-value敏感性分析结果:
+evalue_result_total
+evalue_result_indirect
+evalue_result_direct
+```
+:::
+
+<p class="fig-cap">
+<b>`mediation` 包（161 行）。</b>面板内可上下滚动；
+<a href="code/zheng-w08-mediation.R">下载 .R 文件</a>。存档里的原名是 <code>1.mediation包中介分析.R</code>。
+</p>
+:::
+
+### `CMAverse` 包[：99 行]{.hook}
+
+OR 尺度上的自然效应模型分解，并做未测量混杂的 E-value 敏感性分析。
+
+::: {.slide-embed}
+
+::: {.code-frame}
+```r
+# ============================================================================
+# ============================================================================
+# 课程演示：因果中介分析 (Causal Mediation Analysis) 
+# 研究问题：身体活动量(PA_CAT)是否通过抑郁症状(CESD_CAT)影响慢性肺病(Lung)？
+# 变量说明：
+#   - 结局变量(Y): lungfun      (慢性肺病      0：未患慢性肺病；1：患有慢性肺病)#   
+#   - 暴露变量(X): PA_CAT       (身体活动量     0: 低           1: 正常， )
+#   - 中介变量(M): CESD_CAT     (抑郁症状评分   0：未抑郁       1：抑郁) 
+#   - 协变量(C): sex, age       (性别 0: 女性 1: 男性;  年龄(岁))
+# ============================================================================
+# ----------------------------
+# 1.安装和加载必要的R包
+# ============================================================================
+
+# 安装r包
+if (!require("dplyr")) install.packages("dplyr")
+if (!require("ggplot2")) install.packages("ggplot2")
+if (!require("devtools")) install.packages("devtools")
+#安装CMAverse包
+devtools::install_local("C:/机器学习因果推断课程中介分析王老师/CMAverse") #本地安装
+devtools::install_github("BS1125/CMAverse")     # 2.在线安装（上面安装不成功，备选）
+
+# 加载r包
+library(dplyr)
+library(ggplot2)
+library(devtools)
+library(CMAverse)
+
+#2.数据准备
+# 查看当前工作空间
+getwd()
+
+# 设置工作空间
+setwd("C:/机器学习因果推断课程中介分析王老师")
+
+#导入数据
+data<- read.csv("data.csv")
+# ----------------------------
+
+#########二、CMAverse 包的因果中介分析########
+
+## 自然效应模型 ne（Natural Effect Model）
+set.seed(2024)
+cm_ne <- cmest(
+  data = data,
+  model = "ne",             # 指定模型为自然效应模型
+  outcome = "lungfun",      # Y：结局变量（二分类）
+  exposure = "PA_CAT",      # X：暴露变量（二分类）
+  mediator = "CESD_CAT",    # M：中介变量（二分类）
+  basec = c("sex", "age"),  # C：协变量（混杂因素）
+  yreg = "logistic",        # Y 的回归模型（logistic 回归）
+  mreg = list("logistic"),  # M 的回归模型（logistic 回归）
+  EMint = FALSE,            # 是否指定暴露–中介交互（此处无）
+  estimation = "imputation",# 使用反事实插补进行效应估计
+  inference  = "bootstrap", # 使用 bootstrap 进行推断
+  nboot      = 100,         # bootstrap 次数（建议 ≥1000）
+  yval = 1,                 # Y=1 的效应（肺功能异常）
+  mval = list(1)            # M=1 的中介类别（抑郁）
+)
+summary(cm_ne)  
+
+
+# 从 cm_ne 中提取关键效应指标 
+df_ne <- data.frame(
+  effect = c("NDE", "NIE", "TE"), # 三种效应类型NDE/NIE/TE
+  OR = c(                        
+    cm_ne$effect.pe["Rpnde"],     # 点估计值（OR值）
+    cm_ne$effect.pe["Rpnie"],
+    cm_ne$effect.pe["Rte"]
+  ),
+  lower = c(
+    cm_ne$effect.ci.low["Rpnde"],  # CI下限
+    cm_ne$effect.ci.low["Rpnie"],
+    cm_ne$effect.ci.low["Rte"]
+  ),
+  upper = c(
+    cm_ne$effect.ci.high["Rpnde"], # CI上限
+    cm_ne$effect.ci.high["Rpnie"],
+    cm_ne$effect.ci.high["Rte"]
+  )
+)
+df_ne
+
+#绘制带误差线的森林图
+ggplot(df_ne, aes(x = effect, y = OR, color = effect)) +
+  geom_point(size = 4) +    # 点估计值
+  geom_errorbar(aes(ymin = lower, ymax = upper),  # 置信区间
+                width = 0.15, size = 1) +        
+  geom_hline(yintercept = 1, linetype = "dashed", color = "grey50") + # 参考线(OR=1)
+  coord_flip() +   # 翻转坐标轴
+  theme_bw() +     # 黑白主题
+  labs(
+    title = "Natural Effect Model",
+    x = "",
+    y = "Odds Ratio (OR)"
+  )
+
+# 敏感性分析
+sens_ne <- cmsens(cm_ne, sens="uc") #指定敏感性分析的类型为uc（未测量混杂）
+print(sens_ne$evalues)              # 输出结果    
+```
+:::
+
+<p class="fig-cap">
+<b>`CMAverse` 包（99 行）。</b>面板内可上下滚动；
+<a href="code/zheng-w08-cmaverse.R">下载 .R 文件</a>。存档里的原名是 <code>2.CMAverse包中介分析 .R</code>。
+</p>
+:::
+
+### `medoutcon` 包[：166 行]{.hook}
+
+双重稳健路线，讲义把它列为观测性研究的当前最佳实践。
+
+::: {.slide-embed}
+
+::: {.code-frame}
+```r
+# ============================================================================
+# ============================================================================
+# 课程演示：因果中介分析 (Causal Mediation Analysis) 
+# 研究问题：身体活动量(PA_CAT)是否通过抑郁症状(CESD_CAT)影响慢性肺病(Lung)？
+# 变量说明：
+#   - 结局变量(Y): lungfun      (慢性肺病      0：未患慢性肺病；1：患有慢性肺病)#   
+#   - 暴露变量(X): PA_CAT       (身体活动量     0: 低           1: 正常， )
+#   - 中介变量(M): CESD_CAT     (抑郁症状评分   0：未抑郁       1：抑郁) 
+#   - 协变量(C): sex, age       (性别 0: 女性 1: 男性;  年龄(岁))
+# ============================================================================
+#1.安装包，加载包
+#安装包
+remotes::install_github("nhejazi/medoutcon")
+remotes::install_github("tlverse/sl3")
+
+#加载包
+library(medoutcon)#用于中介分析和因果推断的包，基于目标最大似然估计（TMLE）方法
+library(sl3)#现代机器学习框架
+library(data.table)#数据操作和转换包
+library(dplyr)#高性能数据处理包
+library(speedglm)#快速广义线性模型
+#2.数据准备
+# 查看当前工作空间
+getwd()
+
+# 设置工作空间
+setwd("C:/机器学习因果推断课程中介分析王老师")
+
+#导入数据
+data <- readr::read_csv("data.csv")
+
+df <- data            #将原始数据框赋值给新的对象df
+W <- c("sex", "age")  #定义了一组基准协变量
+A <- "PA_CAT"       #定义处理/暴露变量
+M <- "CESD_CAT"   #定义中介变量
+Y <- "lungfun"    #定义结局变量
+
+
+# 用纯GLM learner，也可以修改为其它的机器学习模型
+glm_learner <- Lrnr_glm$new() #创建一个广义线性模型（GLM）的学习器
+
+
+#计算自然直接效应
+set.seed(123)    # 设置随机种子，确保结果可重复
+nde_glm <- medoutcon(
+  W = df[, W], A = df[[A]], Z = NULL, M = df[[M]], Y = df[[Y]],
+  effect = "direct",      #估计自然直接效应
+  # 以下四个参数都使用GLM进行估计
+   g_learners = glm_learner,# 处理机制模型估计 P(A|W) - 给定协变量下处理的概率
+  h_learners = glm_learner,  #中介机制模型估计 P(M|A,W) - 给定处理和协变量下中介变量的分布
+  b_learners = glm_learner, # 结果机制模型估计 E[Y|A,M,W] - 给定处理、中介和协变量下的结果期望
+  q_learners = glm_learner # 中介密度比模型，用于计算中介变量的密度比，是 TMLE 的关键部分
+)
+
+#计算自然间接效应
+set.seed(123)
+nie_glm <- medoutcon(
+  W = df[, W], A = df[[A]], Z = NULL,#没有其他中介变量
+  M = df[[M]], Y = df[[Y]],
+  effect = "indirect", # 估计自然间接效应
+  g_learners = glm_learner,
+  h_learners = glm_learner,
+  b_learners = glm_learner,
+  q_learners = glm_learner
+)
+# 计算中介百分比
+set.seed(123)
+
+pm_glm <- medoutcon(
+  W = df[, W], A = df[[A]], Z = NULL, M = df[[M]], Y = df[[Y]],
+  effect = "pm",
+  g_learners = glm_learner,
+  h_learners = glm_learner,
+  b_learners = glm_learner,
+  q_learners = glm_learner
+)
+
+cat("GLM结果:\n")
+cat("NDE:", nde_glm$theta, "\n")
+cat("NIE:", nie_glm$theta, "\n")
+cat("TE:", nde_glm$theta + nie_glm$theta, "\n")
+cat("PM (手动):", nie_glm$theta / (nde_glm$theta + nie_glm$theta), "\n")
+cat("PM (medoutcon):", pm_glm$theta, "\n")
+
+
+results <- function(nde_glm,nie_glm){
+  NDE <- nde_glm %>% summary %>% as.data.frame() %>% 
+    dplyr::mutate(
+      效应类型 = "自然直接效应 (NDE)",
+      标准误 = nde_glm$var %>% sqrt, #对方差进行开方
+      p值 = 2 * pnorm(-abs(nde_glm$theta / sqrt(nde_glm$var)))
+    ) %>% 
+    dplyr::select(效应类型,估计值 = param_est,标准误,CI下限 = lwr_ci,CI上限 = upr_ci,p值)
+  NIE <- nie_glm %>% summary %>% as.data.frame() %>% 
+    dplyr::mutate(
+      效应类型 = "自然间接效应 (NIE)",
+      标准误 = nie_glm$var %>% sqrt, #对方差进行开方
+      p值 = 2 * pnorm(-abs(nie_glm$theta / sqrt(nie_glm$var)))
+    ) %>% 
+    dplyr::select(效应类型,估计值 = param_est,标准误,CI下限 = lwr_ci,CI上限 = upr_ci,p值)
+  rbind(NDE,NIE) %>% as.data.frame()
+}
+results(nde_glm,nie_glm)
+
+
+results <- function(nde_glm, nie_glm,pm_glm=NULL){
+  # NDE结果
+  NDE <- nde_glm %>% summary %>% as.data.frame() %>% 
+    dplyr::mutate(
+      效应类型 = "自然直接效应 (NDE)",
+      标准误 = nde_glm$var %>% sqrt,
+      p值 = 2 * pnorm(-abs(nde_glm$theta / sqrt(nde_glm$var)))
+    ) %>% 
+    dplyr::select(效应类型, 估计值 = param_est, 标准误, CI下限 = lwr_ci, CI上限 = upr_ci, p值)
+  # NIE结果
+  NIE <- nie_glm %>% summary %>% as.data.frame() %>% 
+    dplyr::mutate(
+      效应类型 = "自然间接效应 (NIE)",
+      标准误 = nie_glm$var %>% sqrt,
+      p值 = 2 * pnorm(-abs(nie_glm$theta / sqrt(nie_glm$var)))
+    ) %>% 
+    dplyr::select(效应类型, 估计值 = param_est, 标准误, CI下限 = lwr_ci, CI上限 = upr_ci, p值)
+  # 总效应 (TE = NDE + NIE)
+  te_est <- nde_glm$theta + nie_glm$theta
+  # 方差：假设NDE和NIE独立，var(TE) = var(NDE) + var(NIE)
+  # 注意：这是简化假设，实际上它们可能相关
+  te_var <- nde_glm$var + nie_glm$var
+  te_se <- sqrt(te_var)
+  te_ci_lower <- te_est - 1.96 * te_se
+  te_ci_upper <- te_est + 1.96 * te_se
+  te_pval <- 2 * pnorm(-abs(te_est / te_se))
+  TE <- data.frame(
+    效应类型 = "总效应 (TE)",
+    估计值 = te_est,
+    标准误 = te_se,
+    CI下限 = te_ci_lower,
+    CI上限 = te_ci_upper,
+    p值 = te_pval
+  )
+  # 合并结果
+  result_table <- rbind(NDE, NIE, TE)
+  
+  if (!is.null(pm_glm)) {
+    cat("\n============== 中介比例 ==============\n")
+    cat("方法1 (手算 NIE/TE):", round((nie_glm$theta / te_est) * 100, 2), "%\n")
+    cat("方法2 (medoutcon pm):", round(pm_glm$theta * 100, 2), "%\n")
+    cat("  标准误:", round(sqrt(pm_glm$var), 3), "\n")
+    cat("  95% CI: [", round(pm_glm$theta - 1.96*sqrt(pm_glm$var), 3), 
+        ",", round(pm_glm$theta + 1.96*sqrt(pm_glm$var), 3), "]\n")
+    cat("=====================================\n\n")
+  } else {
+    # 计算中介比例
+    mediation_prop <- (nie_glm$theta / te_est) * 100
+    cat("\n中介比例 (NIE/TE):", round(mediation_prop, 2), "%\n\n")
+  }
+  return(result_table)
+}
+
+# 调用函数--手搓中介百分比
+final_results <- results(nde_glm, nie_glm)
+print(final_results)
+
+
+
+# 调用函数--采用程序计算的中介百分比
+final_results <- results(nde_glm, nie_glm,pm_glm)
+print(final_results)
+```
+:::
+
+<p class="fig-cap">
+<b>`medoutcon` 包（166 行）。</b>面板内可上下滚动；
+<a href="code/zheng-w08-medoutcon.R">下载 .R 文件</a>。存档里的原名是 <code>3.medoutcon包中介分析.R</code>。
+</p>
+:::
+
 ## 分讲索引
 
-2 段视频合计约 1 小时 21 分。三份 R 脚本（`1.mediation包中介分析.R`、
-`2.CMAverse包中介分析.R`、`3.medoutcon包中介分析.R`）与数据在
-`learn/courses/zheng-w08-mediation/`（本机存档，不入库）。
+2 段视频合计约 1 小时 21 分。三份 R 脚本原件见上方的 [R 代码](#r-代码课程原件可滚动阅读也可下载)；
+配套数据在 `learn/courses/zheng-w08-mediation/`（本机存档，不入库）。
 
 | # | 讲次 | 时长 | 对应讲义 |
 |---|---|---:|---|

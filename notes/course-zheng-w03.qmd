@@ -213,7 +213,1428 @@ Stents in Ontario*）把倾向得分匹配的完整流程走一遍。这是一�
 大家呢也不用担心」，因为写得结构感强、一行一句，而且**注释是 AI 补的**。
 他建议第一遍不要在意「这个东西具体是怎么算」的细节，先把流程跑通。
 
-三份脚本与数据在 `learn/courses/zheng-w03-propensity-score/`（本机存档，不入库）。
+三份脚本原件见本页下方的 [R 代码](#r-代码课程原件可滚动阅读也可下载)；
+配套数据在 `learn/courses/zheng-w03-propensity-score/`（本机存档，不入库）。
+:::
+
+## R 代码[：课程原件，可滚动阅读也可下载]{.hook}
+
+以下是课程发的 R 脚本原件，**未作任何修改**。
+
+::: {.pitfall}
+[跑之前先改路径]{.pitfall-label}
+
+脚本里的工作目录是课程作者本机的绝对路径，直接跑必然失败——
+先把 `setwd()` 改成自己的目录，或把 `read.csv()` 换成完整路径。
+各周的硬编码位置在 `learn/courses/README.md` 里逐条列了。
+:::
+
+### 案例 1 · 二分类暴露 + 二分类结局[：578 行]{.hook}
+
+倾向得分四种运用方式各跑一遍，最后把「未调整 + 四种方法」的效应估计汇总成表。
+
+::: {.slide-embed}
+
+::: {.code-frame}
+```r
+###########################################################
+#            倾向得分四种常用用法 —— R 全流程演示
+#    Matching / Stratification / Adjustment / IPTW
+#
+# 研究问题（示例）：
+#   暴露：PA_CAT（身体活动是否为高：1=高，0=非高/低）
+#   结局：lungfun（二分类结局）
+#   目标：估计“高身体活动 vs 非高/低身体活动”对 lungfun 的平均处理效应（ATE）
+#
+# 整体流程：
+#  0. 数据读取与变量类型处理
+#  1. 单因素筛选协变量（教学演示用），确定进入 PS 模型的变量
+#  2. Logistic 倾向得分模型 + PS 分布图（检查重叠/支持性）
+#  3.0 未调整 ATE（基线对照）
+#  3.1 PS 匹配：最近邻 + 卡钳 + 平衡性 + ATE
+#  3.2 PS 分层：4 分位分层 + 平衡性 + 分层加权 ATE
+#  3.3 PS 校正：结局模型中调整 PS
+#  3.4 IPTW：生成 ATE 权重 + 平衡性 + ATE
+#  4. 汇总：未调整 + 4 种 PS 方法的 ATE / CI / P 值
+###########################################################
+
+##---------------------------------------------------------
+## -1. 依赖包：如未安装则先安装（一次性）
+##---------------------------------------------------------
+pkgs_needed <- c(
+  "tableone",  # 基线表 / SMD
+  "ggplot2",   # 作图
+  "MatchIt",   # PS 匹配
+  "cobalt",    # 平衡性诊断（SMD、Love plot）
+  "WeightIt",  # PS 分层权重 / IPTW 权重
+  "survey"     # 加权回归（svyglm）
+)
+
+pkgs_to_install <- pkgs_needed[!vapply(pkgs_needed, requireNamespace, logical(1), quietly = TRUE)]
+if (length(pkgs_to_install) > 0) {
+  install.packages(pkgs_to_install, dependencies = TRUE)
+}
+
+###########################################################
+## 0. 读取数据 & 变量预处理
+###########################################################
+
+# 设置当前工作目录（按自己的电脑路径调整）
+setwd("C:/Users/77489/Desktop/倾向得分培训班+训练营_25.12.23/录课")
+
+# 读取数据（data.csv 需放在上述工作目录下）
+data <- read.csv("data.csv")
+
+# 候选协变量（潜在混杂因素）
+# 说明：这些变量将用于构建倾向得分模型（PS = P(A=1|X)）
+names(data)
+covariates <- c("sex","hypertension","diabetes","heart_disease","residence","marital",
+                "smoking","age","education_level","cardio_metabolic",
+                "alcohol","bmi")
+
+# 需要按分类变量处理的协变量（转为 factor，便于后续自动生成哑变量/分层比较）
+categorical_vars <- c("sex","hypertension","diabetes","heart_disease","residence","marital",
+                      "smoking","education_level","cardio_metabolic",
+                      "alcohol")
+
+# 统一把分类协变量转为 factor（否则可能被当作连续变量进入模型）
+data[categorical_vars] <- lapply(data[categorical_vars], factor)
+
+# 暴露变量检查（应为 0/1 或二分类因子）
+table(data$PA_CAT)
+
+
+###########################################################
+# 1. 单因素分析 —— 筛选进入 PS 模型的协变量（教学演示）
+#
+# 目的（教学演示用）：
+#   仅为了演示“变量筛选”的流程；真实研究中更推荐基于领域知识/因果图(DAG)
+#   来确定混杂因素，而不是完全依赖 P 值筛选。
+#
+# 做法：
+#   以 lungfun 为因变量，对每个协变量做单因素回归；
+#   P < 0.05 的协变量进入后续 PS 模型。
+#
+# 说明：
+#   - 分类变量：查看所有虚拟变量（不含截距）的 P 值，只要有一个水平显著则纳入
+#   - 连续变量：查看该变量的系数 P 值
+###########################################################
+
+# 保存“通过筛选”的协变量名
+sig_vars <- c()
+
+# 保存单因素结果（用于展示：变量类型、P 值、是否显著）
+result_table <- data.frame()
+
+# 循环：逐个协变量做单因素回归
+# v=covariates[1]
+for (v in covariates) {
+  # 单因素回归：lungfun ~ 协变量
+  # 用 data[[v]] 便于在循环中按列名取变量
+  fit <- glm(lungfun ~ data[[v]], data = data, family = "binomial")
+  
+  # 回归系数表（估计值、标准误、统计量、P 值）
+  coef_table <- summary(fit)$coefficients
+  
+  # 分类变量：看所有 dummy 项的 P 值（不含截距）
+  if (v %in% categorical_vars) {
+    pvals <- coef_table[-1, 4]
+    sig <- ifelse(any(pvals < 0.05), "Yes", "No")
+    
+    result_table <- rbind(
+      result_table,
+      data.frame(variable   = v,
+                 type       = "categorical",
+                 p_values   = paste(round(pvals,4), collapse=", "),
+                 significant= sig)
+    )
+    if (sig=="Yes") sig_vars <- c(sig_vars, v)
+    
+  } else {
+    # 连续变量：只有一个系数（第二行）
+    pval <- coef_table[2,4]
+    sig  <- ifelse(pval < 0.05, "Yes", "No")
+    
+    result_table <- rbind(
+      result_table,
+      data.frame(variable   = v,
+                 type       = "continuous",
+                 p_values   = round(pval,4),
+                 significant= sig)
+    )
+    if (sig=="Yes") sig_vars <- c(sig_vars, v)
+  }
+}
+
+# 输出单因素筛选结果
+cat("\n==== 单因素分析结果 ====\n")
+print(result_table)
+
+cat("\n进入 PS 模型的协变量：\n")
+print(sig_vars)
+
+
+##---------------------------------------------------------
+## 原始基线表（未做任何 PS 处理前）
+## 目的：展示 PA_CAT 两组在协变量上的初始不平衡（可看 SMD/检验）
+##---------------------------------------------------------
+library(tableone)
+
+# sig_vars 中属于分类变量的部分（CreateTableOne 建议显式指定）
+categorical_vars_sig <- intersect(sig_vars, categorical_vars) 
+
+# Table 1：按暴露 PA_CAT 分组比较协变量分布
+table1 <- CreateTableOne(
+  vars       = sig_vars,
+  strata     = "PA_CAT",
+  data       = data,
+  factorVars = categorical_vars_sig
+)
+
+print(table1, showAllLevels = TRUE, test = TRUE)
+
+
+
+###########################################################
+# 2. 倾向得分模型（Logistic 回归）
+#
+# 目标：
+#   估计每个个体“高身体活动”的概率
+#   PS = P(PA_CAT=1 | X)
+#
+# 模型：
+#   PA_CAT ~ sig_vars
+#
+# 关键检查：
+#   画 PS 分布图，看两组是否有足够重叠（支持性/可比性/positivity）
+###########################################################
+
+library(ggplot2)
+
+# 动态拼接 PS 模型公式
+formula_ps <- as.formula(
+  paste("PA_CAT ~", paste(sig_vars, collapse=" + "))
+)
+
+# Logistic 回归拟合 PS
+ps_model <- glm(formula_ps, data=data, family=binomial())
+
+# 预测倾向得分（概率尺度）
+data$pscore <- predict(ps_model, type="response")
+
+# PS 分布图：观察两组的重叠（重叠越好，支持性越强）
+ggplot(data, aes(pscore, color=factor(PA_CAT), fill=factor(PA_CAT))) +
+  geom_density(alpha=0.3, size=1.2) +
+  scale_color_manual(values=c("#1f77b4","#ff7f0e"),
+                     labels = c("0 = 非高/低", "1 = 高")) +
+  scale_fill_manual(values=c("#1f77b4","#ff7f0e"),
+                    labels = c("0 = 非高/低", "1 = 高")) +
+  labs(title="倾向得分分布（原始）", x="倾向得分", y="密度") +
+  theme_minimal(base_size = 14)+
+  theme(legend.title = element_blank())
+
+
+
+###########################################################
+# 3.0 未调整的平均处理效应（原始数据）
+#
+# 作为对照（粗略关联，不控制混杂）：
+#   ATE = E(lungfun|A=1) - E(lungfun|A=0)
+#
+# 说明：
+#   t.test(y ~ A) 的默认“差值方向”与因子水平顺序有关；
+#   这里统一输出为（A=1 - A=0）
+###########################################################
+
+# 均值差（方向：高身体活动 - 非高/低）
+ATE_unadj <- with(data,
+                  mean(lungfun[PA_CAT == 1]) - mean(lungfun[PA_CAT == 0]))
+
+# t 检验：给出均值差的 CI 和 P 值
+t_unadj <- t.test(lungfun ~ PA_CAT, data = data)
+
+cat("\n==== 未调整 ATE ====\n")
+cat("ATE =", round(ATE_unadj, 3), "\n")
+# t.test 默认输出为（组0 - 组1），这里统一成（组1 - 组0）
+cat("95% CI = [", round(-t_unadj$conf.int[2], 3), ",",
+    round(-t_unadj$conf.int[1], 3), "]\n")
+cat("P值 =", round(t_unadj$p.value, 4), "\n")
+
+
+
+###########################################################
+# 3. 四种倾向得分方法
+#    3.1 匹配 / 3.2 分层 / 3.3 校正 / 3.4 IPTW
+#
+# 平衡性诊断常用口径：
+#   - SMD（标准化均值差）绝对值 < 0.1 作为经验阈值
+#   - Love plot 用于可视化“处理前 vs 处理后”的整体改善情况
+###########################################################
+
+###########################################################
+# 3.1 方法①：倾向得分匹配（PS Matching）
+#
+# 设置要点：
+#   method="nearest"  : 最近邻匹配
+#   caliper=0.2       : 卡钳宽度（限制可匹配的距离，避免“硬配”）
+#   replace=FALSE     : 不放回（每个对照最多匹配一次）
+#   distance="logit"  : 匹配距离基于 logit(PS)
+###########################################################
+
+library(MatchIt)
+sig_vars
+m.out <- matchit(
+  formula_ps,
+  data = data,
+  method = "nearest",
+  distance = "logit",
+  caliper = 0.2,
+  replace = FALSE
+)
+matched_data <- match.data(m.out)
+head(matched_data)
+
+## ---- ① 匹配后 PS 分布（用于直观看重叠） ----
+ggplot(matched_data, aes(x = pscore, 
+                         color = factor(PA_CAT), 
+                         fill = factor(PA_CAT))) +
+  geom_density(alpha = 0.3, size = 1.2) +
+  labs(title = "匹配后两组的倾向得分分布（1:1卡钳匹配）",
+       x = "倾向得分",
+       y = "密度",
+       color = "PA_CAT",
+       fill = "PA_CAT") +
+  scale_color_manual(values = c("#1f77b4","#ff7f0e"),
+                     labels = c("0 = 非高/低","1 = 高")) +
+  scale_fill_manual(values = c("#1f77b4","#ff7f0e"),
+                    labels = c("0 = 非高/低","1 = 高")) +
+  theme_minimal(base_size = 14) +
+  theme(legend.title = element_blank())
+
+## ---- ② 匹配前后协变量分布（TableOne）----
+## 说明：可同时查看均值/比例以及（可选的）SMD 指标
+tab_before <- CreateTableOne(vars = sig_vars, strata = "PA_CAT", data = data)
+tab_after  <- CreateTableOne(vars = sig_vars, strata = "PA_CAT", data = matched_data)
+tab_after
+
+## ---- ③ 平衡性诊断（cobalt + Love plot） ----
+library(cobalt)
+
+# bal.tab：汇总匹配前/后 SMD
+# 关键参数：
+#   un=TRUE           : 同时给出未调整（匹配前）的不平衡
+#   s.d.denom="pooled": SMD 的标准化分母用合并标准差
+#   binary="std"      : 二分类变量用标准化口径计算 SMD
+bal_match <- bal.tab(
+  m.out,
+  un = TRUE,
+  s.d.denom = "pooled",
+  binary    = "std"
+)
+
+print(bal_match)
+
+# love.plot：统一可视化 SMD（常用阈值 0.1）
+love.plot(
+  bal_match,
+  stats     = "mean.diffs",
+  drop.distance = TRUE,
+  abs       = TRUE,
+  threshold = 0.1,
+  var.order = "unadjusted",
+  colors    = c("red", "blue")
+)
+
+## ---- ④ 匹配后的 ATE（matched_data 上两组均值差） ----
+fit_match <- t.test(lungfun ~ PA_CAT, data = matched_data)
+
+ATE_match <- -(fit_match$estimate[[1]] - fit_match$estimate[[2]])
+CI_match  <- -rev(fit_match$conf.int)
+p_match   <- fit_match$p.value
+
+cat("\n==== PS Matching: ATE ====\n")
+cat("ATE =", round(ATE_match, 3), "\n")
+cat("95% CI = [", round(CI_match[1], 3), ",", round(CI_match[2], 3), "]\n")
+cat("P值 =", round(p_match, 4), "\n")
+
+
+
+###########################################################
+# 3.2 方法②：PS 分层（Stratification）—— WeightIt 的 MMWS
+#
+# 设置要点：
+#   subclass=4    : 按 PS 分位数形成 4 层（Q1~Q4）
+#   stabilize=TRUE: 稳定化权重（减少极端权重，提高估计稳定性）
+#
+# 直观理解：
+#   先“分层让组内更可比”，再用分层权重把每层的比较结果合并为总体 ATE
+###########################################################
+library(WeightIt)
+library(cobalt)
+library(survey)
+
+# WeightIt：估计 PS + 指定 4 层
+w_strat_obj <- weightit(
+  formula_ps,
+  data      = data,
+  method    = "glm",
+  estimand  = "ATE",
+  stabilize = TRUE,
+  subclass  = 4
+)
+
+# 从 PS 生成 MMWS 权重（并带 subclass 属性）
+w_mmws <- get_w_from_ps(
+  ps        = w_strat_obj$ps,
+  treat     = data$PA_CAT,
+  estimand  = "ATE",
+  subclass  = 4,
+  stabilize = TRUE
+)
+
+# 写回：PS（分层用）、分层标签、分层权重
+# 注：这里保留 data$pscore（第2步 glm 的 PS），便于 3.3 的 PS 校正复用
+data$pscore_strat <- w_strat_obj$ps
+data$ps_strata <- factor(attr(w_mmws, "subclass")[,1],
+                         levels = 1:4, labels = paste0("Q", 1:4))
+data$w_strat   <- w_mmws[1:nrow(data)]  
+
+
+###########################################################
+# 3.2.1 分层平衡性诊断（在估计 ATE 之前）
+#
+# A) 分层内：每一层内部对比（更强调“可比性”）
+# B) 整体：用分层权重后整体 SMD 是否改善（更强调“合并后的总体平衡”）
+###########################################################
+library(tableone)
+
+cat("\n================ PS 分层后的协变量平衡性（Table1 + SMD）================\n")
+
+strata_levels <- levels(data$ps_strata)
+smd_list <- list()
+
+for (s in strata_levels) {
+  cat("\n---- 分层", s, "内的协变量平衡情况 ----\n")
+  
+  tab_s <- CreateTableOne(
+    vars       = sig_vars,
+    strata     = "PA_CAT",
+    data       = subset(data, ps_strata == s),
+    factorVars = intersect(sig_vars, categorical_vars)
+  )
+  
+  print(tab_s, showAllLevels = TRUE, smd = TRUE)
+  smd_list[[s]] <- ExtractSmd(tab_s)
+}
+
+smd_strata <- do.call(cbind, smd_list)
+colnames(smd_strata) <- strata_levels
+
+cat("\n==== 各分层的 SMD 表 ====\n")
+print(round(smd_strata, 3))
+
+
+cat("\n================ MMWS 分层权重：加权前后整体平衡性（cobalt）================\n")
+
+bal_mmws <- bal.tab(
+  formula_ps,
+  data      = data,
+  weights   = data$w_strat,
+  method    = "weighting",
+  un        = TRUE,
+  s.d.denom = "pooled",
+  binary    = "std"
+)
+
+print(bal_mmws)
+
+love.plot(
+  bal_mmws,
+  stats     = "mean.diffs",
+  abs       = TRUE,
+  threshold = 0.1,
+  var.order = "unadjusted",
+  colors    = c("red", "blue")
+)
+
+###########################################################
+# 3.2.2 分层加权 ATE（survey）
+#
+# 加权后拟合：lungfun ~ PA_CAT
+# 解释：PA_CAT 的回归系数即（A=1 相对 A=0 的）ATE 估计
+###########################################################
+design_strat <- svydesign(ids = ~1, weights = ~w_strat, data = data)
+fit_strat    <- svyglm(lungfun ~ PA_CAT, design = design_strat)
+
+coef_tab <- summary(fit_strat)$coef
+rn <- rownames(coef_tab)
+coef_name <- rn[grepl("^PA_CAT", rn)][1]
+
+ATE_strat <- coef_tab[coef_name, "Estimate"]
+SE_strat  <- coef_tab[coef_name, "Std. Error"]
+CI_strat  <- c(ATE_strat - 1.96*SE_strat, ATE_strat + 1.96*SE_strat)
+p_strat   <- coef_tab[coef_name, "Pr(>|t|)"]
+
+
+
+###########################################################
+# 3.3 方法③：PS 校正（PS Adjustment）
+#
+# 基本思路：
+#   在结局回归模型中同时调整暴露和 PS：
+#   lungfun ~ PA_CAT + pscore
+#
+# 说明：
+#   这是一种“模型校正”策略，依赖线性模型形式假设（含线性项的充分性）
+###########################################################
+fit_adj <- lm(lungfun ~ PA_CAT + pscore, data=data)
+
+est_adj <- summary(fit_adj)$coef["PA_CAT", ]
+
+ATE_adj <- est_adj["Estimate"]
+SE_adj  <- est_adj["Std. Error"]
+CI_adj  <- c(ATE_adj - 1.96*SE_adj,
+             ATE_adj + 1.96*SE_adj)
+p_adj   <- est_adj["Pr(>|t|)"]
+
+
+
+###########################################################
+# 3.4 方法④：IPTW 加权（ATE 权重）—— WeightIt + 平衡性 + 结局模型
+#
+# 核心步骤：
+#   1）估计 PS，并生成 ATE 目标下的 IPTW 权重
+#   2）检查加权前后协变量 SMD（是否达到“加权后可比”）
+#   3）在加权样本上拟合结局模型：lungfun ~ PA_CAT
+#
+# 关键参数：
+#   estimand="ATE"：目标是总体平均处理效应（而非 ATT 等）
+###########################################################
+library(WeightIt)
+library(cobalt)
+
+w_ipw_obj <- weightit(
+  formula_ps,
+  data      = data,
+  method    = "glm",
+  estimand  = "ATE"
+)
+
+data$pscore_ipw <- w_ipw_obj$ps 
+data$w_ate      <- w_ipw_obj$weights
+
+
+cat("\n==== IPTW 加权后的协变量平衡性（cobalt）====\n")
+
+bal_iptw <- bal.tab(
+  w_ipw_obj,
+  un        = TRUE,
+  s.d.denom = "pooled",
+  binary    = "std"
+)
+
+print(bal_iptw)
+
+love.plot(
+  bal_iptw,
+  stats     = "mean.diffs",
+  abs       = TRUE,
+  threshold = 0.1,
+  var.order = "unadjusted",
+  colors    = c("red", "blue")
+)
+
+# 加权结局模型（WeightIt 提供的便捷接口）
+fit_ipw <- lm_weightit(
+  lungfun ~ PA_CAT,
+  data     = data,
+  weightit = w_ipw_obj
+)
+
+coef_tab <- coef(summary(fit_ipw))
+rn <- rownames(coef_tab)
+coef_name <- rn[grepl("^PA_CAT", rn)][1]
+
+ATE_ipw <- coef_tab[coef_name, "Estimate"]
+SE_ipw  <- coef_tab[coef_name, "Std. Error"]
+CI_ipw  <- confint(fit_ipw, parm = coef_name, level = 0.95)
+p_ipw   <- coef_tab[coef_name, "Pr(>|z|)"]
+
+
+
+###########################################################
+# 4. ATE 汇总表（未调整 + 4 种 PS 方法）
+#
+# 输出口径统一：
+#   ATE：A=1 相对 A=0
+#   CI ：95% 置信区间
+#   P  ：对应检验的 P 值
+###########################################################
+
+result_summary <- data.frame(
+  Method = c("未调整", "PS 匹配", "PS 分层", "PS 校正", "IPTW"),
+  
+  ATE = c(
+    ATE_unadj,
+    ATE_match,
+    ATE_strat,
+    ATE_adj,
+    ATE_ipw
+  ),
+  
+  CI_lower = c(
+    -t_unadj$conf.int[2],
+    CI_match[1],
+    CI_strat[1],
+    CI_adj[1],
+    CI_ipw[1]
+  ),
+  
+  CI_upper = c(
+    -t_unadj$conf.int[1],
+    CI_match[2],
+    CI_strat[2],
+    CI_adj[2],
+    CI_ipw[2]
+  ),
+  
+  P_value = c(
+    t_unadj$p.value,
+    p_match,
+    p_strat,
+    p_adj,
+    p_ipw
+  )
+)
+
+# 结果展示：数值统一保留 4 位小数
+result_summary_round <- data.frame(
+  Method = result_summary$Method,
+  round(result_summary[ , -1], 4)
+)
+
+cat("\n\n==================== 五种方法 ATE 汇总表 ====================\n")
+print(result_summary_round)
+```
+:::
+
+<p class="fig-cap">
+<b>案例 1 · 二分类暴露 + 二分类结局（578 行）。</b>面板内可上下滚动；
+<a href="code/zheng-w03-case1-binary-binary.R">下载 .R 文件</a>。存档里的原名是 <code>倾向得分方法应用_案例1_二分类暴露和二分类结局.R</code>。
+</p>
+:::
+
+### 案例 2 · 二分类暴露 + 生存结局[：353 行]{.hook}
+
+倾向得分配 Cox，含 Kaplan-Meier 与 log-rank。
+
+::: {.slide-embed}
+
+::: {.code-frame}
+```r
+###########################################################
+#  二分类暴露（PA_CAT）对生存结局（lungfun, lungfun_time）的因果效应估计 —— HR
+#  Matching / Stratification / Adjustment / IPTW
+#
+#  暴露：PA_CAT（1=高, 0=低/非高）
+#  结局：lungfun（1=事件发生，0=未发生或删失）
+#        lungfun_time（随访时间，月）
+#  目标：估计 ATE 的风险比 HR（高 vs 低）
+#
+#  总体流程：
+#   -0. 依赖包检查与安装
+#    0. 数据读取与变量预处理（类型、取值检查）
+#    1. 单因素 Cox（教学演示）筛选进入 PS 模型的协变量
+#    2. 倾向得分模型（Logistic）+ PS 分布图（检查支持性/重叠）
+#    3.0 未调整 Cox：HR（基线对照）
+#    3.1 PS 匹配 + 平衡性 + 匹配后 Cox（cluster 稳健方差）
+#    3.2 PS 分层（MMWS）+ 平衡性 + 加权 Cox（svycoxph）
+#    3.3 PS 校正：Cox 中调整 PS（样条以放松线性假设）
+#    3.4 IPTW（ATE）+ 平衡性 + 加权 Cox（svycoxph）
+#    4. 汇总：五种方法 HR / 95%CI / P 值
+###########################################################
+
+##---------------------------------------------------------
+## -1. 依赖包：如未安装则先安装（一次性）
+##---------------------------------------------------------
+pkgs_needed <- c(
+  "survival", # Cox 模型 / Surv()
+  "ggplot2",  # 作图
+  "MatchIt",  # PS 匹配
+  "cobalt",   # 平衡性诊断（SMD、Love plot）
+  "WeightIt", # PS 分层权重 / IPTW 权重
+  "survey",   # 加权 Cox（svycoxph）
+  "splines"   # ns() 样条函数（base 推荐包，通常无需安装）
+)
+
+pkgs_to_install <- pkgs_needed[!vapply(pkgs_needed, requireNamespace, logical(1), quietly = TRUE)]
+if (length(pkgs_to_install) > 0) {
+  install.packages(pkgs_to_install, dependencies = TRUE)
+}
+
+###########################################################
+## 0. 读取数据 & 变量预处理
+###########################################################
+rm(list = ls())
+setwd("C:/Users/77489/Desktop/倾向得分培训班+训练营_25.12.23/录课")
+
+data <- read.csv("data.csv")
+
+# 候选协变量（潜在混杂因素）
+names(data)
+covariates <- c("sex","hypertension","diabetes","heart_disease","residence","marital",
+                "smoking","age","education_level","cardio_metabolic",
+                "alcohol","bmi")
+
+# 需要按分类变量处理的协变量（转为 factor，便于哑变量展开与分层比较）
+categorical_vars <- c("sex","hypertension","diabetes","heart_disease","residence","marital",
+                      "smoking","education_level","cardio_metabolic",
+                      "alcohol")
+
+# 统一把分类协变量转为 factor（避免被误当作连续变量）
+data[categorical_vars] <- lapply(data[categorical_vars], factor)
+
+# 暴露变量检查（应为 0/1）
+table(data$PA_CAT)
+
+# 生存结局：确保类型正确（Surv(time, event) 要求 time 数值、event 0/1）
+data$lungfun <- as.integer(data$lungfun)
+data$lungfun_time <- as.numeric(data$lungfun_time)
+
+
+###########################################################
+# 1. 单因素分析 —— 筛选进入 PS 模型的协变量（教学演示）
+#
+# 做法：
+#   用生存结局做单因素 Cox：Surv(time, event) ~ X
+#   P < 0.05 的协变量进入后续 PS 模型（仅用于教学演示）
+#
+# 说明：
+#   - 分类变量：可能产生多行系数（各水平 vs 参照水平）
+#              任一水平 P < 0.05 即纳入
+#   - 连续变量：单行系数
+###########################################################
+library(survival)
+sig_vars <- c()
+result_table <- data.frame()
+
+for (v in covariates) {
+  df_tmp <- data.frame(time = data$lungfun_time,
+                       event = data$lungfun,
+                       x = data[[v]])
+  
+  fit <- coxph(Surv(time, event) ~ x, data = df_tmp)
+  coef_tab <- summary(fit)$coefficients
+  
+  if (v %in% categorical_vars) {
+    pvals <- coef_tab[, "Pr(>|z|)"]
+    sig <- ifelse(any(pvals < 0.05), "Yes", "No")
+    result_table <- rbind(
+      result_table,
+      data.frame(variable=v, type="categorical",
+                 p_values=paste(round(pvals, 4), collapse=", "),
+                 significant=sig)
+    )
+    if (sig == "Yes") sig_vars <- c(sig_vars, v)
+  } else {
+    pval <- coef_tab[1, "Pr(>|z|)"]
+    sig <- ifelse(pval < 0.05, "Yes", "No")
+    result_table <- rbind(
+      result_table,
+      data.frame(variable=v, type="continuous",
+                 p_values=round(pval, 4),
+                 significant=sig)
+    )
+    if (sig == "Yes") sig_vars <- c(sig_vars, v)
+  }
+}
+
+cat("\n==== 单因素 Cox 结果（用于筛选 PS 变量）====\n")
+print(result_table)
+cat("\n进入 PS 模型的协变量：\n")
+print(sig_vars)
+
+
+###########################################################
+# 2. 倾向得分模型（Logistic）
+#
+# 目标：
+#   PS = P(PA_CAT=1 | X)
+#
+# 说明：
+#   画 PS 分布密度图，检查两组重叠（支持性/positivity）
+###########################################################
+library(ggplot2)
+
+formula_ps <- as.formula(paste("PA_CAT ~", paste(sig_vars, collapse = " + ")))
+ps_model <- glm(formula_ps, data = data, family = binomial())
+data$pscore <- predict(ps_model, type = "response")
+
+ggplot(data, aes(pscore, color=factor(PA_CAT), fill=factor(PA_CAT))) +
+  geom_density(alpha=0.3, linewidth=1.0) +
+  labs(title="倾向得分分布（原始）", x="PS = P(PA_CAT=1|X)", y="密度") +
+  theme_minimal(base_size = 13) +
+  theme(legend.title = element_blank())
+
+###########################################################
+# 3.0 未调整效应（Cox）：HR
+#
+# 模型：
+#   Surv(time, event) ~ PA_CAT
+#
+# 输出：
+#   HR = exp(beta)，并给出 95% CI 与 P 值
+###########################################################
+fit_unadj <- coxph(Surv(lungfun_time, lungfun) ~ PA_CAT, data = data)
+sum_unadj <- summary(fit_unadj)
+
+HR_unadj <- exp(coef(fit_unadj)["PA_CAT"])
+CI_unadj <- exp(confint(fit_unadj)["PA_CAT", ])
+p_unadj  <- sum_unadj$coefficients["PA_CAT", "Pr(>|z|)"]
+
+###########################################################
+# 3.1 方法①：PS Matching（MatchIt） + Cox（cluster=subclass）
+#
+# 匹配设置要点：
+#   method="nearest"  : 最近邻匹配
+#   distance="logit"  : 距离基于 logit(PS)
+#   caliper=0.2       : 卡钳宽度（限制可匹配的距离，避免“硬配”）
+#   replace=FALSE     : 不放回
+#
+# 匹配后 Cox：
+#   - 使用 cluster(subclass) 计算稳健方差（考虑匹配对子类相关）
+#   - weights=weights 使用 MatchIt 生成的匹配权重
+###########################################################
+library(MatchIt)
+library(cobalt)
+
+m.out <- tryCatch(
+  matchit(formula_ps, data = data,
+          method = "nearest", distance = "logit",
+          caliper = 0.2, replace = FALSE,
+          estimand = "ATE"),
+  error = function(e) {
+    message("提示：你的 MatchIt 版本可能不支持 estimand='ATE'，将按默认设置运行（matching 通常更接近 ATT/重叠子人群）。")
+    matchit(formula_ps, data = data,
+            method = "nearest", distance = "logit",
+            caliper = 0.2, replace = FALSE)
+  }
+)
+
+matched_data <- match.data(m.out)
+
+## ---- ① 匹配后 PS 分布（用于直观看重叠） ----
+ggplot(matched_data, aes(x = pscore, 
+                         color = factor(PA_CAT), 
+                         fill = factor(PA_CAT))) +
+  geom_density(alpha = 0.3, size = 1.2) +
+  labs(title = "匹配后两组的倾向得分分布（1:1卡钳匹配）",
+       x = "倾向得分",
+       y = "密度",
+       color = "PA_CAT",
+       fill = "PA_CAT") +
+  scale_color_manual(values = c("#1f77b4","#ff7f0e"),
+                     labels = c("0 = 非高/低","1 = 高")) +
+  scale_fill_manual(values = c("#1f77b4","#ff7f0e"),
+                    labels = c("0 = 非高/低","1 = 高")) +
+  theme_minimal(base_size = 14) +
+  theme(legend.title = element_blank())
+
+## ---- ② 匹配前后协变量分布（TableOne） ----
+library(tableone)
+tab_before <- CreateTableOne(vars = sig_vars, strata = "PA_CAT", data = data)
+tab_after  <- CreateTableOne(vars = sig_vars, strata = "PA_CAT", data = matched_data)
+tab_after
+
+# 平衡性诊断：匹配前后 SMD（常用阈值 |SMD|<0.1）
+bal_match <- bal.tab(m.out, un = TRUE, s.d.denom = "pooled", binary = "std")
+print(bal_match)
+love.plot(bal_match, stats="mean.diffs", abs=TRUE, threshold=0.1,
+          var.order="unadjusted", drop.distance=TRUE)
+
+fit_match <- coxph(Surv(lungfun_time, lungfun) ~ PA_CAT + cluster(subclass),
+                   data = matched_data, weights = weights)
+
+sum_match <- summary(fit_match)
+HR_match <- exp(coef(fit_match)["PA_CAT"])
+CI_match <- exp(confint(fit_match)["PA_CAT", ])
+p_match  <- sum_match$coefficients["PA_CAT", "Pr(>|z|)"]
+
+###########################################################
+# 3.2 方法②：PS 分层（MMWS） + 加权 Cox（svycoxph）
+#
+# 分层设置：
+#   subclass=4     : 将样本按 PS 分位数分为 4 层（Q1~Q4）
+#   stabilize=TRUE : 稳定化权重，减少极端权重带来的方差膨胀
+#
+# 分层权重（MMWS）：
+#   在“分层 × 暴露组”内为常数，使加权后协变量总体更平衡
+###########################################################
+library(WeightIt)
+library(survey)
+
+w_strat_obj <- weightit(
+  formula_ps,
+  data      = data,
+  method    = "glm",
+  estimand  = "ATE",
+  stabilize = TRUE,
+  subclass  = 4
+)
+
+w_mmws <- get_w_from_ps(
+  ps        = w_strat_obj$ps,
+  treat     = data$PA_CAT,
+  estimand  = "ATE",
+  subclass  = 4,
+  stabilize = TRUE
+)
+
+data$w_strat <- w_mmws[1:nrow(data)]
+
+# 平衡性：分层权重加权前后 SMD
+bal_mmws <- bal.tab(formula_ps, data = data, weights = data$w_strat,
+                    method="weighting", un=TRUE, s.d.denom="pooled", binary="std")
+print(bal_mmws)
+love.plot(bal_mmws, stats="mean.diffs", abs=TRUE, threshold=0.1,
+          var.order="unadjusted", drop.distance=TRUE)
+
+# 加权 Cox（ATE）
+design_strat <- svydesign(ids = ~1, weights = ~w_strat, data = data)
+fit_strat <- svycoxph(Surv(lungfun_time, lungfun) ~ PA_CAT, design = design_strat)
+
+coef_strat <- coef(summary(fit_strat))
+HR_strat <- exp(coef(fit_strat)["PA_CAT"])
+SE_strat <- coef_strat["PA_CAT", "se(coef)"]
+CI_strat <- exp(c(log(HR_strat) - 1.96*SE_strat, log(HR_strat) + 1.96*SE_strat))
+p_strat  <- coef_strat["PA_CAT", "Pr(>|z|)"]
+
+###########################################################
+# 3.3 方法③：PS 校正（Cox 调整 PS）
+#
+# 模型：
+#   Surv(time, event) ~ PA_CAT + f(PS)
+#
+# 说明：
+#   这里用自然样条 ns(pscore, df=3) 放松“PS 线性”假设
+#   df 为样条自由度：越大越灵活，但也更易过拟合（教学中 3 常用）
+###########################################################
+library(splines)
+
+fit_adj <- coxph(Surv(lungfun_time, lungfun) ~ PA_CAT + ns(pscore, df = 3), data = data)
+sum_adj <- summary(fit_adj)
+
+HR_adj <- exp(coef(fit_adj)["PA_CAT"])
+CI_adj <- exp(confint(fit_adj)["PA_CAT", ])
+p_adj  <- sum_adj$coefficients["PA_CAT", "Pr(>|z|)"]
+
+###########################################################
+# 3.4 方法④：IPTW（ATE） + 加权 Cox（svycoxph）
+#
+# IPTW 权重（ATE）：
+#   目标是让“加权后的总体”在协变量分布上类似随机试验
+#
+# 关键检查：
+#   - Love plot 看加权后 SMD 是否明显下降
+#   - 如出现极端权重，可考虑 stabilize、截尾/修剪（此处仅演示）
+###########################################################
+w_ipw_obj <- weightit(
+  formula_ps,
+  data     = data,
+  method   = "glm",
+  estimand = "ATE"
+)
+
+data$w_ate <- w_ipw_obj$weights
+
+# 平衡性：IPTW 加权前后 SMD
+bal_iptw <- bal.tab(w_ipw_obj, un=TRUE, s.d.denom="pooled", binary="std")
+print(bal_iptw)
+love.plot(bal_iptw, stats="mean.diffs", abs=TRUE, threshold=0.1,
+          var.order="unadjusted", drop.distance=TRUE)
+
+# 加权 Cox（ATE）
+design_ipw <- svydesign(ids = ~1, weights = ~w_ate, data = data)
+fit_ipw <- svycoxph(Surv(lungfun_time, lungfun) ~ PA_CAT, design = design_ipw)
+
+coef_ipw <- coef(summary(fit_ipw))
+HR_ipw <- exp(coef(fit_ipw)["PA_CAT"])
+SE_ipw <- coef_ipw["PA_CAT", "se(coef)"]
+CI_ipw <- exp(c(log(HR_ipw) - 1.96*SE_ipw, log(HR_ipw) + 1.96*SE_ipw))
+p_ipw  <- coef_ipw["PA_CAT", "Pr(>|z|)"]
+
+###########################################################
+# 4. 汇总表：HR / 95% CI / P
+#
+# 输出口径：
+#   HR > 1 ：提示 PA_CAT=1 组风险更高
+#   HR < 1 ：提示 PA_CAT=1 组风险更低
+###########################################################
+result_summary <- data.frame(
+  Method   = c("未调整", "PS 匹配", "PS 分层(MMWS)", "PS 校正", "IPTW(ATE)"),
+  HR       = c(HR_unadj, HR_match, HR_strat, HR_adj, HR_ipw),
+  CI_lower = c(CI_unadj[1], CI_match[1], CI_strat[1], CI_adj[1], CI_ipw[1]),
+  CI_upper = c(CI_unadj[2], CI_match[2], CI_strat[2], CI_adj[2], CI_ipw[2]),
+  P_value  = c(p_unadj, p_match, p_strat, p_adj, p_ipw)
+)
+
+result_summary_round <- data.frame(
+  Method = result_summary$Method,
+  round(result_summary[, -1], 4)
+)
+
+cat("\n\n==================== 五种方法 HR 结果汇总 ====================\n")
+print(result_summary_round)
+```
+:::
+
+<p class="fig-cap">
+<b>案例 2 · 二分类暴露 + 生存结局（353 行）。</b>面板内可上下滚动；
+<a href="code/zheng-w03-case2-binary-survival.R">下载 .R 文件</a>。存档里的原名是 <code>倾向得分方法应用_案例2_二分类暴露和生存结局.R</code>。
+</p>
+:::
+
+### 案例 3 · 连续暴露 + 二分类结局[：426 行]{.hook}
+
+暴露是 0–9 分的身体活动量，不能用 logistic 算概率，改用广义倾向得分 GPS。
+
+::: {.slide-embed}
+
+::: {.code-frame}
+```r
+###########################################################
+# 连续型处理（PA）对二分类结局（lungfun 0/1）的因果效应估计 —— RD(概率差)口径
+# GPS-Matching / GPS-Stratification / GPS-Adjustment / GPS-Weighting
+#
+# 目标 estimand：
+#   ATE(RD) = E[Y(a+1) - Y(a)]，即 PA 每 +1 单位，lungfun 发病概率的平均变化
+#
+# 口径说明：
+#   - 统一用“线性概率模型”(Gaussian) 输出 RD，便于解释与不同方法间可比
+#   - RD 可理解为“风险差/概率差”，不是 OR/HR
+#
+# 平衡性诊断说明（连续型暴露）：
+#   - 连续暴露下通常用“协变量与 PA 的相关系数”作为平衡性指标（越接近 0 越好）
+#   - 这里不能用二分类暴露常见的 SMD（标准化均值差）口径
+#   - cobalt::bal.tab() 可以输出 correlations，但目前不支持“连续暴露 + subclass(分层)”
+#     来直接给出总体 love plot；因此“总体（分层后）love plot”用 ggplot 自行实现
+###########################################################
+
+##---------------------------------------------------------
+## -1. 依赖包：如未安装则先安装（一次性）
+##---------------------------------------------------------
+pkgs_needed <- c(
+  "CausalGPS",     # 连续暴露的 GPS 估计与 counter weight
+  "SuperLearner",  # estimate_gps 的 sl_lib（此处用轻量 SL.glm）
+  "ggplot2",       # 作图
+  "cobalt",        # 平衡性诊断（相关性 + love plot）
+  "survey",        # svydesign / svyglm
+  "WeightIt"       # 连续暴露加权（ps 方法）
+)
+
+pkgs_to_install <- pkgs_needed[!vapply(pkgs_needed, requireNamespace, logical(1), quietly = TRUE)]
+if (length(pkgs_to_install) > 0) {
+  install.packages(pkgs_to_install, dependencies = TRUE)
+}
+
+library(CausalGPS)
+library(SuperLearner)
+library(ggplot2)
+library(cobalt)
+library(survey)
+library(WeightIt)
+
+###########################################################
+## 0. 读取数据 & 变量预处理
+###########################################################
+rm(list = ls())
+setwd("C:/Users/77489/Desktop/倾向得分培训班+训练营_25.12.23/录课")
+
+data <- read.csv("data.csv")
+
+# 候选协变量（潜在混杂因素）
+names(data)
+covariates <- c("sex","hypertension","diabetes","heart_disease","residence","marital",
+                "smoking","age","education_level","cardio_metabolic",
+                "alcohol","bmi")
+
+# 需要按分类变量处理的协变量（转为 factor，便于哑变量展开/相关性计算更合理）
+categorical_vars <- c("sex","hypertension","diabetes","heart_disease","residence","marital",
+                      "smoking","education_level","cardio_metabolic",
+                      "alcohol")
+
+# 统一把分类协变量转为 factor（避免被误当作连续变量）
+data[categorical_vars] <- lapply(data[categorical_vars], factor)
+
+# 连续处理：PA
+# 结局：lungfun (0/1)
+data$id <- seq_len(nrow(data))
+
+###########################################################
+## 1. 单因素分析 —— 筛选进入 GPS 模型的协变量（教学演示）
+##    做法：lungfun ~ 协变量 的单因素线性概率模型；P < 0.05 进入 GPS
+##
+## 说明：
+##   - 这是教学演示用的“筛选流程”，真实研究更推荐基于领域知识/DAG 决定混杂因素
+##   - 因子变量：任一水平显著即纳入
+##   - 连续变量：看对应系数的 P 值
+###########################################################
+sig_vars <- c()
+result_table <- data.frame()
+
+for (v in covariates) {
+  df_tmp <- data.frame(lungfun = data$lungfun, x = data[[v]])
+  fit <- glm(lungfun ~ x, data = df_tmp, family = "binomial")
+  coef_table <- summary(fit)$coefficients
+  
+  if (v %in% categorical_vars) {
+    # 因子变量：看各水平（相对参考组）的 p 值，任一<0.05则入模
+    pvals <- coef_table[-1, 4]
+    sig <- ifelse(any(pvals < 0.05), "Yes", "No")
+    
+    result_table <- rbind(
+      result_table,
+      data.frame(variable=v, type="categorical",
+                 p_values=paste(round(pvals,4), collapse=", "),
+                 significant=sig)
+    )
+    if (sig == "Yes") sig_vars <- c(sig_vars, v)
+    
+  } else {
+    # 连续变量
+    pval <- coef_table[2, 4]
+    sig  <- ifelse(pval < 0.05, "Yes", "No")
+    
+    result_table <- rbind(
+      result_table,
+      data.frame(variable=v, type="continuous",
+                 p_values=round(pval,4), significant=sig)
+    )
+    if (sig == "Yes") sig_vars <- c(sig_vars, v)
+  }
+}
+
+cat("\n==== 单因素分析结果 ====\n")
+print(result_table)
+
+cat("\n进入 GPS 模型的协变量：\n")
+print(sig_vars)
+
+###########################################################
+## 2. GPS 模型（连续处理的“倾向得分”：条件密度 f(PA|X)）
+##
+## 说明：
+##   - 连续暴露的 GPS 可理解为“给定 X 的 PA 条件密度”
+##   - estimate_gps() 输出 gps（conditional density），后续用于匹配型 counter weights
+###########################################################
+formula_gps <- as.formula(paste("PA ~", paste(sig_vars, collapse=" + ")))
+
+gps_obj <- estimate_gps(
+  .data       = data,
+  .formula    = formula_gps,
+  gps_density = "kernel",
+  sl_lib      = c("SL.glm")
+)
+
+data$gps <- gps_obj$.data$gps
+
+# 一个更常用的“balancing score”：e_hat = E[PA|X],用于后续GPS分层法
+data$e_pa_hat <-  gps_obj$.data$e_gps_pred
+
+###########################################################
+## 3.0 未调整效应（RD口径）：lungfun ~ PA （线性概率模型）
+##
+## 解释：
+##   - PA 的回归系数即 PA 每增加 1 单位，发病概率的平均变化（RD）
+###########################################################
+fit_unadj <- lm(lungfun ~ PA, data = data)
+est_unadj <- coef(summary(fit_unadj))["PA", ]
+
+ATE_unadj <- est_unadj["Estimate"]
+SE_unadj  <- est_unadj["Std. Error"]
+CI_unadj  <- c(ATE_unadj - 1.96*SE_unadj, ATE_unadj + 1.96*SE_unadj)
+p_unadj   <- est_unadj["Pr(>|t|)"]
+
+###########################################################
+## 3.1 方法①：GPS 匹配（CausalGPS matching）
+##     输出 RD：在匹配计数权重(counter_weight)下拟合线性概率模型
+##
+## 关键参数（compute_counter_weight）：
+##   - ci_appr="matching" : 使用匹配型 counter weights
+##   - delta_n            : 匹配邻域/平滑强度（越大通常越“宽松”，权重更平滑）
+##   - dist_measure="l1"  : 距离度量（L1 更直观）
+##   - scale              : 距离缩放（影响匹配邻域大小，越大通常权重更平滑）
+##
+## 平衡性诊断（连续暴露）：
+##   - 用“协变量与 PA 的相关系数”而非 SMD（SMD 主要用于二分类/多分类处理）
+###########################################################
+cw_match <- compute_counter_weight(
+  gps_obj  = gps_obj,
+  ci_appr  = "matching",
+  delta_n  = 4,
+  dist_measure = "l1",
+  scale    = 1
+)
+
+data$w_match <- cw_match$.data$counter_weight
+
+# 权重分布检查：关注极端权重（可提示是否需要调整 delta_n/scale 或做截尾）
+#     - 这些阈值不是硬标准，只是帮助你快速判断是否存在严重的极端权重
+#      - 一般来说，P(w>10) 非常小（接近 0）会更放心；如果已经明显>0，建议进一步处理
+#         - 常见操作：delta_n 从 2.5 → 4 → 6（逐步加）
+#         - 常见操作：scale 从 0.5 → 1 → 1.5（逐步加）
+#      调参策略：
+#         - 每次只改一个参数（例如先调 delta_n），观察权重分布 + 平衡性是否同时改善
+#         - 目标是：权重不极端 + 平衡性可接受（|cor| 接近 0，且多数变量<0.1）
+summary(data$w_match)
+quantile(data$w_match, probs = c(.9,.95,.99,.995,.999), na.rm=TRUE)
+cat("max w_match =", max(data$w_match, na.rm=TRUE), "\n")
+cat("P(w_match>10) =", mean(data$w_match>10), "\n")
+cat("P(w_match>20) =", mean(data$w_match>20), "\n")
+cat("P(w_match>50) =", mean(data$w_match>50), "\n")
+
+# 平衡性：协变量与 PA 的相关性（越接近0越好）
+bal_match <- bal.tab(
+  PA ~ .,
+  data    = data[, c("PA", sig_vars), drop = FALSE],
+  weights = data$w_match,
+  method  = "weighting",
+  un      = TRUE,
+  stats   = "correlations"
+)
+print(bal_match)
+
+love.plot(
+  bal_match,
+  stats     = "correlations",
+  abs       = TRUE,
+  threshold = 0.1,
+  var.order = "unadjusted"
+)
+
+# RD 结局模型（Gaussian -> 线性概率模型）
+design_match <- svydesign(ids = ~1, weights = ~w_match, data = data)
+fit_match    <- svyglm(lungfun ~ PA, design = design_match, family = gaussian())
+
+est_match <- coef(summary(fit_match))["PA", ]
+ATE_match <- est_match["Estimate"]
+SE_match  <- est_match["Std. Error"]
+CI_match  <- c(ATE_match - 1.96*SE_match, ATE_match + 1.96*SE_match)
+p_match   <- est_match["Pr(>|t|)"]
+
+###########################################################
+## 3.2 方法②：GPS 分层（Stratification）
+##     用 e_pa_hat 分 4 层；层内 RD（lm），再按样本占比加权合并
+##
+## 分层的目的：
+##   - 让层内的 PA 与协变量关系更接近“随机/弱相关”，提高可比性
+##
+## 平衡性诊断（连续暴露）：
+##   - 依然使用“相关系数”作为指标（不使用 SMD）
+##   - cobalt 的 bal.tab() 可以做“每一层内部”的相关性平衡诊断
+##   - 但 cobalt 目前不支持：连续暴露 + subclass(分层) 来直接输出“分层后的总体 love plot”
+##     因此：总体（分层后）相关性用 ggplot 自行实现
+##
+## 总体相关性的原理（教学口径）：
+##   - 用“层内相关性”的总体汇总：等价于控制 strata 后的相关性
+##   - 实现方式：对 PA 与每个协变量分别对 strata 残差化，再计算残差相关
+###########################################################
+# gps 是 密度值 f(PA∣X)。它不是“暴露大小”的排序量，受带宽、分布形状影响很大，
+# 而且不同个体的 gps 大小不一定对应“暴露高/低”或“可比性强/弱”。
+# 用它分层，层的含义不直观，还可能把“密度高（更常见）/密度低（更罕见）”的人混在一起
+s_breaks <- quantile(data$e_pa_hat, probs = seq(0, 1, 0.25), na.rm = TRUE)
+s_breaks[1] <- s_breaks[1] - 1e-8
+
+data$strata <- cut(
+  data$e_pa_hat,
+  breaks = s_breaks,
+  include.lowest = TRUE,
+  labels = paste0("Q", 1:4)
+)
+table(data$strata)
+
+##-----------------------------
+## 3.2.1 分层内平衡性（逐层相关性 + love plot）
+##-----------------------------
+strata_levels <- levels(data$strata)
+bal_list <- list()
+
+cat("\n================ 分层内平衡性（correlations）================\n")
+
+for (s in strata_levels) {
+  cat("\n---- 分层", s, "----\n")
+  ds <- droplevels(subset(data, strata == s))
+  
+  # 只在该层内做平衡性：剔除“该层内无变异”的变量（否则无法计算相关性/模型矩阵）
+  vars_s <- sig_vars
+  one_level_factors <- vars_s[sapply(vars_s, function(v) {
+    is.factor(ds[[v]]) && nlevels(ds[[v]]) < 2
+  })]
+  
+  if (length(one_level_factors) > 0) {
+    cat("提示：该层以下因子仅 1 个水平，已从 bal.tab 中剔除：",
+        paste(one_level_factors, collapse = ", "), "\n")
+    vars_s <- setdiff(vars_s, one_level_factors)
+  }
+  
+  bal_s <- bal.tab(
+    PA ~ .,
+    data  = ds[, c("PA", vars_s), drop = FALSE],
+    un    = TRUE,
+    stats = "correlations"
+  ) # cobalt 目前明确限制：continuous treatments 不兼容 subclasses,因此后面用ggplot来画
+  print(bal_s)
+  bal_list[[s]] <- bal_s
+}
+
+
+##-----------------------------
+## 3.2.2 总体（分层后）相关性 love plot：ggplot 实现
+##-----------------------------
+# 说明：
+#   - 目标是得到“层内相关性”的总体汇总指标
+#   - 做法：对 PA 与协变量分别对 strata 做残差化（去掉层间差异），再相关
+#   - 这个相关系数可视为控制 strata 后的相关/层内 pooled correlation
+
+X <- model.matrix(
+  as.formula(paste("~", paste(sig_vars, collapse = " + "))),
+  data = data
+)[, -1, drop = FALSE]
+
+A <- data$PA
+S <- data$strata
+
+# 未分层：cor(PA, X_j)
+cor_un <- apply(X, 2, function(x) cor(A, x, use = "pairwise.complete.obs"))
+
+# 分层后总体：cor(resid(PA|strata), resid(X_j|strata))
+A_res <- resid(lm(A ~ S))
+cor_strat <- apply(X, 2, function(x) {
+  x_res <- resid(lm(x ~ S))
+  cor(A_res, x_res, use = "pairwise.complete.obs")
+})
+
+df_plot2 <- rbind(
+  data.frame(var = names(cor_un), cor = cor_un, group = "Overall"),
+  data.frame(var = names(cor_strat), cor = cor_strat, group = "Stratified (within-strata)")
+)
+df_plot2$abs_cor <- abs(df_plot2$cor)
+
+ggplot(df_plot2, aes(x = abs_cor, y = reorder(var, abs_cor), color = group)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = 0.1, linetype = 2) +
+  labs(x = "|Correlation with PA|", y = NULL, color = NULL) +
+  theme_bw()
+
+##-----------------------------
+## 3.2.3 分层合并效应（教学版）
+##-----------------------------
+beta_h <- se_h <- w_h <- numeric(length(strata_levels))
+N_total <- nrow(data)
+
+for (j in seq_along(strata_levels)) {
+  s  <- strata_levels[j]
+  ds <- subset(data, strata == s)
+  
+  fit_s <- lm(lungfun ~ PA, data = ds)
+  est_s <- coef(summary(fit_s))["PA", ]
+  
+  beta_h[j] <- est_s["Estimate"]
+  se_h[j]   <- est_s["Std. Error"]
+  w_h[j]    <- nrow(ds) / N_total
+}
+
+ATE_strat <- sum(w_h * beta_h)
+SE_strat  <- sqrt(sum((w_h^2) * (se_h^2)))  # 教学版合并SE（近似）
+CI_strat  <- c(ATE_strat - 1.96*SE_strat, ATE_strat + 1.96*SE_strat)
+p_strat   <- 2 * (1 - pnorm(abs(ATE_strat / SE_strat)))
+
+###########################################################
+## 3.3 方法③：GPS 校正（Adjustment）—— RD口径
+##     常用做法：lungfun ~ PA + gps + gps^2 + PA:gps （加入非线性与交互）
+##
+## 说明：
+##   - 这里把 gps 作为调整项，并加入二次项与交互，提升函数形式灵活性（教学示例）
+###########################################################
+fit_adj <- lm(lungfun ~ PA + gps + I(gps^2) + PA:gps, data = data)
+est_adj <- coef(summary(fit_adj))["PA", ]
+
+ATE_adj <- est_adj["Estimate"]
+SE_adj  <- est_adj["Std. Error"]
+CI_adj  <- c(ATE_adj - 1.96*SE_adj, ATE_adj + 1.96*SE_adj)
+p_adj   <- est_adj["Pr(>|t|)"]
+
+###########################################################
+## 3.4 方法④：GPS 加权（IPTW 类比）—— RD口径
+##     用 WeightIt 生成连续处理权重；加权后用 svyglm(Gaussian)估计 RD
+##
+## 说明：
+##   - 连续暴露下的加权思想与 IPTW 类似：加权后让 PA 与协变量更接近“独立/弱相关”
+##   - 平衡性同样用 correlations 口径
+###########################################################
+w_wt_obj <- weightit(
+  formula_gps,
+  data     = data[, c("PA", sig_vars), drop = FALSE],
+  method   = "ps",
+  estimand = "ATE"
+)
+
+data$w_ipw <- w_wt_obj$weights
+
+# 平衡性诊断：correlations
+bal_ipw <- bal.tab(
+  PA ~ .,
+  data    = data[, c("PA", sig_vars), drop = FALSE],
+  weights = data$w_ipw,
+  method  = "weighting",
+  un      = TRUE,
+  stats   = "correlations"
+)
+print(bal_ipw)
+
+love.plot(
+  bal_ipw,
+  stats     = "correlations",
+  abs       = TRUE,
+  threshold = 0.1,
+  var.order = "unadjusted"
+)
+
+# RD 加权结局模型（Gaussian -> 线性概率模型）
+design_ipw <- svydesign(ids = ~1, weights = ~w_ipw, data = data)
+fit_ipw    <- svyglm(lungfun ~ PA, design = design_ipw, family = gaussian())
+
+est_ipw <- coef(summary(fit_ipw))["PA", ]
+ATE_ipw <- est_ipw["Estimate"]
+SE_ipw  <- est_ipw["Std. Error"]
+CI_ipw  <- c(ATE_ipw - 1.96*SE_ipw, ATE_ipw + 1.96*SE_ipw)
+p_ipw   <- est_ipw["Pr(>|t|)"]
+
+###########################################################
+## 4. 汇总：未调整 + 4 种 GPS 方法（统一为 RD）
+###########################################################
+result_summary <- data.frame(
+  Method  = c("未调整(RD)", "GPS 匹配(RD)", "GPS 分层(RD)", "GPS 校正(RD)", "GPS 加权(RD)"),
+  ATE     = c(ATE_unadj, ATE_match, ATE_strat, ATE_adj, ATE_ipw),
+  CI_lower= c(CI_unadj[1], CI_match[1], CI_strat[1], CI_adj[1], CI_ipw[1]),
+  CI_upper= c(CI_unadj[2], CI_match[2], CI_strat[2], CI_adj[2], CI_ipw[2]),
+  P_value = c(p_unadj, p_match, p_strat, p_adj, p_ipw)
+)
+
+result_summary_round <- data.frame(
+  Method = result_summary$Method,
+  round(result_summary[, -1], 4)
+)
+
+cat("\n\n==================== 五种方法结果汇总（统一RD口径）====================\n")
+print(result_summary_round)
+```
+:::
+
+<p class="fig-cap">
+<b>案例 3 · 连续暴露 + 二分类结局（426 行）。</b>面板内可上下滚动；
+<a href="code/zheng-w03-case3-continuous-gps.R">下载 .R 文件</a>。存档里的原名是 <code>广义倾向得分方法应用_案例3_连续暴露和二分类结局.R</code>。
+</p>
 :::
 
 ## 分讲索引
