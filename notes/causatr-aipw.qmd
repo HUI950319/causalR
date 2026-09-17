@@ -1,0 +1,185 @@
+---
+title: "使用 causatr 的增强 IPW（双稳健估计）"
+subtitle: "*Augmented IPW (doubly-robust estimation) with causatr* · causatr 官方文档中译"
+bibliography: causatr-refs.bib
+---
+
+> **来源**：R 包 [causatr](https://github.com/etverse/causatr) 官方文档 [`aipw.qmd`](https://etverse.github.io/causatr/vignettes/aipw.html)，MIT 许可。
+> 本页是中译，**代码与运行结果直接取自原站的渲染输出，未在本站重新执行**。
+> Copyright (c) 2026 causatr authors；许可证全文见原仓库 `LICENSE.md`。
+
+```r
+library(causatr)
+library(tinytable)
+```
+
+增强逆概率加权（AIPW）把两个单稳健估计量——G-computation（**结局**模型）和 IPW（**处理**
+模型）——合并成一个**双稳健**估计量。对于二值处理和干预值 $a$，
+
+$$
+\hat\psi_{\mathrm{AIPW}}(a) = \underbrace{\frac{1}{n}\sum_i \hat m(a, L_i)}_{\text{g-computation}}
+ + \underbrace{\frac{1}{n}\sum_i \frac{\mathbb 1\{A_i = a\}}{\hat g(a \mid L_i)}\,\bigl(Y_i - \hat m(A_i, L_i)\bigr)}_{\text{IPW augmentation}},
+$$
+
+其中 $\hat m$ 是拟合好的结局回归，$\hat g$ 是拟合好的倾向评分。*任一*模型正确时，增强项的
+均值都为零，因此**只要**结局模型**或**倾向评分模型有一个设定正确，
+$\hat\psi_{\mathrm{AIPW}}$ 就是一致的——不必两个都正确。这就是**双稳健**性质。
+
+causatr 用用户给的 `model_fn`（结局）和 `propensity_model_fn`（处理）拟合两个冗余参数，
+按干预逐个组装双稳健泛函，并用堆叠的影响函数三明治（结局部分 + 倾向评分部分 + 插入式部分）
+计算方差。这是*经典解析*版 AIPW——不同于 `lmtp` 中带交叉拟合和机器学习的 TMLE/SDR。
+
+## 双稳健性演示
+
+看清双稳健最干净的办法，是构造一个平均处理效应**已知**的模拟数据生成过程，其中混杂因子 $L$
+以**非线性**方式同时进入倾向评分和结局。漏掉 $L^2$ 项的模型就是误设的。
+
+```r
+set.seed(2)
+n <- 4000
+L <- rnorm(n)
+A <- rbinom(n, 1, plogis(-0.5 + 0.7 * L + 0.6 * L^2))
+Y <- 1 + 2 * A + 1.5 * L + 1.6 * L^2 + rnorm(n)
+d <- data.frame(Y, A, L)
+
+correct <- ~ L + I(L^2) # captures the L^2 confounding
+wrong <- ~ L # misspecified: omits L^2
+```
+
+真实 ATE 是 **2**。causatr 允许结局模型和处理模型带*各自独立的*混杂因子公式
+（`confounders_outcome`、`confounders_treatment`），这样我们可以只误设其中一个，
+而让另一个保持正确：
+
+```r
+ate <- function(estimator, co, ct) {
+  fit <- causat(
+    d, outcome = "Y", treatment = "A",
+    confounders_outcome = co, confounders_treatment = ct,
+    estimator = estimator, model_fn = stats::glm,
+    propensity_model_fn = stats::glm
+  )
+  contrast(fit, list(a1 = static(1), a0 = static(0)), reference = "a0")$contrasts$estimate[1]
+}
+
+results <- data.frame(
+  estimator = c(
+    "gcomp", "ipw",
+    "aipw", "aipw", "aipw", "aipw"
+  ),
+  outcome_model = c(
+    "wrong", "correct",
+    "wrong", "correct", "correct", "wrong"
+  ),
+  propensity_model = c(
+    "wrong", "wrong",
+    "correct", "wrong", "correct", "wrong"
+  ),
+  ATE_hat = c(
+    ate("gcomp", wrong, wrong),
+    ate("ipw", correct, wrong),
+    ate("aipw", wrong, correct),
+    ate("aipw", correct, wrong),
+    ate("aipw", correct, correct),
+    ate("aipw", wrong, wrong)
+  )
+)
+tt(results, digits = 3)
+```
+
+| estimator | outcome_model | propensity_model | ATE_hat |
+|---|---|---|---|
+| gcomp | wrong | wrong | 3.13 |
+| ipw | correct | wrong | 3.42 |
+| aipw | wrong | correct | 2.05 |
+| aipw | correct | wrong | 1.97 |
+| aipw | correct | correct | 1.96 |
+| aipw | wrong | wrong | 3.47 |
+
+读这张表：**结局**模型误设时，G-computation 有偏倚；**倾向评分**误设时，IPW 有偏倚。
+但只要**至少有一个**冗余参数正确，AIPW 就能还原真实 ATE 2——哪怕另一个是错的。
+只有当**两个**都误设时，AIPW 才失去一致性（最后一行）：双稳健只容得下一次免费的误设，
+容不下两次。
+
+## 真实数据示例：NHEFS
+
+在观测数据上我们永远不知道真值，但当你不确定该信任哪个冗余参数时，AIPW 是自然的默认选择。
+以 NHEFS 的戒烟问题为例（`qsmk` 对体重变化 `wt82_71` 的效应）：
+
+```r
+data("nhefs")
+nhefs_complete <- nhefs[!is.na(nhefs$wt82_71) & !is.na(nhefs$education), ]
+
+conf <- ~ sex + age + I(age^2) + race + factor(education) +
+  smokeintensity + I(smokeintensity^2) + smokeyrs + I(smokeyrs^2) +
+  factor(exercise) + factor(active) + wt71 + I(wt71^2)
+
+fit_aipw <- causat(
+  nhefs_complete,
+  outcome = "wt82_71", treatment = "qsmk",
+  confounders = conf,
+  estimator = "aipw",
+  model_fn = stats::glm,
+  propensity_model_fn = stats::glm
+)
+
+res_aipw <- contrast(
+  fit_aipw,
+  interventions = list(quit = static(1), continue = static(0)),
+  reference = "continue",
+  type = "difference",
+  ci_method = "sandwich"
+)
+tt(tidy(res_aipw), digits = 3)
+```
+
+| term | estimate | std.error | type | conf.low | conf.high |
+|---|---|---|---|---|---|
+| quit vs continue | 3.48 | 0.483 | contrast | 2.53 | 4.42 |
+
+点估计值落在纯 G-computation 与纯 IPW 估计值之间，解释也和它们一样：假如所有人都戒烟，
+与假如无人戒烟相比，平均体重变化的差异。
+
+## 方差
+
+上面的 `"sandwich"` CI 用的是堆叠影响函数方差：AIPW 影响函数是结局模型修正项、
+倾向评分修正项与双稳健插入式残差之和，由 `variance_if()` 汇总得到。在所用模型
+设定正确时，它是渐近精确的。`ci_method = "bootstrap"` 会在每次重抽样上重新拟合
+两个冗余模型，可作为非参数的替代方案。
+
+```r
+res_boot <- contrast(
+  fit_aipw,
+  interventions = list(quit = static(1), continue = static(0)),
+  reference = "continue",
+  ci_method = "bootstrap", n_boot = 200L
+)
+tt(res_boot$contrasts[, c("comparison", "estimate", "se", "ci_lower", "ci_upper")], digits = 3)
+```
+
+| comparison | estimate | se | ci_lower | ci_upper |
+|---|---|---|---|---|
+| quit vs continue | 3.48 | 0.482 | 2.38 | 4.33 |
+
+## AIPW 的定位
+
+AIPW 与 G-computation、IPW 同属方法学**三角**：估计目标相同，但对冗余模型的依赖
+方式不同。以下情形可以选用它：
+
+- 你想要一个单一估计值，它对两个冗余模型中*其中一个*的误设保持稳健；或者
+- 你在做三角验证：G-computation、IPW 与 AIPW 结果一致会让人放心，而 AIPW 与另
+  两者都不一致，则提示其中某个模型很可能存在误设。
+
+causatr 的 AIPW 支持与其他估计量相同的功能范围 —— 二值、连续、分类和多元处理；
+`static` / `shift` / `scale_by` / `dynamic` / `stochastic` 干预；difference /
+ratio / OR 对比；按 `by` 分层的估计目标；稳定化权重；以及可迁移性。关于**纵向**
+双稳健估计量（ICE-AIPW）[@bang2005doubly]，见 `vignette("longitudinal")`。它的
+`"sandwich"` 方差是完整的堆叠 M-估计三明治，在非平衡面板（单调失访 / 删失）上
+依然有效，并覆盖 GLM 族和多分类冗余模型；带惩罚的学习器（`mgcv::gam`、
+`betareg`）则退回到 `ci_method = "bootstrap"`。关于贯穿这三个估计量的三角验证
+流程，见 `vignette("triangulation")`。
+
+## 参考文献
+
+::: {#refs}
+:::
+

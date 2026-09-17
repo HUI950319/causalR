@@ -1,0 +1,2055 @@
+---
+title: "因果效应的方差估计"
+subtitle: "*Variance estimation for causal effects* · causatr 官方文档中译"
+bibliography: causatr-refs.bib
+---
+
+> **来源**：R 包 [causatr](https://github.com/etverse/causatr) 官方文档 [`variance-theory.qmd`](https://etverse.github.io/causatr/vignettes/variance-theory.html)，MIT 许可。
+> 本页是中译，**代码与运行结果直接取自原站的渲染输出，未在本站重新执行**。
+> Copyright (c) 2026 causatr authors；许可证全文见原仓库 `LICENSE.md`。
+
+```{=html}
+<style>
+mjx-container[jax="CHTML"][display="true"] {
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 0.5em 0;
+}
+</style>
+```
+
+
+本文推导 causatr 中因果效应估计量背后的方差估计理论。核心结论很简单：**只有一种
+方法** —— 影响函数（IF）—— 它被统一地用于 G-computation、IPW 和匹配。各方法之间
+唯一不同的是定义估计量的那组估计方程；方差公式始终相同。
+
+后续各节中每一个非平凡的公式旁边都配有一个 **“数值验证”** 标签页组：你可以从代数
+推导切换到一小段 R 代码，它在一个固定的贯穿示例上计算同一个量，并给出算出的数值。
+这些代码块是真实运行的——每次构建本包时本文都会重新渲染，因此一旦某个公式与它的
+实现产生偏离，“结果”标签页里的表格就会立刻把问题暴露出来。
+
+## 0. 路线图
+
+目标是 $\mathrm{Var}(\hat\mu)$，即 $\mathbb{E}[Y^a]$ 或 $\mathbb{E}[Y^{a_1}] -
+\mathbb{E}[Y^{a_0}]$ 这类*因果*估计目标的抽样方差。我们分六步走到那里：
+
+1. **第 1 节 —— $\hat\beta$ 的三明治方差。** 任何定义为 $\sum_i \psi(O_i;\beta) = 0$
+   之根的估计量，其渐近方差都具有 $A^{-1} M A^{-1}/n$（bread × meat × bread）的
+   形式。这是“参数的方差”，还不是估计目标的方差。
+2. **第 2 节 —— 影响函数。** 三明治方差等价于
+   $\mathrm{Var}(\hat\beta) = \frac{1}{n^2}\sum_i \mathrm{IF}_i
+   \mathrm{IF}_i^{\mathsf T}$，其中 $\mathrm{IF}_i = A^{-1}\psi_i$ 是逐个体的
+   “估计值对个体 $i$ 的梯度”。数值相同，只是参数化方式不同——但能推广到因果
+   估计目标的正是 IF 这种形式。
+3. **第 3 节 —— $\hat\mu$ 的双通道 IF。** 因果估计目标
+   $\hat\mu = \frac{1}{n}\sum_i m(X_i;\hat\beta)$ 混合了两个随机性来源：$X_i$ 的
+   随机抽取（通道 1）和 $\hat\beta$ 的估计（通道 2）。正确的 IF 是两个通道之和。
+   delta 方法 $J V_\beta J^{\mathsf T}$ 是只算通道 2 的捷径——**当每种干预下的
+   预测值为常数时它是精确的，否则会偏小。**
+4. **第 4 节 —— 核心估计量。** G-computation、IPW 和匹配是接入同一套机制的三种
+   估计方程选择。每一种都有自己的 IF，但聚合方式完全一样。AIPW 把 G-computation
+   和 IPW 的影响函数合并成一个双稳健的 IF；它的方差遵循同一套框架。
+5. **第 5 节 —— 链式估计量（ICE）。** 当多个冗余模型彼此馈入时（例如纵向数据的
+   迭代条件期望 G-computation），IF 每多一个模型就多出一项通道 2 修正。我们通过
+   一个前向敏感度递推来导出它们。
+6. **第 6 节 —— 小结。** 一张把每个估计量对应到它的估计方程、它的 IF、以及
+   causatr 中计算该 IF 的那一行代码的表格。
+
+阅读本文的一个好办法是：先略读某一节的数学推导，然后展开每个关键公式下方的
+**数值验证** 标签页组，看这个公式如何在真实数据上实例化，并与 `sandwich::sandwich()`
+或 causatr 自己的 `variance_if()` 引擎交叉核对。
+
+### 0.1 贯穿示例
+
+下面每个验证代码块都使用同一个小型 logistic 示例。它被刻意做得很小（这样表格能放
+进本文），但又没有小到让渐近近似失效。
+
+```r
+library(causatr)
+library(sandwich)
+library(tinytable)
+
+set.seed(42)
+n <- 200
+L <- rnorm(n)
+A <- rbinom(n, 1, plogis(0.5 * L))
+Y <- rbinom(n, 1, plogis(-1 + 0.8 * A + 0.6 * L))
+dat <- data.frame(Y = Y, A = A, L = L)
+
+# The outcome model we'll use throughout Sections 1-3.
+fit <- glm(Y ~ A + L, data = dat, family = binomial)
+beta_hat <- coef(fit)
+X   <- model.matrix(fit)           # design matrix, n x p
+mu  <- fitted(fit)                 # predicted probabilities
+p   <- length(beta_hat)
+
+# A small helper: print two named numeric matrices / vectors side-by-side
+# as a tinytable, so that "manual" and "gold-standard" results sit next
+# to each other and any disagreement is visible.
+verify_tbl <- function(manual, reference, label_m = "manual",
+                       label_r = "reference", digits = 4) {
+  m <- as.numeric(manual)
+  r <- as.numeric(reference)
+  out <- data.frame(
+    cell      = if (length(m) == 1) "scalar" else seq_along(m),
+    `value`   = m,
+    reference = r,
+    `abs diff` = abs(m - r),
+    check.names = FALSE
+  )
+  names(out)[2] <- label_m
+  names(out)[3] <- label_r
+  tt(out) |>
+    format_tt(j = 2:4, digits = digits, num_fmt = "significant")
+}
+```
+
+一个快速的合理性检查：$\hat\beta$ 以及基于模型的（非三明治）拟合结果。
+
+```r
+tt(data.frame(coef = names(beta_hat), estimate = round(beta_hat, 4)))
+```
+
+| coef | estimate |
+|---|---|
+| (Intercept) | -1.0622 |
+| A | 0.7498 |
+| L | 0.8197 |
+
+```{mermaid}
+%%| label: fig-pipeline
+%%| fig-cap: "因果效应的方差估计流程。影响函数（IF）是唯一的方法：写下完整系统（闭包模型+估计目标）的估计方程，计算每个个体的 IF，然后平方求和。delta 方法（J V_β J^T）是一个捷径，只捕获参数不确定性——当预测值对每个干预保持不变时是精确的，否则低估。"
+flowchart TB
+  EE["Complete estimating equations<br/>(nuisance models + estimand)"] -->|"linearise<br/>(Sec 1–2)"| IF["IF_i per individual<br/>= direct + model correction"]
+  IF -->|"Var = (1/n²) Σ IF²<br/>(always correct)"| VM["Var(μ̂)"]
+
+  EE -->|"shortcut:<br/>J V_β Jᵀ"| SC{"Predictions<br/>constant?"}
+  SC -->|"Yes<br/>(saturated MSM,<br/>static intervention)"| VM
+  SC -->|"No<br/>(g-comp,<br/>non-saturated MSM)"| UNDER["Underestimates ❌"]
+
+  style EE fill:#f0f4ff,stroke:#3182BD
+  style IF fill:#fff5eb,stroke:#E6550D
+  style VM fill:#e8f5e9,stroke:#31A354
+  style SC fill:#fff5eb,stroke:#E6550D
+  style UNDER fill:#fee,stroke:#c00
+```
+
+
+## 1. 参数模型的三明治估计量
+
+本节推导 $\text{Var}(\hat\beta)$——模型参数的方差。这是一个构建块，不是最终答案。第 3 节展示了如何从 $\text{Var}(\hat\beta)$ 到达 $\text{Var}(\hat\mu)$。
+
+### 1.1 什么是估计方程？
+
+起点是一个简单的想法：许多统计估计量可以定义为以下形式的方程的解
+
+$$
+\sum_{i=1}^n \psi(O_i; \beta) = 0
+$$
+
+其中 $O_i$ 是个体 $i$ 的观察数据，$\beta$ 是我们想要估计的参数，$\psi$ 是一个函数——称为**估计函数**——它将每个观察和一个候选参数值映射到一个向量。估计量 $\hat\beta$ 是使这个和等于零的 $\beta$ 的值。
+
+但 *是什么* $\psi$，具体而言？它从哪里来？
+
+### 1.2 推导 $\psi$：通往同一地点的三条路线
+
+#### 路线 1：分数方程（最大似然估计）
+
+$\psi$ 最熟悉的来源是最大似然估计。如果观察具有对数似然 $\ell_i(\beta) = \log f(O_i; \beta)$，MLE 最大化 $\sum_i \ell_i(\beta)$。令导数为零得到：
+
+$$
+\sum_{i=1}^n \underbrace{\frac{\partial \ell_i(\beta)}{\partial \beta}}_
+{\psi(O_i;\beta)} = 0
+$$
+
+所以 $\psi$ 是**分数函数**——个体对数似然的梯度。对于结果 $Y_i$、协变量 $X_i$、线性预测器 $\eta_i = X_i^T\beta$ 和均值函数 $\mu_i = g^{-1}(\eta_i)$ 的 GLM：
+
+$$
+\psi(O_i; \beta) =
+\underset{\color{#E6550D}{\text{残差}}}{\color{#E6550D}{(Y_i - \mu_i)}}
+\;\cdot\;
+\underset{\color{#3182BD}{\text{尺度因子}}}
+{\color{#3182BD}{\frac{d\mu/d\eta}{V(\mu_i)}}}
+\;\cdot\;
+\underset{\color{#31A354}{\text{方向}}}{\color{#31A354}{X_i}}
+$$
+
+其中 $V(\mu_i)$ 是指数族的方差函数（二项分布为 $V(\mu) = \mu(1-\mu)$，泊松分布为 $V(\mu) = \mu$，高斯分布为 $V(\mu) = 1$——注意 $\sigma^2$ 作为离散参数 $\phi$ 单独进入，而不是作为 $V(\mu)$）。解读三个因子：
+
+- $\color{#E6550D}{(Y_i - \mu_i)}$ ——**残差**：预测与观察的距离。在真实值处平均为零，这就是为什么 $E[\psi_i] = 0$。
+- $\color{#3182BD}{(d\mu/d\eta) / V(\mu_i)}$ ——**尺度因子**：结合链式法则（从 $\eta$ 尺度转换到 $\mu$ 尺度）与方差权重（对嘈杂观察降权）。对于规范链式，此乘积简化（见下文）。
+- $\color{#31A354}{X_i}$ ——**方向**：协变量告诉我们这个观察影响*哪个*参数。具有大 $|X_{ij}|$ 的观察提供了关于 $\beta_j$ 的更多信息。
+
+::: {.callout-note}
+### 示例：logistic 回归
+
+对于 logistic 回归，$\mu_i = \text{expit}(\eta_i)$，所以 $d\mu/d\eta = \mu_i(1-\mu_i)$ 和 $V(\mu_i) = \mu_i(1 - \mu_i)$。尺度因子约分为 $1$，得到：
+
+$$\psi(O_i;\beta) = (Y_i - \mu_i) \cdot X_i$$
+
+估计方程 $\sum_i (Y_i - \mu_i) X_i = 0$ 的意思是：在 MLE 处，协变量与残差不相关。
+:::
+
+#### 路线 2：矩条件（矩方法）
+
+不是每个估计方程都来自似然函数。**广义矩方法**（GMM）从真实参数 $\beta_0$ 的理论性质——一个*矩条件*——开始，把它变成 $\psi$。
+
+例如，如果我们知道 $E[X_i(Y_i - X_i^T\beta_0)] = 0$，我们可以定义：
+
+$$
+\psi(O_i; \beta) = X_i(Y_i - X_i^T\beta)
+$$
+
+设 $\sum_i \psi = 0$ 给出 OLS 正规方程。不需要任何分布假设——只需矩条件 $E[X_i \varepsilon_i] = 0$。
+
+这是 M-估计的关键洞察：估计函数 $\psi$ 不必是分数函数。它只需要满足在真实参数值处 $E[\psi(O_i; \beta_0)] = 0$（**无偏性**条件）。这正是保证 $\hat\beta$ 的相合性。
+
+#### 路线 3：拟似然
+
+拟似然提供一个中间立场。我们只指定 $Y_i \mid X_i$ 的前两阶矩——均值函数 $\mu_i = g^{-1}(X_i^T\beta)$ 和方差函数 $V(\mu_i)$——不假设完整的分布形式。拟分数为：
+
+$$
+\psi(O_i; \beta) = \frac{(Y_i - \mu_i)}{V(\mu_i)} \cdot
+\frac{d\mu_i}{d\eta_i} \cdot X_i
+$$
+
+这看起来与 GLM 分数相同，但现在 $V(\mu)$ 是一个*工作*方差——它可能是错误的。三明治估计量（第 1.4 节）防护这种误设。
+
+### 1.3 一般 M-估计框架
+
+所有三条路线都产生同一形式的估计量：找 $\hat\beta$ 解决 $\sum_i \psi(O_i; \hat\beta) = 0$。M-估计框架 [@huber1964robust; @stefanski2002mestimation] 在两个条件下统一它们：
+
+1. **无偏性**：在真实 $\beta_0$ 处 $E[\psi(O_i; \beta_0)] = 0$。这保证估计方程在期望中有正确的解。
+2. **正则性**：$\psi$ 在 $\beta$ 中足够光滑以进行 Taylor 展开。
+
+给定这些，$\hat\beta$ 是相合的且渐近正态的，其方差具有三明治形式——无论 $\psi$ 是来自似然函数、矩条件还是拟似然。
+
+::: {.callout-tip}
+### 为什么叫"M-估计"？
+
+"M"代表"最大"（如最大似然），但框架更广泛。任何定义为数据和参数函数和的根的估计量都是 M-估计量——这包括 MLE、加权最小二乘法、分位数回归、稳健回归（Huber 损失）、广义估计方程，以及第 4-5 节中的因果估计量 [@stefanski2002mestimation]。
+:::
+
+### 1.4 M-估计量的渐近方差
+
+我们要 $\text{Var}(\hat\beta)$。推导有三个步骤：通过 Taylor 展开线性化 $\hat\beta$，识别线性近似的方差，然后从数据中估计它。
+
+#### 步骤 1：通过 Taylor 展开线性化
+
+我们知道 $\hat\beta$ 解决 $\sum_i \psi(O_i; \hat\beta) = 0$。我们也知道真实的 $\beta_0$ 满足 $E[\psi(O_i; \beta_0)] = 0$，但有限样本和 $\sum_i \psi(O_i; \beta_0)$ 通常*不*等于零——它是围绕零波动的随机量。想法是通过 Taylor 展开关联这两个事实。
+
+在 $\beta_0$ 周围展开 $\sum_i \psi(O_i; \hat\beta)$，只保留一阶项（由正则性对大 $n$ 有效）：
+
+$$
+\underbrace{\sum_i \psi(O_i; \hat\beta)}_{= \, 0 \text{ (根据定义)}}
+\approx \sum_i \psi(O_i; \beta_0) +
+\left[\sum_i \frac{\partial \psi(O_i;\beta_0)}
+{\partial \beta^T}\right]
+(\hat\beta - \beta_0)
+$$
+
+重新排列得到估计误差 $\hat\beta - \beta_0$：
+
+$$
+\hat\beta - \beta_0 \approx
+-\left[\sum_i \frac{\partial \psi(O_i;
+\beta_0)}{\partial \beta^T}\right]^{-1}
+\sum_i \psi(O_i; \beta_0)
+$$
+
+分子分母都除以 $n$ 并标记两个因子：
+
+$$
+\underset{p \times 1}{\hat\beta - \beta_0}
+\;\approx\;
+\underbrace{\left[-\frac{1}{n}\sum_i \frac{\partial \psi_i}
+{\partial \beta^T}\right]^{-1}}_{\to\;
+\color{#3182BD}{A^{-1}} \;(p \times p)}
+\;\cdot\;
+\underbrace{\frac{1}{n}\sum_i \psi(O_i; \beta_0)}_{\text{mean zero,
+covariance } \color{#E6550D}{B/n}}
+$$
+
+这是关键的线性化：估计误差近似为 bread 逆乘以平均分数。第一个因子收敛到常数矩阵 $\color{#3182BD}{A^{-1}}$；第二个是独立同分布均值为零的随机 $p$-向量的和，其协方差我们称为 $\color{#E6550D}{B}$。
+
+#### 步骤 2：识别方差
+
+命名在步骤 1 中出现的两个矩阵：
+
+- **Bread** $\color{#3182BD}{A}$：估计函数的预期负 Jacobian（$p \times p$）：
+
+$$
+\color{#3182BD}{A}
+\;\equiv\; -E\!\left[\frac{\partial \psi(O_i; \beta_0)}
+{\partial \beta^T}\right]
+\qquad (p \times p)
+$$
+
+对于 GLM，$\color{#3182BD}{A} = E[w_i X_i X_i^T]$，其中 $w_i = (d\mu/d\eta)^2 / V(\mu)$ 是 IWLS 工作权重——基本上是（拟）对数似然的曲率。
+
+- **Meat** $\color{#E6550D}{B}$：估计函数的协方差（$p \times p$）：
+
+$$
+\color{#E6550D}{B}
+\;\equiv\; E\!\left[\psi(O_i; \beta_0)\,\psi(O_i; \beta_0)^T\right]
+\qquad (p \times p)
+$$
+
+这衡量了个别分数 $\psi_i$ 在观察间的变异程度。它在步骤 1 中作为第二个因子的协方差出现：$\text{Var}\! \left(\frac{1}{n}\sum_i \psi_i\right) = \frac{1}{n}\color{#E6550D}{B}$。
+
+现在通过线性化传播。取步骤 1 方程两边的 $\text{Var}(\cdot)$：
+
+$$
+\underset{p \times p}{\text{Var}(\hat\beta)}
+\;\approx\;
+\underset{p \times p}{\color{#3182BD}{A^{-1}}}
+\;\cdot\;
+\underset{p \times p}{\frac{\color{#E6550D}{B}}{n}}
+\;\cdot\;
+\underset{p \times p}{\color{#3182BD}{(A^{-1})^T}}
+\;=\;
+\frac{1}{n}\,
+\color{#3182BD}{A^{-1}}\,
+\color{#E6550D}{B}\,
+\color{#3182BD}{(A^{-1})^T}
+$$
+
+#### 步骤 3：从数据中估计
+
+用样本平均值替换总体期望 $A$ 和 $B$：
+
+$$
+\color{#3182BD}{\hat{A}}
+= -\frac{1}{n}\sum_i
+\frac{\partial \psi(O_i; \hat\beta)}{\partial \beta^T}
+\qquad (p \times p)
+$$
+
+$$
+\color{#E6550D}{\hat{B}}
+= \frac{1}{n}\sum_i
+\psi(O_i; \hat\beta)\,\psi(O_i; \hat\beta)^T
+\qquad (p \times p)
+$$
+
+**三明治估计量**是：
+
+$$
+\underset{p \times p}{\widehat{\text{Var}}(\hat\beta)}
+= \frac{1}{n}\;
+\underset{p \times p}{\color{#3182BD}{\hat{A}^{-1}}}
+\;
+\underset{p \times p}{\color{#E6550D}{\hat{B}}}
+\;
+\underset{p \times p}{\color{#3182BD}{(\hat{A}^{-1})^T}}
+$$ {#eq-sandwich}
+
+所以被称为是因为 meat $\color{#E6550D}{\hat B}$ 被"夹在"两片 bread $\color{#3182BD}{\hat A^{-1}}$ 之间。
+
+::: {.callout-important}
+### 为什么这是稳健的？
+
+Bread $\color{#3182BD}{A}$ 和 meat $\color{#E6550D}{B}$ 被*分别*估计。在正确的模型设定下（例如 GLM 方差函数是对的），$A = B$，三明治简化为 $\frac{1}{n} A^{-1}$——通常的基于模型的方差。但如果方差函数错误，$A \neq B$：bread 仍然正确地捕获曲率（它只依赖于均值模型），而 meat 捕获分数的*实际*变异性。三明治无论如何都保持相合——这是 Huber--White 稳健性性质 [@huber1967behavior; @white1982maximum]。
+:::
+
+::: {.panel-tabset}
+
+## 数学
+
+$$
+\widehat{\text{Var}}(\hat\beta)
+= \frac{1}{n}\hat A^{-1}\hat B\,\hat A^{-1}
+$$
+
+其中 meat $\hat B = \frac{1}{n}\sum_i \psi_i\psi_i^{\mathsf T}$ 和 bread 逆 $\hat A^{-1}$。对于具有规范链式的 GLM，$\hat A = \frac{1}{n} X^{\mathsf T} W X$，其中 $W$ 是 $\mu_i(1-\mu_i)$ 的对角线（二项情况）。
+
+## 代码
+
+```r
+# Meat: outer product of per-individual score contributions.
+psi   <- (Y - mu) * X                       # n x p: (Y-mu) * X
+M_hat <- crossprod(psi) / n                 # (1/n) sum psi psi^T, p x p
+
+# Bread^{-1}: for logistic, A_hat = (1/n) X^T W X, with W = diag(mu(1-mu))
+W     <- diag(mu * (1 - mu))
+A_hat_inv <- solve(crossprod(X, W %*% X) / n)
+
+# Sandwich variance of beta
+V_beta_manual <- A_hat_inv %*% M_hat %*% A_hat_inv / n
+
+# Gold standard: sandwich::sandwich(fit)
+V_beta_gold <- sandwich::sandwich(fit)
+```
+
+## 结果
+
+```r
+# Collapse both p x p matrices into long form so the table stays readable.
+cells <- outer(rownames(V_beta_manual), colnames(V_beta_manual),
+               paste, sep = " × ")
+out <- data.frame(
+  cell      = as.vector(cells),
+  manual    = as.vector(V_beta_manual),
+  reference = as.vector(V_beta_gold),
+  `abs diff` = abs(as.vector(V_beta_manual) - as.vector(V_beta_gold)),
+  check.names = FALSE
+)
+tt(out, caption = "Sandwich $V_\\beta$: manual vs `sandwich::sandwich(fit)`") |>
+  format_tt(j = 2:4, digits = 4, num_fmt = "significant")
+```
+
+手动三明治和 `sandwich::sandwich(fit)` 同意到数值精度（≲ 1e-8），确认 @eq-sandwich 被正确实现。
+
+:::
+
+### 1.5 伪代码：GLM 的三明治方差
+
+```r
+sandwich_variance <- function(X, Y, beta_hat, family) {
+  n <- length(Y)
+  eta <- X %*% beta_hat
+  mu <- family$linkinv(eta)
+  mu_eta <- family$mu.eta(eta)    # dmu/deta
+  V <- family$variance(mu)        # Var(Y|X) under the model
+
+  # Bread: A = (1/n) X^T W X where W = diag((dmu/deta)^2 / V(mu))
+  W <- mu_eta^2 / V
+  A <- (1 / n) * crossprod(X, X * W)
+
+  # Meat: B = (1/n) sum psi_i psi_i^T
+  residuals <- Y - mu
+  score_weights <- mu_eta / V
+  psi <- X * (residuals * score_weights)  # n x p matrix of score contributions
+  B <- (1 / n) * crossprod(psi)
+
+  # Sandwich: (1/n) A^{-1} B (A^{-1})^T
+  A_inv <- solve(A)
+  V_beta <- (1 / n) * A_inv %*% B %*% t(A_inv)
+  V_beta
+}
+```
+
+::: {.callout-tip}
+### 在实践中
+
+你几乎从不自己编码这个。在 R 中，`sandwich::sandwich(model)` 从任何 `glm` 对象计算 $\hat A^{-1} \hat B (\hat A^{-1})^T$。`sandwich` 包 [@zeileis2004econometric; @zeileis2006object] 为聚类数据 (`vcovCL()`)、面板数据 (`vcovPL()`) 和异方差-自相关 (`vcovHAC()`) 提供了变体。
+:::
+
+### 1.6 具体示例：线性回归
+
+让我们逐步完成 OLS 的三明治。
+
+**模型**：$Y_i = X_i^T\beta + \varepsilon_i$，其中 $E[\varepsilon_i \mid X_i] = 0$。
+
+**步骤 1：写下 $\psi$。**
+
+OLS 估计量最小化 $\sum_i (Y_i - X_i^T\beta)^2$。设置梯度为零得到 $\sum_i X_i(Y_i - X_i^T\beta) = 0$，所以：
+
+$$
+\psi(O_i; \beta) = X_i(Y_i - X_i^T\beta)
+\qquad (p \times 1)
+$$
+
+在 $\beta_0$ 处：$E[\psi_i] = E[X_i \varepsilon_i] = 0$ 由外生性。
+
+**步骤 2：计算 bread $\color{#3182BD}{A}$。**
+
+$$
+\frac{\partial \psi(O_i; \beta)}{\partial \beta^T}
+= \frac{\partial}{\partial \beta^T}\left[X_i(Y_i - X_i^T\beta)\right]
+= -X_i X_i^T
+\qquad (p \times p)
+$$
+
+所以 $\color{#3182BD}{A} = E[X_i X_i^T]$，由 $\color{#3182BD}{\hat{A}} = \frac{1}{n} X^T X$ 估计。
+
+**步骤 3：计算 meat $\color{#E6550D}{B}$。**
+
+由于 $\psi_i = X_i \hat e_i$，外积是 $\psi_i\psi_i^T = \hat e_i^2 X_iX_i^T$：
+
+$$
+\color{#E6550D}{\hat{B}} = \frac{1}{n}\sum_i \hat{e}_i^2 \, X_i X_i^T
+\qquad (p \times p)
+$$
+
+meat 依赖于*平方残差*，而不是任何假设的方差。这是稳健性的来源。
+
+**步骤 4：组装三明治。**
+
+$$
+\underset{p \times p}{\widehat{\text{Var}}(\hat\beta)}
+= \frac{1}{n}\,
+\color{#3182BD}{\hat{A}^{-1}}\;
+\color{#E6550D}{\hat{B}}\;
+\color{#3182BD}{(\hat{A}^{-1})^T}
+$$
+
+替换：
+
+$$
+= \underset{p \times p}{\color{#3182BD}{(X^TX)^{-1}}}
+\;\;
+\underset{p \times p}{\color{#E6550D}{\left[\sum_i
+\hat{e}_i^2\,X_iX_i^T\right]}}
+\;\;
+\underset{p \times p}{\color{#3182BD}{(X^TX)^{-1}}}
+$$
+
+这是 *HC0* 异方差一致估计量 [@white1980heteroskedasticity]。
+
+**如果同方差成立呢？** 如果 $\text{Var}(\varepsilon_i \mid X_i) = \sigma^2$ 对所有 $i$，那么 $E[\hat{e}_i^2 X_i X_i^T] = \sigma^2 E[X_i X_i^T]$，所以 $\color{#E6550D}{B} = \sigma^2 \color{#3182BD}{A}$ 和三明治简化为 $\frac{\sigma^2}{n} \color{#3182BD}{A^{-1}} = \hat\sigma^2(X^TX)^{-1}$，通常的 OLS 方差。
+
+
+## 2. 影响函数
+
+第 1 节给了我们 $\text{Var}(\hat\beta)$ 作为矩阵乘积（三明治）。**影响函数**（IF）给出相同的答案但表示为每个个体的贡献。这不仅仅是好奇心——IF 是让我们计算因果估计目标（第 3 节）和多模型管道（第 5 节）的 $\text{Var}(\hat\mu)$ 的工具。
+
+### 2.1 想法：每个观察的重要程度如何？
+
+想象从数据集中移除观察 $i$ 并重新估计 $\hat\beta$。变化 $\hat\beta_{(-i)} - \hat\beta$ 告诉你观察 $i$ 对估计的"影响"程度。**影响函数**（IF）是这个量的一阶近似，按 $n$ 缩放：
+
+$$
+\text{IF}_i \approx -n(\hat\beta_{(-i)} - \hat\beta)
+$$
+
+但我们不需要实际重新拟合模型 $n$ 次。对于 M-估计量，IF 可以闭式计算。
+
+### 2.2 从线性化推导 IF
+
+在第 1.4 节，步骤 1，我们推导了线性化：
+
+$$
+\underset{p \times 1}{\hat\beta - \beta_0}
+\;\approx\;
+\frac{1}{n}\sum_{i=1}^n
+\underset{p \times p}{\color{#3182BD}{A^{-1}}}
+\;\;
+\underset{p \times 1}{\psi(O_i; \beta_0)}
+$$
+
+每个被加数 $\color{#3182BD}{A^{-1}}\psi_i$ 是观察 $i$ 对总估计误差的贡献。这正是**影响函数**：
+
+$$
+\underset{p \times 1}{\text{IF}_i(\hat\beta)}
+\;=\;
+\underset{p \times p}{\color{#3182BD}{A^{-1}}}
+\;\cdot\;
+\underset{p \times 1}{\psi(O_i; \hat\beta)}
+$$ {#eq-if}
+
+读每个因子：
+
+- $\psi_i$（$p \times 1$）：第 1.2 节的分数——观察 $i$ 的数据"不同意"当前 $\hat\beta$ 的程度。
+- $\color{#3182BD}{A^{-1}}$（$p \times p$）：第 1.4 节的 bread 逆——从分数空间转换到参数空间，说明曲率。
+- $\text{IF}_i$（$p \times 1$）：$\hat\beta$ 中由观察 $i$ 导致的结果转变（乘以 $n$）。
+
+不需要新的推导。IF *就是*线性化，逐项阅读。
+
+### 2.3 IF = 三明治（关键等价性）
+
+**性质 1：线性化。** IF 让我们把复杂的估计量写成简单的平均：
+
+$$
+\hat\beta - \beta_0 \approx \frac{1}{n}\sum_i \text{IF}_i
+$$
+
+**性质 2：方差恢复。** 由于 $E[\text{IF}_i] = 0$：
+
+$$
+\text{Var}(\hat\beta) \approx
+\frac{1}{n^2}\sum_i \text{IF}_i \, \text{IF}_i^T
+$$
+
+展开 $\text{IF}_i \text{IF}_i^T = \color{#3182BD}{A^{-1}} \psi_i \psi_i^T \color{#3182BD}{(A^{-1})^T}$ 并分解：
+
+$$
+\frac{1}{n^2}\sum_i \color{#3182BD}{A^{-1}} \psi_i\psi_i^T
+\color{#3182BD}{(A^{-1})^T}
+= \frac{1}{n} \color{#3182BD}{A^{-1}}
+\underbrace{\frac{1}{n}\sum_i \psi_i\psi_i^T}_
+{\color{#E6550D}{B}\text{ （meat）}}
+\color{#3182BD}{(A^{-1})^T}
+$$
+
+这是第 1.4 节的三明治。
+
+::: {.callout-note}
+### 关键等价性
+
+$$
+\underbrace{\frac{1}{n^2}\sum_i \text{IF}_i\,\text{IF}_i^T}_
+{\text{IF-based variance}}
+\;=\;
+\underbrace{\frac{1}{n}\,\color{#3182BD}{A^{-1}}\,\color{#E6550D}{B}\,
+\color{#3182BD}{(A^{-1})^T}}_{\text{sandwich variance}}
+$$ {#eq-if-sandwich}
+
+三明治操作矩阵。IF 操作每个个体的向量。相同的答案，不同的表示。从这里开始我们将使用 IF 表示，因为它干净地扩展到多步估计量（第 3-5 节）。
+:::
+
+::: {.panel-tabset}
+
+## 数学
+
+$$
+\mathrm{IF}_i(\hat\beta) = \hat A^{-1}\psi_i,
+\qquad
+\widehat{\text{Var}}(\hat\beta)
+= \frac{1}{n^2}\sum_{i=1}^n \mathrm{IF}_i\,\mathrm{IF}_i^{\mathsf T}.
+$$
+
+## 代码
+
+```r
+# Per-individual IF for beta (n x p). psi and A_hat_inv come from the
+# sandwich verification block above.
+IF_beta <- psi %*% t(A_hat_inv)
+
+# Assemble Var(beta) two different ways.
+V_beta_via_IF  <- crossprod(IF_beta) / n^2
+V_beta_via_sw  <- sandwich::sandwich(fit)
+```
+
+## 结果
+
+```r
+cells <- outer(rownames(V_beta_via_IF), colnames(V_beta_via_IF),
+               paste, sep = " × ")
+out <- data.frame(
+  cell                = as.vector(cells),
+  `IF (1/n^2 Σ IF²)`  = as.vector(V_beta_via_IF),
+  `sandwich`          = as.vector(V_beta_via_sw),
+  `abs diff`          = abs(as.vector(V_beta_via_IF) -
+                            as.vector(V_beta_via_sw)),
+  check.names         = FALSE
+)
+tt(out, caption = "Sandwich $= \\tfrac{1}{n^2}\\sum_i \\mathrm{IF}_i\\mathrm{IF}_i^{\\mathsf T}$") |>
+  format_tt(j = 2:4, digits = 4, num_fmt = "significant")
+```
+
+两种表示法在机器精度内相等（abs diff ≲ 1e-16）——所以任何我们看到"三明治方差"的地方，我们可以等价地写成"影响函数的平方和除以 $n^2$"。
+
+:::
+
+### 2.4 示例：样本均值的 IF
+
+$\hat\mu = \frac{1}{n}\sum_i Y_i$。估计方程：$\psi(O_i; \mu) = Y_i - \mu$。Bread：$A = 1$。IF：$\text{IF}_i = Y_i - \hat\mu$。方差：$\frac{1}{n^2}\sum_i(Y_i - \hat\mu)^2 = s^2/n$。
+
+::: {.panel-tabset}
+
+## 数学
+
+$$
+\mathrm{IF}_i(\hat\mu) = Y_i - \hat\mu,
+\qquad
+\widehat{\mathrm{Var}}(\hat\mu)
+= \frac{1}{n^2}\sum_{i=1}^n (Y_i - \hat\mu)^2
+= \frac{n-1}{n}\cdot\frac{s^2}{n}.
+$$
+
+IF-based SE 直到 $(n-1)/n$ 偏倚因子，只是入门统计教科书中的均值标准误差。
+
+## 代码
+
+```r
+y   <- dat$Y
+mu  <- mean(y)
+
+# IF-based variance: (1/n²) Σ (yᵢ - μ̂)²
+var_if <- sum((y - mu)^2) / length(y)^2
+se_if  <- sqrt(var_if)
+
+# Textbook: s² / n   (n-1 denominator)
+se_textbook <- sqrt(var(y) / length(y))
+```
+
+## 结果
+
+```r
+out <- data.frame(
+  quantity = c("IF-based SE",
+               "Textbook SE ($s / \\sqrt{n}$)",
+               "Ratio $\\sqrt{n/(n-1)}$"),
+  value    = c(se_if, se_textbook, se_textbook / se_if)
+)
+tt(out, caption = "Sample mean IF variance matches the textbook SE") |>
+  format_tt(j = "quantity", markdown = TRUE) |>
+  format_tt(j = 2, digits = 4, num_fmt = "significant")
+```
+
+两者同意到标准 $(n-1)/n$ 自由度修正——在 $n = `r length(y)`$ 上比率与 $\sqrt{n/(n-1)}$ 无差别。
+
+:::
+
+
+## 3. 因果估计目标的方差
+
+### 3.1 问题
+
+三明治（第 1 节）给出 $\text{Var}(\hat\beta)$。但因果估计目标通常是 $\hat\beta$ **和**数据的非线性函数。例如，g-computation 在干预 $a$ 下的边际均值是：
+
+$$
+\hat\mu_a = \frac{1}{n}\sum_{i=1}^n
+g^{-1}(X_i^{*T} \hat\beta)
+$$
+
+其中 $X_i^*$ 是个体 $i$ 的协变量向量，处理设置为 $a$，$g^{-1}(\cdot)$ 是反链式函数。
+
+这个量依赖于**两个**随机的事物：
+
+1. $\hat\beta$ ——估计的模型参数（因为有限数据而随机）。
+2. $\{X_i\}$ ——协变量分布（因为不同的样本给出不同的协变量，因此预测的平均值不同而随机）。
+
+完整的方差估计量必须考虑两个来源。正如我们将看到的，标准"delta 方法"快捷方式只捕获来源 (1)。
+
+### 3.2 两通道影响函数
+
+g-computation 边际均值是一个**两步**估计量：首先估计 $\hat\beta$，然后计算 $\hat\mu_a = \frac{1}{n}\sum_i g^{-1}(X_i^{*T} \hat\beta)$。个体 $i$ 通过两个通道影响 $\hat\mu_a$。
+
+#### 通道 1：直接贡献（协变量采样）
+
+即使 $\hat\beta$ 是固定的，观察 $i$ 的预测 $g^{-1}(X_i^{*T}\hat\beta)$ 也是被平均的 $n$ 项之一。不同的样本给出不同的预测集合。个体 $i$ 对估计误差的直接贡献是：
+
+$$
+\text{IF}_i^{\text{direct}} = g^{-1}(X_i^{*T}\hat\beta) - \hat\mu_a
+\qquad (\text{scalar})
+$$
+
+这与第 2.4 节的样本均值 IF 具有相同的结构——一个项与平均值的偏差。
+
+#### 通道 2：模型修正（参数不确定性）
+
+观察 $i$ 也通过改变 $\hat\beta$ 间接影响 $\hat\mu_a$。从第 2.2 节，$i$ 对 $\hat\beta$ 的影响大约是 $\frac{1}{n}\color{#3182BD}{A^{-1}}\psi_i$。这个转变改变 $\hat\mu_a$ 通过：
+
+$$
+\delta\hat\mu_a \;\approx\;
+\underset{1 \times p}{\color{#31A354}{J_a}}
+\;\cdot\;
+\underset{p \times 1}{\color{#3182BD}{A^{-1}}\psi_i}
+$$
+
+其中 $\color{#31A354}{J_a} = \frac{\partial \hat\mu_a}{\partial \beta^T}$ 是 $1 \times p$ **Jacobian** ——边际均值随着每个系数转变而变化的方式：
+
+$$
+\underset{1 \times p}{\color{#31A354}{J_a}}
+= \frac{1}{n} \sum_{i=1}^n
+\underbrace{\frac{d\mu}{d\eta}\bigg|_{\eta_i^*}}_{\text{scalar}}
+\;\cdot\;
+\underbrace{X_i^{*T}}_{1 \times p}
+$$
+
+常见 GLM 的链式导数：
+
+| 族 | 链式 | $d\mu/d\eta$ | 效应 |
+|---|---|---|---|
+| 高斯 | 恒等式 | $1$ | 所有观察等同地贡献 |
+| 二项 | Logit | $\mu(1 - \mu)$ | 接近 $\mu = 0.5$ 的观察贡献最多 |
+| 泊松 | 对数 | $\mu$ | 具有更大均值的观察贡献更多 |
+
+#### 结合两个通道
+
+边际均值 $\hat\mu_a$ 的完整 IF 是：
+
+$$
+\text{IF}_i(\hat\mu_a) =
+\underbrace{g^{-1}(X_i^{*T}\hat\beta) - \hat\mu_a}_
+{\text{通道 1：协变量采样}}
+\;+\;
+\underbrace{
+\underset{1 \times p}{\color{#31A354}{J_a}}
+\;\;
+\underset{p \times p}{\color{#3182BD}{A^{-1}}}
+\;\;
+\underset{p \times 1}{\psi_i}
+}_{\text{通道 2：参数不确定性}}
+$$ {#eq-if-gcomp}
+
+方差是：
+
+$$
+\widehat{\text{Var}}(\hat\mu_a) = \frac{1}{n^2}\sum_{i=1}^n
+\text{IF}_i(\hat\mu_a)^2
+$$ {#eq-var-if}
+
+对于两个干预 $a$ 和 $b$，协方差是：
+
+$$
+\widehat{\text{Cov}}(\hat\mu_a, \hat\mu_b)
+= \frac{1}{n^2}\sum_{i=1}^n \text{IF}_i^{(a)} \cdot \text{IF}_i^{(b)}
+$$
+
+这给出了对比（风险差、风险比等）所需的完整 $k \times k$ 协方差矩阵。
+
+::: {.callout-note}
+### 为什么协方差重要
+
+$\hat\mu_1$ 和 $\hat\mu_0$ 都是*相同*数据的函数，所以它们是相关的。这个协方差通常*减少*差异的方差。忽略它（分别计算方差并相加）会高估 SE。
+:::
+
+::: {.panel-tabset}
+
+## 数学
+
+对于在 logistic 结局模型下 $\hat\mu_1 = \mathbb{E}[Y^{A=1}]$ 的 g-computation 估计，
+
+$$
+\mathrm{IF}_i(\hat\mu_1) =
+\underbrace{m(X_i^{(1)};\hat\beta) - \hat\mu_1}_{\text{通道 1}}
+\;+\;
+\underbrace{J_1\,\hat A^{-1}\,\psi_i}_{\text{通道 2}},
+$$
+
+其中 $m(X_i^{(1)};\hat\beta) = \text{expit}(X_i^{(1)\mathsf T}\hat\beta)$，$J_1 = \frac{1}{n}\sum_j X_j^{(1)}\,\mu_1^{(j)}(1-\mu_1^{(j)})$，和 $\widehat{\mathrm{Var}}(\hat\mu_1) = \frac{1}{n^2}\sum_i \mathrm{IF}_i^2$。
+
+## 代码
+
+```r
+# Counterfactual design matrix and predictions with A set to 1 for everyone.
+X1   <- X
+X1[, "A"] <- 1
+eta1 <- X1 %*% beta_hat
+mu1_i <- as.numeric(plogis(eta1))
+mu1_hat <- mean(mu1_i)
+
+# Channel 1: direct covariate-sampling contribution.
+C1 <- mu1_i - mu1_hat
+
+# Channel 2: gradient of mu1_hat in beta times IF_beta.
+# For logistic, d mu1_i / d beta = mu1_i (1 - mu1_i) * X1_i.
+J1 <- colMeans(X1 * (mu1_i * (1 - mu1_i)))     # p-vector
+C2 <- as.numeric(IF_beta %*% J1)
+
+IF_mu1 <- C1 + C2
+var_mu1_manual <- sum(IF_mu1^2) / n^2
+se_mu1_manual  <- sqrt(var_mu1_manual)
+
+# Gold standard: causatr's variance_if() routed through contrast().
+fit_c <- causat(dat, outcome = "Y", treatment = "A",
+                confounders = ~ L, family = binomial,
+                model_fn = stats::glm)
+res_c <- contrast(
+  fit_c,
+  interventions = list(a1 = static(1), a0 = static(0)),
+  reference    = "a0",
+  ci_method    = "sandwich"
+)
+se_mu1_causatr <- res_c$estimates[intervention == "a1"]$se
+mu1_causatr    <- res_c$estimates[intervention == "a1"]$estimate
+```
+
+## 结果
+
+```r
+out <- data.frame(
+  quantity  = c("$\\mathbb{E}[Y^{A=1}]$",
+                "$\\mathrm{SE}(\\hat\\mu_1)$"),
+  manual    = c(mu1_hat, se_mu1_manual),
+  causatr   = c(mu1_causatr, se_mu1_causatr),
+  `abs diff` = c(abs(mu1_hat - mu1_causatr),
+                 abs(se_mu1_manual - se_mu1_causatr)),
+  check.names = FALSE
+)
+tt(out, caption = "Two-channel IF for g-comp: manual vs `causatr::variance_if`") |>
+  format_tt(j = "quantity", markdown = TRUE) |>
+  format_tt(j = 2:4, digits = 4, num_fmt = "significant")
+```
+
+手动两通道 IF 将 causatr 的 $\hat\mu_1$ 的 SE 重现为 $\sim$1e-9。两个通道都是必需的——丢弃通道 1 会给出不同（更小）的数字，如下一个面板所示。
+
+:::
+
+### 3.3 Delta 方法快捷方式
+
+一个广泛使用的快捷方式分别计算 Jacobian $\color{#31A354}{J}$ 和参数三明治 $V_\beta$，然后通过以下方式传播：
+
+$$
+\underset{k \times k}{\text{Var}(\hat\mu)}
+\;\approx\;
+\underset{k \times p}{\color{#31A354}{J}}
+\;\;
+\underset{p \times p}{V_\beta}
+\;\;
+\underset{p \times k}{\color{#31A354}{J^T}}
+$$ {#eq-delta}
+
+这是**多元 delta 方法**。要看它捕获什么，使用两通道分解（@eq-if-gcomp）展开基于 IF 的方差（@eq-var-if）：
+
+$$
+\frac{1}{n^2}\sum_i \text{IF}_i^2
+= \underbrace{\frac{1}{n^2}\sum_i
+\left(\text{通道 1}_i\right)^2}_
+{\text{协变量采样}}
++ \underbrace{\frac{1}{n^2}\sum_i
+\left(\text{通道 2}_i\right)^2}_{
+= \; \color{#31A354}{J} \, V_\beta \,
+\color{#31A354}{J^T}}
++ \underbrace{\frac{2}{n^2}\sum_i
+\text{通道 1}_i \cdot \text{通道 2}_i}_
+{\text{交叉项}}
+$$
+
+Delta 方法只给出中间项——**通道 2 平方**。它错过了协变量采样方差（通道 1 平方）和交叉项。所有三个项都是 $O(1/n)$，所以 delta 方法系统地低估。
+
+::: {.panel-tabset}
+
+## 数学
+
+$$
+\widehat{\mathrm{Var}}(\hat\mu_a)
+= \underbrace{\tfrac{1}{n^2}\sum_i \mathrm{通道 1}_i^2}_{\text{full}}
++ \underbrace{J\,V_\beta\,J^{\mathsf T}}_{\text{delta}}
++ \underbrace{\tfrac{2}{n^2}\sum_i \mathrm{通道 1}_i\,\mathrm{通道 2}_i}_{\text{cross}}.
+$$
+
+Delta 方法是第二项单独的。
+
+## 代码
+
+```r
+var_full   <- sum(IF_mu1^2) / n^2
+var_ch1    <- sum(C1^2)     / n^2
+var_ch2    <- sum(C2^2)     / n^2
+var_cross  <- 2 * sum(C1 * C2) / n^2
+var_delta  <- as.numeric(t(J1) %*% V_beta_gold %*% J1)  # J V_beta J^T
+
+# Ch.2² and J V_beta J^T are algebraically identical; numerically they
+# agree up to the bread solve precision.
+stopifnot(abs(var_ch2 - var_delta) < 1e-6)
+ratio <- sqrt(var_full) / sqrt(var_delta)
+```
+
+## 结果
+
+```r
+out <- data.frame(
+  term = c(
+    "Full IF variance $\\mathrm{通道 1}^2 + \\mathrm{通道 2}^2 + \\text{cross}$",
+    "Channel 1 squared (covariate sampling)",
+    "Channel 2 squared $=$ delta $J\\,V_\\beta\\,J^{\\mathsf T}$",
+    "Cross term $2 \\cdot \\mathrm{通道 1} \\cdot \\mathrm{通道 2}$",
+    "SE ratio $\\mathrm{SE}_{\\text{full}} / \\mathrm{SE}_{\\text{delta}}$"
+  ),
+  value = c(var_full, var_ch1, var_ch2, var_cross, ratio)
+)
+tt(out, caption = "Decomposition of $\\mathrm{Var}(\\hat\\mu_1)$: delta captures only the middle row") |>
+  format_tt(j = "term", markdown = TRUE) |>
+  format_tt(j = 2, digits = 4, num_fmt = "significant")
+```
+
+在这个例子中，delta-method SE 大约是正确 SE 的 $1/1.026 \approx 97\%$——一个适度的低估，因为协变量采样方差（通道 $1^2$）相对于参数不确定性碰巧很小。在非饱和 MSM 和具有强协变量驱动异质性的模型下，比率可能要大得多；@eq-delta 作为默认值不是安全的。
+
+:::
+
+::: {.callout-important}
+### Delta 方法将协变量视为固定
+
+$\color{#31A354}{J} V_\beta \color{#31A354}{J^T}$ 回答了这样一个问题："给定这些特定的协变量 $\{X_i\}$，$\hat\beta$ 中的不确定性如何传播到 $\hat\mu_a$？"它对协变量分布进行了条件化。但是 $\{X_i\}$ 是随机的——不同的样本给出不同的协变量，因此即使 $\beta$ 固定，预测的平均值也不同。完整的 IF 捕获了两个来源；Delta 方法只捕获了一个。
+:::
+
+### 3.4 快捷方法何时精确
+
+Delta 方法在通道 1 非零时会低估。通道 1 是：
+
+$$
+\text{Ch.1}_i = g^{-1}(X_i^{*T}\hat\beta) - \hat\mu_a
+$$
+
+当且仅当**每个个体获得相同的预测**时，这对所有 $i$ 都为零——即 $g^{-1}(X_i^{*T}\hat\beta)$ 不依赖于 $i$。这发生在以下情况：
+
+1. **模型在处理中饱和**（例如二值处理的 $Y \sim A$）**且**干预是静态的（所有人 $A = a$）。那么所有个体共享相同的 $X^*$（只有截距和处理指标重要），所以预测相同。
+
+2. **模型没有协变量**（例如 $Y \sim A$）。同样的推理。
+
+当预测在个体间变化时，快捷方法**失败**：
+
+- **G-computation 有混杂因子**：$Y \sim A + L$。预测 $g^{-1}(\hat\beta_0 + \hat\beta_1 a + \hat\beta_2 L_i)$ 在个体间随 $L_i$ 变化。通道 1 非零。
+
+- **非饱和 MSM**：连续 $A$ 的 $Y \sim A$ 是线性模型，不饱和。对于非静态干预（例如把每个人的处理平移 $+\delta$），不同的个体得到不同的 $A$ 值，因此有不同的预测。
+
+| 情形 | 预测恒定？| Delta 方法精确？|
+|---|---|---|
+| 有混杂因子的 G-comp（$Y \sim A + L$）| 否 | **否** — 低估 |
+| IPW/匹配，二值 $A$，饱和 MSM（$Y \sim A$），静态干预 | 是 | 是 |
+| IPW/匹配，连续 $A$，线性 MSM（$Y \sim A$），静态干预 | 是 | 是 |
+| IPW，连续 $A$，非静态干预（平移，MTP）| 否 | **否** — 低估 |
+
+
+### 3.5 IF 是堆叠的三明治，解析求解
+
+双通道公式（@eq-if-gcomp）可能看起来凭空出现。实际上，它是三明治（@eq-sandwich）应用于**完整**估计方程——模型得分函数加上均值方程——其块三角形 bread 通过回代求逆。本节展示推导。
+
+#### 完整的估计方程
+
+G-computation 对每个个体有两个估计方程：
+
+$$
+\underset{(p+1) \times 1}{\Psi(O_i;\,\beta,\,\mu_a)}
+= \begin{pmatrix}
+\underset{p \times 1}{\psi_\beta(O_i;\,\beta)} \[4pt]
+\underset{1 \times 1}{\psi_\mu(O_i;\,\beta,\,\mu_a)}
+\end{pmatrix}
+= \begin{pmatrix}
+\text{GLM score (Section 1.2)} \[4pt]
+g^{-1}(X_i^{*T}\beta) - \mu_a
+\end{pmatrix}
+$$
+
+第一个块 $\psi_\beta$ 定义了模型。第二个块 $\psi_\mu$ 定义了估计目标：$\hat\mu_a$ 是使 $\sum_i \psi_\mu = 0$ 的 $\mu_a$ 值，即 $\hat\mu_a = \frac{1}{n}\sum_i g^{-1}(X_i^{*T} \hat\beta)$。
+
+#### 块三角形 bread
+
+堆叠系统的 bread 矩阵是：
+
+$$
+\underset{(p+1) \times (p+1)}{A}
+= -\frac{1}{n}\sum_i \frac{\partial\Psi_i}{\partial(\beta,\mu_a)^T}
+= \begin{pmatrix}
+\underset{p \times p}{\color{#3182BD}{A_{\beta\beta}}} &
+\underset{p \times 1}{0} \[6pt]
+\underset{1 \times p}{\color{#E6550D}{A_{\mu\beta}}} &
+\underset{1 \times 1}{\color{#E6550D}{A_{\mu\mu}}}
+\end{pmatrix}
+$$
+
+其中：
+
+- $\color{#3182BD}{A_{\beta\beta}} = -\frac{1}{n}\sum_i \frac{\partial\psi_\beta}{\partial\beta^T}$ — GLM Hessian 矩阵（第 1.4 节）。
+- $\color{#E6550D}{A_{\mu\beta}} = -\frac{1}{n}\sum_i \frac{\partial\psi_\mu}{\partial\beta^T} = -\frac{1}{n}\sum_i \frac{d\mu}{d\eta}\big|_{\eta_i^*} X_i^{*T} = -\color{#31A354}{J_a}$ — 第 3.2 节的负 Jacobian。
+- $\color{#E6550D}{A_{\mu\mu}} = -\frac{\partial\psi_\mu}{\partial\mu_a} = 1$。
+- 右上 = $0$：GLM 得分函数不依赖于 $\mu_a$。
+
+块三角形结构产生是因为 $\psi_\beta$ 只依赖于 $\beta$（不依赖于 $\mu_a$），而 $\psi_\mu$ 依赖于 $\beta$ 和 $\mu_a$ 两者。
+
+#### 反向代入求逆
+
+对于 $2 \times 2$ 分块下三角矩阵，其逆矩阵为：
+
+$$
+A^{-1} = \begin{pmatrix}
+\color{#3182BD}{A_{\beta\beta}^{-1}} & 0 \\[4pt]
+-A_{\mu\mu}^{-1} \, \color{#E6550D}{A_{\mu\beta}} \,
+\color{#3182BD}{A_{\beta\beta}^{-1}} &
+A_{\mu\mu}^{-1}
+\end{pmatrix}
+$$
+
+完整参数 $(\beta, \mu_a)$ 的影响函数为 $A^{-1}\Psi_i$。提取 $\mu_a$ 行（$A^{-1}$ 的最后一行乘以 $\Psi_i$）：
+
+$$
+\text{IF}_i(\hat\mu_a)
+= \underbrace{A_{\mu\mu}^{-1}\;\psi_{\mu,i}}_{\text{通道 1}}
+\;+\;
+\underbrace{(-A_{\mu\mu}^{-1})\;
+\color{#E6550D}{A_{\mu\beta}}\;
+\color{#3182BD}{A_{\beta\beta}^{-1}}\;
+\psi_{\beta,i}}_{\text{通道 2}}
+$$
+
+代入 $A_{\mu\mu} = 1$、$A_{\mu\beta} = -\color{#31A354}{J_a}$ 和 $\psi_{\mu,i} = g^{-1}(X_i^{*T}\hat\beta) - \hat\mu_a$：
+
+$$
+\text{IF}_i(\hat\mu_a) =
+\underbrace{g^{-1}(X_i^{*T}\hat\beta) - \hat\mu_a}_
+{\text{通道 1}}
+\;+\;
+\underbrace{
+\color{#31A354}{J_a}\;
+\color{#3182BD}{A_{\beta\beta}^{-1}}\;
+\psi_{\beta,i}}_{\text{通道 2}}
+$$
+
+这正是 @eq-if-gcomp。bread $\color{#3182BD}{A_{\beta\beta}^{-1}}$ 是 `model_bread_inv()` = $(X^TWX)^{-1}$。得分函数 $\psi_{\beta,i}$ 为 $r_i \cdot (d\mu/d\eta) / V(\mu_i) \cdot X_i$。Jacobian $\color{#31A354}{J_a}$ 将 $p$ 维结果投影为标量。
+
+::: {.callout-note}
+### 肉隐藏，不是不存在
+影响函数公式为每个个体计算 $\color{#3182BD}{A^{-1}}\psi_i$，然后平方：$\text{Var} = \frac{1}{n^2}\sum_i \text{IF}_i^2$。展开后：
+
+$$
+\frac{1}{n^2}\sum_i \text{IF}_i^2
+= \frac{1}{n}\;\color{#3182BD}{A^{-1}}
+\underbrace{\frac{1}{n}\sum_i \Psi_i \Psi_i^T}_
+{\color{#E6550D}{B} \text{（肉）}}
+\color{#3182BD}{(A^{-1})^T}
+$$
+
+这是堆叠系统的三明治（@eq-sandwich）。影响函数避免了形成 $(p+1) \times (p+1)$ 的肉矩阵 $\color{#E6550D}{B}$ —— 它通过求和标量积计算出相同的结果。
+:::
+
+### 3.6 目标子总体（ATT、ATU、自定义子集）
+
+第 3.1–3.5 节将边际均值定义为**全样本**上的平均值：$\hat\mu_a = (1/n)\sum_{i=1}^n g^{-1}(X_i^{*T}\hat\beta)$。许多因果估计目标 —— ATT、ATU 或用户提供的子集上的估计目标 —— 改为只在**目标子总体** $T \subseteq \{1,\ldots,n\}$（大小为 $n_t$）上求平均：
+
+$$
+\hat\mu_a \;=\; \frac{1}{n_t}\sum_{i\in T} g^{-1}(X_i^{*T}\hat\beta)
+$$
+
+堆叠估计方程需要一处小改动来适应这一点：均值方程现在是指示加权的。令 $t_i = \mathbb{1}[i \in T]$，写成
+
+$$
+\psi_{\mu,i}(\beta,\mu_a) \;=\; t_i \cdot \bigl[g^{-1}(X_i^{*T}\beta) - \mu_a\bigr]
+$$
+
+这样 $\sum_i \psi_{\mu,i} = 0$ 仍然恢复 $\hat\mu_a$。
+
+用这个指示加权的均值方程重做第 3.5 节的 bread 计算：
+
+- $\color{#E6550D}{A_{\mu\mu}} = -\frac{1}{n}\sum_i \frac{\partial\psi_{\mu,i}}{\partial\mu_a} = -\frac{1}{n}\sum_i(-t_i) = \frac{n_t}{n}$，所以 $A_{\mu\mu}^{-1} = \frac{n}{n_t}$。
+- $\color{#E6550D}{A_{\mu\beta}} = -\frac{1}{n}\sum_i t_i \cdot \frac{d\mu}{d\eta}\Big|_{\eta_i^*} X_i^{*T} = -\frac{n_t}{n}\,\color{#31A354}{J_a}$，其中 $\color{#31A354}{J_a} = \frac{1}{n_t}\sum_{i\in T}\frac{d\mu}{d\eta}\big|_{\eta_i^*} X_i^{*T}$ 是在目标子总体上求平均的 Jacobian。
+
+代入反向代入公式来得到 $A^{-1}$ 的最后一行：
+
+$$
+\text{IF}_i(\hat\mu_a)
+\;=\; -A_{\mu\mu}^{-1}\,\color{#E6550D}{A_{\mu\beta}}\,\color{#3182BD}{A_{\beta\beta}^{-1}}\,\psi_{\beta,i}
+\;+\; A_{\mu\mu}^{-1}\,\psi_{\mu,i}
+$$
+
+代入 $A_{\mu\mu}^{-1} = n/n_t$ 和 $A_{\mu\beta} = -(n_t/n)\,\color{#31A354}{J_a}$：
+
+$$
+\text{IF}_i(\hat\mu_a)
+\;=\; \underbrace{\frac{n}{n_t}\cdot t_i \cdot (g^{-1}(X_i^{*T}\hat\beta) - \hat\mu_a)}_
+{\text{通道 1（重新缩放）}}
+\;+\; \underbrace{\color{#31A354}{J_a}\,\color{#3182BD}{A_{\beta\beta}^{-1}}\,\psi_{\beta,i}}_
+{\text{通道 2（不变）}}
+$$ {#eq-if-gcomp-target}
+
+有两点需要注意：
+
+1. **通道 1 获得一个 $n/n_t$ 的因子**，只对目标内的个体非零。没有这个因子，方差会被低估 $(n_t/n)^2$ —— 当目标是真子集时是一个严重的不足（例如，ATT 只有约 40% 的处理群体）。
+2. **通道 2 不变。** $A_{\mu\beta}$ 中的 $n_t/n$ 与 $A_{\mu\mu}^{-1}$ 中的 $n/n_t$ 相消，所以第 3.2 节的通道 2 公式逐字适用 —— $\color{#31A354}{J_a}$ 只是在目标子总体上求平均而不是全样本上求平均，而 $\psi_{\beta,i}$ 仍然遍历结局模型使用的每个个体（目标**内部和外部**的），因为结局模型是在所有那些行上拟合的。
+
+方差仍为 $\widehat{\text{Var}}(\hat\mu_a) = (1/n^2)\sum_{i=1}^n \text{IF}_i^2$，对所有 $n$ 个个体求和。目标外部的个体有 $\text{Ch.1}_i = 0$，只通过通道 2 贡献。
+
+设置 $T = \{1,\ldots,n\}$（所以 $n_t = n$，$t_i \equiv 1$）恢复 @eq-if-gcomp。全样本情况是 @eq-if-gcomp-target 的特殊情况，其中缩放因子为 $1$。
+
+### 3.7 伪代码：边际均值的完整 IF
+
+这里纳入了第 3.6 节的目标子人群缩放，以及得分的正确非典型联系函数处理（把响应残差乘以 $\mu_\eta/V$；参见第 1.2 节路线 3）。
+
+```r
+gcomp_influence <- function(model, data_a, target_idx) {
+  n <- nrow(data_a)
+  beta_hat <- coef(model)
+  pred_terms <- delete.response(terms(model))
+  family <- model$family
+
+  # Predictions under intervention (target rows only)
+  X_star <- model.matrix(pred_terms, data = data_a[target_idx, ])
+  eta_star <- as.numeric(X_star %*% beta_hat)
+  preds <- family$linkinv(eta_star)
+  mu_hat <- mean(preds)
+  n_t <- length(preds)
+
+  # Channel 1: (n/n_t) * t_i * (pred_i - mu_hat), zero outside target
+  IF_direct <- rep(0, n)
+  IF_direct[target_idx] <- preds - mu_hat
+
+  # Channel 2 gradient: J_a = (1/n_t) sum_{target} (dmu/deta) * X_star
+  mu_eta_star <- family$mu.eta(eta_star)
+  J <- as.numeric(crossprod(X_star, mu_eta_star)) / n_t  # p x 1
+
+  # Bread inverse (X'WX)^{-1} with IWLS working weights
+  X_fit <- model.matrix(model)
+  eta_fit <- model$linear.predictors
+  mu_eta_fit <- family$mu.eta(eta_fit)
+  V_fit <- family$variance(fitted(model))
+  W <- mu_eta_fit^2 / V_fit
+  XtWX_inv <- solve(crossprod(X_fit, X_fit * W))
+  h <- as.numeric(XtWX_inv %*% J)  # p x 1
+
+  # Per-observation directional sensitivity and SCORE residual.
+  # Score residual = response residual * (dmu/deta) / V(mu), so that
+  # psi_i = X_i * r_i * (mu_eta/V). For canonical links mu_eta/V = 1
+  # and this reduces to the response residual.
+  d_fit <- as.numeric(X_fit %*% h)
+  r_response <- residuals(model, type = "response")
+  r_score <- r_response * mu_eta_fit / V_fit
+  IF_correction <- d_fit * r_score                         # n_fit x 1
+
+  # Combine: full IF = (n/n_t) * Ch.1 + n * Ch.2
+  # Factor of n on Ch.2 from A_{beta,beta}^{-1} = n * (X'WX)^{-1}
+  # Factor of (n/n_t) on Ch.1 from A_{mu,mu}^{-1} = n/n_t (Sec. 3.6)
+  IF <- (n / n_t) * IF_direct
+  IF[seq_along(IF_correction)] <- IF[seq_along(IF_correction)] +
+    n * IF_correction
+
+  IF
+}
+```
+
+
+## 4. 核心因果估计量
+
+本节把第 3 节的 IF 框架应用到 g 计算、IPW 和匹配上。方差公式始终相同（@eq-var-if）；不同的是估计方程，以及通道 1 是否为零。AIPW 把 g 计算和 IPW 的影响函数合并成单个双稳健 IF——它的方差推导遵循同样的通道 1 + 通道 2 结构；实现见 `R/variance_if_aipw.R`。
+
+### 4.1 G 计算
+
+**估计方程。** G 计算拟合一个结局模型 $E[Y_i \mid A_i, L_i] = g^{-1}(X_i^T \beta)$，并计算 $\hat\mu_a = \frac{1}{n}\sum_i g^{-1}(X_i^{*T}\hat\beta)$，其中 $X_i^*$ 把处理设为 $a$。完整的估计方程是：
+
+$$
+\begin{pmatrix}
+\psi_\beta(O_i; \beta) \\[4pt]
+\psi_\mu(O_i; \beta, \mu_a)
+\end{pmatrix}
+=
+\begin{pmatrix}
+\text{结局模型的 GLM 得分} \\[4pt]
+g^{-1}(X_i^{*T}\beta) - \mu_a
+\end{pmatrix}
+$$
+
+**IF。** 由第 3.2 节（@eq-if-gcomp）：
+
+$$
+\text{IF}_i(\hat\mu_a) =
+\underbrace{g^{-1}(X_i^{*T}\hat\beta) - \hat\mu_a}_
+{\text{通道 1（非零）}}
+\;+\;
+\underbrace{
+\color{#31A354}{J_a}
+\color{#3182BD}{A^{-1}}
+\psi_i
+}_{\text{通道 2}}
+$$
+
+**两个通道都不可少**，因为预测值 $g^{-1}(\hat\beta_0 + \hat\beta_1 a + \hat\beta_2 L_i)$ 会通过 $L_i$ 在个体间变化。Delta 方法这条捷径 $\color{#31A354}{J} V_\beta \color{#31A354}{J^T}$ 会低估方差。
+
+**方差**：用完整的双通道 IF 计算 $\frac{1}{n^2}\sum_i \text{IF}_i^2$。
+
+### 4.2 逆概率加权（IPW）
+
+IPW 更复杂，因为涉及两个模型，第一个模型（倾向评分）的不确定性必须传播到第二个模型（MSM）中。
+
+::: {.callout-tip}
+### 配套 vignette
+密度比权重公式（Horvitz–Thompson 指示符、前向推动与符号/雅可比矩阵、IPSI 闭式解）、`make_weight_fn()` 闭包设计以及数值 $A_{\beta\alpha}$ 验证在 `vignette("ipw-variance-theory")` 中开发。
+:::
+
+#### 两模型设置
+
+1. **倾向评分模型**：从 $\text{logit}[P(A_i = 1 \mid L_i)] = L_i^T \alpha$ 估计 $\hat\alpha$（$q$ 维向量）。
+2. **加权结局模型（MSM）**：使用估计的权重 $w_i = 1/\hat{P}(A_i \mid L_i; \hat\alpha)$，通过加权回归拟合 $E[Y_i \mid A_i] = g^{-1}(\beta_0 + \beta_1 A_i)$ 得到 $\hat\beta$（$p$ 维向量）。
+
+权重 $w_i$ 依赖于 $\hat\alpha$，因此 $\hat\beta$ 也依赖于 $\hat\alpha$。
+
+#### 朴素方法失败的原因
+
+对结局模型单独的朴素三明治——将权重视为*已知常数*——忽略了 $\hat\alpha$ 的变异性。每个新样本产生不同的 $\hat\alpha$，因此产生不同的权重，进而产生不同的 $\hat\beta$。$\hat\beta$ 的真实变异性有两个来源：
+
+- **结局变异性**：给定固定权重时 $Y_i$ 中的随机性。
+- **权重变异性**：$\hat\alpha$ 中的随机性（因此 $w_i$ 中的随机性）。
+
+朴素三明治仅捕获第一个。偏差的方向取决于估计量：对于 **ATE**，使用估计的（而非已知的）倾向评分实际上*降低*了渐近方差，因此朴素三明治是保守的——它**高估** SE [@hirano2003efficient; @lunceford2004stratification]。对于 **ATT**，效果可能朝任何方向。
+
+#### 正确的方法：联合 M-估计
+
+将两个模型视为单个 M-估计问题。定义联合参数 $\theta = (\alpha, \beta)$——一个 $(q+p)$ 维向量——以及堆叠的估计函数：
+
+$$
+\underset{(q+p) \times 1}{\Psi(O_i; \theta)} =
+\begin{pmatrix}
+\color{#3182BD}{\psi_\alpha(O_i; \alpha)} \\[4pt]
+\color{#E6550D}{\psi_\beta(O_i; \alpha, \beta)}
+\end{pmatrix}
+$$
+
+其中 $\color{#3182BD}{\psi_\alpha}$（$q \times 1$）是倾向模型的得分，$\color{#E6550D}{\psi_\beta}$（$p \times 1$）是结局模型的*加权*得分（通过 $w_i$ 依赖于 $\alpha$）。
+
+面包矩阵 $\hat A = -\frac{1}{n}\sum_i \frac{\partial\Psi_i}{\partial\theta^T}$ 具有分块结构：
+
+$$
+\underset{(q+p) \times (q+p)}{\hat{A}} =
+\begin{pmatrix}
+\underset{q \times q}{\color{#3182BD}{A_{\alpha\alpha}}} &
+\underset{q \times p}{0} \\[6pt]
+\underset{p \times q}{\color{#E6550D}{A_{\beta\alpha}}} &
+\underset{p \times p}{\color{#E6550D}{A_{\beta\beta}}}
+\end{pmatrix}
+$$
+
+每个分块有具体的含义：
+
+- $\color{#3182BD}{A_{\alpha\alpha}}$（$q \times q$）：倾向模型的海森矩阵——$\psi_\alpha$ 如何随 $\alpha$ 变化。
+- $\color{#E6550D}{A_{\beta\beta}}$（$p \times p$）：结局模型的加权海森矩阵——$\psi_\beta$ 如何随 $\beta$ 变化。
+- $\color{#E6550D}{A_{\beta\alpha}}$（$p \times q$）：**交叉项**——加权结局得分如何随 $\alpha$ 变化。这涉及 $\frac{\partial w_i}{\partial\alpha^T}$（当倾向参数改变时权重如何偏移）。这是捕获依赖关系的分块。
+- 右上角 = $0$（$q \times p$）：倾向评分不依赖于 $\beta$。
+
+完整的三明治 $\frac{1}{n}\hat A^{-1}\hat B(\hat A^{-1})^T$ 应用于堆叠系统，正确地通过 $A_{\beta\alpha}$ 分块将权重不确定性传播到 $\text{Var}(\hat\beta)$ 中。
+
+::: {.callout-tip}
+### 在实践中
+causatr 的自包含 IPW 引擎通过 `compute_ipw_if_self_contained_one()` 直接计算这个堆叠三明治，使用 `numDeriv::jacobian()` 在 `make_weight_fn()` 闭包上数值评估 $A_{\beta\alpha}$ 分块。详见 `vignette("ipw-variance-theory")` 中的闭包设计和验证。
+:::
+
+#### $\hat\mu_a$ 的完整 IF
+
+上述堆叠三明治给出 $V_\beta$——MSM 参数 $\hat\beta$ 的方差，考虑权重不确定性。但我们需要 $\text{Var}(\hat\mu_a)$，而非 $\text{Var}(\hat\beta)$。按照第 3.5 节的相同方法，我们将**均值方程**加入堆栈：
+
+$$
+\underset{(q+p+1) \times 1}{\Psi(O_i;\,\alpha,\,\beta,\,\mu_a)}
+= \begin{pmatrix}
+\color{#3182BD}{\psi_\alpha(O_i;\,\alpha)} \\[4pt]
+\color{#E6550D}{\psi_\beta(O_i;\,\alpha,\,\beta)} \\[4pt]
+\psi_\mu(O_i;\,\beta,\,\mu_a)
+\end{pmatrix}
+$$
+
+面包现在是 $3 \times 3$ 分块下三角形：
+
+$$
+A = \begin{pmatrix}
+\color{#3182BD}{A_{\alpha\alpha}} & 0 & 0 \\[4pt]
+\color{#E6550D}{A_{\beta\alpha}} &
+\color{#E6550D}{A_{\beta\beta}} & 0 \\[4pt]
+0 & A_{\mu\beta} & A_{\mu\mu}
+\end{pmatrix}
+$$
+
+其中 $A_{\mu\beta} = -\color{#31A354}{J}$（预测关于 $\beta$ 的负雅可比矩阵），$A_{\mu\mu} = 1$（与第 3.5 节相同）。$(\mu, \alpha)$ 位置的零出现是因为均值方程 $g^{-1}(X_i^{*T}\beta) - \mu_a$ 不直接依赖于 $\alpha$——它仅通过 $\beta$ 依赖于 $\alpha$。
+
+通过后向替换反演并提取 $\mu_a$ 行：
+
+$$
+\text{IF}_i(\hat\mu_a)
+= \underbrace{g^{-1}(X_i^{*T}\hat\beta) - \hat\mu_a}_
+  {\text{通道 1（直接）}}
++ \underbrace{\color{#31A354}{J}\;
+  \color{#E6550D}{A_{\beta\beta}^{-1}}\;
+  \psi_{\beta,i}}_{\text{MSM 修正}}
++ \underbrace{\color{#31A354}{J}\;
+  \color{#E6550D}{A_{\beta\beta}^{-1}}\;
+  \color{#E6550D}{A_{\beta\alpha}}\;
+  \color{#3182BD}{A_{\alpha\alpha}^{-1}}\;
+  \psi_{\alpha,i}}_{\text{倾向修正}}
+$$ {#eq-if-ipw}
+
+对每一项的理解：
+
+- **通道 1**：个体 $i$ 的预测偏离均值多少（与 g-comp 相同）。当预测为常数时为零（饱和 MSM + 静态干预）；对于非静态干预或非饱和 MSM 非零。
+- **MSM 修正**：个体 $i$ 的结局残差（在 $\psi_{\beta,i}$ 中捕获）如何通过 MSM 参数传播到 $\hat\mu_a$。与 g-comp 通道 2 结构相同。
+- **倾向修正**：个体 $i$ 的倾向评分残差（在 $\psi_{\alpha,i}$ 中捕获）如何通过权重传播到 $\hat\mu_a$。链是：$\psi_{\alpha,i} \to \hat\alpha \to w_i \to \hat\beta \to \hat\mu_a$。矩阵乘积 $\color{#E6550D}{A_{\beta\alpha}}\color{#3182BD}{A_{\alpha\alpha}^{-1}}$ 捕获前两个链接（倾向参数 $\to$ 权重 $\to$ MSM 参数）；$\color{#31A354}{J}\color{#E6550D}{A_{\beta\beta}^{-1}}$ 捕获后两个（MSM 参数 $\to$ 预测 $\to$ 估计量）。
+
+第二和第三项可以合并：
+
+$$
+\text{IF}_i(\hat\mu_a)
+= \text{Ch.1}_i
+\;+\;
+\color{#31A354}{J}\;
+\underbrace{
+\color{#E6550D}{A_{\beta\beta}^{-1}}
+\left(
+\psi_{\beta,i}
++ \color{#E6550D}{A_{\beta\alpha}}\;
+\color{#3182BD}{A_{\alpha\alpha}^{-1}}\;
+\psi_{\alpha,i}
+\right)}_{\text{来自堆叠 }
+(\alpha,\beta) \text{ 系统的 IF}_i(\hat\beta)}
+$$
+
+括号中的表达式是**调整得分**：倾向估计修正的 MSM 得分 $\psi_{\beta,i}$。这正是 `WeightIt::glm_weightit()` 在产生其 M-估计三明治时内部计算的内容——我们现在逐个体暴露它。
+
+::: {.callout-note}
+### 面包和肉在哪里？
+面包出现三次：$\color{#3182BD}{A_{\alpha\alpha}^{-1}}$（倾向面包逆）、$\color{#E6550D}{A_{\beta\beta}^{-1}}$（MSM 面包逆）和 $\color{#31A354}{J}$（来自均值方程的雅可比矩阵）。个体得分 $\psi_{\alpha,i}$ 和 $\psi_{\beta,i}$ 是如果平方并求和会形成肉的内容。IF 避免了形成 $(q+p+1) \times (q+p+1)$ 肉矩阵。
+:::
+
+::: {.panel-tabset}
+
+## 数学
+
+对于饱和 MSM $Y \sim A$，逆概率权重 $w_i = A_i / e(L_i)$ 和倾向 $e(L_i) = \mathrm{expit}(L_i^{\mathsf T}\alpha)$，
+
+$$
+\hat\mu_1 = \frac{1}{n}\sum_i w_i Y_i,
+$$
+
+$\hat\mu_1$ 的 IF 是 @eq-if-ipw 中给出的通道 1 + 倾向修正通道 2 形式。causatr 通过 `compute_ipw_if_self_contained_one()` 计算这个，使用 `numDeriv::jacobian()` 在 `make_weight_fn()` 闭包上按个体组装调整得分（详见 `vignette("ipw-variance-theory")`）。
+
+## 代码
+
+```r
+# Fit the propensity model manually and check the point estimate matches
+# causatr.
+ps_fit <- glm(A ~ L, data = dat, family = binomial)
+e_i    <- fitted(ps_fit)
+w1     <- dat$A / e_i
+mu1_ipw_manual <- sum(w1 * dat$Y) / n
+
+fit_ipw <- causat(
+  dat, outcome = "Y", treatment = "A", confounders = ~ L,
+  estimator = "ipw", family = binomial,
+  model_fn = stats::glm, propensity_model_fn = stats::glm
+)
+res_ipw <- contrast(
+  fit_ipw,
+  interventions = list(a1 = static(1), a0 = static(0)),
+  reference = "a0", ci_method = "sandwich"
+)
+mu1_ipw_causatr <- res_ipw$estimates[intervention == "a1"]$estimate
+se_ipw_causatr  <- res_ipw$estimates[intervention == "a1"]$se
+```
+
+## 结果
+
+```r
+out <- data.frame(
+  quantity = c("$\\hat\\mu_1$ (Horvitz–Thompson)",
+               "$\\hat\\mu_1$ (causatr IPW)",
+               "$\\mathrm{SE}(\\hat\\mu_1)$ 通过 causatr IF 引擎"),
+  value    = c(mu1_ipw_manual, mu1_ipw_causatr, se_ipw_causatr)
+)
+tt(out, caption = "IPW $\\hat\\mu_1$ 及其基于 IF 的 SE") |>
+  format_tt(j = "quantity", markdown = TRUE) |>
+  format_tt(j = 2, digits = 4, num_fmt = "significant")
+```
+
+HT 估计和 causatr IPW 估计完全一致（在饱和 MSM 与 $w_i = A_i/e(L_i)$ 上代数相同），SE 来自倾向修正调整得分——@eq-if-ipw 中的第三项——内部计算。
+
+:::
+
+### 4.3 匹配
+
+匹配后，结局模型在匹配样本上拟合。两个问题需要特殊处理。
+
+#### 聚类稳健方差
+
+同一子类（配对或阶层）内的匹配个体相关——他们一起被选中。标准三明治（假设独立性）会低估肉。
+
+**聚类稳健**三明治考虑了这一点。面包 $\color{#3182BD}{A}$ 不变，但肉在每个子类*内*求和得分后再平方：
+
+$$
+V_\beta = \color{#3182BD}{A^{-1}}
+\;\color{#E6550D}{B_{\text{CL}}}\;
+\color{#3182BD}{(A^{-1})^T}
+$$
+
+其中：
+
+$$
+\color{#E6550D}{B_{\text{CL}}} = \frac{1}{n}\sum_{c=1}^C
+\bar\psi_c \, \bar\psi_c^T,
+\qquad \bar\psi_c = \sum_{i \in \text{subclass } c} \psi_i
+\qquad (p \times 1)
+$$
+
+平方求和的得分（而非求和的平方得分）允许聚内相关膨胀肉。
+
+#### 匹配的完整 IF
+
+每个体 IF 与 g-comp 具有相同的两通道结构：
+
+$$
+\text{IF}_i(\hat\mu_a) =
+\underbrace{g^{-1}(X_i^{*T}\hat\beta) - \hat\mu_a}_
+{\text{通道 1}}
+\;+\;
+\underbrace{
+\color{#31A354}{J_a}\;
+\color{#3182BD}{A_{\beta\beta}^{-1}}\;
+\psi_{\beta,i}}_{\text{通道 2}}
+$$
+
+其中 $\psi_{\beta,i}$ 是匹配数据上个体 $i$ 的结局模型得分。与 g-comp 的区别在于**聚合步骤**：不是将每个个体的 IF 视为独立，我们通过在每个匹配集内求和 IF 来考虑子类内相关性，然后再平方：
+
+$$
+\widehat{\text{Var}}(\hat\mu_a) = \frac{1}{n^2}\sum_{c=1}^{C}
+\left(\sum_{i \in \text{subclass } c} \text{IF}_i\right)^2
+$$
+
+这是聚类稳健三明治的 IF 类似物：不是求和平方 IF（假设独立性），我们求和平方*聚类级别* IF。它与应用于最终预测-然后-平均步骤的聚类稳健肉完全相同，应用于堆叠系统的 $\color{#3182BD}{A^{-1}} \color{#E6550D}{B_{\text{CL}}} \color{#3182BD}{(A^{-1})^T}$。
+
+::: {.panel-tabset}
+
+## 数学
+
+对于匹配样本，子类指示符为 $c_i$，
+
+$$
+\widehat{\mathrm{Var}}(\hat\beta)_{\text{CL}}
+= \hat A^{-1}
+\left(\frac{1}{n}\sum_{c=1}^C
+      \bar\psi_c\,\bar\psi_c^{\mathsf T}\right)
+\hat A^{-1} / n,
+\qquad
+\bar\psi_c = \sum_{i \in c}\psi_i.
+$$
+
+等价地，$\widehat{\mathrm{Var}}(\hat\beta)_{\text{CL}} =
+\frac{1}{n^2}\sum_{c=1}^C \bar{\mathrm{IF}}_c\,\bar{\mathrm{IF}}_c^{\mathsf T}$，
+其中 $\bar{\mathrm{IF}}_c = \sum_{i \in c}\mathrm{IF}_i$。
+
+## 代码
+
+```r
+# Build a toy matched design on dat: assign each pair of consecutive
+# rows to the same subclass. This is not a real match, but it exercises
+# the cluster-robust machinery on a dataset we already have.
+subclass <- rep(seq_len(n / 2), each = 2)
+
+# Manual cluster-robust sandwich, using the IF decomposition.
+# IF_beta was computed in Section 2.3 (n x p matrix).
+IF_by_cluster <- rowsum(IF_beta, group = subclass)          # C x p
+V_beta_CL_manual <- crossprod(IF_by_cluster) / n^2
+
+# Gold standard: sandwich::vcovCL() with the same subclass grouping.
+# Use HC0 (no finite-sample adjustment) so we match the textbook formula
+# above exactly.
+V_beta_CL_gold <- sandwich::vcovCL(
+  fit,
+  cluster = subclass,
+  type    = "HC0",
+  cadjust = FALSE
+)
+```
+
+## 结果
+
+```r
+cells <- outer(rownames(V_beta_CL_manual),
+               colnames(V_beta_CL_manual),
+               paste, sep = " × ")
+out <- data.frame(
+  cell      = as.vector(cells),
+  manual    = as.vector(V_beta_CL_manual),
+  reference = as.vector(V_beta_CL_gold),
+  `abs diff` = abs(as.vector(V_beta_CL_manual) -
+                   as.vector(V_beta_CL_gold)),
+  check.names = FALSE
+)
+tt(out, caption = "聚类稳健 $V_\\beta$：手动 vs `sandwich::vcovCL`") |>
+  format_tt(j = 2:4, digits = 4, num_fmt = "significant")
+```
+
+"在聚类内求和，然后平方"的 IF 聚合重现了 `sandwich::vcovCL()`（`cadjust = FALSE`）的数值精度。匹配的面包与 g-comp 情况相同——只有肉形成不同，通过在每个子类内累积 IF 后再平方。
+
+:::
+
+### 4.4 总结：一种方法，多个估计量
+
+所有方法使用相同的方差公式——IF 平方并求和（@eq-var-if）。不同的是估计方程以及通道 2 的计算方式。
+
+| 方法 | 堆叠方程 | 通道 2 模型 | 聚合 |
+|---|---|---|---|
+| **G-computation** | 结局模型 + 均值方程 | 1（结局） | 标准或用户聚类 |
+| **IPW** | 倾向 + MSM + 均值方程 | 2（倾向、MSM） | 标准或用户聚类 |
+| **匹配** | 结局模型 + 均值方程 | 1（结局） | 子类上的聚类稳健 |
+| **ICE** | $K\!+\!1$ 结局模型 + 均值方程 | $K\!+\!1$（反向链） | 标准或用户聚类 |
+
+IF 公式统一处理所有情况。唯一的方法间变化是**哪些模型贡献**到通道 2 以及**如何聚合 IF**（对于匹配在匹配子类内求和，或通过 `contrast(cluster = ...)` 在任何用户提供的设计聚类内求和；否则直接求和）。匹配的子类聚类是结构性的——`contrast(cluster = ...)` 在此被拒绝，带 `causatr_bad_cluster` 中止，因为在顶部分层用户聚类会双计子类内行。对于 `gcomp`、`ipw` 和 `ice`，匹配内部使用的相同求和-在-聚类-然后-平方原语直接通过 `cluster` 参数暴露；数值上等价于应用于最终预测-然后-平均步骤的 `sandwich::vcovCL(type = "HC0")`（直到一个小的 $G/(G-1)$ 聚类计数因子）。
+
+
+## 5. 链式估计器：ICE g-computation
+
+### 5.1 影响函数的链式法则
+
+第 3 节推导了两步估计器（拟合 $\hat\beta$，然后计算 $\hat\mu_a$）的 IF。**多个模型形成链**会发生什么，其中每个模型的响应是下一个的预测？相同的逻辑递归应用。如果 $\hat\mu = f(\hat\beta_0, \hat\beta_1, \ldots, \hat\beta_K)$ 且每个 $\hat\beta_k$ 是面包 $\color{#3182BD}{A_k}$ 和得分 $\psi_k$ 的 M-估计器，则 $\hat\mu$ 的 IF 为 [@hampel1986robust; @huber1981robust]：
+
+$$
+\text{IF}_i(\hat\mu)
+\;=\;
+\text{IF}_i^{\text{direct}}
+\;+\;
+\sum_{k=0}^{K}
+\frac{\partial \hat\mu}{\partial \hat\beta_k^T}
+\;\cdot\;
+\color{#3182BD}{A_k^{-1}} \; \psi_k(O_i; \hat\beta_k)
+$$ {#eq-if-chain}
+
+和中的每一项是第 3.2 节的"通道 2"应用于模型 $k$：雅可比矩阵 $\partial\hat\mu/\partial\hat\beta_k^T$（$\hat\mu$ 如何依赖模型 $k$）乘以模型 $k$ 参数的 IF（$\color{#3182BD}{A_k^{-1}}\psi_{k,i}$）。
+
+::: {.callout-note}
+### 与其他框架的联系
+基于 IF 的这种方法等价于：
+
+1. **堆叠估计方程** [@stefanski2002mestimation; @zivich2024ice]：
+   连接所有模型的估计方程并将通用三明治应用于完整堆栈。
+2. **半参数效率理论** [@tsiatis2006semiparametric]：推导高效影响函数（EIF）并投影到参数模型。
+
+所有都产生相同的方差估计。
+:::
+
+### 5.2 ICE g-computation：激励示例
+
+迭代条件期望（ICE）g-computation 在纵向数据中估计治疗策略下的反事实均值 [@robins1986newapproach; @bang2005doubly; @zivich2024ice]。它向后拟合 $K+1$ 个结局模型：
+
+```{mermaid}
+%%| label: fig-ice-chain
+%%| fig-cap: "ICE 反向迭代。模型从最后时间到基线逐个拟合。每个模型的预测成为下一个模型的响应。"
+flowchart RL
+  MK["模型 K（最后时间）<br/>拟合：E[Y | A_K, H_K]<br/>预测 → Ỹ_K"] -->|"Ỹ_K 成为<br/>响应用于"| MK1["模型 K-1<br/>拟合：E[Ỹ_K | A_{K-1}, H_{K-1}]<br/>预测 → Ỹ_{K-1}"]
+  MK1 -->|"Ỹ_{K-1} 成为<br/>响应用于"| Mdots["⋯"]
+  Mdots -->|"响应用于"| M0["模型 0（基线）<br/>拟合：E[Ỹ_1 | A_0, H_0]<br/>预测 → Ỹ_0"]
+  M0 -->|"平均"| MU["μ̂ = mean(Ỹ_0)"]
+
+  style MK fill:#f0f4ff,stroke:#3182BD
+  style MK1 fill:#f0f4ff,stroke:#3182BD
+  style M0 fill:#f0f4ff,stroke:#3182BD
+  style MU fill:#e8f5e9,stroke:#31A354
+```
+
+每个模型的响应（$\tilde{Y}_k$）是链中下一个模型的*预测*。这创建了依赖关系的级联。
+
+### 5.3 为什么朴素方法失败
+
+**朴素 1：伪结果的方差只。** 仅使用通道 1——忽略所有模型修正项。
+
+**朴素 2：仅模型 0 的 $\color{#31A354}{J}V_\beta\color{#31A354}{J^T}$。** 捕获模型 0 的通道 2 但忽略模型 $1, \ldots, K$。
+
+**正确：完整 IF 链。** 通过链式法则考虑所有 $K+1$ 个模型。
+
+### 5.4 推导链式模型的 IF
+
+#### IF 分解
+
+应用链式法则（第 5.1 节）：
+
+$$
+\text{IF}_i
+= \underbrace{\frac{1}{n_t}(\tilde{Y}_{0,i} - \hat\mu)}_{\text{通道 1}}
++ \sum_{k=0}^{K}
+\underbrace{
+\color{#E6550D}{d_{k,i}} \cdot r^{\text{score}}_{k,i}
+}_{\text{模型 } k \text{ 的通道 2}}
+$$ {#eq-if-ice}
+
+其中 $\color{#E6550D}{d_{k,i}}$ 是**灵敏度**——模型 $k$ 处的扰动如何传播到 $\hat\mu$——且 $r^{\text{score}}_{k,i}$ 是个体 $i$ 在模型 $k$ 处的**得分残差**：
+
+$$
+r^{\text{score}}_{k,i}
+\;=\; (Y_{k,i} - \hat{Y}_{k,i}) \cdot
+\frac{d\mu/d\eta\big|_{\eta_{k,i}}}{V(\hat{Y}_{k,i})}
+$$
+
+即响应残差 $r_{k,i} = Y_{k,i} - \hat{Y}_{k,i}$ 加权以 GLM 得分（第 1.2 节，路线 3）的链接尺度因子。对于**规范**链接（logistic-logit、Poisson-log、Gaussian-identity）比率 $(d\mu/d\eta)/V(\mu) = 1$ 且 $r^{\text{score}}_{k,i}$ 坍缩为普通响应残差 $r_{k,i}$。对于**非规范**链接（probit、cloglog、Gamma-log、Poisson-sqrt 等）因子不是 $1$ 且必须应用。
+
+::: {.callout-warning}
+### 为什么是得分残差，而非响应残差
+$\text{Ch.2}_i = J_k A_k^{-1} \psi_{k,i}$ 包含完整的 GLM 得分 $\psi_{k,i} = (Y - \mu)\cdot(d\mu/d\eta)/V(\mu)\cdot X_i$，而非裸残差 $(Y - \mu)\cdot X_i$。通过代数：
+
+$$
+\color{#31A354}{J_k}\color{#3182BD}{A_k^{-1}}\psi_{k,i}
+\;=\; n\cdot d_{k,i}\cdot (Y_{k,i} - \hat Y_{k,i})\cdot
+\frac{d\mu/d\eta\big|_{\eta_{k,i}}}{V(\hat Y_{k,i})}
+\;=\; n\cdot d_{k,i}\cdot r^{\text{score}}_{k,i}
+$$
+
+$n$ 的因子来自 $A_k^{-1} = n(X_k^T W_k X_k)^{-1}$（第 5.5 节）。仅当它等于 $1$ 时——即仅对规范链接——省略 $(d\mu/d\eta)/V$ 因子并使用普通响应残差是正确的。这个错误在 logistic/Poisson-log/Gaussian 模型上无声但在 probit 和 cloglog 上误校准。
+:::
+
+#### 灵敏度测量什么
+
+每个模型修正需要一个**灵敏度** $\color{#E6550D}{d_{k,i}}$：一个标量，回答"如果个体 $i$ 在模型 $k$ 处的残差增加一个单位，$\hat\mu$ 会改变多少？"计算 $\color{#E6550D}{d_{k,i}}$ 需要三步，每步有清晰的角色：
+
+1. **梯度** $g_k$（$p_k \times 1$）：$\hat\mu$ 对模型 $k$ 系数向量 $\beta_k$ 的总灵敏度。这是一个雅可比矩阵——与第 3.2 节中的 $\color{#31A354}{J_a}$ 相同的对象，但对 $k > 0$ 递归计算。
+2. **求解** $h_k = (X_k^T W_k X_k)^{-1} g_k$（$p_k \times 1$）：从"$\hat\mu$ 如何响应 $\beta_k$"转换为"$\hat\mu$ 如何响应个体得分贡献"。这是面包逆 $\color{#3182BD}{A_k^{-1}}$ 应用于 $g_k$。
+3. **分配** $\color{#E6550D}{d_{k,i}} = h_k^T X_{k,i}$（标量）：投影到个体 $i$ 的协变量向量以获得其个人灵敏度。
+
+#### 基础情况：模型 0
+
+$\hat\mu$ 是模型 0 预测的直接平均。$\hat\mu$ 关于 $\beta_0$ 的梯度因此是第 3.2 节中的雅可比矩阵：
+
+$$
+\underset{p_0 \times 1}{g_0}
+= \frac{1}{n_t}\sum_{j \in \text{target}}
+\frac{d\mu}{d\eta}\bigg|_{\eta_{0,j}^*}
+\;\cdot\; X_{0,j}^*
+$$
+
+$g_0$ 告诉我们 $\hat\mu$ 对 $\beta_0$ 的总灵敏度，但 IF 需要每个体数量。我们需要问："在数据引起的 $\hat\beta_0$ 总偏移中，有多少来自个体 $i$？"答案使用两个事实：(a) 个体 $i$ 对 $\hat\beta_0$ 的影响与其得分 $\psi_{0,i} = (d\mu/d\eta)_i / V(\mu_i) \cdot r_{0,i} \cdot X_{0,i}$ 成比例；(b) 比例常数涉及面包逆 $(X_0^T W_0 X_0)^{-1}$。合并：
+
+$$
+h_0 = \underbrace{(X_0^T W_0 X_0)^{-1}}_{\text{面包逆}} g_0,
+\qquad
+\color{#E6550D}{d_{0,i}} = h_0^T X_{0,i}
+$$
+
+现在 $\color{#E6550D}{d_{0,i}} \cdot r^{\text{score}}_{0,i}$ 给出个体 $i$ 的通道 2 贡献：其**得分残差** $r^{\text{score}}_{0,i} = (Y_{0,i} - \hat Y_{0,i}) \cdot (d\mu/d\eta)_i / V(\mu_i)$（其数据在链接尺度得分度量上与模型 0 "不同意"多少）乘以 $\color{#E6550D}{d_{0,i}}$（那个不同意对 $\hat\mu$ 的重要性）。对于规范链接 $(d\mu/d\eta)/V = 1$ 且得分残差坍缩为响应残差 $r_{0,i}$。对于非规范链接，链接尺度因子必须保留。这等价于第 3.2 节的 $\color{#31A354}{J_0}\color{#3182BD}{A_0^{-1}}\psi_{0,i}$，分解为上述三步。
+
+#### 递归情况：模型 $k = 1, \ldots, K$
+
+模型 $k$ 不直接输入 $\hat\mu$。相反，模型 $k$ 的预测成为模型 $k-1$ 的伪结果（响应变量）。我们已经知道 $\hat\mu$ 对这些伪结果中每一个的敏感程度——那是来自上一步的 $\color{#E6550D}{d_{k-1,j}}$。
+
+$\hat\mu$ 关于 $\beta_k$ 的梯度因此对每个个体的贡献加权以前面计算的灵敏度，进一步以 $(k-1)$-th 得分函数为行 $j$ 携带的先前权重 $w_{k-1,j}$ 加权：
+
+$$
+\underset{p_k \times 1}{g_k}
+= \sum_{j \in \text{fit}_{k-1}}
+w_{k-1,j}\;\cdot\;
+\color{#E6550D}{d_{k-1,j}}
+\;\cdot\;
+\frac{d\mu}{d\eta}\bigg|_{\eta_{k,j}^*}
+\;\cdot\; X_{k,j}^*
+$$
+
+$w_{k-1,j}$ 因子来自 $A_{k-1,k} = E[\partial s_{k-1,j}/\partial \beta_k]$，且 $s_{k-1,j}$ 继承 $w_{k-1,j}$ 因为 $(k-1)$-th 伪结果模型是加权拟合。在无权情况下 $w_{k-1,j} \equiv 1$ 且因子消失；在非均匀外部权重下丢弃它（例如 IPCW、调查权重）无声地低估三明治方差，因子随权重异质性缩放。
+
+与 $g_0$ 比较：均匀权重 $\frac{1}{n_t}$ 超过目标人群被 $w_{k-1,j} \cdot \color{#E6550D}{d_{k-1,j}}$ 超过前一个模型的拟合集替换。其他一切——求解和分配——相同：
+
+$$
+h_k = (X_k^T W_k X_k)^{-1} g_k,
+\qquad
+\color{#E6550D}{d_{k,i}} = h_k^T X_{k,i}
+$$
+
+### 5.5 缩放：$n$ 的因子
+
+每个模型修正涉及 $\color{#3182BD}{A_k^{-1}}$。由于 $\color{#3182BD}{A_k} = \frac{1}{n_k} X_k^T W_k X_k$，我们有 $\color{#3182BD}{A_k^{-1}} = n_k(X_k^T W_k X_k)^{-1}$。所以步骤 $k$ 处的修正是：
+
+$$
+n_k \cdot \color{#E6550D}{d_{k,i}} \cdot r^{\text{score}}_{k,i}
+$$
+
+因子 $n_k$ 确保每个 IF 贡献为每个个体 $O(1)$，给出正确的 $\text{Var}(\hat\mu) = O(1/n)$。
+
+::: {.callout-warning}
+### 常见错误
+省略 $n_k$ 使每个修正 $O(1/n)$，产生 $\text{Var} = O(1/n^3)$——置信区间过于狭窄。
+:::
+
+::: {.panel-tabset}
+
+## 数学
+
+对于 $k=1$ 处的结局模型 $m_1$ 和 $k=0$ 处的伪结果模型 $m_0$ 的 2 期 ICE，IF 为
+
+$$
+\mathrm{IF}_i(\hat\mu)
+= \big(\hat m_0(H_0^{(a)}) - \hat\mu\big)
++ n_1\,d_{1,i}\,r^{\text{score}}_{1,i}
++ n_0\,d_{0,i}\,r^{\text{score}}_{0,i},
+$$
+
+灵敏度 $d_{k,i}$ 通过第 5.4 节的递归传播。$n_k$ 因子是必需的（第 5.5 节）。对于下面的线性高斯 DGP，$(a_0=1, a_1=1)$ vs $(a_0=0, a_1=0)$ 下的真实联合 ATE 通过构造精确为 $0.8 + 0.6 = 1.4$，我们检查 causatr 的三明治 CI 是否覆盖它。
+
+## 代码
+
+```r
+set.seed(7)
+n_ice <- 500
+id    <- seq_len(n_ice)
+L0    <- rnorm(n_ice)
+A0    <- rbinom(n_ice, 1, plogis(0.3 * L0))
+L1    <- 0.5 * L0 + 0.4 * A0 + rnorm(n_ice)
+A1    <- rbinom(n_ice, 1, plogis(0.2 * L1 + 0.3 * A0))
+Y_ice <- 1 + 0.8 * A0 + 0.6 * A1 + 0.5 * L0 + 0.4 * L1 + rnorm(n_ice)
+
+long <- rbind(
+  data.frame(id = id, time = 0L, A = A0, L = L0, Y = NA_real_),
+  data.frame(id = id, time = 1L, A = A1, L = L1, Y = Y_ice)
+)
+
+fit_ice <- causat(
+  long, outcome = "Y", treatment = "A",
+  confounders     = ~ 1,
+  confounders_tv  = ~ L,
+  id = "id", time = "time",
+  model_fn = stats::glm
+)
+res_ice <- contrast(
+  fit_ice,
+  interventions = list(a11 = static(1), a00 = static(0)),
+  reference     = "a00",
+  ci_method     = "sandwich"
+)
+
+ate_ice <- res_ice$contrasts$estimate
+se_ice  <- res_ice$contrasts$se
+ci_lo   <- res_ice$contrasts$ci_lower
+ci_hi   <- res_ice$contrasts$ci_upper
+truth   <- 0.8 + 0.6  # structural sum of the two causal coefficients
+covered <- (truth >= ci_lo) && (truth <= ci_hi)
+```
+
+## 结果
+
+```r
+out <- data.frame(
+  quantity = c("ICE ATE (causatr 三明治)",
+               "$\\mathrm{SE}$",
+               "95% CI 下界",
+               "95% CI 上界",
+               "真值（$0.8 + 0.6$）",
+               "真值 $\\in$ 95% CI？"),
+  value    = c(ate_ice, se_ice, ci_lo, ci_hi, truth,
+               ifelse(covered, "yes", "no"))
+)
+tt(out, caption = "2 期线性高斯 DGP 上的 ICE 链式 IF") |>
+  format_tt(j = "quantity", markdown = TRUE) |>
+  format_tt(j = 2, digits = 4)
+```
+
+由 `variance_if_ice()` 产生的三明治 CI 覆盖 $1.4$ 的结构真值，链式 IF 机制正在做第 5.4 节所说的。
+
+:::
+
+### 5.6 伪代码：链式估计器的 IF
+
+```r
+chained_influence <- function(models, data_iv, target) {
+  n <- number_of_individuals
+  K <- length(models) - 1
+  mu_hat <- mean(pseudo_final[target])
+  n_target <- sum(target)
+
+  # Channel 1 with target-subpopulation scaling (see Sec. 3.6).
+  IF <- rep(0, n)
+  IF[target] <- (n / n_target) * (pseudo_final[target] - mu_hat)
+
+  d <- rep(0, n)  # sensitivities from previous step
+
+  for (step in 0:K) {
+    model_k <- models[[step + 1]]
+    family_k <- model_k$family
+    X_k <- model.matrix(model_k)         # fitting design matrix
+    eta_k <- model_k$linear.predictors
+    mu_eta_k <- family_k$mu.eta(eta_k)   # dmu/deta at fitted values
+    V_k <- family_k$variance(fitted(model_k))
+    W_k <- mu_eta_k^2 / V_k              # IWLS working weights
+    fit_ids_k <- model_k$fitting_ids
+    n_k <- length(fit_ids_k)
+
+    # Score residual = response residual * (dmu/deta) / V(mu). For
+    # canonical links this factor is 1; for non-canonical (probit,
+    # cloglog, Gamma-log, ...) it is not.
+    r_response_k <- residuals(model_k, type = "response")
+    r_score_k <- r_response_k * mu_eta_k / V_k
+
+    # Intervention design matrix and link derivatives (dmu/deta)
+    X_star_k <- model.matrix(model_k, newdata = intervention_data[[step + 1]])
+    eta_star <- X_star_k %*% coef(model_k)
+    mu_eta_star <- family_k$mu.eta(eta_star)
+
+    # Step 1: Gradient g_k = d mu_hat / d beta_k. The step > 0 branch
+    # carries w_{k-1} from the previous-step fit's prior weights.
+    if (step == 0) {
+      g_k <- crossprod(X_star_k[target, ], mu_eta_star[target]) / n_target
+    } else {
+      prev_ids <- models[[step]]$fitting_ids
+      w_prev <- models[[step]]$prior.weights  # 1-vector if unweighted
+      g_k <- crossprod(
+        X_star_k[prev_ids, ],
+        w_prev * d[prev_ids] * mu_eta_star[prev_ids]
+      )
+    }
+
+    # Step 2: Solve h_k = (X'WX)^{-1} g_k
+    h_k <- solve(crossprod(X_k, X_k * W_k)) %*% g_k
+
+    # Step 3: Distribute d_{k,i} = h_k' X_{k,i}
+    d <- rep(0, n)
+    d[fit_ids_k] <- X_k %*% h_k
+
+    # Channel 2 for model k: n_k * d_{k,i} * r_score_{k,i}
+    r_vec <- rep(0, n)
+    r_vec[fit_ids_k] <- r_score_k
+    IF <- IF + n_k * d * r_vec
+  }
+  IF
+}
+```
+
+### 5.7 从个体 IF 到方差
+
+一旦我们从上述递归得到每个体 $\text{IF}_i$，方差估计遵循相同的公式如常 (@eq-var-if)：
+
+$$
+\widehat{\text{Var}}(\hat\mu)
+= \frac{1}{n^2}\sum_{i=1}^n \text{IF}_i^2
+$$
+
+对于同一数据上的两个干预 $a$ 和 $b$：
+
+$$
+\widehat{\text{Cov}}(\hat\mu_a, \hat\mu_b)
+= \frac{1}{n^2}\sum_{i=1}^n \text{IF}_i^{(a)} \cdot \text{IF}_i^{(b)}
+$$
+
+然后完整的 $k \times k$ 协方差矩阵用于对比。
+
+
+## 6. IPCW：结局删失下的方差
+
+当结局数据缺失完全随机（MAR）且 causatr 拟合删失模型 $P(C = 0 \mid A, L)$ 时，IPCW 权重成为估计的麻烦参数。因果估计量的方差必须考虑这个估计不确定性——否则三明治 SE 是保守的。
+
+### 6.1 删失模型作为第三个麻烦块
+
+删失模型向堆叠估计方程添加一个块。对于**点处理 g-computation** 配合 IPCW，堆栈变为：
+
+$$
+\Psi(\theta) =
+\begin{pmatrix}
+\psi_\gamma \\
+\psi_\beta \\
+\psi_\mu
+\end{pmatrix}
+= \begin{pmatrix}
+\text{删失模型得分} \\
+\text{结局模型得分（IPCW 加权）} \\
+\text{目标估计量}
+\end{pmatrix}
+$$
+
+其中 $\theta = (\gamma, \beta, \mu)^T$，$\gamma$ 是删失模型参数，$\beta$ 是结局模型参数，$\mu$ 是边际均值。
+
+### 6.2 分块三角面包
+
+面包矩阵具有与第 3.5 节相同的分块三角结构，现在多一个块：
+
+$$
+A =
+\begin{pmatrix}
+A_{\gamma\gamma} & 0 & 0 \\
+A_{\beta\gamma} & A_{\beta\beta} & 0 \\
+0 & A_{\mu\beta} & A_{\mu\mu}
+\end{pmatrix}
+$$
+
+关键新块是 $A_{\beta\gamma}$：结局模型得分关于删失参数的交叉导数。这捕获 IPCW 权重改变（由 $\gamma$ 驱动）如何影响结局模型拟合。
+
+具体地：
+
+$$
+A_{\beta\gamma} = -\frac{\partial}{\partial\gamma}
+\left[\frac{1}{n} \sum_i X_i \, w_{\text{ipcw}}(\gamma)_i \,
+\frac{(y_i - \mu_i)\,\mu'(\eta_i)}{V(\mu_i)}\right]
+$$
+
+在 causatr 中，这通过 `numDeriv::jacobian()` 在扰动 IPCW 权重同时保持 $\hat\beta$ 固定的闭包上计算。
+
+### 6.3 删失的通道 2 修正
+
+通过面包的后向替换产生 IF 中的额外通道 2 修正项：
+
+$$
+\text{IF}_i = \underbrace{\text{Ch1}_i}_{\text{协变量采样}}
++ \underbrace{\text{Ch2}_i^{(\text{结局})}}_{\text{结局模型}}
+- \underbrace{\text{Ch2}_i^{(\text{删失})}}_{\text{删失模型}}
+$$
+
+删失修正为：
+
+$$
+\text{Ch2}_i^{(\text{删失})}
+= g_\gamma^T \, A_{\gamma\gamma}^{-1} \, \psi_{\gamma,i}
+$$
+
+其中 $g_\gamma = A_{\beta\gamma}^T \, h_\beta$ 且 $h_\beta = A_{\beta\beta}^{-1} J_\mu^T$ 通过结局模型面包投影边际均值梯度。
+
+删失修正上的减号是故意的：@robins1994aipw 显示这个修正**降低**方差通过考虑删失模型中的信息。忽略它（将 IPCW 权重视为已知）是保守的。
+
+### 6.4 点处理 IPW 配合 IPCW
+
+对于 IPW + IPCW，堆栈有四个块：删失模型、倾向模型、MSM 和目标。面包变为 $4 \times 4$ 分块三角形：
+
+$$
+A =
+\begin{pmatrix}
+A_{\gamma\gamma} & 0 & 0 & 0 \\
+0 & A_{\alpha\alpha} & 0 & 0 \\
+A_{\beta\gamma} & A_{\beta\alpha} & A_{\beta\beta} & 0 \\
+0 & 0 & A_{\mu\beta} & A_{\mu\mu}
+\end{pmatrix}
+$$
+
+两个非对角块输入 MSM 得分：$A_{\beta\gamma}$（IPCW 权重）和 $A_{\beta\alpha}$（倾向权重）。每个产生一个独立的通道 2 修正。
+
+::: {.callout-note}
+## 实现注记（点 IPW + IPCW）
+
+上述块结构假设倾向估计*不带*删失权重，所以 $\gamma$ 仅通过 $A_{\beta\gamma}$ 到达 MSM。当前点 IPW 实现反而在未删失行上拟合 IPCW 加权倾向，添加分析三明治不带的 $\gamma \to \alpha$ 耦合——点 IPW + IPCW SE 因此偏离 ~3–7% 每臂（点估计是一致的）。标准化估计量（无权倾向，匹配 §6.5 的纵向路径）是受限的后续工作。对于正确的点 IPW + IPCW 标准误今天，使用 `ci_method = "bootstrap"`。
+:::
+
+### 6.5 纵向 IPCW：每期删失块
+
+对于纵向处理，删失模型每期拟合，系数为 $\gamma_1, \ldots, \gamma_K$。该块是否——以及如何——进入三明治取决于估计器。
+
+**纵向 IPW。** 最后期 Hájek MSM 由累积 IPCW 权重加权，所以删失块贡献单个交叉导数 $A_{\beta\gamma}$ 完全如点 IPW 情况（第 6.4 节），按期删失得分堆叠。causatr 传播它（`compute_ipw_ipcw_correction_longitudinal()`）：MSM 得分灵敏度形成反对堆叠 $\gamma$ 通过 `numDeriv::jacobian()`，然后通过每期的删失模型影响函数投影。这项是**承载的**——当删失依赖处理时它可以移动处理臂 SE 几个百分点（恢复 @robins1994aipw 效率增益）。至关重要，按期倾向模型估计*无权*（IPCW 权重重加权 MSM 仅——标准分离-然后-乘法构造，@hernan_whatif 第 12.6 & 17 章），所以 $\gamma$ 仅通过 MSM 到达 $\mu$（$\gamma \to \beta$ 路径）；没有 $\gamma \to \alpha$ 项。针对 `delicatessen` M-估计堆栈验证到 $\sim 10^{-4}$。
+
+**纵向 AIPW。** 堆叠-EE 三明治（第 5 节）按期 $\gamma$ 块在 $\theta = (\alpha, \beta, \gamma, \mu)$ 中携带，将 IPCW 权重穿线到每个结局得分使数值面包机械地捕获 $\gamma \to \beta \to \mu$。通过增强估计器的双稳健正交性这个交叉项是**近似零**（它移动边际均值 SE ~0.03%）：块被接线和携带为精确正确的三明治，不修复可察觉的偏差。
+
+**纵向 ICE（g-computation）。** 池 ICE 三明治*还不*携带删失通道 2 修正：完整项需要交叉导数 $A_{\beta_k, \gamma_j}$ 投影通过级联的增量构建灵敏度 $d_k$，在单个 `numDeriv` 闭包内不可用。ICE 三明治因此在 IPCW 下是保守的（大于真实渐近 SE）。**推荐**：对于纵向 ICE 配合 IPCW 使用 `ci_method = "bootstrap"` 获得最紧 CI；三明治对覆盖率保证保持有效。
+
+没有现有包（`lmtp`、`ltmle`、`gfoRmula`）实现纵向删失通道 2 修正分析——所有在这个设置中使用自举方差。
+
+
+## 7. 总结
+
+1. **一种方法**：影响函数。对任何因果估计量 $\hat\mu$，写出完整估计方程（麻烦模型 + 目标估计量），计算每个体的 $\text{IF}_i$，并取 $\widehat{\text{Var}}(\hat\mu) = \frac{1}{n^2}\sum_i \text{IF}_i^2$。
+
+2. **IF 是三明治**：IF 公式是三明治 $\color{#3182BD}{A^{-1}} \color{#E6550D}{B} \color{#3182BD}{(A^{-1})^T}$ 应用于堆叠估计方程，块三角面包通过后向替换反演。面包、肉和得分都存在——IF 只是每个体计算 $A^{-1}\psi_i$ 而非形成完整矩阵。
+
+3. **两个通道**：IF 总是分解为**直接项**（通道 1：协变量采样）和**模型修正**（通道 2：每个麻烦模型一个）。跨方法变化仅是哪些模型贡献到通道 2。
+
+4. **G-computation**：一个模型修正（结局模型）。通道 1 非零。
+
+5. **IPW**：两个模型修正（MSM + 倾向）。倾向修正通过交叉导数 $A_{\beta\alpha}$ 捕获权重估计不确定性。
+
+6. **匹配**：一个模型修正（结局模型），与 g-comp 相同。聚合是聚类稳健（在匹配子类内求和 IF）。
+
+7. **用户提供聚类**（`contrast(cluster = ...)`）：匹配内部使用的相同求和-在-聚类-然后-平方原语直接在 gcomp、IPW 和 ICE 上暴露。数值等价于应用于最终预测-然后-平均步骤的 `sandwich::vcovCL(type = "HC0")`；被拒绝匹配因为子类聚类已经是结构性。
+
+8. **链式估计器**（ICE）：$K\!+\!1$ 模型修正通过灵敏度的反向递归计算。
+
+9. **IPCW** 向堆叠方程添加删失模型块。删失通道 2 修正**降低**方差通过考虑权重估计不确定性。对于纵向 IPCW，修正被忽略（保守）；使用自举获得更紧 CI。
+
+10. **delta 方法**（$\color{#31A354}{J} V_\beta \color{#31A354}{J^T}$）是捕获仅通道 2 的快捷方式。当通道 1 = 0（常数预测）时精确，否则低估。完整 IF 避免这个限制。
+
+
+## 8. 数值方差层级（自定义 `model_fn`）
+
+分析 IF 引擎 `variance_if()` 需要访问模型的得分残差和面包矩阵。标准 GLM（`stats::glm`）和 GAM（`mgcv::gam`）通过 `family$mu.eta` / `family$variance` 和 `$Vp` 暴露这些，分别。但用户可以通过 `model_fn =` 传递任何拟合函数（例如 `MASS::glm.nb`、`betareg::betareg`），那些模型可能不暴露标准 GLM 内部。
+
+causatr 使用两层数值回退处理这个（`variance_if_numeric()`）：
+
+### 层级 1：`sandwich::estfun` 可用
+
+如果 `sandwich::estfun(model)` 返回每个观察得分矩阵 $\psi_i$ 和 `sandwich::bread(model)` 返回面包，回退恢复**完整 IF**（通道 1 + 通道 2 + 交叉项）精确，匹配分析主路径。边际均值雅可比 $J$ 通过 `numDeriv::jacobian()` 在 `predict()` 上计算，而非分析上。
+
+这适用于 `MASS::glm.nb`（负二项）和大多数有 `sandwich` 方法的模型类。
+
+### 层级 2：普通 delta 快捷方式
+
+如果没有 `estfun` 方法存在（例如 `betareg::betareg`），回退计算 $V_1 + V_2$ 其中 $V_1 = (1/n^2) \sum_i \text{Ch.1}_i^2$ 是通道 1 方差且 $V_2 = J \, V_\beta \, J^T$ 是通道 2 的 delta 方法近似。这**丢弃交叉项** $(1/n^2)(\text{Ch.1}^T \text{Ch.2} + \text{Ch.2}^T \text{Ch.1})$ 并发出 `causatr_tier2_fallback` 警告使用户知道 SE 稍微误校准。
+
+对于层级 2 模型，`ci_method = "bootstrap"` 给出精确覆盖。
+
+### 我的 `model_fn` 使用哪个层级？
+
+| `model_fn` | 层级 | 精确？ |
+|---|---|---|
+| `stats::glm` | 分析（主路径） | 是 |
+| `mgcv::gam` | 分析（GAM 路径） | 是 |
+| `MASS::glm.nb` | 层级 1（数值 + estfun） | 是 |
+| `betareg::betareg` | 层级 2（delta 快捷方式） | 近似（使用自举获得精确） |
+
+如果不确定，先用 `ci_method = "sandwich"` 运行——如果看到 `causatr_tier2_fallback` 警告，模型在层级 2。
+
+## 自举置信区间风格
+
+当 `ci_method = "bootstrap"` 时，`contrast()` 重采样完整管道并存储每干预复制矩阵。两个标准区间可以从这些复制中读取 [@efron1993bootstrap, 第 13 章；@davison1997bootstrap, 第 5.2 节]，用 `boot_ci` 选择：
+
+- **`"percentile"`（默认）** ——复制的经验 $\alpha/2$ 和 $1-\alpha/2$ 分位数。它是变换尊重且被估计量支撑界定，所以相对风险或优势比得到严格正区间且概率停留在 $[0, 1]$。对比区间使用对比在每个复制的每干预均值上计算的分位数，所以差异/比率/优势比-都由一个方法处理。
+- **`"normal"`** ——来自自举标准误的 Wald 区间，$\hat\theta \pm z_{1-\alpha/2}\,\widehat{sd}$。对称；当自举分布粗略高斯时最佳。
+
+两个都来自相同复制，所以选择成本无额外且保持点估计、SE 和 vcov 不变——仅区间界移动。每个表面（`print()`、`plot()`、`estimates` / `contrasts` 表、`tidy()`）尊重记录选择；`confint(res, boot_ci = ...)` 按需覆盖它。
+
+```r
+res_perc <- contrast(
+  fit,
+  interventions = list(a1 = static(1), a0 = static(0)),
+  ci_method = "bootstrap",
+  boot_ci = "percentile"
+)
+# pull the symmetric interval from the same fit without re-bootstrapping
+confint(res_perc, boot_ci = "normal")
+```
+
+对于 SNM blip 参数和池人口平均 blip，`boot_ci` 应用相同方式；`by`-分层平均 blip 保持其 delta 方法（正态）区间因为它没有每阶层复制。
+
+## 参考文献
+
+::: {#refs}
+:::
+

@@ -1,0 +1,556 @@
+---
+title: "IPW 密度比权重和方差理论"
+subtitle: "*IPW density-ratio weights and variance theory* · causatr 官方文档中译"
+bibliography: causatr-refs.bib
+---
+
+> **来源**：R 包 [causatr](https://github.com/etverse/causatr) 官方文档 [`ipw-variance-theory.qmd`](https://etverse.github.io/causatr/vignettes/ipw-variance-theory.html)，MIT 许可。
+> 本页是中译，**代码与运行结果直接取自原站的渲染输出，未在本站重新执行**。
+> Copyright (c) 2026 causatr authors；许可证全文见原仓库 `LICENSE.md`。
+
+```{=html}
+<style>
+mjx-container[jax="CHTML"][display="true"] {
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 0.5em 0;
+}
+</style>
+```
+
+
+本文推导 causatr 自带 IPW 引擎背后的密度比权重公式，并说明它们如何进入三明治方差
+估计量。本文是 `vignette("variance-theory")` 的姊妹篇：后者在 4.2 节推导了 IPW 的
+一般化堆叠 M-估计框架。这里我们深入 4.2 节当作黑箱处理的那几个部件：权重公式本身、
+方差引擎要对其求导的 `make_weight_fn()` 闭包，以及把倾向评分的不确定性传递到最终
+标准误的数值交叉导数 $A_{\beta\alpha}$。
+
+实际用法示例见 `vignette("ipw")` 与 `vignette("interventions")`。
+
+## 1. 密度比权重：总体思路
+
+IPW 对观测样本重新加权，使得在加权后的分布下混杂因子达到均衡，且 $Y$ 的加权均值
+可以估计干预 $d$ 下的反事实均值 $E[Y^d]$。核心对象是**密度比权重**：
+
+$$
+w_i = \frac{f_d(A_i^{\text{obs}} \mid L_i)}{f(A_i^{\text{obs}} \mid L_i)},
+$$
+
+其中 $f(\cdot \mid L)$ 是观测数据下的条件处理密度，$f_d(\cdot \mid L)$ 是
+**干预 $d$ 下**的处理密度。$f_d$ 的具体形式取决于干预类型：
+
+- 对于**点质量干预**（static、dynamic），干预后的分布是 Dirac 测度，权重退化为
+  Horvitz--Thompson 示性量。
+- 对于**光滑 MTPs**（shift、scale），干预后的分布是 $f$ 在某个微分同胚下的前推，
+  权重是一个光滑的密度比。
+- 对于 **IPSI**（增量倾向评分干预），权重有闭式表达式，完全绕开了密度求值。
+
+本节余下部分逐一讨论这几种情形。
+
+### 1.1 Horvitz--Thompson 示性形式（static、dynamic）
+
+当干预把每个个体的处理设为确定性取值 $a^* = d(A_i, L_i)$ 时，干预后的“密度”就是
+一个点质量 $\delta_{a^*}$。点质量关于密度 $f$ 的 Radon--Nikodym 导数为：
+
+$$
+\frac{d\delta_{a^*}}{df}(A_i^{\text{obs}})
+= \frac{\mathbb{1}\{A_i = a^*\}}{f(a^* \mid L_i)}.
+$$
+
+对二值处理配合 `static(1)`，这就化为熟悉的 $w_i = A_i / e(L_i)$，其中
+$e(L_i) = P(A_i=1 \mid L_i)$ 是倾向评分。
+
+#### 按估计目标区分的分子（ATE / ATT / ATC）
+
+ATE 针对整个总体，ATT 与 ATC 则针对子总体。要从观测数据中还原 $E[Y^a \mid A = A^*]$，
+标准的贝叶斯法则改写 [@imbens2004nonparametric; @hernan_whatif, Ch. 12] 给出一个
+逐个体的分子 $f^*_i$：
+
+$$
+w_i = \frac{\mathbb{1}\{A_i = a\} \cdot f^*_i}{f(A_i \mid L_i)},
+$$
+
+其中：
+
+| Estimand | Target subpopulation | $f^*_i$ |
+|---|---|---|
+| ATE | 整个总体 | $1$ |
+| ATT | 处理组（$A^* = 1$） | $p(L_i)$ |
+| ATC | 对照组（$A^* = 0$） | $1 - p(L_i)$ |
+
+仅凭这一个公式，就在同一个分支里重现了全部三种按处理臂设定的权重方案。对于退化的
+那一臂（例如 ATT 配 `static(1)` 时落在 $A=1$ 的那些行上），$f^* = p$ 与
+$f(1 \mid L) = p$ 相消，得到 $w_i = A_i$ --- 即直接的样本泛函 $E[Y \mid A=1]$，
+不带倾向评分的不确定性，与预期一致。
+
+causatr 只在二值 0/1 处理上使用 `static()` 时才允许 ATT/ATC。其他所有干预都只支持
+ATE；非 ATE 的请求会被 `check_estimand_intervention_compat()` 拒绝。
+
+::: {.callout-note}
+### 分类处理
+
+对于有 $K$ 个水平的分类处理，同样的 HT 形式依然适用：
+$w_i = \mathbb{1}\{A_i = a^*\} / P(A_i = a^* \mid L_i)$，其中多项
+概率来自 `nnet::multinom` 模型。只支持 ATE（当处理水平多于两个时，
+ATT/ATC 的含义并不明确）。
+:::
+
+### 1.2 光滑前推（shift、scale_by） {#sec-pushforward}
+
+当干预是连续处理上的一个光滑可逆映射 $d: a \mapsto d(a, l)$ 时，
+干预后的密度就是 $f$ 在 $d$ 下的**前推**。由换元公式：
+
+$$
+f_d(y \mid l) = f\bigl(d^{-1}(y, l) \mid l\bigr) \cdot \lvert\det Dd^{-1}(y, l)\rvert.
+$$
+
+在 $y = A_i^{\text{obs}}$ 处取值即得权重：
+
+$$
+w_i = \frac{f\bigl(d^{-1}(A_i, L_i) \mid L_i\bigr) \cdot |\text{Jac}|}{f(A_i \mid L_i)}.
+$$ {#eq-pushforward}
+
+对 causatr 支持的两种 MTPs：
+
+| Intervention | Map $d(a)$ | Inverse $d^{-1}(y)$ | Jacobian $\lvert\det Dd^{-1}\rvert$ |
+|---|---|---|---|
+| `shift(delta)` | $a + \delta$ | $y - \delta$ | $1$ |
+| `scale_by(c)` | $c \cdot a$ | $y / c$ | $1 / \lvert c \rvert$ |
+
+::: {.callout-warning}
+### 前推的符号陷阱
+
+一个常见错误是去计算 $f(d(A_i) \mid L_i) / f(A_i \mid L_i)$
+——也就是在**干预后的**处理值上计算拟合密度。这是错的：正确的
+公式应在 $d^{-1}(A_i^{\text{obs}})$ 处取值，而不是
+$d(A_i^{\text{obs}})$。
+
+对 `shift(delta)` 来说，差别就是一次符号翻转：在
+$A_i + \delta$ 处取值得到的是 $E[Y^{\text{shift}(-\delta)}]$，而不是
+$E[Y^{\text{shift}(\delta)}]$。这个错误很容易写出来，而且没有基于
+真值的模拟测试就很难发现。
+
+在 `compute_density_ratio_weights()` 中：
+
+```r
+# shift: d(a) = a + delta, d^{-1}(y) = y - delta, |Jac| = 1.
+# f_d(A_obs | l) = f(A_obs - delta | l).
+a_eval <- a_obs - delta                       # <-- d^{-1}, not d
+f_int  <- evaluate_density(tm, a_eval, data)
+w      <- f_int / f_obs
+```
+
+对 `scale_by(c)`：
+
+```r
+# d(a) = c*a, d^{-1}(y) = y/c, |Jac| = 1/|c|.
+a_eval <- a_obs / fct                         # <-- d^{-1}, not d
+f_int  <- evaluate_density(tm, a_eval, data)
+w      <- (f_int / f_obs) / abs(fct)
+```
+:::
+
+#### 为什么 `threshold()` 和 `dynamic()` 在连续处理上会被拒绝
+
+`threshold(lo, hi)` 把 $A$ 截断到 $[\text{lo}, \text{hi}]$。连续密度
+在边界截断下的前推是一个**混合测度**：在 $(\text{lo}, \text{hi})$ 上
+连续，再加上边界处的点质量（区间外的全部概率质量都堆积到了截断点
+上）。混合测度没有 Lebesgue 密度，所以 @eq-pushforward 中的密度比
+没有定义。用户应改用 `estimator = "gcomp"`，在那里截断处理的反事实
+通过对结局模型先预测再平均来干净地处理。
+
+同样地，连续处理上的 `dynamic(rule)` 会为每个个体定义一个 Dirac
+$\delta_{d(L_i)}$ ——这是一个退化的“密度”，其 Lebesgue 密度为零。
+权重几乎处处为零。用户应把规则改写成光滑的 `shift()` 或
+`scale_by()`，或者改用 `gcomp`。
+
+### 1.3 IPSI 闭式解 [@kennedy2019ipsi] {#sec-ipsi}
+
+增量倾向评分干预 [@kennedy2019ipsi] 作用在**倾向评分**上，而不是
+作用在处理值上。该干预把处理的比值（odds）乘以一个因子
+$\delta > 0$：
+
+$$
+\text{odds}_d(L_i) = \delta \cdot \text{odds}(L_i)
+\quad\Rightarrow\quad
+p_d(L_i) = \frac{\delta \, p(L_i)}{1 - p(L_i) + \delta \, p(L_i)}.
+$$
+
+由于该干预是用倾向评分而不是反事实处理值定义的，就没有前推密度
+需要计算。密度比权重简化为一个闭式解：
+
+$$
+w_i = \frac{\delta \, A_i + (1 - A_i)}{\delta \, p_i + (1 - p_i)},
+$$ {#eq-ipsi-weight}
+
+其中 $p_i = P(A_i = 1 \mid L_i)$ 是拟合的倾向评分。
+
+这个公式有几个很好的性质：
+
+- **无需计算密度。** 与 `shift()` / `scale_by()` 不同，IPSI 从不在
+  反事实处理值上计算 $f(a \mid L)$。权重是倾向评分的直接函数。
+- **权重有限。** 对有限的 $\delta > 0$，分母
+  $\delta \, p + (1-p)$ 介于 $\min(1, \delta)$ 与
+  $\max(1, \delta)$ 之间，所以权重总是有限的，不需要正值性保护。
+- **关于 $\delta$ 光滑。** 剂量-反应曲线
+  $\delta \mapsto E[Y^{d_\delta}]$ 是光滑的，这使它天然适合在一组
+  $\delta$ 取值网格上拟合边际结构模型。
+
+在 causatr 中：
+
+```r
+ipsi_weight_formula <- function(a_obs, p, delta) {
+  (delta * a_obs + (1 - a_obs)) / (delta * p + (1 - p))
+}
+```
+
+## 2. `make_weight_fn()` 闭包 {#sec-closure}
+
+三明治方差估计量需要交叉导数
+$A_{\beta\alpha} = -\partial\bar\psi_\beta/\partial\alpha$，它刻画了
+倾向评分参数变动时 MSM 得分函数如何变化。
+causatr 通过 `numDeriv::jacobian()` 用数值方法计算它。数值
+Jacobian 需要一个函数 $\alpha \mapsto w_i(\alpha)$，它在候选的
+倾向评分参数下重新算出权重向量。
+
+`make_weight_fn()` 构建的就是这个闭包。它在创建时**按值**捕获
+所需的一切：
+
+| Captured quantity | Description | Varies under $\alpha$ perturbation? |
+|---|---|---|
+| `X_prop` | 倾向评分设计矩阵（$n \times q$） | 否 --- 矩阵是固定的 |
+| `a_obs` | 观测到的处理取值 | 否 |
+| `a_int` / `a_eval` | 干预后或逆干预后的取值 | 否 --- 干预是固定的 |
+| `sigma` | 残差 SD（连续处理） | 否 --- 拟合时已固定 |
+| `delta` | 优势乘子（仅 IPSI） | 否 |
+| `family` 标记 | 分派到正确的公式 | 否 |
+
+唯一变化的量只有 $\alpha$ 本身。在闭包内部，预测值通过一次矩阵
+乘法 `X_prop %*% alpha` 从 $\alpha$ 重新算出，从而避免在每个
+`numDeriv` 步骤上解析公式。
+
+### 闭包的各个分支
+
+**IPSI：**
+
+```r
+function(alpha) {
+  eta <- as.numeric(X_prop %*% alpha)
+  p   <- plogis(eta)
+  ipsi_weight_formula(a_obs, p, delta)
+}
+```
+
+**HT 示性函数（伯努利）：**
+
+```r
+function(alpha) {
+  eta   <- as.numeric(X_prop %*% alpha)
+  p     <- plogis(eta)
+  f_obs <- ifelse(a_obs == 1, p, 1 - p)
+  ind * f_star_fn(p) / f_obs
+}
+```
+
+这里 `ind`（HT 示性函数 $\mathbb{1}\{A_i = a^*\}$）和
+`f_star_fn`（依估计目标而定的贝叶斯分子）在创建时被捕获。
+对 ATE，`f_star_fn(p) = 1`；对 ATT，`f_star_fn(p) = p`；
+对 ATC，`f_star_fn(p) = 1 - p`。把 ATT/ATC 的分子写进闭包，
+可以保证 `numDeriv::jacobian()` 正确捕捉到分子对倾向评分的依赖。
+
+**HT 示性函数（分类/多项）：**
+
+```r
+function(alpha) {
+  alpha_mat <- matrix(alpha, nrow = K-1, ncol = p, byrow = TRUE)
+  eta       <- X_prop %*% t(alpha_mat)
+  exp_eta   <- exp(eta)
+  denom     <- 1 + rowSums(exp_eta)
+  prob_mat  <- cbind(1/denom, exp_eta/denom)     # softmax
+  f_obs     <- prob_mat[cbind(1:n, col_idx)]
+  ind / f_obs                                    # ATE only
+}
+```
+
+展平后的 $\alpha$ 向量按行优先编码 $(K-1) \times p$ 个系数。
+每个 `numDeriv` 步骤扰动其中一个元素；闭包重建系数矩阵、应用
+softmax，再取出每个个体在其观测处理水平上的概率。
+
+**光滑前推（高斯）：**
+
+```r
+function(alpha) {
+  mu    <- as.numeric(X_prop %*% alpha)
+  f_obs <- dnorm(a_obs, mean = mu, sd = sigma)
+  f_eval <- dnorm(a_eval, mean = mu, sd = sigma)
+  (f_eval / f_obs) * jac_abs
+}
+```
+
+这里 `a_eval`（$= d^{-1}(A_i^{\text{obs}})$）和 `jac_abs` 只预先
+计算一次。残差 SD `sigma` 在 $\alpha$ 扰动下保持固定。若把
+$\sigma$ 当作额外的冗余参数，就需要一套联合的 $(\mu, \sigma)$
+M-估计方案 --- 此处暂缓。
+
+::: {.callout-note}
+### 为什么 `sigma` 保持固定
+
+条件处理密度为 $A_i \mid L_i \sim N(\mu_i, \sigma^2)$，
+其中 $\mu_i = L_i^T\alpha$。在极大似然下，$\alpha$ 的得分函数与
+$\sigma$ 的得分函数是正交的（信息矩阵在 $(\alpha, \sigma)$ 上
+分块对角）。把 $\sigma$ 固定在其 MLE 上、只把 $\alpha$ 当作
+倾向评分一侧的冗余参数，等价于把 $\sigma$ 剖面消去 ---
+由此得到的三明治方差对 $\hat\mu_a$ 是渐近正确的，只差一个
+来自剖面化后 $\sigma$ 不确定性的 $O(n^{-1})$ 项
+[@liang1986longitudinal]。实际中它对 SE 的影响可以忽略，因为
+$\sigma$ 只通过正态 pdf 进入权重比，而在主阶上会相互抵消。
+:::
+
+## 3. 交叉导数 $A_{\beta\alpha}$ {#sec-cross}
+
+`vignette("variance-theory")` 的第 4.2 节把 IPW 下 $\hat\mu_a$ 的完整 IF 推导成
+三项之和（通道 1 + MSM 修正 + 倾向评分修正）。倾向评分修正链为：
+
+$$
+\text{propensity correction}_i
+= J \, A_{\beta\beta}^{-1} \, A_{\beta\alpha} \, A_{\alpha\alpha}^{-1}
+  \, \psi_{\alpha,i},
+$$
+
+其中 $A_{\beta\alpha}$ 是加权 MSM 得分函数对倾向评分参数的交叉导数：
+
+$$
+A_{\beta\alpha}
+= -\frac{1}{n} \sum_{i=1}^{n}
+  \frac{\partial \psi_{\beta,i}}{\partial \alpha^T}
+= -\frac{1}{n} \sum_{i=1}^{n}
+  X_i \, \frac{\partial w_i}{\partial \alpha^T} \,
+  \frac{(Y_i - \mu_i)\,\mu'(\eta_i)}{V(\mu_i)}.
+$$
+
+权重导数 $\partial w_i / \partial\alpha^T$ 取决于干预类型（HT 示性函数、光滑前推、
+IPSI --- 各自是 $\alpha$ 的不同函数）。causatr 没有为每种情形推导闭式公式，而是
+用 `numDeriv::jacobian()` 数值计算 $A_{\beta\alpha}$，作用于一个把平均加权
+MSM 得分函数表达成 $\alpha$ 的函数：
+
+$$
+\bar\psi_\beta(\alpha)
+= \frac{1}{n} \sum_{i=1}^{n}
+  X_i \, w_i(\alpha) \,
+  \frac{(Y_i - \hat\mu_i)\,\mu'(\hat\eta_i)}{V(\hat\mu_i)}.
+$$
+
+除 $w_i(\alpha)$ 之外的一切都固定在 $\hat\beta$ 处。$\bar\psi_\beta$ 对 $\alpha$ 的
+Jacobian 为 $+\partial\bar\psi_\beta/\partial\alpha$，因此按负 Hessian 约定有：
+
+$$
+A_{\beta\alpha} = -\texttt{numDeriv::jacobian}(\bar\psi_\beta, \hat\alpha).
+$$
+
+```r
+phi_bar <- function(alpha) {
+  w_alpha <- weight_fn(alpha)
+  s_per_i <- w_alpha * mu_eta * r_fit / var_mu
+  as.numeric(crossprod(X_msm, s_per_i)) / n_fit
+}
+A_beta_alpha <- -numDeriv::jacobian(phi_bar, x = alpha_hat)
+```
+
+这里的 `weight_fn` 就是 @sec-closure 里的闭包，它编码了各干预特有的权重公式。
+只构建一次闭包并把它交给 `numDeriv::jacobian()`，我们就让所有干预类型的交叉
+导数共用同一条代码路径。
+
+### 数值验证 {#sec-verify-cross}
+
+causatr 的测试套件（`test-ipw-cross-derivative.R`）在闭式可得的静态二值情形下，
+用手工推导的解析公式校验数值算出的 $A_{\beta\alpha}$：
+
+$$
+(A_{\beta\alpha})_{j,k}
+= -\frac{1}{n}\sum_{i=1}^{n}
+  X_{i,j}^{\text{msm}} \cdot
+  \frac{(Y_i - \hat\mu_i)\,\mu'(\hat\eta_i)}{V(\hat\mu_i)} \cdot
+  \frac{\partial w_i}{\partial \alpha_k}.
+$$
+
+对于 Bernoulli 处理下的 `static(1)`（$w_i = A_i / p_i$）：
+
+$$
+\frac{\partial w_i}{\partial \alpha_k}
+= -\frac{A_i}{p_i^2} \cdot p_i(1-p_i) \cdot X_{i,k}^{\text{prop}}
+= -\frac{A_i(1-p_i)}{p_i} \cdot X_{i,k}^{\text{prop}}.
+$$
+
+对于 Gaussian 处理下的 `shift(delta)`（$w_i = \phi(a_i - \delta; \mu_i, \sigma) / \phi(a_i; \mu_i, \sigma)$）：
+
+$$
+\frac{\partial w_i}{\partial \alpha_k}
+= w_i \cdot \frac{\delta}{\sigma^2} \cdot X_{i,k}^{\text{prop}}.
+$$
+
+对于 Bernoulli 处理下的 IPSI：
+
+$$
+\frac{\partial w_i}{\partial \alpha_k}
+= \frac{(\delta A_i + 1 - A_i) \cdot (-1)(\delta - 1) \cdot p_i(1-p_i)}
+       {(\delta p_i + 1 - p_i)^2}
+  \cdot X_{i,k}^{\text{prop}}.
+$$
+
+该测试断言全部五条权重分支（static(1)、static(0)、shift、IPSI、自然进程）都在
+$\sim 10^{-6}$ 的容差内一致。
+
+::: {.panel-tabset}
+
+## 代码
+
+```r
+library(causatr)
+
+set.seed(42)
+n <- 200
+L <- rnorm(n)
+A <- rbinom(n, 1, plogis(0.5 * L))
+Y <- 2 + 3 * A + L + rnorm(n)
+dat <- data.table::data.table(Y = Y, A = A, L = L)
+
+fit <- causat(dat, outcome = "Y", treatment = "A", confounders = ~ L,
+              estimator = "ipw",
+              model_fn = stats::glm, propensity_model_fn = stats::glm)
+res <- contrast(fit, interventions = list(a1 = static(1), a0 = static(0)),
+                reference = "a0", ci_method = "sandwich")
+
+tm <- fit$details$treatment_model
+p <- as.numeric(stats::predict(tm$model, type = "response"))
+
+# Hand-derived dw/dalpha for static(1): -A*(1-p)/p * X_prop
+X_prop <- tm$X_prop
+dw_dalpha_hand <- sweep(X_prop, 1, -A * (1 - p) / p, "*")
+
+# Numerical dw/dalpha via the make_weight_fn closure
+wfn <- causatr:::make_weight_fn(tm, dat, static(1))
+dw_dalpha_num <- numDeriv::jacobian(wfn, x = tm$alpha_hat)
+
+max_diff <- max(abs(dw_dalpha_hand - dw_dalpha_num))
+```
+
+## 结果
+
+```r
+cat(sprintf(
+  "Max |hand - numerical| for dw/dalpha under static(1): %.2e\n",
+  max_diff
+))
+```
+
+:::
+
+## 4. 组装：IPW 下 $\hat\mu_a$ 的完整 IF {#sec-assembly}
+
+`compute_ipw_if_self_contained_one()` 为单个干预组装每个个体的影响
+函数。按照 `vignette("variance-theory")` 中的推导，三条通道是：
+
+$$
+\text{IF}_i(\hat\mu_a) =
+\underbrace{g^{-1}(X_i^{*T}\hat\beta) - \hat\mu_a}_{\text{Channel 1}}
++ \underbrace{J \, A_{\beta\beta}^{-1} \, \psi_{\beta,i}}_{\text{MSM correction}}
+- \underbrace{J \, A_{\beta\beta}^{-1} \, A_{\beta\alpha} \,
+  A_{\alpha\alpha}^{-1} \, \psi_{\alpha,i}}_{\text{propensity correction}}.
+$$
+
+注意倾向评分修正项前面是**减**号。它来自下三角 bread 矩阵的分块求逆：
+
+$$
+A^{-1} =
+\begin{pmatrix}
+A_{\alpha\alpha}^{-1} & 0 \\
+-A_{\beta\beta}^{-1} A_{\beta\alpha} A_{\alpha\alpha}^{-1} & A_{\beta\beta}^{-1}
+\end{pmatrix}.
+$$
+
+::: {.callout-note}
+### 符号约定
+
+`vignette("variance-theory")` 在写 IF 时给倾向评分修正项加的是**加**号，
+因为它采用 Wooldridge 的约定
+$A_{\beta\alpha}^W = +(1/n)\sum \partial\psi_\beta/\partial\alpha$，
+而代码采用负 Hessian 约定
+$A_{\beta\alpha} = -(1/n)\sum \partial\psi_\beta/\partial\alpha$。两者
+在 $A_{\beta\alpha}$ 上差一个符号，这会翻转复合后的符号。数值结果是一样的。
+:::
+
+### 实现走查
+
+1. **MSM 修正。** `prepare_model_if(msm_model)` + `apply_model_correction(msm_prep, J)` 给出
+   投影到梯度 $J$ 上的 $A_{\beta\beta}^{-1}\psi_{\beta,i}$。这与 G-computation 和匹配用的是同一个基本构件 ---
+   所有估计量共用一条代码路径。
+
+2. **交叉导数。** `numDeriv::jacobian(phi_bar, alpha_hat)` 用 @sec-closure 里的 `weight_fn` 闭包
+   数值地给出 $A_{\beta\alpha}$。
+   对含 $q$ 个参数的倾向评分模型，每步开销是 $O(n \cdot q)$ ---
+   每次扰动做一次矩阵乘法。
+
+3. **倾向评分修正。** 构造梯度
+   $g_{\text{prop}} = A_{\beta\alpha}^T \cdot h_{\text{msm}}$，其中
+   $h_{\text{msm}} = n \cdot A_{\beta\beta}^{-1} J$（$n$ 这个缩放是为了
+   配合 `bread_inv()` 返回的是原始的 $(X^TWX)^{-1}$）。然后
+   `apply_model_correction(prop_prep, g_prop)` 给出每个个体的
+   $g_{\text{prop}}^T A_{\alpha\alpha}^{-1} \psi_{\alpha,i}$
+   --- 也就是倾向评分通道。
+
+4. **组装。** `Ch1_i + msm_res$correction - prop_res$correction`。
+
+### 倾向评分修正什么时候才重要？
+
+对静态二值处理下的 ATE，倾向评分修正会**降低** SE
+[@lunceford2004stratification; @hirano2003efficient]。用估计出的倾向评分
+而不是已知的倾向评分更有效，所以朴素三明治方差（它忽略了倾向评分的
+不确定性）是保守的。
+
+对非静态干预，情况要更丰富：
+
+- **Shift：** 倾向评分修正通常让单个干预的 SE 下降 5--8%（堆叠
+  M-估计带来的负交叉项盖过了新增的倾向评分不确定性项）。
+- **IPSI：** 对单个干预的 SE 影响很小，但**对比**的 SE 可能大幅下降
+  （$\sim$90%），因为共享的倾向评分模型会在 IPSI 与自然进程
+  （natural course）的边际均值之间引入很大的正协方差。当你把两个共享
+  同样倾向评分噪声的边际均值相减时，噪声大部分会抵消。
+
+这两种效应都在 `test-ipw-variance-regression.R` 中得到验证，该测试断言
+基于完整 IF 的 SE 与 $J V_\beta J^T$ 捷径（它省略了倾向评分修正）
+有实质差异。
+
+## 5. 干预 × 分布族兼容性矩阵
+
+并非干预类型与处理分布族的每一种组合在密度比 IPW 下都有效。由
+`check_intervention_family_compat()` 强制执行的兼容性矩阵如下：
+
+| Intervention | Bernoulli | Gaussian | Categorical |
+|---|---|---|---|
+| `static()` | $\checkmark$ HT | $\times$ | $\checkmark$ HT |
+| `shift()` | $\times$ | $\checkmark$ 前推 | $\times$ |
+| `scale_by()` | $\times$ | $\checkmark$ 前推 | $\times$ |
+| `threshold()` | $\times$ | $\times$ | $\times$ |
+| `dynamic()` | $\checkmark$ HT | $\times$ | $\checkmark$ HT |
+| `ipsi()` | $\checkmark$ Kennedy | $\times$ | $\times$ |
+
+每一个 $\times$ 都有植根于密度比框架的具体原因：
+
+- **`static(v)` 用于连续处理**：对连续处理而言，HT 示性函数 $\mathbb{1}\{A_i = v\}$
+  几乎必然为零。
+- **`shift()` / `scale_by()` 用于离散处理**：因子没有加法或乘法结构。
+- **`threshold()` 用于连续处理**：前推是混合测度（在截断边界处存在点质量），
+  因此这个比值没有 Lebesgue 密度。
+- **`dynamic()` 用于连续处理**：逐个体的确定性规则对每个个体都是一个 Dirac 测度，
+  与 `threshold()` 有相同的前推退化问题。
+- **`ipsi()` 用于非二值处理**：Kennedy [-@kennedy2019ipsi] 的闭式公式
+  (@eq-ipsi-weight) 只适用于 Bernoulli。
+
+每一处拒绝都会提示用户改用正确的替代方案（通常是 `estimator = "gcomp"`
+或某个光滑的 MTP 构造函数）。
+
+## 参考文献
+
+::: {#refs}
+:::
+

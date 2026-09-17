@@ -1,0 +1,1894 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hans" xml:lang="zh-Hans"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>使用 causatr 的结构嵌套均值模型 – 因果推断读书笔记</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+  margin-bottom: 0em;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../notes/causatr-interventions.html" rel="next">
+<link href="../notes/causatr-matching.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-4571e413af9019dfdcc70175faf53a1f.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-6dc1a78ab6bae0d3eba54bf33535cf80.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-6382e9162de9198f964ae53196d3447c.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-6dc1a78ab6bae0d3eba54bf33535cf80.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "没有结果",
+    "search-matching-documents-text": "匹配的文档",
+    "search-copy-link-title": "复制搜索链接",
+    "search-hide-matches-text": "隐藏其它匹配结果",
+    "search-more-match-text": "更多匹配结果",
+    "search-more-matches-text": "更多匹配结果",
+    "search-clear-button-title": "清除",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "取消",
+    "search-submit-button-title": "提交",
+    "search-label": "搜索"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar docked quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../notes/causatr-introduction.html">causatr 官方文档中译</a></li><li class="breadcrumb-item"><a href="../notes/causatr-snm.html"><span class="chapter-title">使用 causatr 的结构嵌套均值模型</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="搜索" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header sidebar-header-stacked">
+      <a href="../index.html" class="sidebar-logo-link">
+      </a>
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../">因果推断读书笔记</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/HUI950319/causalR" title="源代码" class="quarto-navigation-tool px-1" aria-label="源代码"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="切换深色模式"><i class="bi"></i></a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="搜索"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">关于这份笔记</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-logic-chain.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">前三章逻辑链</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/notation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">记号与约定</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/identifiability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">三条识别条件</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/formulas.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">公式卡</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">阶段一 · 估计量全景</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-potential-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 1 章 · Zeus 的心脏移植</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-randomized-experiments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 2 章 · 一枚硬币，还是两枚</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-observational-studies.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 3 章 · 一枚硬币也没抛</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-effect-modification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 4 章 · 没有「治疗的因果效应」这种东西</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w01-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 5 章 · 两个处理，一起动手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-causal-diagrams.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 6 章 · 先画假设，再下结论</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-confounding.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 7 章 · 后门关上，可交换性才回来</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-selection-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 8 章 · 进了分析的人，未必还能互换</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-measurement-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 9 章 · 带星号的变量，与担不起因果的箭头</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w02-random-variability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 10 章 · 该不该撤稿</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">原书第二部分 · 有模型的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w03-why-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 11 章 · 数据不会自己说话</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w03-ip-weighting-msm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w04-standardization-gformula.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 13 章 · 把模型挪到结局那一侧</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w04-g-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 14 章 · 猜一个数，直到它与处理无关</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w05-outcome-regression-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 15 章 · 最常用的方法，为什么排在最后</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w05-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 16 章 · 不要求可交换性的那条路</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w06-causal-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 17 章 · 风险比里藏着一个碰撞变量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w06-variable-selection.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 18 章 · 调整得越多，不等于偏倚越小</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">原书第三部分 · 时变处理的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w07-time-varying-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 19 章 · 先说清策略，才有效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w07-treatment-confounder-feedback.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 20 章 · 调了混杂，反而更错</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w08-g-methods-time-varying.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 21 章 · 三条路线，同一个 0</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w11-target-trial-emulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 22 章 · 先写协议，再看数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/w11-causal-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 23 章 · 把中介问题改写成能做的试验</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">郑老师因果推理课程讲义</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/course-zheng-overview.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">课程讲义总览</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/course-zheng-w01.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W01 · 因果推断理论与方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/course-zheng-w02.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W02 · DAG 与回归、反事实与 G 计算</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/course-zheng-w03.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W03 · 倾向得分方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/course-zheng-w04.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W04 · 机器学习与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/course-zheng-w05.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W05 · 双重稳健估计与双重机器学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/course-zheng-w06.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W06 · TMLE 及其衍生方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/course-zheng-w07.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W07 · 缺失数据与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/course-zheng-w08.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W08 · 中介分析与因果中介</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/course-zheng-w09.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W09 · 处理效应异质性分析</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
+ <span class="menu-text">causatr 官方文档中译</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-introduction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 介绍</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-gcomp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的 G-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-ipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的逆概率加权</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-aipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的增强 IPW（双稳健估计）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的倾向评分匹配</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-snm.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">使用 causatr 的结构嵌套均值模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-interventions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 中的干预类型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-natural-history-mtps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">自然历史修改处理政策（宽限期）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-triangulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">方法论三角：g-computation、IPW、AIPW、匹配和 SNM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-longitudinal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">纵向处理：ICE g-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-transportability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">可转运性和可推广性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-missing-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">处理缺失数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-diagnostics.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的诊断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-validation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">针对参考实现的验证</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果效应的方差估计</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../notes/causatr-ipw-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IPW 密度比权重和方差理论</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">目录</h2>
+   
+  <ul>
+  <li><a href="#snm-估计什么msm-又估计什么" id="toc-snm-估计什么msm-又估计什么" class="nav-link active" data-scroll-target="#snm-估计什么msm-又估计什么">SNM 估计什么，MSM 又估计什么</a>
+  <ul class="collapse">
+  <li><a href="#一个共享的-dgp" id="toc-一个共享的-dgp" class="nav-link" data-scroll-target="#一个共享的-dgp">一个共享的 DGP</a></li>
+  <li><a href="#msm-的问题干预之下会发生什么" id="toc-msm-的问题干预之下会发生什么" class="nav-link" data-scroll-target="#msm-的问题干预之下会发生什么">MSM 的问题：干预之下会发生什么？</a></li>
+  <li><a href="#snm-的问题处理效应的结构是什么" id="toc-snm-的问题处理效应的结构是什么" class="nav-link" data-scroll-target="#snm-的问题处理效应的结构是什么">SNM 的问题：处理效应的结构是什么？</a></li>
+  <li><a href="#把两者联系起来" id="toc-把两者联系起来" class="nav-link" data-scroll-target="#把两者联系起来">把两者联系起来</a></li>
+  <li><a href="#建模框架何时才重要" id="toc-建模框架何时才重要" class="nav-link" data-scroll-target="#建模框架何时才重要">建模框架何时才重要？</a></li>
+  </ul></li>
+  <li><a href="#何时必须使用-snm" id="toc-何时必须使用-snm" class="nav-link" data-scroll-target="#何时必须使用-snm">何时必须使用 SNM？</a>
+  <ul class="collapse">
+  <li><a href="#dgp" id="toc-dgp" class="nav-link" data-scroll-target="#dgp">DGP</a></li>
+  <li><a href="#ipw-msm有偏倚" id="toc-ipw-msm有偏倚" class="nav-link" data-scroll-target="#ipw-msm有偏倚">IPW-MSM：有偏倚</a></li>
+  <li><a href="#snm-g-估计正确" id="toc-snm-g-估计正确" class="nav-link" data-scroll-target="#snm-g-估计正确">SNM g-估计：正确</a></li>
+  <li><a href="#平均-blip-效应" id="toc-平均-blip-效应" class="nav-link" data-scroll-target="#平均-blip-效应">平均 blip 效应</a></li>
+  <li><a href="#可视化偏倚" id="toc-可视化偏倚" class="nav-link" data-scroll-target="#可视化偏倚">可视化偏倚</a></li>
+  </ul></li>
+  <li><a href="#基本用法" id="toc-基本用法" class="nav-link" data-scroll-target="#基本用法">基本用法</a>
+  <ul class="collapse">
+  <li><a href="#带效应修饰的单时点处理" id="toc-带效应修饰的单时点处理" class="nav-link" data-scroll-target="#带效应修饰的单时点处理">带效应修饰的单时点处理</a></li>
+  <li><a href="#连续处理" id="toc-连续处理" class="nav-link" data-scroll-target="#连续处理">连续处理</a></li>
+  <li><a href="#用-treatment-free-模型提升有效性" id="toc-用-treatment-free-模型提升有效性" class="nav-link" data-scroll-target="#用-treatment-free-模型提升有效性">用 treatment-free 模型提升有效性</a></li>
+  </ul></li>
+  <li><a href="#解释" id="toc-解释" class="nav-link" data-scroll-target="#解释">解释</a></li>
+  <li><a href="#与其他估计量的主要区别" id="toc-与其他估计量的主要区别" class="nav-link" data-scroll-target="#与其他估计量的主要区别">与其他估计量的主要区别</a></li>
+  <li><a href="#纵向-snm" id="toc-纵向-snm" class="nav-link" data-scroll-target="#纵向-snm">纵向 SNM</a>
+  <ul class="collapse">
+  <li><a href="#带时变效应修饰的两期-dgp" id="toc-带时变效应修饰的两期-dgp" class="nav-link" data-scroll-target="#带时变效应修饰的两期-dgp">带时变效应修饰的两期 DGP</a></li>
+  </ul></li>
+  <li><a href="#分类处理" id="toc-分类处理" class="nav-link" data-scroll-target="#分类处理">分类处理</a></li>
+  <li><a href="#计数处理" id="toc-计数处理" class="nav-link" data-scroll-target="#计数处理">计数处理</a></li>
+  <li><a href="#bootstrap-置信区间" id="toc-bootstrap-置信区间" class="nav-link" data-scroll-target="#bootstrap-置信区间">Bootstrap 置信区间</a></li>
+  <li><a href="#查看结果" id="toc-查看结果" class="nav-link" data-scroll-target="#查看结果">查看结果</a></li>
+  <li><a href="#参考文献" id="toc-参考文献" class="nav-link" data-scroll-target="#参考文献">参考文献</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/causatr-snm.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../notes/causatr-introduction.html">causatr 官方文档中译</a></li><li class="breadcrumb-item"><a href="../notes/causatr-snm.html"><span class="chapter-title">使用 causatr 的结构嵌套均值模型</span></a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-title">使用 causatr 的结构嵌套均值模型</span></h1>
+<p class="subtitle lead"><em>Structural nested mean models with causatr</em> · causatr 官方文档中译</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<blockquote class="blockquote">
+<p><strong>来源</strong>：R 包 <a href="https://github.com/etverse/causatr">causatr</a> 官方文档 <a href="https://etverse.github.io/causatr/vignettes/snm.html"><code>snm.qmd</code></a>，MIT 许可。 本页是中译，<strong>代码与运行结果直接取自原站的渲染输出，未在本站重新执行</strong>。 Copyright (c) 2026 causatr authors；许可证全文见原仓库 <code>LICENSE.md</code>。</p>
+</blockquote>
+<p>结构嵌套均值模型（SNMM）是 Robins 三角的第三条边——另外两条是 g-formula（G-computation/ICE）和逆概率加权（IPW-MSM）。它们估计的是 <strong>blip 参数</strong>，用来刻画每个时间点上的处理在给定协变量的条件下如何因果地改变结局。</p>
+<p>最重要的特性是：SNMM 能正确处理<strong>时变效应修饰</strong>——即效应修饰变量本身受处理影响。IPW-MSM 和匹配要求效应修饰变量必须是基线（处理前）变量；在 MSM 中对处理后的效应修饰变量做条件化，会打开对撞路径并使估计目标产生偏倚 <span class="citation" data-cites="robins2000msmvssnm">(<a href="causatr-introduction.html#ref-robins2000msmvssnm" role="doc-biblioref">Robins 2000</a>)</span>。SNMM 只要处理模型设定正确就能识别 blip，因此处理后的效应修饰变量是合法的 <span class="citation" data-cites="vansteelandt2014snm">(<a href="causatr-introduction.html#ref-vansteelandt2014snm" role="doc-biblioref">Vansteelandt 和 Joffe 2014</a>)</span>。</p>
+<section id="snm-估计什么msm-又估计什么" class="level2">
+<h2 class="anchored" data-anchor-id="snm-估计什么msm-又估计什么">SNM 估计什么，MSM 又估计什么</h2>
+<p>在深入到只有 SNM 才管用的场景之前，先看清它们<em>不同</em>在哪里会很有帮助——哪怕在两类估计量都完全有效的场景里也是如此。</p>
+<p>核心区别在于 <span class="citation" data-cites="robins2000msmvssnm">(<a href="causatr-introduction.html#ref-robins2000msmvssnm" role="doc-biblioref">Robins 2000</a>)</span>：</p>
+<ul>
+<li><strong>MSM</strong> 回答的是：“如果所有人都接受处理 <span class="math inline">\(a\)</span>，总体的平均结局会是多少？”其估计目标是 <span class="math inline">\(E[Y(a)]\)</span>，一个边际反事实均值。</li>
+<li><strong>SNM</strong> 回答的是：“实际接受的处理带来的因果效应是多少，它如何随协变量变化？”其估计目标是 <strong>blip 函数</strong> <span class="math inline">\(\gamma(a, \ell; \psi) = E[Y(a) - Y(0) \mid A = a, L = \ell]\)</span>，一个条件处理效应结构。</li>
+</ul>
+<p>两者编码的是同一个底层因果真相，只是透镜不同。MSM 给出的是假想方案下汇总层面的潜在结局。SNM 给出的是处理效应的<em>架构</em>——它如何在不同协变量层之间变化。</p>
+<section id="一个共享的-dgp" class="level3">
+<h3 class="anchored" data-anchor-id="一个共享的-dgp">一个共享的 DGP</h3>
+<p>考虑一个简单的点处理设定，带一个基线二值效应修饰变量 <span class="math inline">\(M\)</span>：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(causatr)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1800</span>)</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">5000</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>L <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>M <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fl">0.5</span>)</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>A <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fu">plogis</span>(<span class="fl">0.3</span> <span class="sc">*</span> L <span class="sc">+</span> <span class="fl">0.2</span> <span class="sc">*</span> M))</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>Y <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> A <span class="sc">+</span> <span class="dv">3</span> <span class="sc">*</span> A <span class="sc">*</span> M <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> L <span class="sc">+</span> <span class="fl">0.8</span> <span class="sc">*</span> M <span class="sc">+</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> data.table<span class="sc">::</span><span class="fu">data.table</span>(<span class="at">Y =</span> Y, <span class="at">A =</span> A, <span class="at">L =</span> L, <span class="at">M =</span> M)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p>结构性真值：</p>
+<ul>
+<li>Blip：<span class="math inline">\(\gamma(A, M; \psi) = A \cdot (\psi_0 + \psi_M \cdot M)\)</span>，其中 <span class="math inline">\(\psi_0 = 2\)</span>、<span class="math inline">\(\psi_M = 3\)</span>。</li>
+<li>当 <span class="math inline">\(M = 0\)</span> 时：处理效应为 <span class="math inline">\(2\)</span>。</li>
+<li>当 <span class="math inline">\(M = 1\)</span> 时：处理效应为 <span class="math inline">\(2 + 3 = 5\)</span>。</li>
+<li>边际 ATE：<span class="math inline">\(\psi_0 + \psi_M \cdot P(M = 1) = 2 + 3 \times 0.5 = 3.5\)</span>。</li>
+</ul>
+<p>这三个数字都是对同一个 DGP 的正确描述。问题只在于你想要哪种表述方式。</p>
+</section>
+<section id="msm-的问题干预之下会发生什么" class="level3">
+<h3 class="anchored" data-anchor-id="msm-的问题干预之下会发生什么">MSM 的问题：干预之下会发生什么？</h3>
+<p>G-computation 和 IPW-MSM 都是先对每个干预方案计算反事实均值 <span class="math inline">\(\hat{E}[Y(a)]\)</span>，再把它们做对比。输出是一个 ATE——单个汇总数字：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>fit_gc <span class="ot">&lt;-</span> <span class="fu">causat</span>(d, <span class="at">outcome =</span> <span class="st">"Y"</span>, <span class="at">treatment =</span> <span class="st">"A"</span>,</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>                 <span class="at">confounders =</span> <span class="sc">~</span> L <span class="sc">+</span> M <span class="sc">+</span> A<span class="sc">:</span>M, <span class="at">estimator =</span> <span class="st">"gcomp"</span>,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>                 <span class="at">model_fn =</span> stats<span class="sc">::</span>glm)</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>r_gc <span class="ot">&lt;-</span> <span class="fu">contrast</span>(fit_gc,</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>                 <span class="at">interventions =</span> <span class="fu">list</span>(<span class="at">a1 =</span> <span class="fu">static</span>(<span class="dv">1</span>), <span class="at">a0 =</span> <span class="fu">static</span>(<span class="dv">0</span>)),</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>                 <span class="at">type =</span> <span class="st">"difference"</span>, <span class="at">ci_method =</span> <span class="st">"sandwich"</span>)</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>r_gc<span class="sc">$</span>contrasts</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;    comparison  estimate         se  ci_lower  ci_upper</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;        &lt;char&gt;     &lt;num&gt;      &lt;num&gt;     &lt;num&gt;     &lt;num&gt;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1:   a0 vs a1 -3.535713 0.03569227 -3.605668 -3.465757</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p>G-computation 的估计值给出 <span class="math inline">\(\widehat{\text{ATE}} \approx 3.5\)</span>，即正确的边际处理效应。它回答的是：“平均而言，处理有多大帮助？”</p>
+<p>要揭示各亚组特有的效应，MSM/G-computation 这条路线可以用 <code>by</code> 做分层：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>r_gc_by <span class="ot">&lt;-</span> <span class="fu">contrast</span>(fit_gc,</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>                    <span class="at">interventions =</span> <span class="fu">list</span>(<span class="at">a1 =</span> <span class="fu">static</span>(<span class="dv">1</span>), <span class="at">a0 =</span> <span class="fu">static</span>(<span class="dv">0</span>)),</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>                    <span class="at">type =</span> <span class="st">"difference"</span>, <span class="at">ci_method =</span> <span class="st">"sandwich"</span>,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>                    <span class="at">by =</span> <span class="st">"M"</span>)</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>r_gc_by<span class="sc">$</span>contrasts</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;    comparison  estimate         se  ci_lower  ci_upper     by  n_by</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;        &lt;char&gt;     &lt;num&gt;      &lt;num&gt;     &lt;num&gt;     &lt;num&gt; &lt;char&gt; &lt;int&gt;</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1:   a0 vs a1 -1.977829 0.03973574 -2.055709 -1.899948      0  2493</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2:   a0 vs a1 -5.084897 0.03959283 -5.162498 -5.007297      1  2507</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p>现在我们看到了各亚组特有的 ATE：<span class="math inline">\(M = 0\)</span> 时为 <span class="math inline">\(\approx 2\)</span>，<span class="math inline">\(M = 1\)</span> 时为 <span class="math inline">\(\approx
+5\)</span>。但这些仍然是反事实均值之差——MSM 框架里没有任何单个参数直接代表效应修饰。你得把估计量跑两遍（或者用 <code>by</code>），再靠肉眼比较各亚组的估计值。效应修饰本身是一个<em>派生</em>量，而不是模型参数。</p>
+</section>
+<section id="snm-的问题处理效应的结构是什么" class="level3">
+<h3 class="anchored" data-anchor-id="snm-的问题处理效应的结构是什么">SNM 的问题：处理效应的结构是什么？</h3>
+<p>SNM 直接估计 blip 参数 <span class="math inline">\(\psi\)</span>，它以协变量的函数形式描述处理如何改变结局：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>fit_snm <span class="ot">&lt;-</span> <span class="fu">causat</span>(d, <span class="at">outcome =</span> <span class="st">"Y"</span>, <span class="at">treatment =</span> <span class="st">"A"</span>,</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>                  <span class="at">confounders_outcome =</span> <span class="sc">~</span> L <span class="sc">+</span> M <span class="sc">+</span> A<span class="sc">:</span>M,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>                  <span class="at">confounders_treatment =</span> <span class="sc">~</span> L <span class="sc">+</span> M,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>                  <span class="at">estimator =</span> <span class="st">"snm"</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>                  <span class="at">treatment_free =</span> <span class="sc">~</span> L <span class="sc">+</span> M)</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Warning: `propensity_model_fn` not specified; defaulting to `stats::glm`.</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ Set `propensity_model_fn` explicitly if you need a different fitter (e.g. `mgcv::gam`).</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>r_snm <span class="ot">&lt;-</span> <span class="fu">contrast</span>(fit_snm, <span class="at">ci_method =</span> <span class="st">"sandwich"</span>)</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>r_snm<span class="sc">$</span>estimates</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;        parameter estimate         se ci_lower ci_upper</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;           &lt;char&gt;    &lt;num&gt;      &lt;num&gt;    &lt;num&gt;    &lt;num&gt;</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1: psi_intercept 1.984661 0.04000629 1.906250 2.063072</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2:         psi_M 3.093240 0.05641067 2.982677 3.203803</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p>SNM 的输出不是反事实均值，也不是不同干预方案之间的对比。它就是<strong>效应修饰结构本身</strong>：<span class="math inline">\(\hat\psi_0 \approx 2\)</span> （<span class="math inline">\(M = 0\)</span> 时的效应）和 <span class="math inline">\(\hat\psi_M \approx 3\)</span>（<span class="math inline">\(M = 1\)</span> 时的额外效应）。这些量可以直接解释：</p>
+<ul>
+<li>处理对所有人都有益（<span class="math inline">\(\psi_0 &gt; 0\)</span>），但在 <span class="math inline">\(M = 1\)</span> 时益处大得多（<span class="math inline">\(\psi_M &gt; 0\)</span>， 而 <span class="math inline">\(z\)</span> 检验（针对 <span class="math inline">\(\psi_M\)</span>）就是效应修饰的直接检验）。</li>
+<li>不需要事后分层，也不需要亚组比较——blip 参数<em>就是</em>效应修饰的估计值。</li>
+</ul>
+</section>
+<section id="把两者联系起来" class="level3">
+<h3 class="anchored" data-anchor-id="把两者联系起来">把两者联系起来</h3>
+<p>MSM 的边际 ATE 和 SNM 的 blip 参数编码的是同一个因果事实。平均后的 blip，<span class="math inline">\(\Delta = (a_1 - a_0) \cdot (\hat\psi_0 + \hat\psi_M
+\cdot \bar{M})\)</span>，可以还原出 MSM 的 ATE：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>r_avg <span class="ot">&lt;-</span> <span class="fu">contrast</span>(fit_snm, <span class="at">treatment_values =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>))</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>r_avg<span class="sc">$</span>estimates</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;          parameter estimate         se ci_lower ci_upper</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;             &lt;char&gt;    &lt;num&gt;      &lt;num&gt;    &lt;num&gt;    &lt;num&gt;</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1: avg_blip_effect 3.535611 0.02820541  3.48033 3.590893</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p>平均后的 blip 估计值（<span class="math inline">\(\approx 3.5\)</span>）与 G-computation 的估计值一致。SNM 把这个平均值 分解为各个组成部分；MSM 则直接报告合成后的结果。</p>
+<p>下图把全部六个估计值并排展示。G-computation（MSM）面板报告三个聚合层次上的反事实 均值之差；SNM（blip）面板报告结构效应参数。两者都还原了真值（虚线），只是透过了不同 的视角：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>comp_df <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">estimator =</span> <span class="fu">factor</span>(</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">rep</span>(<span class="fu">c</span>(<span class="st">"G-comp (MSM)"</span>, <span class="st">"SNM (blip)"</span>), <span class="at">each =</span> <span class="dv">3</span>),</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"G-comp (MSM)"</span>, <span class="st">"SNM (blip)"</span>)</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>  ),</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">parameter =</span> <span class="fu">factor</span>(</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">c</span>(<span class="st">"Marginal ATE"</span>, <span class="st">"ATE | M = 0"</span>, <span class="st">"ATE | M = 1"</span>,</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>      <span class="st">"Averaged blip"</span>, <span class="st">"psi_0 (intercept)"</span>, <span class="st">"psi_M (modifier)"</span>),</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"psi_M (modifier)"</span>, <span class="st">"psi_0 (intercept)"</span>, <span class="st">"Averaged blip"</span>,</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>               <span class="st">"ATE | M = 1"</span>, <span class="st">"ATE | M = 0"</span>, <span class="st">"Marginal ATE"</span>)</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>  ),</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">estimate =</span> <span class="fu">c</span>(<span class="sc">-</span>r_gc<span class="sc">$</span>contrasts<span class="sc">$</span>estimate[<span class="dv">1</span>],</span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>               <span class="sc">-</span>r_gc_by<span class="sc">$</span>contrasts<span class="sc">$</span>estimate[<span class="dv">1</span>],</span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>               <span class="sc">-</span>r_gc_by<span class="sc">$</span>contrasts<span class="sc">$</span>estimate[<span class="dv">2</span>],</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>               r_avg<span class="sc">$</span>estimates<span class="sc">$</span>estimate[<span class="dv">1</span>],</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>               r_snm<span class="sc">$</span>estimates<span class="sc">$</span>estimate[<span class="dv">1</span>],</span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>               r_snm<span class="sc">$</span>estimates<span class="sc">$</span>estimate[<span class="dv">2</span>]),</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>  <span class="at">ci_lower =</span> <span class="fu">c</span>(<span class="sc">-</span>r_gc<span class="sc">$</span>contrasts<span class="sc">$</span>ci_upper[<span class="dv">1</span>],</span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>               <span class="sc">-</span>r_gc_by<span class="sc">$</span>contrasts<span class="sc">$</span>ci_upper[<span class="dv">1</span>],</span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>               <span class="sc">-</span>r_gc_by<span class="sc">$</span>contrasts<span class="sc">$</span>ci_upper[<span class="dv">2</span>],</span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>               r_avg<span class="sc">$</span>estimates<span class="sc">$</span>ci_lower[<span class="dv">1</span>],</span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>               r_snm<span class="sc">$</span>estimates<span class="sc">$</span>ci_lower[<span class="dv">1</span>],</span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>               r_snm<span class="sc">$</span>estimates<span class="sc">$</span>ci_lower[<span class="dv">2</span>]),</span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>  <span class="at">ci_upper =</span> <span class="fu">c</span>(<span class="sc">-</span>r_gc<span class="sc">$</span>contrasts<span class="sc">$</span>ci_lower[<span class="dv">1</span>],</span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a>               <span class="sc">-</span>r_gc_by<span class="sc">$</span>contrasts<span class="sc">$</span>ci_lower[<span class="dv">1</span>],</span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a>               <span class="sc">-</span>r_gc_by<span class="sc">$</span>contrasts<span class="sc">$</span>ci_lower[<span class="dv">2</span>],</span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a>               r_avg<span class="sc">$</span>estimates<span class="sc">$</span>ci_upper[<span class="dv">1</span>],</span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a>               r_snm<span class="sc">$</span>estimates<span class="sc">$</span>ci_upper[<span class="dv">1</span>],</span>
+<span id="cb6-29"><a href="#cb6-29" aria-hidden="true" tabindex="-1"></a>               r_snm<span class="sc">$</span>estimates<span class="sc">$</span>ci_upper[<span class="dv">2</span>]),</span>
+<span id="cb6-30"><a href="#cb6-30" aria-hidden="true" tabindex="-1"></a>  <span class="at">truth =</span> <span class="fu">c</span>(<span class="fl">3.5</span>, <span class="dv">2</span>, <span class="dv">5</span>, <span class="fl">3.5</span>, <span class="dv">2</span>, <span class="dv">3</span>)</span>
+<span id="cb6-31"><a href="#cb6-31" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb6-32"><a href="#cb6-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-33"><a href="#cb6-33" aria-hidden="true" tabindex="-1"></a>tinyplot<span class="sc">::</span><span class="fu">tinyplot</span>(</span>
+<span id="cb6-34"><a href="#cb6-34" aria-hidden="true" tabindex="-1"></a>  estimate <span class="sc">~</span> parameter <span class="sc">|</span> estimator,</span>
+<span id="cb6-35"><a href="#cb6-35" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> comp_df,</span>
+<span id="cb6-36"><a href="#cb6-36" aria-hidden="true" tabindex="-1"></a>  <span class="at">type =</span> <span class="st">"pointrange"</span>,</span>
+<span id="cb6-37"><a href="#cb6-37" aria-hidden="true" tabindex="-1"></a>  <span class="at">ymin =</span> comp_df<span class="sc">$</span>ci_lower,</span>
+<span id="cb6-38"><a href="#cb6-38" aria-hidden="true" tabindex="-1"></a>  <span class="at">ymax =</span> comp_df<span class="sc">$</span>ci_upper,</span>
+<span id="cb6-39"><a href="#cb6-39" aria-hidden="true" tabindex="-1"></a>  <span class="at">pch =</span> <span class="dv">19</span>,</span>
+<span id="cb6-40"><a href="#cb6-40" aria-hidden="true" tabindex="-1"></a>  <span class="at">ylab =</span> <span class="st">"Estimate (95% CI)"</span>,</span>
+<span id="cb6-41"><a href="#cb6-41" aria-hidden="true" tabindex="-1"></a>  <span class="at">xlab =</span> <span class="st">""</span>,</span>
+<span id="cb6-42"><a href="#cb6-42" aria-hidden="true" tabindex="-1"></a>  <span class="at">main =</span> <span class="st">"Same DGP, different questions"</span>,</span>
+<span id="cb6-43"><a href="#cb6-43" aria-hidden="true" tabindex="-1"></a>  <span class="at">palette =</span> <span class="st">"dark2"</span>,</span>
+<span id="cb6-44"><a href="#cb6-44" aria-hidden="true" tabindex="-1"></a>  <span class="at">axes =</span> <span class="st">"l"</span></span>
+<span id="cb6-45"><a href="#cb6-45" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="causatr-figs/snm-fig-msm-vs-snm-1.png" class="img-fluid figure-img"></p>
+<figcaption>Pointrange plot comparing g-comp (MSM) and SNM estimates from the same DGP. The MSM panel shows marginal ATE and subgroup-specific ATEs; the SNM panel shows blip parameters and the averaged blip. All estimates bracket the true values.</figcaption>
+</figure>
+</div>
+<p>亚组特异的 MSM 估计值（<span class="math inline">\(\text{ATE} \mid M = 0\)</span> 与 <span class="math inline">\(\text{ATE}
+\mid M = 1\)</span>）对应于在各个修饰因子水平上取值的 blip。但这个映射是单向的：你总是可以把 blip 参数聚合成 ATE，却无法在不指定 blip 模型的情况下把 ATE 分解成 blip 参数。</p>
+</section>
+<section id="建模框架何时才重要" class="level3">
+<h3 class="anchored" data-anchor-id="建模框架何时才重要">建模框架何时才重要？</h3>
+<p>在这个简单的基线修饰因子情形里，两种估计量都可用，选择取决于你想报告 什么：</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Goal</th>
+<th>Better tool</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>群体层面的处理策略决策</td>
+<td>MSM（各方案下的反事实均值）</td>
+</tr>
+<tr class="even">
+<td>理解<em>谁从处理中获益最多</em></td>
+<td>SNM（blip 参数直接刻画异质性）</td>
+</tr>
+<tr class="odd">
+<td>效应修饰的正式检验</td>
+<td>SNM（针对 <span class="math inline">\(\psi_M\)</span> 的 <span class="math inline">\(z\)</span> 检验）</td>
+</tr>
+<tr class="even">
+<td>特定干预下的剂量-反应</td>
+<td>MSM 配合 <code>shift()</code> 或 <code>scale_by()</code></td>
+</tr>
+<tr class="odd">
+<td>最优处理规则（DTR）估计</td>
+<td>SNM（blip 的符号决定最优分配）</td>
+</tr>
+</tbody>
+</table>
+<p>下一节展示 SNM 不只是方便、而是<strong>必需</strong>的场景：修饰因子本身受处理影响。 在那里，MSM 只要纳入 <span class="math inline">\(M\)</span> 就会引入对撞偏倚，而 SNM 天然能处理这种情形。</p>
+</section>
+</section>
+<section id="何时必须使用-snm" class="level2">
+<h2 class="anchored" data-anchor-id="何时必须使用-snm">何时必须使用 SNM？</h2>
+<p>当你的研究问题涉及<strong>由一个本身受处理影响的变量带来的效应修饰</strong>时，标准 估计量会给出有偏倚的结果。本节用一个模拟 DGP 演示这个问题，并说明 SNM g-估计能还原真值。</p>
+<section id="dgp" class="level3">
+<h3 class="anchored" data-anchor-id="dgp">DGP</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1801</span>)</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">5000</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>L <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>A <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n, <span class="at">mean =</span> <span class="fl">0.5</span> <span class="sc">*</span> L, <span class="at">sd =</span> <span class="dv">1</span>)</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="co"># M is post-treatment: it depends on A</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>M <span class="ot">&lt;-</span> <span class="fl">0.3</span> <span class="sc">*</span> A <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> L <span class="sc">+</span> <span class="fu">rnorm</span>(n, <span class="at">sd =</span> <span class="fu">sqrt</span>(<span class="fl">0.5</span>))</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Y depends on A, L, and the A*M interaction</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>Y <span class="ot">&lt;-</span> <span class="dv">2</span> <span class="sc">+</span> <span class="dv">3</span> <span class="sc">*</span> A <span class="sc">+</span> <span class="fl">1.5</span> <span class="sc">*</span> L <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> A <span class="sc">*</span> M <span class="sc">+</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> data.table<span class="sc">::</span><span class="fu">data.table</span>(<span class="at">Y =</span> Y, <span class="at">A =</span> A, <span class="at">L =</span> L, <span class="at">M =</span> M)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p>结构 blip 为 <span class="math inline">\(\gamma(a, m; \psi) = a \cdot (\psi_0 + \psi_M \cdot m)\)</span>， 真值是 <span class="math inline">\(\psi_0 = 3\)</span> 与 <span class="math inline">\(\psi_M = 2\)</span>。</p>
+</section>
+<section id="ipw-msm有偏倚" class="level3">
+<h3 class="anchored" data-anchor-id="ipw-msm有偏倚">IPW-MSM：有偏倚</h3>
+<p>当我们在 IPW-MSM 中把 M 作为效应修饰纳入时，估计量就以 A 的后代为条件。 这会打开一条非因果通路，产生严重偏倚的估计值：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>fit_ipw <span class="ot">&lt;-</span> <span class="fu">causat</span>(d, <span class="at">outcome =</span> <span class="st">"Y"</span>, <span class="at">treatment =</span> <span class="st">"A"</span>,</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>                  <span class="at">confounders =</span> <span class="sc">~</span> L <span class="sc">+</span> A<span class="sc">:</span>M, <span class="at">estimator =</span> <span class="st">"ipw"</span>)</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Warning: `model_fn` not specified; defaulting to `stats::glm`.</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ Set `model_fn` explicitly (e.g. `model_fn = stats::glm` or `model_fn = mgcv::gam`).</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Warning: `propensity_model_fn` not specified; defaulting to `stats::glm`.</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ Set `propensity_model_fn` explicitly if you need a different fitter (e.g. `mgcv::gam`).</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>r_ipw <span class="ot">&lt;-</span> <span class="fu">contrast</span>(fit_ipw,</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>                  <span class="at">interventions =</span> <span class="fu">list</span>(<span class="at">a1 =</span> <span class="fu">shift</span>(<span class="dv">1</span>), <span class="at">a0 =</span> <span class="fu">shift</span>(<span class="dv">0</span>)),</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>                  <span class="at">type =</span> <span class="st">"difference"</span>)</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>r_ipw<span class="sc">$</span>contrasts</span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;    comparison  estimate         se  ci_lower  ci_upper</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;        &lt;char&gt;     &lt;num&gt;      &lt;num&gt;     &lt;num&gt;     &lt;num&gt;</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1:   a0 vs a1 -2.049563 0.07879844 -2.204005 -1.895121</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p>由于 <span class="math inline">\(M = 0.3A + 0.5L + \epsilon\)</span>，且 <span class="math inline">\(A\)</span> 与 <span class="math inline">\(L\)</span> 的均值都为零，所以 <span class="math inline">\(\bar{M}
+\approx 0\)</span>，真实的平均 blip 为 <span class="math inline">\(\approx 3 + 2 \times 0 = 3\)</span>。IPW 估计值 明显偏离这个数值。</p>
+</section>
+<section id="snm-g-估计正确" class="level3">
+<h3 class="anchored" data-anchor-id="snm-g-估计正确">SNM g-估计：正确</h3>
+<p>SNM 以处理残差作为工具变量来识别 blip。再配一个无处理模型（treatment-free） 吸收 <span class="math inline">\(L \to Y\)</span> 通路，结构 blip 参数就能被还原：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>fit_snm <span class="ot">&lt;-</span> <span class="fu">causat</span>(d, <span class="at">outcome =</span> <span class="st">"Y"</span>, <span class="at">treatment =</span> <span class="st">"A"</span>,</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>                  <span class="at">confounders_outcome =</span> <span class="sc">~</span> L <span class="sc">+</span> A<span class="sc">:</span>M,</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>                  <span class="at">confounders_treatment =</span> <span class="sc">~</span> L,</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>                  <span class="at">estimator =</span> <span class="st">"snm"</span>,</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>                  <span class="at">treatment_free =</span> <span class="sc">~</span> L)</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Warning: `propensity_model_fn` not specified; defaulting to `stats::glm`.</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ Set `propensity_model_fn` explicitly if you need a different fitter (e.g. `mgcv::gam`).</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Blip parameter table</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>r_blip <span class="ot">&lt;-</span> <span class="fu">contrast</span>(fit_snm, <span class="at">ci_method =</span> <span class="st">"sandwich"</span>)</span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>r_blip<span class="sc">$</span>estimates</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;        parameter estimate         se ci_lower ci_upper</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;           &lt;char&gt;    &lt;num&gt;      &lt;num&gt;    &lt;num&gt;    &lt;num&gt;</span></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1: psi_intercept 3.017628 0.01443905 2.989328 3.045928</span></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2:         psi_M 1.988832 0.01263058 1.964076 2.013587</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p>估计得到的 <span class="math inline">\(\hat\psi_0 \approx 3\)</span> 和 <span class="math inline">\(\hat\psi_M \approx 2\)</span> 与真值高度吻合， 标准误也很小。</p>
+</section>
+<section id="平均-blip-效应" class="level3">
+<h3 class="anchored" data-anchor-id="平均-blip-效应">平均 blip 效应</h3>
+<p>要得到单一的汇总数值（比如 ATE），使用 <code>treatment_values</code>：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>r_avg <span class="ot">&lt;-</span> <span class="fu">contrast</span>(fit_snm, <span class="at">treatment_values =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>))</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>r_avg<span class="sc">$</span>estimates</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;          parameter estimate         se ci_lower ci_upper</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;             &lt;char&gt;    &lt;num&gt;      &lt;num&gt;    &lt;num&gt;    &lt;num&gt;</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1: avg_blip_effect 3.024219 0.01443917 2.995918 3.052519</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="可视化偏倚" class="level3">
+<h3 class="anchored" data-anchor-id="可视化偏倚">可视化偏倚</h3>
+<p>两种做法的对比在图上最清楚。IPW-MSM 的估计值（向下偏倚）远离真实的平均 blip（<span class="math inline">\(\approx 3\)</span>，虚线），而 SNM 还原了真值：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>bias_df <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">Method =</span> <span class="fu">factor</span>(</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">c</span>(<span class="st">"IPW-MSM (biased)"</span>, <span class="st">"SNM (correct)"</span>),</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"IPW-MSM (biased)"</span>, <span class="st">"SNM (correct)"</span>)</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>  ),</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">estimate =</span> <span class="fu">c</span>(<span class="sc">-</span>r_ipw<span class="sc">$</span>contrasts<span class="sc">$</span>estimate[<span class="dv">1</span>],</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>               r_avg<span class="sc">$</span>estimates<span class="sc">$</span>estimate[<span class="dv">1</span>]),</span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">ci_lower =</span> <span class="fu">c</span>(<span class="sc">-</span>r_ipw<span class="sc">$</span>contrasts<span class="sc">$</span>ci_upper[<span class="dv">1</span>],</span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>               r_avg<span class="sc">$</span>estimates<span class="sc">$</span>ci_lower[<span class="dv">1</span>]),</span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">ci_upper =</span> <span class="fu">c</span>(<span class="sc">-</span>r_ipw<span class="sc">$</span>contrasts<span class="sc">$</span>ci_lower[<span class="dv">1</span>],</span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>               r_avg<span class="sc">$</span>estimates<span class="sc">$</span>ci_upper[<span class="dv">1</span>])</span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a><span class="co"># Approximate truth: 3 + 2 * mean(M) where M = 0.3*A + 0.5*L + noise</span></span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>avg_blip_truth <span class="ot">&lt;-</span> <span class="dv">3</span> <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> <span class="fu">mean</span>(d<span class="sc">$</span>M)</span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>tinyplot<span class="sc">::</span><span class="fu">tinyplot</span>(</span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>  estimate <span class="sc">~</span> Method,</span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> bias_df,</span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>  <span class="at">type =</span> <span class="st">"pointrange"</span>,</span>
+<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a>  <span class="at">ymin =</span> bias_df<span class="sc">$</span>ci_lower,</span>
+<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a>  <span class="at">ymax =</span> bias_df<span class="sc">$</span>ci_upper,</span>
+<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a>  <span class="at">pch =</span> <span class="dv">19</span>,</span>
+<span id="cb11-24"><a href="#cb11-24" aria-hidden="true" tabindex="-1"></a>  <span class="at">ylab =</span> <span class="st">"Effect estimate (95% CI)"</span>,</span>
+<span id="cb11-25"><a href="#cb11-25" aria-hidden="true" tabindex="-1"></a>  <span class="at">main =</span> <span class="st">"Post-treatment effect modification:</span><span class="sc">\n</span><span class="st">IPW-MSM vs SNM"</span></span>
+<span id="cb11-26"><a href="#cb11-26" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb11-27"><a href="#cb11-27" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">h =</span> avg_blip_truth, <span class="at">lty =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"grey40"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="causatr-figs/snm-fig-bias-comparison-1.png" class="img-fluid figure-img"></p>
+<figcaption>Pointrange plot showing the IPW-MSM estimate (biased downward) versus the SNM averaged blip (correct at approximately 3). A dashed horizontal line marks the true averaged blip value.</figcaption>
+</figure>
+</div>
+</section>
+</section>
+<section id="基本用法" class="level2">
+<h2 class="anchored" data-anchor-id="基本用法">基本用法</h2>
+<section id="带效应修饰的单时点处理" class="level3">
+<h3 class="anchored" data-anchor-id="带效应修饰的单时点处理">带效应修饰的单时点处理</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">42</span>)</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">2000</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>L <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>sex <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fl">0.5</span>)</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>A <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fu">plogis</span>(<span class="fl">0.3</span> <span class="sc">*</span> L <span class="sc">+</span> <span class="fl">0.2</span> <span class="sc">*</span> sex))</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>Y <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> A <span class="sc">+</span> L <span class="sc">+</span> <span class="fl">1.5</span> <span class="sc">*</span> A <span class="sc">*</span> sex <span class="sc">+</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> data.table<span class="sc">::</span><span class="fu">data.table</span>(<span class="at">Y =</span> Y, <span class="at">A =</span> A, <span class="at">L =</span> L, <span class="at">sex =</span> sex)</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>fit <span class="ot">&lt;-</span> <span class="fu">causat</span>(d, <span class="at">outcome =</span> <span class="st">"Y"</span>, <span class="at">treatment =</span> <span class="st">"A"</span>,</span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>              <span class="at">confounders_outcome =</span> <span class="sc">~</span> L <span class="sc">+</span> sex <span class="sc">+</span> A<span class="sc">:</span>sex,</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>              <span class="at">confounders_treatment =</span> <span class="sc">~</span> L <span class="sc">+</span> sex,</span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>              <span class="at">estimator =</span> <span class="st">"snm"</span>,</span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>              <span class="at">treatment_free =</span> <span class="sc">~</span> L <span class="sc">+</span> sex)</span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Warning: `propensity_model_fn` not specified; defaulting to `stats::glm`.</span></span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ Set `propensity_model_fn` explicitly if you need a different fitter (e.g. `mgcv::gam`).</span></span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a><span class="fu">contrast</span>(fit, <span class="at">ci_method =</span> <span class="st">"sandwich"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>parameter</th>
+<th>estimate</th>
+<th>se</th>
+<th>ci_lower</th>
+<th>ci_upper</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>psi_intercept</td>
+<td>1.921</td>
+<td>0.069</td>
+<td>1.786</td>
+<td>2.056</td>
+</tr>
+<tr class="even">
+<td>psi_sex</td>
+<td>1.658</td>
+<td>0.095</td>
+<td>1.473</td>
+<td>1.844</td>
+</tr>
+</tbody>
+</table>
+<p>blip 参数为：<span class="math inline">\(\psi_{\text{intercept}}\)</span>（<code>sex = 0</code> 时的处理效应）和 <span class="math inline">\(\psi_{\text{sex}}\)</span>（<code>sex = 1</code> 时的额外效应）。</p>
+</section>
+<section id="连续处理" class="level3">
+<h3 class="anchored" data-anchor-id="连续处理">连续处理</h3>
+<p>SNM 天然适用于连续处理——这正是 SNMM 的经典场景。 处理模型默认是高斯 GLM：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">101</span>)</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">2000</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>L <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>A <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n, <span class="at">mean =</span> <span class="fl">0.5</span> <span class="sc">*</span> L, <span class="at">sd =</span> <span class="dv">1</span>)</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>M <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(L <span class="sc">&gt;</span> <span class="dv">0</span>)</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>Y <span class="ot">&lt;-</span> <span class="dv">2</span> <span class="sc">+</span> <span class="dv">3</span> <span class="sc">*</span> A <span class="sc">+</span> <span class="fl">1.5</span> <span class="sc">*</span> L <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> A <span class="sc">*</span> M <span class="sc">+</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> data.table<span class="sc">::</span><span class="fu">data.table</span>(<span class="at">Y =</span> Y, <span class="at">A =</span> A, <span class="at">L =</span> L, <span class="at">M =</span> M)</span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>fit <span class="ot">&lt;-</span> <span class="fu">causat</span>(d, <span class="at">outcome =</span> <span class="st">"Y"</span>, <span class="at">treatment =</span> <span class="st">"A"</span>,</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>              <span class="at">confounders_outcome =</span> <span class="sc">~</span> L <span class="sc">+</span> A<span class="sc">:</span>M,</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>              <span class="at">confounders_treatment =</span> <span class="sc">~</span> L,</span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a>              <span class="at">estimator =</span> <span class="st">"snm"</span>)</span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Warning: `propensity_model_fn` not specified; defaulting to `stats::glm`.</span></span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ Set `propensity_model_fn` explicitly if you need a different fitter (e.g. `mgcv::gam`).</span></span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a><span class="fu">contrast</span>(fit, <span class="at">ci_method =</span> <span class="st">"sandwich"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>parameter</th>
+<th>estimate</th>
+<th>se</th>
+<th>ci_lower</th>
+<th>ci_upper</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>psi_intercept</td>
+<td>2.905</td>
+<td>0.049</td>
+<td>2.81</td>
+<td>3.001</td>
+</tr>
+<tr class="even">
+<td>psi_M</td>
+<td>2.13</td>
+<td>0.082</td>
+<td>1.969</td>
+<td>2.292</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="用-treatment-free-模型提升有效性" class="level3">
+<h3 class="anchored" data-anchor-id="用-treatment-free-模型提升有效性">用 treatment-free 模型提升有效性</h3>
+<p><code>treatment_free</code> 参数指定一个结局模型 <span class="math inline">\(E[Y \mid L]\)</span>，用来吸收 <span class="math inline">\(L \to Y\)</span> 带来的方差，从而提升有效性 <span class="citation" data-cites="vansteelandt2014snm">(<a href="causatr-introduction.html#ref-vansteelandt2014snm" role="doc-biblioref">Vansteelandt 和 Joffe 2014</a>)</span>。当 blip 设定正确时，它不改变点估计值——只会缩小标准误：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Without treatment-free model</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>r_no_tf <span class="ot">&lt;-</span> <span class="fu">contrast</span>(fit, <span class="at">ci_method =</span> <span class="st">"sandwich"</span>)</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="co"># With treatment-free model</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>fit_tf <span class="ot">&lt;-</span> <span class="fu">causat</span>(d, <span class="at">outcome =</span> <span class="st">"Y"</span>, <span class="at">treatment =</span> <span class="st">"A"</span>,</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>                 <span class="at">confounders_outcome =</span> <span class="sc">~</span> L <span class="sc">+</span> A<span class="sc">:</span>M,</span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>                 <span class="at">confounders_treatment =</span> <span class="sc">~</span> L,</span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>                 <span class="at">estimator =</span> <span class="st">"snm"</span>,</span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>                 <span class="at">treatment_free =</span> <span class="sc">~</span> L)</span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Warning: `propensity_model_fn` not specified; defaulting to `stats::glm`.</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ Set `propensity_model_fn` explicitly if you need a different fitter (e.g. `mgcv::gam`).</span></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>r_tf <span class="ot">&lt;-</span> <span class="fu">contrast</span>(fit_tf, <span class="at">ci_method =</span> <span class="st">"sandwich"</span>)</span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a><span class="co"># Compare SEs</span></span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a>data.table<span class="sc">::</span><span class="fu">data.table</span>(</span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a>  <span class="at">parameter =</span> r_no_tf<span class="sc">$</span>estimates<span class="sc">$</span>parameter,</span>
+<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">se_without_tf =</span> r_no_tf<span class="sc">$</span>estimates<span class="sc">$</span>se,</span>
+<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a>  <span class="at">se_with_tf =</span> r_tf<span class="sc">$</span>estimates<span class="sc">$</span>se,</span>
+<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a>  <span class="at">reduction_pct =</span> <span class="fu">round</span>(<span class="dv">100</span> <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> r_tf<span class="sc">$</span>estimates<span class="sc">$</span>se <span class="sc">/</span> r_no_tf<span class="sc">$</span>estimates<span class="sc">$</span>se), <span class="dv">1</span>)</span>
+<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;        parameter se_without_tf se_with_tf reduction_pct</span></span>
+<span id="cb14-22"><a href="#cb14-22" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;           &lt;char&gt;         &lt;num&gt;      &lt;num&gt;         &lt;num&gt;</span></span>
+<span id="cb14-23"><a href="#cb14-23" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1: psi_intercept    0.04879214 0.03217362          34.1</span></span>
+<span id="cb14-24"><a href="#cb14-24" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2:         psi_M    0.08245686 0.04475478          45.7</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+</section>
+<section id="解释" class="level2">
+<h2 class="anchored" data-anchor-id="解释">解释</h2>
+<p>SNM 的 blip 参数具有直接的因果解释：</p>
+<ul>
+<li><strong><span class="math inline">\(\psi_{\text{intercept}}\)</span></strong>：在参照层（所有效应修饰因子 = 0）中，处理 增加一个单位所产生的因果效应。</li>
+<li><strong><span class="math inline">\(\psi_{\text{modifier}}\)</span></strong>：效应修饰因子每增加一个单位带来的额外因果 效应。这就是效应修饰参数。</li>
+</ul>
+<p>平均 blip 效应 <span class="math inline">\(\Delta = (a_1 - a_0) \cdot (\hat\psi_0 + \sum_j \hat\psi_j \bar{m}_j)\)</span> 是一个类似 ATE 的汇总量，它在观测到的效应修饰因子分布上对 blip 取 平均。</p>
+</section>
+<section id="与其他估计量的主要区别" class="level2">
+<h2 class="anchored" data-anchor-id="与其他估计量的主要区别">与其他估计量的主要区别</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Feature</th>
+<th>gcomp</th>
+<th>IPW-MSM</th>
+<th>SNM</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>时变 EM</td>
+<td>需要正确设定的高维结局模型</td>
+<td>有偏倚（对处理后变量取条件）</td>
+<td>正确（核心应用场景）</td>
+</tr>
+<tr class="even">
+<td>识别</td>
+<td>结局模型</td>
+<td>处理模型</td>
+<td>处理模型</td>
+</tr>
+<tr class="odd">
+<td>输出</td>
+<td>反事实均值</td>
+<td>反事实均值</td>
+<td>blip 参数</td>
+</tr>
+<tr class="even">
+<td><code>interventions =</code></td>
+<td>是</td>
+<td>是</td>
+<td>否（改用 <code>treatment_values =</code>）</td>
+</tr>
+<tr class="odd">
+<td>近正值性</td>
+<td>外推风险</td>
+<td>权重爆炸</td>
+<td>退化平缓</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="纵向-snm" class="level2">
+<h2 class="anchored" data-anchor-id="纵向-snm">纵向 SNM</h2>
+<p>SNM 可以自然地推广到时变处理。后向序贯 g-估计算法 <span class="citation" data-cites="robins1994snm">(<a href="causatr-introduction.html#ref-robins1994snm" role="doc-biblioref">Robins 1994</a>)</span> 从最后一个时间点开始反向迭代，逐阶段估计 blip 参数 <span class="math inline">\(\psi_k\)</span>：</p>
+<ol type="1">
+<li>在阶段 <span class="math inline">\(K\)</span>，用观测到的结局 <span class="math inline">\(Y\)</span> 求解 blip 方程，得到 <span class="math inline">\(\psi_K\)</span>。</li>
+<li>在阶段 <span class="math inline">\(k &lt; K\)</span>，把 <span class="math inline">\(Y\)</span> 替换为<strong>后向变换结局</strong> <span class="math inline">\(H_k = Y - \sum_{j &gt; k} \gamma_j(A_j, \bar{L}_j; \hat\psi_j)\)</span>——即从 <span class="math inline">\(k+1\)</span> 起不接受处理时的假设结局。</li>
+</ol>
+<section id="带时变效应修饰的两期-dgp" class="level3">
+<h3 class="anchored" data-anchor-id="带时变效应修饰的两期-dgp">带时变效应修饰的两期 DGP</h3>
+<p>这是最核心的用例：效应修饰变量 <span class="math inline">\(M_1 = \mathbf{1}\{L_1 &gt; 0\}\)</span> 是处理后变量（它依赖于 <span class="math inline">\(A_0\)</span>），因此 IPW-MSM 若把它纳入模型就会产生对撞偏倚。SNM 则能正确识别各阶段的 blip。</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">18</span>)</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">5000</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>L0 <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>A0 <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fu">plogis</span>(<span class="fl">0.3</span> <span class="sc">*</span> L0))</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>L1 <span class="ot">&lt;-</span> <span class="fl">0.5</span> <span class="sc">*</span> L0 <span class="sc">+</span> <span class="fl">0.3</span> <span class="sc">*</span> A0 <span class="sc">+</span> <span class="fu">rnorm</span>(n, <span class="at">sd =</span> <span class="fu">sqrt</span>(<span class="fl">0.5</span>))</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>M1 <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(L1 <span class="sc">&gt;</span> <span class="dv">0</span>)</span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>A1 <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fu">plogis</span>(<span class="fl">0.3</span> <span class="sc">*</span> L1 <span class="sc">+</span> <span class="fl">0.2</span> <span class="sc">*</span> A0))</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>Y <span class="ot">&lt;-</span> <span class="dv">2</span> <span class="sc">+</span> <span class="dv">1</span> <span class="sc">*</span> A0 <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> A1 <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> A1 <span class="sc">*</span> M1 <span class="sc">+</span> <span class="fl">1.5</span> <span class="sc">*</span> L0 <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> L1 <span class="sc">+</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>d_long <span class="ot">&lt;-</span> data.table<span class="sc">::</span><span class="fu">rbindlist</span>(<span class="fu">list</span>(</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>  data.table<span class="sc">::</span><span class="fu">data.table</span>(<span class="at">id =</span> <span class="fu">seq_len</span>(n), <span class="at">time =</span> <span class="dv">0</span>L,</span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">A =</span> A0, <span class="at">L =</span> L0, <span class="at">M =</span> <span class="fu">as.numeric</span>(L0 <span class="sc">&gt;</span> <span class="dv">0</span>), <span class="at">Y =</span> <span class="cn">NA_real_</span>),</span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>  data.table<span class="sc">::</span><span class="fu">data.table</span>(<span class="at">id =</span> <span class="fu">seq_len</span>(n), <span class="at">time =</span> <span class="dv">1</span>L,</span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>    <span class="at">A =</span> A1, <span class="at">L =</span> L1, <span class="at">M =</span> M1, <span class="at">Y =</span> Y)</span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a>))</span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a>fit_long <span class="ot">&lt;-</span> <span class="fu">causat</span>(d_long, <span class="at">outcome =</span> <span class="st">"Y"</span>, <span class="at">treatment =</span> <span class="st">"A"</span>,</span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>  <span class="at">confounders_outcome =</span> <span class="sc">~</span> A<span class="sc">:</span>M,</span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a>  <span class="at">confounders_tv =</span> <span class="sc">~</span> L,</span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a>  <span class="at">id =</span> <span class="st">"id"</span>, <span class="at">time =</span> <span class="st">"time"</span>, <span class="at">type =</span> <span class="st">"longitudinal"</span>,</span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a>  <span class="at">estimator =</span> <span class="st">"snm"</span>,</span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a>  <span class="at">treatment_free =</span> <span class="sc">~</span> L)</span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Warning: `propensity_model_fn` not specified; defaulting to `stats::glm`.</span></span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ Set `propensity_model_fn` explicitly if you need a different fitter (e.g. `mgcv::gam`).</span></span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a>result_long <span class="ot">&lt;-</span> <span class="fu">contrast</span>(fit_long, <span class="at">ci_method =</span> <span class="st">"sandwich"</span>)</span>
+<span id="cb15-28"><a href="#cb15-28" aria-hidden="true" tabindex="-1"></a>result_long<span class="sc">$</span>estimates</span>
+<span id="cb15-29"><a href="#cb15-29" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;               parameter    estimate         se   ci_lower   ci_upper</span></span>
+<span id="cb15-30"><a href="#cb15-30" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;                  &lt;char&gt;       &lt;num&gt;      &lt;num&gt;      &lt;num&gt;      &lt;num&gt;</span></span>
+<span id="cb15-31"><a href="#cb15-31" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1: stage0_psi_intercept  1.15210608 0.04282554  1.0681696 1.23604259</span></span>
+<span id="cb15-32"><a href="#cb15-32" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2:         stage0_psi_M -0.09101977 0.06044861 -0.2094969 0.02745732</span></span>
+<span id="cb15-33"><a href="#cb15-33" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 3: stage1_psi_intercept  1.97726358 0.05978991  1.8600775 2.09444964</span></span>
+<span id="cb15-34"><a href="#cb15-34" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 4:         stage1_psi_M  2.02718665 0.09437425  1.8422165 2.21215678</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p>真值为 <span class="math inline">\(\psi_{0,\text{intercept}} = 1\)</span>、<span class="math inline">\(\psi_{1,\text{intercept}} = 2\)</span>、<span class="math inline">\(\psi_{1,M} = 2\)</span>。SNM 通过后向序贯 g-估计和聚类稳健三明治标准误恢复出这些各阶段 blip 参数。</p>
+<p>森林图展示了所有各阶段 blip 参数及其 95% CI：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(result_long)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="causatr-figs/snm-fig-longitudinal-blip-1.png" class="img-fluid figure-img"></p>
+<figcaption>Forest plot of longitudinal SNM blip parameters. Three parameters are shown: psi_0 intercept near 1, psi_1 intercept near 2, and psi_1_M near 2, all with tight confidence intervals around the true values.</figcaption>
+</figure>
+</div>
+</section>
+</section>
+<section id="分类处理" class="level2">
+<h2 class="anchored" data-anchor-id="分类处理">分类处理</h2>
+<p>SNM 同样适用于分类处理（<span class="math inline">\(k &gt; 2\)</span> 个水平）。处理模型是通过 <code>nnet::multinom()</code> 拟合的多项 logistic 回归。blip 展开为 <span class="math inline">\((K-1)\)</span> 个水平特异的参数（相对于参考水平）：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1803</span>)</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">3000</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>L <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Multinomial probabilities from softmax</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>eta1 <span class="ot">&lt;-</span> <span class="fl">0.2</span> <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> L</span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>eta2 <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fl">0.3</span> <span class="sc">+</span> <span class="fl">0.3</span> <span class="sc">*</span> L</span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>denom <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(eta1) <span class="sc">+</span> <span class="fu">exp</span>(eta2)</span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a>A_num <span class="ot">&lt;-</span> <span class="fu">sapply</span>(<span class="fu">seq_len</span>(n), <span class="cf">function</span>(i) {</span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">sample</span>(<span class="dv">0</span><span class="sc">:</span><span class="dv">2</span>, <span class="dv">1</span>, <span class="at">prob =</span> <span class="fu">c</span>(<span class="dv">1</span> <span class="sc">/</span> denom[i], <span class="fu">exp</span>(eta1[i]) <span class="sc">/</span> denom[i],</span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a>                           <span class="fu">exp</span>(eta2[i]) <span class="sc">/</span> denom[i]))</span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a>})</span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>A <span class="ot">&lt;-</span> <span class="fu">factor</span>(A_num, <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"0"</span>, <span class="st">"1"</span>, <span class="st">"2"</span>))</span>
+<span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a>Y <span class="ot">&lt;-</span> <span class="dv">2</span> <span class="sc">+</span> <span class="fl">0.8</span> <span class="sc">*</span> (A_num <span class="sc">==</span> <span class="dv">1</span>) <span class="sc">+</span> <span class="fl">1.5</span> <span class="sc">*</span> (A_num <span class="sc">==</span> <span class="dv">2</span>) <span class="sc">+</span> L <span class="sc">+</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> data.table<span class="sc">::</span><span class="fu">data.table</span>(<span class="at">Y =</span> Y, <span class="at">A =</span> A, <span class="at">L =</span> L)</span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a>fit_cat <span class="ot">&lt;-</span> <span class="fu">causat</span>(d, <span class="at">outcome =</span> <span class="st">"Y"</span>, <span class="at">treatment =</span> <span class="st">"A"</span>,</span>
+<span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a>                  <span class="at">confounders =</span> <span class="sc">~</span> L,</span>
+<span id="cb17-19"><a href="#cb17-19" aria-hidden="true" tabindex="-1"></a>                  <span class="at">estimator =</span> <span class="st">"snm"</span>,</span>
+<span id="cb17-20"><a href="#cb17-20" aria-hidden="true" tabindex="-1"></a>                  <span class="at">propensity_model_fn =</span> nnet<span class="sc">::</span>multinom)</span>
+<span id="cb17-21"><a href="#cb17-21" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; No effect-modification terms (e.g. `A:modifier`) found in confounders.</span></span>
+<span id="cb17-22"><a href="#cb17-22" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ The SNMM blip reduces to a single constant-effect parameter (equivalent to an ATE). Add `A:modifier` terms to the confounders formula to estimate effect modification.</span></span>
+<span id="cb17-23"><a href="#cb17-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-24"><a href="#cb17-24" aria-hidden="true" tabindex="-1"></a><span class="fu">contrast</span>(fit_cat, <span class="at">ci_method =</span> <span class="st">"sandwich"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>parameter</th>
+<th>estimate</th>
+<th>se</th>
+<th>ci_lower</th>
+<th>ci_upper</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>level_1_psi_intercept</td>
+<td>0.702</td>
+<td>0.042</td>
+<td>0.621</td>
+<td>0.784</td>
+</tr>
+<tr class="even">
+<td>level_2_psi_intercept</td>
+<td>1.467</td>
+<td>0.049</td>
+<td>1.372</td>
+<td>1.562</td>
+</tr>
+</tbody>
+</table>
+<p>真值为 <span class="math inline">\(\psi_1 = 0.8\)</span>（水平 1 对 0）和 <span class="math inline">\(\psi_2 = 1.5\)</span>（水平 2 对 0）。注意 <code>treatment_values</code> 对分类 SNM 不可用——各水平的 blip 参数本身就是估计目标。</p>
+</section>
+<section id="计数处理" class="level2">
+<h2 class="anchored" data-anchor-id="计数处理">计数处理</h2>
+<p>泊松或负二项处理使用相应的倾向模型。g-估计方程中使用残差 <span class="math inline">\(R = A - \hat\lambda\)</span>：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1804</span>)</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">3000</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>L <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>A <span class="ot">&lt;-</span> <span class="fu">rpois</span>(n, <span class="at">lambda =</span> <span class="fu">exp</span>(<span class="fl">0.5</span> <span class="sc">+</span> <span class="fl">0.3</span> <span class="sc">*</span> L))</span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>M <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(L <span class="sc">&gt;</span> <span class="dv">0</span>)</span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>Y <span class="ot">&lt;-</span> <span class="dv">2</span> <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> A <span class="sc">+</span> <span class="fl">0.3</span> <span class="sc">*</span> A <span class="sc">*</span> M <span class="sc">+</span> L <span class="sc">+</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> data.table<span class="sc">::</span><span class="fu">data.table</span>(<span class="at">Y =</span> Y, <span class="at">A =</span> A, <span class="at">L =</span> L, <span class="at">M =</span> M)</span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>fit_count <span class="ot">&lt;-</span> <span class="fu">causat</span>(d, <span class="at">outcome =</span> <span class="st">"Y"</span>, <span class="at">treatment =</span> <span class="st">"A"</span>,</span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>                    <span class="at">confounders_outcome =</span> <span class="sc">~</span> L <span class="sc">+</span> A<span class="sc">:</span>M,</span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a>                    <span class="at">confounders_treatment =</span> <span class="sc">~</span> L,</span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a>                    <span class="at">estimator =</span> <span class="st">"snm"</span>,</span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a>                    <span class="at">propensity_family =</span> <span class="st">"poisson"</span>)</span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Warning: `propensity_model_fn` not specified; defaulting to `stats::glm`.</span></span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ Set `propensity_model_fn` explicitly if you need a different fitter (e.g. `mgcv::gam`).</span></span>
+<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a><span class="fu">contrast</span>(fit_count, <span class="at">ci_method =</span> <span class="st">"sandwich"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>parameter</th>
+<th>estimate</th>
+<th>se</th>
+<th>ci_lower</th>
+<th>ci_upper</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>psi_intercept</td>
+<td>0.511</td>
+<td>0.03</td>
+<td>0.452</td>
+<td>0.571</td>
+</tr>
+<tr class="even">
+<td>psi_M</td>
+<td>0.283</td>
+<td>0.045</td>
+<td>0.194</td>
+<td>0.372</td>
+</tr>
+</tbody>
+</table>
+<p>真值为 <span class="math inline">\(\psi_0 = 0.5\)</span>、<span class="math inline">\(\psi_M = 0.3\)</span>。</p>
+</section>
+<section id="bootstrap-置信区间" class="level2">
+<h2 class="anchored" data-anchor-id="bootstrap-置信区间">Bootstrap 置信区间</h2>
+<p>所有 SNM 变体都支持通过 <code>ci_method = "bootstrap"</code> 做 bootstrap 推断。 对纵向 SNM，bootstrap 使用按 ID 聚类的重抽样：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1805</span>)</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">2000</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>L <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>A <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n, <span class="at">mean =</span> <span class="fl">0.5</span> <span class="sc">*</span> L, <span class="at">sd =</span> <span class="dv">1</span>)</span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>M <span class="ot">&lt;-</span> <span class="fl">0.3</span> <span class="sc">*</span> A <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> L <span class="sc">+</span> <span class="fu">rnorm</span>(n, <span class="at">sd =</span> <span class="fu">sqrt</span>(<span class="fl">0.5</span>))</span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>Y <span class="ot">&lt;-</span> <span class="dv">2</span> <span class="sc">+</span> <span class="dv">3</span> <span class="sc">*</span> A <span class="sc">+</span> <span class="fl">1.5</span> <span class="sc">*</span> L <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> A <span class="sc">*</span> M <span class="sc">+</span> <span class="fu">rnorm</span>(n)</span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> data.table<span class="sc">::</span><span class="fu">data.table</span>(<span class="at">Y =</span> Y, <span class="at">A =</span> A, <span class="at">L =</span> L, <span class="at">M =</span> M)</span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>fit <span class="ot">&lt;-</span> <span class="fu">causat</span>(d, <span class="at">outcome =</span> <span class="st">"Y"</span>, <span class="at">treatment =</span> <span class="st">"A"</span>,</span>
+<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a>              <span class="at">confounders_outcome =</span> <span class="sc">~</span> L <span class="sc">+</span> A<span class="sc">:</span>M,</span>
+<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a>              <span class="at">confounders_treatment =</span> <span class="sc">~</span> L,</span>
+<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a>              <span class="at">estimator =</span> <span class="st">"snm"</span>,</span>
+<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a>              <span class="at">treatment_free =</span> <span class="sc">~</span> L)</span>
+<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Warning: `propensity_model_fn` not specified; defaulting to `stats::glm`.</span></span>
+<span id="cb19-15"><a href="#cb19-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ Set `propensity_model_fn` explicitly if you need a different fitter (e.g. `mgcv::gam`).</span></span>
+<span id="cb19-16"><a href="#cb19-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-17"><a href="#cb19-17" aria-hidden="true" tabindex="-1"></a>r_boot <span class="ot">&lt;-</span> <span class="fu">contrast</span>(fit, <span class="at">ci_method =</span> <span class="st">"bootstrap"</span>, <span class="at">n_boot =</span> <span class="dv">500</span>)</span>
+<span id="cb19-18"><a href="#cb19-18" aria-hidden="true" tabindex="-1"></a>r_boot<span class="sc">$</span>estimates</span>
+<span id="cb19-19"><a href="#cb19-19" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;        parameter estimate         se ci_lower ci_upper</span></span>
+<span id="cb19-20"><a href="#cb19-20" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;           &lt;char&gt;    &lt;num&gt;      &lt;num&gt;    &lt;num&gt;    &lt;num&gt;</span></span>
+<span id="cb19-21"><a href="#cb19-21" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1: psi_intercept 2.944718 0.02085849 2.905194 2.985051</span></span>
+<span id="cb19-22"><a href="#cb19-22" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2:         psi_M 1.955069 0.01804071 1.918346 1.989488</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="查看结果" class="level2">
+<h2 class="anchored" data-anchor-id="查看结果">查看结果</h2>
+<p>标准的 S3 方法同样适用于 SNM 结果。<code>print()</code> 会显示 “Blip parameters”（blip 参数） 表头，<code>summary()</code> 给出 blip 的方差-协方差矩阵，<code>plot()</code> 生成带零参考线的森林图 （blip = 0 表示没有处理效应）：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>fit_demo <span class="ot">&lt;-</span> <span class="fu">causat</span>(d, <span class="at">outcome =</span> <span class="st">"Y"</span>, <span class="at">treatment =</span> <span class="st">"A"</span>,</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>                   <span class="at">confounders_outcome =</span> <span class="sc">~</span> L <span class="sc">+</span> A<span class="sc">:</span>M,</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>                   <span class="at">confounders_treatment =</span> <span class="sc">~</span> L,</span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>                   <span class="at">estimator =</span> <span class="st">"snm"</span>,</span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>                   <span class="at">treatment_free =</span> <span class="sc">~</span> L)</span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Warning: `propensity_model_fn` not specified; defaulting to `stats::glm`.</span></span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ Set `propensity_model_fn` explicitly if you need a different fitter (e.g. `mgcv::gam`).</span></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a>r_demo <span class="ot">&lt;-</span> <span class="fu">contrast</span>(fit_demo, <span class="at">ci_method =</span> <span class="st">"sandwich"</span>)</span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a><span class="co"># Forest plot: reference line at 0</span></span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(r_demo)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p><img src="causatr-figs/snm-s3-methods-1.png" class="img-fluid"></p>
+<p><code>tidy()</code> 方法返回与 <code>broom</code> 兼容的整洁数据框：</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Use which = "means" for blip parameters (SNM Path A has no contrasts)</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="fu">tidy</span>(r_demo, <span class="at">which =</span> <span class="st">"means"</span>)</span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;            term estimate  std.error      type conf.low conf.high</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 psi_intercept 2.944718 0.02190377 parameter 2.901787  2.987649</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2         psi_M 1.955069 0.01813524 parameter 1.919524  1.990613</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="参考文献" class="level2">
+<h2 class="anchored" data-anchor-id="参考文献">参考文献</h2>
+<div id="refs" class="references csl-bib-body hanging-indent" data-entry-spacing="0" role="list" style="display: none">
+<div id="ref-robins1994snm" class="csl-entry" role="listitem">
+Robins, James M. 1994. <span>《Correcting for non-compliance in randomized trials using structural nested mean models》</span>. <em>Communications in Statistics — Theory and Methods</em> 23 (8): 2379–2412. <a href="https://doi.org/10.1080/03610929408831393">https://doi.org/10.1080/03610929408831393</a>.
+</div>
+<div id="ref-robins2000msmvssnm" class="csl-entry" role="listitem">
+———. 2000. <span>《Marginal structural models versus structural nested models as tools for causal inference》</span>. 收入 <em>Statistical Models in Epidemiology, the Environment, and Clinical Trials</em>, 编辑 M. Elizabeth Halloran 和 Donald Berry, 95–133. New York: Springer. <a href="https://doi.org/10.1007/978-1-4612-1284-3_2">https://doi.org/10.1007/978-1-4612-1284-3_2</a>.
+</div>
+<div id="ref-vansteelandt2014snm" class="csl-entry" role="listitem">
+Vansteelandt, Stijn, 和 Marshall Joffe. 2014. <span>《Structural nested models and <span>G</span>-estimation: the partially realized promise》</span>. <em>Statistical Science</em> 29 (4): 707–31. <a href="https://doi.org/10.1214/14-STS493">https://doi.org/10.1214/14-STS493</a>.
+</div>
+</div>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "已复制");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "已复制");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/hui950319\.github\.io\/causalR\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../notes/causatr-matching.html" class="pagination-link" aria-label="使用 causatr 的倾向评分匹配">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">使用 causatr 的倾向评分匹配</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../notes/causatr-interventions.html" class="pagination-link" aria-label="causatr 中的干预类型">
+        <span class="nav-page-text"><span class="chapter-title">causatr 中的干预类型</span></span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/causatr-snm.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></div></div></footer></body></html>

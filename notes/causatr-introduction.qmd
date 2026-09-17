@@ -1,0 +1,264 @@
+---
+title: "causatr 介绍"
+subtitle: "*Introduction to causatr* · causatr 官方文档中译"
+bibliography: causatr-refs.bib
+---
+
+> **来源**：R 包 [causatr](https://github.com/etverse/causatr) 官方文档 [`introduction.qmd`](https://etverse.github.io/causatr/vignettes/introduction.html)，MIT 许可。
+> 本页是中译，**代码与运行结果直接取自原站的渲染输出，未在本站重新执行**。
+> Copyright (c) 2026 causatr authors；许可证全文见原仓库 `LICENSE.md`。
+
+causatr 通过五种互补的方法，为因果效应估计提供统一接口：
+
+- **G-computation**（参数化 g-formula）—— 拟合结局模型
+  $E[Y | A, L]$，并把预测值在目标人群上做标准化。
+- **逆概率加权（IPW）** —— 用倾向评分对数据重新加权，使混杂因子在各处理
+  组之间达到均衡。
+- **增强逆概率加权（AIPW）** —— 把结局模型和倾向评分合并成一个双稳健估计量：
+  只要*任一个*模型设定正确就是相合的，两个模型都正确时还具有半参数有效性。
+- **结构嵌套均值模型（SNM）** —— 以处理模型作为工具变量，对 blip 参数做
+  g-估计。它是唯一能正确处理**时变效应修饰**（修饰因子受既往处理影响）的
+  方法。参见 `vignette("snm")`。
+- **倾向评分匹配** —— 把倾向评分相近的处理个体和对照个体配成对。
+
+当多种方法给出一致结果时，你对结论就可以更有信心。这称为**三角验证**。
+
+## 两步式 API
+
+所有分析都遵循同样的两步模式：
+
+```r
+# Step 1: Fit
+fit <- causat(data, outcome = "Y", treatment = "A", confounders = ~ L1 + L2,
+              estimator = "gcomp", model_fn = stats::glm)
+
+# Step 2: Contrast
+result <- contrast(fit,
+  interventions = list(treated = static(1), control = static(0)),
+  reference = "control")
+```
+
+## 快速示例
+
+下面的示例使用 @hernan_whatif 中的 **NHEFS**（National Health and Nutrition
+Examination Survey — Epidemiologic Follow-up Study）数据集。假定的因果结构
+如下：
+
+- **处理（$A$）：** `qsmk` —— 个体是否在基线（1971 年）到随访（1982 年）
+  之间戒烟。二值（0 = 继续吸烟，1 = 戒烟）。
+- **结局（$Y$）：** `wt82_71` —— 1971 年到 1982 年的体重变化（kg）。
+  连续型。
+- **混杂因子（$L$）：** 一组基线协变量 —— 性别、年龄、种族、吸烟强度
+  （支/天）、吸烟年数、锻炼、体力活动水平和基线体重 —— 它们同时影响
+  戒烟这一决定和体重的变化。
+- **删失（$C$）：** `censored` —— 个体是否失访。$C = 1$ 的行不参与模型
+  拟合；预测值在完整的目标人群上做标准化。
+
+在该因果 DAG 下，$L$ 是 $A$ 和 $Y$ 的共同原因。对 $L$ 做调整可以阻断
+$A$ 到 $Y$ 的所有后门路径，因此 g-formula 可以识别平均因果效应
+$\mathbb{E}[Y^{a=1}] - \mathbb{E}[Y^{a=0}]$。
+
+```r
+library(causatr)
+data("nhefs")
+
+fit <- causat(
+  nhefs,
+  outcome = "wt82_71",
+  treatment = "qsmk",
+  confounders = ~ sex + age + race + smokeintensity + smokeyrs +
+    factor(exercise) + factor(active) + wt71,
+  censoring = "censored",
+  model_fn = stats::glm
+)
+
+result <- contrast(
+  fit,
+  interventions = list(quit = static(1), continue = static(0)),
+  reference = "continue"
+)
+result
+```
+
+| intervention | estimate | se | ci_lower | ci_upper |
+|---|---|---|---|---|
+| quit | 5.033 | 0.404 | 4.241 | 5.825 |
+| continue | 1.877 | 0.209 | 1.467 | 2.287 |
+
+| comparison | estimate | se | ci_lower | ci_upper |
+|---|---|---|---|---|
+| quit vs continue | 3.156 | 0.449 | 2.276 | 4.035 |
+
+## 干预类型
+
+causatr 为 G-computation 支持多种干预类型：
+
+| Function | Description | Example |
+|---|---|---|
+| `static(value)` | 把处理设为一个固定值 | `static(1)` |
+| `shift(delta)` | 在观测到的处理上加一个常数 | `shift(-10)` |
+| `scale_by(factor)` | 把观测到的处理乘以一个倍数 | `scale_by(0.5)` |
+| `threshold(lower, upper)` | 把处理截断在给定上下界之内 | `threshold(0, 20)` |
+| `dynamic(rule)` | 应用用户自定义的规则 | `dynamic(\(d, a) ifelse(d$L > 0, 1, 0))` |
+| `NULL` | 自然进程（观测值） | — |
+
+IPW 支持 `static()`、`shift()`、`scale_by()`、`dynamic()` 和 `ipsi()`。
+AIPW 支持与 IPW 相同的一组干预（除 `threshold()` 和 `stochastic()` 以外的全部）。
+匹配只支持 `static()` 干预。
+
+## 对比类型
+
+| Type | Meaning |
+|---|---|
+| `"difference"` | 风险差／均值差（默认） |
+| `"ratio"` | 风险比 |
+| `"or"` | 比值比（二值结局） |
+
+## 推断方法
+
+| Method | Description |
+|---|---|
+| `"sandwich"` | 稳健三明治 SE（默认，速度快） |
+| `"bootstrap"` | 非参数 bootstrap（对整条流程重抽样） |
+
+## 估计目标
+
+| Estimand | Population | Applicability |
+|---|---|---|
+| `"ATE"` | 全部个体 | 始终适用（默认） |
+| `"ATT"` | 观测到的处理组（A = 1） | 仅限二值点处理 |
+| `"ATC"` | 观测到的对照组（A = 0） | 仅限二值点处理 |
+| `subset = quote(...)` | 自定义亚组 | 始终适用 |
+
+对 G-computation，估计目标可以在 `contrast()` 中更改，无需重新拟合。对 IPW 和匹配，
+需要用 `causat(estimand = ...)` 重新拟合。
+
+## 处理类型
+
+causatr 支持二值、连续、分类、计数和多元处理：
+
+| Treatment type | G-comp | IPW | AIPW | Matching |
+|---|---|---|---|---|
+| 二值（0/1） | 是 | 是 | 是 | 是 |
+| 连续 | 是 | 是（GPS） | 是（shift、scale\_by） | 否（MatchIt 仅支持二值） |
+| 分类（k > 2） | 是 | 是 | 是 | 否（MatchIt 仅支持二值） |
+| 计数（Poisson / NB） | 是 | 是（`propensity_family =`） | 是 | 否 |
+| 多元（联合） | 是 | 是（序贯 MTP） | 是 | 否 |
+
+对多元处理（例如 `treatment = c("A1", "A2")`），要以命名列表提供干预，每个处理
+变量对应一个元素。
+
+所有估计方法都支持在 `confounders` 中通过 `A:modifier` 交互项刻画效应修饰。
+G-computation 和 AIPW 直接把交互项送入结局模型；IPW 把每个干预的 MSM 扩展为
+`Y ~ 1 + modifier`；匹配扩展为 `Y ~ A + modifier + A:modifier`；ICE 则在各处理
+滞后上自动展开该交互项。在 `contrast()` 中使用 `by = "modifier"` 可得到各层的
+估计值。
+
+## 效应修饰
+
+`contrast()` 的 `by` 参数按某个变量的水平对估计值分层，给出亚组特异的效应：
+
+```r
+contrast(fit,
+  interventions = list(quit = static(1), continue = static(0)),
+  by = "sex"
+)
+```
+
+## 抽样设计与聚类稳健推断
+
+`causat()` 和 `contrast()` 为考虑抽样设计的研究提供了两项推断基础设施上的便利。
+
+**通过 `survey::svydesign` 提供抽样权重。** 直接把设计对象传给 `weights =`，
+causatr 会同时解出抽样权重（通过 `stats::weights()`）和第一阶段聚类（PSU）：
+
+```r
+library(survey)
+des <- svydesign(ids = ~psu, weights = ~pw, data = nhefs)
+fit <- causat(nhefs, outcome = "wt82_71", treatment = "qsmk",
+              confounders = ~ sex + age + wt71, weights = des,
+              model_fn = stats::glm)
+```
+
+**聚类稳健三明治。** 在 `causat()`（或 `contrast()`）上使用 `cluster = "col"`，
+先在聚类内汇总各个体的影响函数，再做平方 [@liang1986longitudinal]。它在数值上
+等价于对最后的“先预测再平均”步骤应用 `sandwich::vcovCL(type = "HC0")`。
+G-computation / IPW / ICE 支持该选项；匹配则不接受（子类聚类本身已是结构性的）。
+
+**bootstrap 的 `future` 后端。** `contrast(parallel = "future")` 通过
+`future.apply::future_lapply()` 分发各次重复，因此任何 `future::plan()`
+（本地 multisession、远程 cluster、用于 HPC 的 `future.batchtools`）都会被采用。
+
+## 诊断
+
+拟合后用 `diagnose()` 检查正值性与协变量均衡：
+
+```r
+diag <- diagnose(fit)
+diag          # print positivity + balance summary
+plot(diag)    # Love plot (requires cobalt)
+```
+
+对 IPW 和匹配，均衡通过 [cobalt](https://ngreifer.github.io/cobalt/) 计算，
+并包含调整前后的标准化均值差。
+
+## 提取结果
+
+causatr 的结果对象支持标准的 R 泛型函数：
+
+```r
+coef(result)       # named vector of E[Y^a]
+confint(result)    # CI matrix (respects custom `level`)
+vcov(result)       # vcov of marginal means
+tidy(result)       # broom-style tidy data frame
+glance(result)     # broom-style one-row summary
+plot(result)       # forest plot (requires forrest package)
+```
+
+## 局限与已知的拒绝情形
+
+对于不支持的组合，causatr 会给出信息明确的报错，而不是静默地产出错误答案。主要限制如下：
+
+| What | Why |
+|---|---|
+| **匹配要求二值处理** | MatchIt 不支持连续/分类处理 |
+| **ATT/ATC 仅适用于 0/1 二值处理** | 其他处理类型下该估计目标没有定义 |
+| **IPW 下的 `threshold()`** | 前推密度在边界处带有点质量（混合测度） |
+| **IPW 下对连续处理使用 `dynamic()`** | 连续处理上的确定性规则没有 Lebesgue 密度 |
+| **`ipsi()` 仅在 IPW 下可用，且仅限二值处理** | IPSI 权重公式要求二值处理和一个倾向评分模型 |
+| **`stochastic()` 仅在 G-computation 下可用** | 用户自定义随机策略的密度比难以处理 |
+| **处理变量存在缺失值** | 没有观测到的处理就无法定义反事实 |
+| **拒绝 `na.action = na.exclude`** | 会因残差填充不匹配而静默破坏 IF |
+| **IPW/匹配下效应修饰变量必须是基线变量** | MSM 中的时变修饰变量会通过对撞路径引入偏倚（运行时不做强制检查） |
+| **多元纵向 IPW** | 尚不支持；改用 ICE G-computation |
+
+支持的估计量 × 处理 × 干预 × 结局组合的完整矩阵，见 `vignette("interventions")` 和
+`FEATURE_COVERAGE_MATRIX.md`。
+
+::: {.callout-warning}
+## 混杂因子选择：用 DAG，不要用数据驱动的方法
+
+`causat()` 中的 `confounders =` 公式应当反映一个预先设定的**因果 DAG**（有向无环图），
+它编码了你对数据生成过程的假设。**不要**通过逐步回归、LASSO 或其他数据驱动的变量选择
+来挑选混杂因子。这些方法优化的是预测拟合，而不是因果识别，可能会：
+- **纳入对撞因子** —— 对处理和结局的共同效应做条件化会打开一条非因果路径，使估计值
+  向零偏倚，甚至翻转符号。
+- **纳入工具变量** —— 影响处理但不影响结局的变量会抬高方差，却不能减少混杂偏倚（在
+  模型设定正确时这纯粹是有效性损失，但会放大未测量混杂因子带来的偏倚）。
+- **纳入中介变量** —— 位于从处理到结局的因果路径上的变量会挡住你想估计的那部分效应，
+  使其向无效值衰减。
+
+可以用 [`dagitty`](https://cran.r-project.org/package=dagitty) 编码你的 DAG，
+并查询最小充分调整集（`dagitty::adjustmentSets()`）。参见 @hernan_whatif，第 18 章。
+:::
+
+## 延伸阅读
+
+causatr 为每种估计方法都提供了详细的 vignette：G-computation、IPW、匹配、纵向 ICE、
+可迁移性和三角验证。用 `vignette(package = "causatr")` 查看全部可用的 vignette。
+
+## 参考文献
+
+::: {#refs}
+:::
+
