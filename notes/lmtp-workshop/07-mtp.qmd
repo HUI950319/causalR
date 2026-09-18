@@ -1,0 +1,157 @@
+---
+title: "修正处理策略"
+subtitle: "*Modified Treatment Policies* · Beyond the ATE 工作坊中译"
+bibliography: lmtp-refs.bib
+nocite: |
+  @diaz2023nonparametric, @haneuse2013estimation
+lang: zh
+---
+
+> **来源**：Nick Williams、Kara Rudolph、Iván Díaz，[*Beyond the ATE* · Modified Treatment Policies](https://www.beyondtheate.com/07_R_mtp.html)
+> （[GitHub 仓库](https://github.com/nt-williams/lmtp-workshop)），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 原站的 webR 交互代码块在本站以静态代码块呈现，不重新执行；
+> 原文用交互式表格展示的模拟数据，本站改为列说明。
+
+{{< include macros.qmd >}}
+
+```r
+download.file("https://raw.githubusercontent.com/nt-williams/lmtp-workshop/main/data/crime_toy.csv", "crime.csv")
+crime <- read.csv("crime.csv")
+```
+
+正如前面讨论过的，修正处理策略是一类依赖于处理的**自然取值**（即观测取值）的干预。
+例子包括：
+
+-   把时长超过 4 小时的手术缩短 1 小时（加法 MTP）
+
+-   把 BMI > 30 的个体的 BMI 降低 2 个单位（加法 MTP）
+
+-   把空气质量指数（AQI）降低 20%（乘法 MTP）。
+
+### 合成的社区暴力数据
+
+在目前的一项工作中，我们想估计降低社区暴力水平（暴力犯罪率）对早产风险的效应。
+研究提示，社区暴力可能通过应激的生理反应、母亲心理健康恶化以及不健康的应对行为，
+影响婴儿健康。社区暴力是一个高度内生的暴露，这正是采用此类移位干预的动因。[^1]
+
+[^1]: 感谢 Chris Dharma 模拟了这份数据！
+
+原站在此处渲染出该数据集的交互式表格（数值按一位小数显示）。数据列依次为：
+`owner_vacancy_rate`、`renter_vacancy_rate`、`poverty_line_prop`、`unemployed_prop`、
+`no_car_prop`、`never_married_prop`、`separated_prop`（前 7 列为基线协变量 $W$），
+以及 `maternal_age`、`edu_level`、`insurance_status`、`race_ethnicity`、`parity`、
+`neighborhood_violence`（暴露 $A$）、`preterm_birth`（结局 $Y$）和
+`community_code`（社区聚类编号）。
+
+## 练习 1
+
+为如下修正处理策略编写移位函数：把社区暴力的自然取值降低 50%。
+用 _lmtp_ 包估计该干预对早产的总体平均效应。计算标准误时，
+务必用 `id` 参数来处理社区层面的聚类。为节省计算时间，不要使用交叉拟合。
+
+```r
+A <- "neighborhood_violence"
+W <- names(crime)[1:7]
+Y <- "preterm_birth"
+id <- "community_code"
+
+learners <- c("SL.mean",
+              "SL.glm",
+              "SL.rpart",
+              "SL.gam")
+
+d <- # 在这里写你的移位函数！
+
+fit_mtp <- # 在这里写你的估计代码！
+```
+
+<details>
+
+<summary style="color: grey; font-weight: 400;">
+
+✅ 参考答案
+
+</summary>
+
+```r
+d <- function(data, a) {
+  data[[a]]*0.5
+}
+
+fit_mtp <- lmtp_tmle(
+  data = crime,
+  trt = A,
+  outcome = Y,
+  baseline = W,
+  id = id,
+  shift = d,
+  mtp = TRUE,
+  folds = 1,
+  learners_trt = learners,
+  learners_outcome = learners
+)
+```
+
+</details>
+
+你是不是遇到了这个报错？
+
+```r
+Warning: Detected decimalish `trt` values and `mtp = FALSE`. Consider setting `mtp =
+TRUE` if getting errors.
+Loading required package: nnls
+Error: object 'fit' not found
+```
+
+::: {.callout-caution appearance="simple"}
+如果你的干预是修正处理策略，务必设定 `mtp = TRUE`！
+:::
+
+## 练习 2
+
+下面把「降低社区暴力」这一干预对早产的效应，与观测到的早产率作比较。
+我们需要考虑到：这个对比里用的是观测早产率的**样本均值**。
+随机变量样本均值的 EIF 为
+
+$$
+Y - \E[Y]\text{.}
+$$
+
+回忆一下，_lmtp_ 在底层把估计结果作为 [_ife_](https://cran.r-project.org/package=ife)
+包的 `ife` 对象返回。`ife` 对象是一个用于「基于影响函数的估计」的 S7 类，
+它允许在基于影响函数的估计之间做算术运算，从而非常方便地自动计算标准误和置信区间。
+下面为观测早产率的样本均值构造一个 `ife` 对象。
+
+```r
+ife_preterm_birth <- ife::ife(
+  mean(crime$preterm_birth),
+  eif = crime$preterm_birth - mean(crime$preterm_birth),
+  id = as.character(crime$community_code)
+)
+
+ife_preterm_birth
+```
+
+把该干预对早产的效应与观测早产率作对比。
+
+```r
+# 在这里写你的代码！
+```
+
+<details>
+
+<summary style="color: grey; font-weight: 400;">
+
+✅ 参考答案
+
+</summary>
+
+```r
+fit_mtp$estimate - ife_preterm_birth
+```
+
+</details>
+
+借助 _lmtp_ 我们发现：在「把社区暴力降低 50%」的假设干预下，
+早产率会下降约 4 个百分点。
