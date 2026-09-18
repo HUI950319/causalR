@@ -86,7 +86,7 @@ status <- function(type) {
     "::: ",
     class,
     "\n",
-    "## Work-in-progress 🚧\n",
+    "## Work-in-progress &#128679;\n",
     "You are reading the work-in-progress first edition of *Causal Inference in R*. ",
     "This chapter ",
     status,
