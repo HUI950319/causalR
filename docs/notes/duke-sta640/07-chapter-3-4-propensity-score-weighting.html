@@ -1,0 +1,1710 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hans" xml:lang="zh-Hans"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Chapter 3.4 · Propensity Score Weighting – 因果推断读书笔记</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../notes/duke-sta640/08-chapter-3-5-doubly-robust-estimation.html" rel="next">
+<link href="../../notes/duke-sta640/06-chapter-3-3-observational-studies-stratification-and-matching.html" rel="prev">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-4571e413af9019dfdcc70175faf53a1f.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-6dc1a78ab6bae0d3eba54bf33535cf80.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../../site_libs/bootstrap/bootstrap-dark-6382e9162de9198f964ae53196d3447c.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-6dc1a78ab6bae0d3eba54bf33535cf80.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "没有结果",
+    "search-matching-documents-text": "匹配的文档",
+    "search-copy-link-title": "复制搜索链接",
+    "search-hide-matches-text": "隐藏其它匹配结果",
+    "search-more-match-text": "更多匹配结果",
+    "search-more-matches-text": "更多匹配结果",
+    "search-clear-button-title": "清除",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "取消",
+    "search-submit-button-title": "提交",
+    "search-label": "搜索"
+  }
+}</script>
+
+
+</head>
+
+<body class="nav-sidebar docked course-slides quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../notes/duke-sta640.html">Duke STA 640 · 因果推断课程讲义中译</a></li><li class="breadcrumb-item"><a href="../../notes/duke-sta640/07-chapter-3-4-propensity-score-weighting.html"><span class="chapter-title">Chapter 3.4 · Propensity Score Weighting</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="搜索" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header sidebar-header-stacked">
+      <a href="../../index.html" class="sidebar-logo-link">
+      </a>
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../../">因果推断读书笔记</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/HUI950319/causalR" title="源代码" class="quarto-navigation-tool px-1" aria-label="源代码"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="切换深色模式"><i class="bi"></i></a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="搜索"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">关于这份笔记</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-logic-chain.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">前三章逻辑链</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/notation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">记号与约定</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/identifiability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">三条识别条件</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/formulas.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">公式卡</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">阶段一 · 估计量全景</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-potential-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 1 章 · Zeus 的心脏移植</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-randomized-experiments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 2 章 · 一枚硬币，还是两枚</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-observational-studies.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 3 章 · 一枚硬币也没抛</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-effect-modification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 4 章 · 没有「治疗的因果效应」这种东西</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 5 章 · 两个处理，一起动手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-causal-diagrams.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 6 章 · 先画假设，再下结论</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-confounding.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 7 章 · 后门关上，可交换性才回来</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-selection-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 8 章 · 进了分析的人，未必还能互换</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-measurement-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 9 章 · 带星号的变量，与担不起因果的箭头</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-random-variability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 10 章 · 该不该撤稿</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">原书第二部分 · 有模型的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w03-why-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 11 章 · 数据不会自己说话</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w03-ip-weighting-msm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w04-standardization-gformula.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 13 章 · 把模型挪到结局那一侧</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w04-g-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 14 章 · 猜一个数，直到它与处理无关</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w05-outcome-regression-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 15 章 · 最常用的方法，为什么排在最后</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w05-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 16 章 · 不要求可交换性的那条路</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w06-causal-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 17 章 · 风险比里藏着一个碰撞变量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w06-variable-selection.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 18 章 · 调整得越多，不等于偏倚越小</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">原书第三部分 · 时变处理的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w07-time-varying-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 19 章 · 先说清策略，才有效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w07-treatment-confounder-feedback.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 20 章 · 调了混杂，反而更错</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w08-g-methods-time-varying.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 21 章 · 三条路线，同一个 0</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w11-target-trial-emulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 22 章 · 先写协议，再看数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w11-causal-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 23 章 · 把中介问题改写成能做的试验</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">郑老师因果推理课程讲义</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-overview.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">课程讲义总览</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w01.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W01 · 因果推断理论与方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w02.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W02 · DAG 与回归、反事实与 G 计算</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w03.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W03 · 倾向得分方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w04.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W04 · 机器学习与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w05.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W05 · 双重稳健估计与双重机器学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w06.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W06 · TMLE 及其衍生方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w07.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W07 · 缺失数据与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w08.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W08 · 中介分析与因果中介</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w09.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W09 · 处理效应异质性分析</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
+ <span class="menu-text">Duke STA 640 · 因果推断课程讲义中译</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">课程讲义总览（21 份）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/01-chapter-1-background-and-potential-outcome-framework.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 1 · Background and Potential Outcome Framework</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/02-chapter-2-1-randomized-experiments-fisher-s-and-neyman-s-mode-of-inference.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 2.1 · Randomized Experiments: Fisher’s and Neyman’s Mode of Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/03-chapter-2-2-randomized-experiments-covariate-balance-and-adjustment.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 2.2 · Randomized Experiments: Covariate Balance and Adjustment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/04-chapter-3-1-observational-studies-outcome-regression.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.1 · Observational Studies: Outcome Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/05-chapter-3-2-observational-studies-propensity-score.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.2 · Observational Studies: Propensity Score</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/06-chapter-3-3-observational-studies-stratification-and-matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.3 · Observational Studies: Stratification and Matching</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/07-chapter-3-4-propensity-score-weighting.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">Chapter 3.4 · Propensity Score Weighting</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/08-chapter-3-5-doubly-robust-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.5 · Doubly Robust Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/09-chapter-3-6-non-binary-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.6 · Non-binary Treatments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/10-chapter-4-1-treatment-effect-heterogeneity-causal-subgroup-analysis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 4.1 · Treatment Effect Heterogeneity: Causal Subgroup Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/11-chapter-4-2-treatment-effect-heterogeneity-machine-learning-approaches.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 4.2 · Treatment Effect Heterogeneity: Machine Learning Approaches</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/12-chapter-5-sensitivity-analysis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 5 · Sensitivity Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/13-chapter-6-1-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 6.1 · Instrumental Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/14-chapter-6-2-principal-stratification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 6.2 · Principal Stratification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/15-chapter-7-regression-discontinuity-designs.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 7 · Regression Discontinuity Designs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/16-chapter-8-difference-in-differences-synthetic-control-and-beyond.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 8 · Difference-in-Differences, Synthetic Control, and Beyond</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/17-chapter-9-sequential-and-longitudinal-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 9 · Sequential and Longitudinal Treatments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/18-chapter-10-bayesian-causal-inference.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 10 · Bayesian Causal Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/19-chapter-11-causal-inference-with-survival-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 11 · Causal Inference with Survival Outcomes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/20-lab-2-propensity-score-matching-and-weighting-binary-treatment.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Lab 2 · Propensity Score Matching and Weighting: Binary Treatment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/21-lab-3-propensity-score-weighting-with-multiple-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Lab 3 · Propensity Score Weighting with Multiple Treatments</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false">
+ <span class="menu-text">causatr 官方文档中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-introduction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 介绍</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-gcomp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的 G-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-ipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的逆概率加权</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-aipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的增强 IPW（双稳健估计）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的倾向评分匹配</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-snm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的结构嵌套均值模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-interventions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 中的干预类型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-natural-history-mtps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">自然历史修改处理政策（宽限期）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-triangulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">方法论三角：g-computation、IPW、AIPW、匹配和 SNM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-longitudinal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">纵向处理：ICE g-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-transportability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">可转运性和可推广性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-missing-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">处理缺失数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-diagnostics.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的诊断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-validation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">针对参考实现的验证</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果效应的方差估计</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-ipw-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IPW 密度比权重和方差理论</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false">
+ <span class="menu-text">Causal Inference in R · 原书中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/01-casual-to-causal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">从随意推断到因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/02-whole-game.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">完整实践：蚊帐与疟疾</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/03-po-counterfactuals.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">潜在结局与反事实</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/04-dags.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">用 DAG 表达因果问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/05-not-just-a-stats-problem.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果推断不只是统计问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/06-stats-models-ci.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">从问题到答案：分层与结局模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/07-prep-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">准备数据以回答因果问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/08-propensity-scores.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">倾向评分</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/09-evaluating-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">评估倾向评分模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/10-estimands.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果估计目标</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/11-outcome-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">拟合加权结局模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/12-other-exposures.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">连续型与分类暴露</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/13-g-comp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">G 计算</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/14-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">异质性处理效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/15-missingness-and-measurement.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">缺失与测量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/16-sensitivity.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">敏感性分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/17-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果中介分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/18-longitudinal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">跨时间的因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/19-time-to-event.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果生存时间模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/20-doubly-robust.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">双稳健模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/21-machine-learning.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">机器学习与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/22-iv-and-friends.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">工具变量及相关方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/23-diff-in-diff.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">双重差分</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/24-evidence.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">证据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/99-references.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">参考文献</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/appendices/A-bootstrap.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">自助法（Bootstrap）</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
+        
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../notes/duke-sta640.html">Duke STA 640 · 因果推断课程讲义中译</a></li><li class="breadcrumb-item"><a href="../../notes/duke-sta640/07-chapter-3-4-propensity-score-weighting.html"><span class="chapter-title">Chapter 3.4 · Propensity Score Weighting</span></a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-title">Chapter 3.4 · Propensity Score Weighting</span></h1>
+<p class="subtitle lead">Duke STA 640 · 69 页 · 中文翻译</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<blockquote class="blockquote">
+<p>本页是 Duke STA 640 因果推断课程讲义的中文文字翻译。原始 PDF 由课程页面公开提供； 图形、坐标轴文字和 PDF 中的版式仍以原始讲义为准。原始来源： <a href="https://stat.duke.edu/~fl35/teaching/640/Chap3.4_observational_weighting.pdf">课程 PDF</a>。</p>
+</blockquote>
+<div class="slide-embed">
+<div class="fig-frame">
+<iframe src="../slides/duke-sta640/07-Chapter-3.4-Propensity-Score-Weighting.pdf#view=FitH" title="Chapter 3.4 · Propensity Score Weighting" style="width:100%; aspect-ratio:16/10; min-height:460px; border:0; display:block;">
+  <p>浏览器没有在页内渲染 PDF，请
+  <a href="../slides/duke-sta640/07-Chapter-3.4-Propensity-Score-Weighting.pdf">直接打开讲义</a>。</p>
+</iframe>
+</div>
+<p class="fig-cap">
+<b>原始讲义（69 页）。</b>阅读器支持翻页、缩放和页码跳转；手机上若页内不显示， <a href="../slides/duke-sta640/07-Chapter-3.4-Propensity-Score-Weighting.pdf">直接打开或下载 PDF</a>。
+</p>
+</div>
+<p><strong>第 1 页</strong></p>
+<p>STA 640 — 因果推断</p>
+<p>第 3.4 章：倾向评分加权</p>
+<p>Fan Li</p>
+<p>统计科学系 Duke University</p>
+<p><strong>第 2 页</strong></p>
+<p>混杂</p>
+<p>▶ 混杂因素 𝑋（或共同原因；见 DAG）是关联与因果之间的主要 复杂性/障碍</p>
+<p>𝑋</p>
+<p> 𝑍 /𝑌</p>
+<p>▶ 倾向评分方法：需要一个 𝑍 ∼ 𝑋 的模型</p>
+<p>▶ 分层 ▶ 匹配 ▶ 回归（需要为 𝑌 ∼ 𝑒(𝑋) 建立额外模型） ▶ 加权（本讲）</p>
+<p><strong>第 3 页</strong></p>
+<p>逆概率加权（IPW）</p>
+<p>▶ 逆概率加权（IPW），也称为处理逆概率加权（IPTW） ▶ 容易证明   𝑍𝑌 (1 − 𝑍)𝑌 E − = 𝜏 ATE . 𝑒(𝑋) 1 − 𝑒(𝑋) 观察       𝑍𝑌 1 E(𝑍 |𝑋) E =E E [𝑍𝑌 (1) | 𝑋] = E E[𝑌 (1)|𝑋] 𝑒(𝑋) 𝑒(𝑋) 𝑒(𝑋) = E {E[𝑌 (1)|𝑋]} = E[𝑌 (1)]</p>
+<p>▶ 起源于调查抽样文献中的 Horvitz-Thompson（HT）估计量（1952） ▶ 在因果推断中，首次出现在 Rosenbaum (1987)</p>
+<p><strong>第 4 页</strong></p>
+<p>逆概率加权（IPW） ▶ 回顾   𝑍𝑌 (1 − 𝑍)𝑌 E − = 𝜏 ATE . 𝑒(𝑋) 1 − 𝑒(𝑋) ▶ 定义逆概率权重（IPW）： ( 1 𝑤 1 (𝑋𝑖 ) = 𝑒 (𝑋 𝑖) , for 𝑍𝑖 = 1 𝑤 0 (𝑋𝑖 ) = 1−𝑒1(𝑋𝑖 ) , for 𝑍𝑖 = 0. ▶ Horvitz-Thompson（HT）估计量：平均处理效应（ATE）的无偏非参数 估计量；两组之间加权结局均值之差 (𝑁 𝑁 ) 𝐻𝑇 1 ∑︁ 𝑌𝑖 𝑍𝑖 ∑︁ 𝑌𝑖 (1 − 𝑍𝑖 ) 𝜏ˆ = − ˆ 𝑖 ) 𝑖=1 1 − 𝑒(𝑋 𝑁 𝑖=1 𝑒(𝑋 ˆ 𝑖) 𝑁 1 ∑︁ = {𝑌𝑖 𝑍𝑖 𝑤 1 (𝑋𝑖 ) − 𝑌𝑖 (1 − 𝑍𝑖 )𝑤 0 (𝑋𝑖 )} . 𝑁 𝑖=1</p>
+<p><strong>第 5 页</strong></p>
+<p>标准化权重：Hájek 估计量 ▶ 使用任何加权方法时，一个好的做法是标准化权重——一组内权重的总和应为 1</p>
+<p>▶ 将每个个体的权重除以该组中所有权重的总和 Í 𝑤 𝑖 / 𝑖:𝑍=𝑧 𝑤 𝑖 for 𝑧 = 0, 1，即 Hájek 估计量：</p>
+<p>Í𝑛 Í𝑛 hajek 𝑖=1 𝑌𝑖 𝑍 𝑖 𝑤 1 (𝑋𝑖 ) 𝑌𝑖 (1 − 𝑍𝑖 )𝑤 0 (𝑋𝑖 ) 𝜏ˆ = Í𝑛 − Í𝑖=1 𝑛 𝑖=1 𝑍 𝑖 𝑤 1 (𝑋𝑖 ) 𝑖=1 (1 − 𝑍 𝑖 )𝑤 0 (𝑋𝑖 ) Í𝑁 Í𝑁 𝑍𝑖𝑌𝑖 /𝑒(𝑋 ˆ 𝑖) (1 − 𝑍𝑖 )𝑌𝑖 /{1 − 𝑒(𝑋ˆ 𝑖 )} = Í𝑖=1 𝑁 − Í𝑖=1 𝑁 , 𝑖=1 𝑍 𝑖 /𝑒(𝑋 ˆ 𝑖) 𝑖=1 (1 − 𝑍 𝑖 )/{1 − 𝑒(𝑋 ˆ 𝑖 )}</p>
+<p>▶ 更小的渐近方差：V( 𝜏ˆ hajek ) ≤ V( 𝜏ˆ 𝐻𝑇 )</p>
+<p>▶ 在纵向处理中，标准化权重也称为“稳定化权重”（Hernan, Robins, Brumback, 2000）</p>
+<p><strong>第 6 页</strong></p>
+<p>逆概率加权（IPW）</p>
+<p>▶ IPW 创建一个加权总体（即目标总体）——研究样本所代表的总体</p>
+<p>▶ 在这个加权总体中，两组之间的协变量分布达到平衡：可以证明</p>
+<p>E[𝑋 𝑍/𝑒(𝑋)] = E[𝑋 (1 − 𝑍)/(1 − 𝑒(𝑋))].</p>
+<p>▶ 其背后的直觉是：一个受试者被抽样到的可能性越小，他所应代表的总体规模就越大</p>
+<p>▶ 提高“异类”的权重：处理分配与倾向评分预测相反的个体</p>
+<p><strong>第 7 页</strong></p>
+<p>逆概率加权（IPW）：方差</p>
+<p>▶ 如果真实的倾向评分 PS 𝑒(𝑋) 已知，会怎样？</p>
+<p>▶ Hirano, Imbens, Ridder (2003)：使用估计的 PS 而非真实 PS 来估计 ATE，在渐近意义下可得到更有效率的处理效应估计</p>
+<p>▶ 这仅对 ATE（IPW）成立，而不适用于其他目标量，如 ATT 或 ATO（Yang and Ding, 2018; Reifeis and Hudgens, 2022）</p>
+<p>▶ 考虑倾向评分估计不确定性的方差闭式三明治估计量（M-估计量） （Lunceford and Davidian, 2004）——半参数推断，并为 PS 模型增加一个估计方程</p>
+<p>▶ Bootstrap：重新抽样个体，并在每次重抽样后重新拟合 PS、估计因果效应——对于大样本计算开销很大</p>
+<p><strong>第 8 页</strong></p>
+<p>逆概率加权（IPW）</p>
+<p>优点（加权方法的一般优点）</p>
+<p>▶ 简单，具有理论基础 ▶ 平滑——目标总体明确 ▶ 全局平衡 ▶ 可扩展到更复杂的情境</p>
+<p>缺点（IPW 特有）</p>
+<p>▶ 对倾向评分错设更敏感 ▶ 接近 0 或 1 的倾向评分会产生极端权重 ▶ 需要许多临时性的处理决策 ▶ ATE 可能并不总是合理的目标量</p>
+<p><strong>第 9 页</strong></p>
+<p>示例：重新审视 Framingham 心脏研究</p>
+<p>▶ 目标：评估他汀类药物对健康结局的影响</p>
+<p>▶ 患者：来自子代队列、在第 6 次访视（1995-1998）的横断面总体</p>
+<p>▶ 处理：第 6 次访视时使用他汀类药物 vs.&nbsp;不使用他汀类药物</p>
+<p>▶ 结局：心血管死亡、心肌梗死（MI）、卒中</p>
+<p>▶ 混杂因素：性别、年龄、体质指数、糖尿病、MI 病史、PAD 病史、卒中病史……</p>
+<p>▶ 处理组与对照组之间协变量存在显著不平衡，这促使我们采用 IPW（或某种形式的倾向评分调整）</p>
+<p><strong>第 10 页</strong></p>
+<p>Framingham 研究中的平衡（他汀类药物 vs.&nbsp;对照）</p>
+<p><strong>第 11 页</strong></p>
+<p>IPW 面临的挑战：正值性不足</p>
+<p><strong>第 12 页</strong></p>
+<p>示例：正值性不足（Brennen et al.&nbsp;2016）</p>
+<p><strong>第 13 页</strong></p>
+<p>IPW 的操作性挑战</p>
+<p>▶ 接近 0 和 1 的倾向评分值会产生极端权重（取倒数后）</p>
+<p>▶ 有限样本下的不利后果——Basu 的大象：严重的偏倚和方差</p>
+<p>▶ 权重标准化有所帮助，但作用有限</p>
+<p>▶ 核心问题：倾向评分分布尾部缺乏正值性——对这些个体进行因果比较具有很大的不确定性</p>
+<p><strong>第 14 页</strong></p>
+<p>其他调整方法</p>
+<p>正值性不足和极端倾向评分如何影响其他调整方法？</p>
+<p>▶ 回归调整：使结果对模型更敏感</p>
+<p>▶ 匹配：许多患者因没有匹配对象而被排除</p>
+<p>▶ 分层：由于层内残余不平衡而增加偏倚</p>
+<p>与其完全放弃加权，不如改进 IPW。</p>
+<p><strong>第 15 页</strong></p>
+<p>倾向评分修剪与截尾</p>
+<p>▶ 对称修剪（Crump et al., 2009） ▶ 排除估计 PS 位于 [𝛼, 1 − 𝛼] 之外的患者 ▶ 经验法则：𝛼 = 0.1</p>
+<p>表：应用于 Framingham 的修剪阈值</p>
+<p>方法 左侧排除 右侧排除 总计 对称 𝛼 = 0.025 1047 1 1048 (31%) 对称 𝛼 = 0.05 1634 1 1635 (48%) 对称 𝛼 = 0.10 2269 1 2270 (68%)</p>
+<p>▶ 倾向评分截尾 ▶ 将估计 PS 低于 𝛼 的患者设为 𝛼，将估计 PS 高于 1 − 𝛼 的患者设为 1 − 𝛼 ▶ 没有比这更临时的做法了！</p>
+<p><strong>第 16 页</strong></p>
+<p>对称修剪 𝛼 = 0.10</p>
+<p><strong>第 17 页</strong></p>
+<p>IPW 之外的扩展：调整目标</p>
+<p>▶ 另一种方法：将目标从 ATE（IPW）移开，转向其他由用户指定的目标总体。</p>
+<p>▶ 关键问题：针对哪个目标总体计算 ATE？ (Thomas et al.&nbsp;2020a)</p>
+<p>▶ 通常，研究者关注的是处于“犹豫不决”状态的个体（位于 PS 分布中部）。示例：</p>
+<ol type="1">
+<li>TAVR/SAVR</li>
+<li>在临床均衡下，目标总体是其观测特征具有最大正值性的个体。</li>
+</ol>
+<p><strong>第 18 页</strong></p>
+<p>平衡权重 Li, Morgan, Zaslavsky, 2018</p>
+<p>▶ IPW 是一大类平衡权重的特殊情形</p>
+<p>▶ 回顾，条件平均处理效应 CATE 定义为</p>
+<p>𝜏(𝑥) ≡ E(𝑌 (1)|𝑋 = 𝑥) − E(𝑌 (0)|𝑋 = 𝑥).</p>
+<p>▶ 假设观测协变量的密度 𝑓 (𝑥) 相对于测度 𝜇 存在</p>
+<p>▶ 考虑一个目标总体，其密度记为 𝑔(𝑥)，可能不同于 𝑓 (𝑥)</p>
+<p>▶ 比值 ℎ(𝑥) = 𝑔(𝑥)/ 𝑓 (𝑥) 称为倾斜函数，它对观测样本重新加权，使其代表目标总体</p>
+<p><strong>第 19 页</strong></p>
+<p>平衡权重：一般框架 Li, Morgan, Zaslavsky, 2018</p>
+<p>▶ 一类新的目标量：目标总体 𝑔 上的 ATE ∫ 𝜏(𝑥) 𝑓 (𝑥)ℎ(𝑥)𝜇(𝑑𝑥) E{ℎ(𝑥)𝜏(𝑥)} 𝜏ℎ ≡ E𝑔 [𝑌𝑖 (1) − 𝑌𝑖 (0)] = ∫ = . (1) 𝑓 (𝑥)ℎ(𝑥)𝜇(𝑑𝑥) E{ℎ(𝑥)}</p>
+<p>▶ 𝜏ℎ 是一大类加权 ATE（WATE）目标量（Hirano et al., 2003）</p>
+<p>▶ 当 ℎ(𝑥) = 1、𝑓 (𝑥) = 𝑔(𝑥) 时，目标总体是观测总体</p>
+<p>▶ 不同的 ℎ(𝑥) 定义不同的目标总体。在实践中，我们预先指定倾斜函数 ℎ(𝑥)</p>
+<p><strong>第 20 页</strong></p>
+<p>平衡权重：一般框架 Li, Morgan, Zaslavsky, 2018</p>
+<p>▶ 令 𝑓 𝑧 (𝑥) = Pr(𝑋 = 𝑥|𝑍 = 𝑧)（每个组 𝑧 内的协变量分布），容易证明</p>
+<p>𝑓1 (𝑥) ∝ 𝑓 (𝑥)𝑒(𝑥), 𝑓0 (𝑥) ∝ 𝑓 (𝑥) (1 − 𝑒(𝑥))</p>
+<p>▶ 对于给定的 ℎ(𝑥)，为了估计 𝜏ℎ，我们可以使用解析权重将 𝑓 𝑧 (𝑥) 加权到目标总体 𝑔(𝑥) = 𝑓 (𝑥)ℎ(𝑥) 𝑓 ( 𝑥 ) ℎ ( 𝑥 ) 𝑓 ( 𝑥 ) ℎ ( 𝑥 ) ℎ ( 𝑥 )  𝑤 1 (𝑥) ∝ 𝑓1 ( 𝑥 ) = 𝑓 ( 𝑥 )𝑒 ( 𝑥 ) = 𝑒 ( 𝑥 ) ,    (2)  𝑤 0 (𝑥) ∝ 𝑓 (𝑓𝑥 )(ℎ(  𝑥) = 𝑓 ( 𝑥𝑓 () 𝑥(1−𝑒 ) ℎ( 𝑥 ) ℎ( 𝑥 ) ( 𝑥 ) ) = 1−𝑒 ( 𝑥 ) .  0 𝑥)</p>
+<p>▶ 这类权重（𝑤 0 , 𝑤 1 ）称为平衡权重：使比较组之间加权协变量的分布达到平衡 𝑓1 (𝑥)𝑤 1 (𝑥) = 𝑓0 (𝑥)𝑤 0 (𝑥) = 𝑓 (𝑥)ℎ(𝑥)</p>
+<p><strong>第 21 页</strong></p>
+<p>示例：目标总体（ℎ）与平衡权重</p>
+<p>▶ ℎ(𝑥) 的选择决定目标总体、目标量和权重</p>
+<p>▶ 选择 ℎ(𝑥) 时需要综合考虑统计学、科学和政策因素</p>
+<p>目标总体 ℎ( 𝑥 ) 目标量 权重（𝑤1 , 𝑤0 ）   1 1 合并 1 ATE 𝑒 ( 𝑥) , 1−𝑒 ( 𝑥) [HT] 处理组 𝑒(𝑥) ATT 1, 𝑒 ( 𝑥)  1−𝑒 ( 𝑥)  1−𝑒 ( 𝑥) 对照组 1 − 𝑒(𝑥) ATC 𝑒 ( 𝑥) , 1 正值性 𝑒 ( 𝑥 ) (1 − 𝑒 ( 𝑥 ) ) ATO  (1 − 𝑒 ( 𝑥 ), 𝑒 ( 𝑥 )  1( 𝛼≤𝑒 ( 𝑥) ≤1− 𝛼) 1( 𝛼≤𝑒 ( 𝑥) ≤1− 𝛼) 修剪 1( 𝛼 ≤ 𝑒 ( 𝑥 ) ≤ 1 − 𝛼) 𝑒 ( 𝑥) , 1−𝑒 ( 𝑥)   min{𝑒 ( 𝑥) ,1−𝑒 ( 𝑥) } min{𝑒 ( 𝑥) ,1−𝑒 ( 𝑥) } 匹配 min{𝑒 ( 𝑥 ), 1 − 𝑒 ( 𝑥 ) } 𝑒 ( 𝑥) , 1−𝑒 ( 𝑥)</p>
+<p><strong>第 22 页</strong></p>
+<p>大样本性质</p>
+<p>▶ WATE 的样本估计量 Í Í 𝑖 𝑤 1 (𝑥 𝑖 )𝑍 𝑖 𝑌𝑖 𝑤 0 (𝑥𝑖 ) (1 − 𝑍𝑖 )𝑌𝑖 𝜏ˆℎ = Í − Í𝑖 (3) 𝑤 (𝑥 𝑖 1 𝑖 𝑖 )𝑍 𝑖 𝑤 0 (𝑥 𝑖 ) (1 − 𝑍 𝑖 )</p>
+<p>▶ 定理 1. 𝜏ˆℎ 是 𝜏ℎ 的一致估计量。</p>
+<p><strong>第 23 页</strong></p>
+<p>大样本性质</p>
+<p>定理 2. 当 𝑁 → ∞ 时，在给定样本 𝑋 = {𝑥1 , . . . , 𝑥 𝑁 } 的条件下，估计量 𝜏ˆℎ 的条件方差（对协变量 取值的可能样本求期望）收敛为： ∫   𝑣 1 (𝑥) 𝑣 0 (𝑥) 𝑓 (𝑥)ℎ(𝑥) 2 𝜇(𝑑𝑥) 𝐶ℎ2 ,  𝑁 · E 𝑥 V[ 𝜏ˆℎ | 𝑋] → + 𝑒(𝑥) 1 − 𝑒(𝑥) ∫ 其中 𝑣 𝑧 (𝑥) = V[𝑌 (𝑧) | 𝑋]，且 𝐶ℎ = ℎ(𝑥) 𝑓 (𝑥)𝑑𝜇(𝑥) 是一个标准化 常数。</p>
+<p>推论 1. 在同方差条件下，在所有 ℎ 中，函数 ℎ(𝑥) ∝ 𝑒(𝑥) (1 − 𝑒(𝑥)) 使 加权估计量 𝜏ˆℎ 具有最小渐近方差；并且当 𝑁 → ∞ 时， ∫  𝑁 · minℎ {V[ 𝜏ˆℎ ]} → 𝑣 𝑓 (𝑥)𝑒(𝑥) (1 − 𝑒(𝑥))𝜇(𝑑𝑥).</p>
+<p><strong>第 24 页</strong></p>
+<p>重叠权重</p>
+<p>▶ 基于推论 1，LMZ 提出了一种新的权重，即重叠权重，令 ℎ(𝑥) = 𝑒(𝑥) (1 − 𝑒(𝑥))： ( 𝑤 1 (𝑥) ∝ 1 − 𝑒(𝑥), for 𝑍 = 1, 𝑤 0 (𝑥) ∝ 𝑒(𝑥), for 𝑍 = 0.</p>
+<p>▶ 每个单位按照其被分配到相反组的概率加权</p>
+<p>▶ 与逆概率加权一样，实践中始终应先对权重进行标准化</p>
+<p><strong>第 25 页</strong></p>
+<p>重叠权重 ▶ 回顾：ℎ(𝑥) = 𝑒(𝑥) (1 − 𝑒(𝑥))， ( 𝑤 1 (𝑥) ∝ 1 − 𝑒(𝑥), for 𝑍 = 1, 𝑤 0 (𝑥) ∝ 𝑒(𝑥), for 𝑍 = 0.</p>
+<p>▶ 问题：倾向评分 𝑒(𝑥) 取何值时 ℎ(𝑥) 最大？</p>
+<p>▶ 答案：𝑒(𝑥) = 0.5 时，ℎ(𝑥) = 0.25</p>
+<p>▶ ℎ(𝑥) 对 𝑓 (𝑥) 的相对加权在 0.5 处最大</p>
+<p>▶ 目标总体：其特征以较大概率出现在任一处理组中的单位（重叠最多）</p>
+<p>▶ 𝑒(𝑥) (1 − 𝑒(𝑥))：调和平均数，在分类树文献中也称基尼指数</p>
+<p><strong>第 26 页</strong></p>
+<p><strong>第 27 页</strong></p>
+<p>重叠权重：精确平衡 定理 3. 当根据 logistic 回归模型通过最大似然估计倾向评分时，</p>
+<p>logit{𝑒(𝑥𝑖 )} = 𝛽0 + 𝑥𝑖′ 𝛽,</p>
+<p>重叠权重会使处理组与对照组之间任一纳入协变量的均值达到精确 平衡： Í𝑛 Í𝑛 𝑖=1 𝑥 𝑖 𝑗 𝑍 𝑖 (1 − 𝑒ˆ𝑖 ) 𝑖=1 𝑥 𝑖 𝑗 (1 − 𝑍 𝑖 ) 𝑒ˆ𝑖 Í 𝑛 = Í 𝑛 , for 𝑗 = 1, . . . , 𝑝, (4) 𝑖=1 𝑍 𝑖 (1 − 𝑒ˆ𝑖 ) 𝑖=1 (1 − 𝑍 𝑖 ) 𝑒ˆ𝑖</p>
+<p>其中 𝑒ˆ𝑖 = {1 + exp[−( 𝛽ˆ0 + 𝑥𝑖′ 𝛽)]} ˆ −1，且 𝛽ˆ = ( 𝛽ˆ1 , …, 𝛽ˆ 𝑗 ) 是回归系数的最大似然估计。 ▶ 注：精确平衡性质适用于任何纳入的协变量及其衍生协变量，包括 协变量的高阶项和交互项</p>
+<p><strong>第 28 页</strong></p>
+<p>精确平衡：证明概要 ▶ logistic 倾向评分模型 logit{𝑒(𝑋𝑖 )} = 𝛽0 + 𝑋𝑖′ 𝛽 的对数似然函数为： 𝑛 ∑︁ 𝐿= 𝑍𝑖 log{ 𝑒(𝑥)} ˆ + (1 − 𝑍𝑖 ) log{1 − 𝑒(𝑥)}, ˆ 𝑖=1 −1 其中 𝑒ˆ = 1 + exp(−𝑥 𝑖′ 𝛽) . </p>
+<p>▶ 为获得 β 的最大似然估计，需要令得分函数等于 0；对于每个协变量 𝑘，有： 𝑛 𝜕 log 𝐿 ∑︁ 𝑆𝑘 = = 𝑥𝑖𝑘 (𝑍𝑖 − 𝑒), ˆ for 𝑘 = 0, 1, . . . , 𝑝, (5) 𝜕 𝛽𝑘 𝑖=1</p>
+<p>其中 𝑥0𝑘 ≡ 1。 ▶ 令其等于 0 并求解，最大似然估计 𝛽ˆ 满足（习题） 𝑛 ∑︁ 𝑛 ∑︁ 𝑛 ∑︁ 𝑛 ∑︁ 𝑍𝑖 = 𝑒ˆ𝑖 , and 𝑥𝑖𝑘 𝑍𝑖 = 𝑥𝑖𝑘 𝑒ˆ𝑖 . 𝑖=1 𝑖=1 𝑖=1 𝑖=1</p>
+<p><strong>第 29 页</strong></p>
+<p>重叠加权：亚组中的精确平衡 (Yang et al.&nbsp;2022)</p>
+<p>推论 2. 如果假定的倾向评分模型包含二元协变量的任何交互项，那么 重叠权重会使由该二元协变量定义的亚组中的均值达到精确平衡。</p>
+<p>说明： ▶ 如果真实倾向评分模型含有交互项，那么使用由任何包含真实模型的 模型估计的倾向评分计算的重叠权重，会使由这些交互项定义的亚组达到精确 平衡</p>
+<p><strong>第 30 页</strong></p>
+<p>重叠权重的精确平衡：更多说明</p>
+<p>▶ 对于二元处理，精确平衡性质仅对 logistic 链接函数（规范链接函数）成立</p>
+<p>▶ 如果使用 Z 对 X 的线性回归估计 𝑒(𝑥)，该性质也成立：恒等链接函数是规范链接函数</p>
+<p>▶ 双刃剑：无论倾向评分模型是否有效，精确平衡性质都成立——这是 GLM 规范链接函数所产生的一个奇特数学现象</p>
+<p>▶ 精确（均值）平衡是重叠权重的一个良好副产品，但并非其主要 动机（最小化方差）</p>
+<p>▶ 实践中，即使这可能破坏精确平衡，也始终应努力拟合一个良好的倾向评分模型</p>
+<p><strong>第 31 页</strong></p>
+<p>重叠权重：统计学优势</p>
+<p>▶ 在所有平衡权重中，非参数估计量的方差最小（同方差假设在实践中 并非关键）</p>
+<p>▶ logistic 倾向评分模型中所纳入协变量的均值实现精确平衡</p>
+<p>▶ 权重有界（不同于逆概率加权）</p>
+<p>▶ 避免临时截断权重或剔除个案：这是修剪的连续版本</p>
+<p><strong>第 32 页</strong></p>
+<p>重叠权重：自适应</p>
+<p>▶ 重叠权重具有自适应性，近似目标是 ATO</p>
+<p>▶ ATE：如果处理组和对照组在规模和分布上近乎平衡   （当 𝑒(𝑥) ≈ 1/2 时，(1 − 𝑒(𝑥), 𝑒(𝑥)) ≈ 𝑒.25 .25 ( 𝑥 ) , 1−𝑒 ( 𝑥 ) ）</p>
+<p>▶ ATT：如果接受处理的倾向始终很小（当 𝑒(𝑥) ≈ 0 时，   𝑒(𝑥) (1 − 𝑒(𝑥), 𝑒(𝑥)) ≈ 1, 1−𝑒 ( 𝑥 ) ）</p>
+<p>▶ ATC：如果接受对照的倾向很小</p>
+<p><strong>第 33 页</strong></p>
+<p>重叠权重：科学意义 ▶ 重叠权重聚焦于最接近随机试验总体的（子）总体 ▶ 重叠权重强调内部效度</p>
+<p>▶ 重叠总体本身具有实质性研究价值，例如</p>
+<p>▶ 在医学中，处于临床均势状态的患者</p>
+<p>▶ 在政策研究中，随着获得新信息，处理分配对政策转变反应最敏感的 单位</p>
+<p>▶ 重叠加权模拟随机临床试验的特征。在大型随机试验无法立即开展的 情况下很有用，例如 COVID-19 研究（Thomas et al.&nbsp;2020b） ▶ 重叠加权最早由 A Zaslavsky 提出，自 2001 年起应用于医学期刊 （Schneider et al.&nbsp;2001）</p>
+<p><strong>第 34 页</strong></p>
+<p>刻画目标总体</p>
+<p>▶ 刻画和比较不同目标总体的一种简便方法，是列出协变量均值表，包括未调整和加权均值（医学论文中通常称为表 1）</p>
+<p><strong>第 35 页</strong></p>
+<p>匹配与回归的联系 ▶ 匹配：将两个样本中“相似”的个案配对，丢弃未匹配个案（自下而上的方法）</p>
+<p>▶ 加权：将权重应用于整个样本，旨在实现整体平衡（自上而下的方法）</p>
+<p>▶ 内在联系：随着倾向评分模型变得越来越复杂，重叠加权趋近于多对多匹配</p>
+<p>▶ 为什么？倾向评分模型的极限是一个饱和模型：每个设计点（对于 连续变量则是每个小邻域）都有一个固定效应（虚拟变量）</p>
+<p><strong>第 36 页</strong></p>
+<p>匹配与回归的联系 ▶ 设组 𝑧 = 0, 1 中 𝑥𝑖 的样本数为 𝑁 𝑧𝑖，则饱和模型估计的倾向评分 ˆ 𝑖 ) = 𝑁1𝑖 /(𝑁0𝑖 + 𝑁1𝑖 ) 为 𝑒(𝑥</p>
+<p>▶ 处理组和对照组单位的重叠权重分别为 𝑁0𝑖 /(𝑁0𝑖 + 𝑁1𝑖 ) 和 𝑁1𝑖 /(𝑁0𝑖 + 𝑁1𝑖 )</p>
+<p>▶ 在多对多匹配中：在每个设计点 𝑥 处，每个处理组单位与同一 𝑥 处的 𝑁0𝑖 个对照组单位匹配，每个对照组单位与 𝑁1𝑖 个处理组单位匹配—— 这与重叠加权完全相同</p>
+<p>▶ 每个设计点 𝑥，以及因此 𝜏(𝑥 ˆ 𝑖 ) 的总重叠权重为 𝑁0𝑖 𝑁1𝑖 /(𝑁0𝑖 + 𝑁1𝑖 )</p>
+<p>▶ 这正是每个设计点固定效应 OLS 结局模型中赋予 𝑦¯ 1𝑖 − 𝑦¯ 0𝑖 的 精度权重 𝑌𝑧𝑖 = 𝛼𝑖 + 𝑧𝜏 + 𝜖 𝑧𝑖</p>
+<p><strong>第 37 页</strong></p>
+<p>二元结局：目标量与估计量</p>
+<p>▶ 回顾 𝜏1 = Pr𝑔 [𝑌 (1) = 1] = E𝑔 [𝑌 (1)] = E 𝑓 [ℎ(𝑋) 𝜇1 (𝑋) ] E (ℎ (𝑋) ) , 𝑓 E [ℎ(𝑋) 𝜇 (𝑋) ] 𝜏0 = Pr𝑔 [𝑌 (0) = 1] = E𝑔 [𝑌 (0)] = 𝑓 E 𝑓 (ℎ(𝑋)0 )</p>
+<p>▶ 𝜏 ATO = 𝜏1 − 𝜏0 解释为因果风险差</p>
+<p>▶ 我们将重叠总体中的因果风险比和优势比定义为 𝜏1 𝜏1 /(1 − 𝜏1 ) 𝜏RR = , 𝜏OR = 𝜏0 𝜏0 /(1 − 𝜏0 ) ▶ 估计倾向评分，并使用 Í𝑛 Í𝑛 𝑍𝑖𝑌𝑖 (1 − 𝑒ˆ𝑖 ) (1 − 𝑍𝑖 )𝑌𝑖 𝑒ˆ𝑖 𝜏ˆ1 = Í𝑖=1 𝑛 , 𝜏ˆ0 = Í𝑖=1 𝑛 𝑖=1 𝑍 𝑖 (1 − 𝑒ˆ𝑖 ) 𝑖=1 (1 − 𝑍 𝑖 ) 𝑒ˆ𝑖</p>
+<p><strong>第 38 页</strong></p>
+<p>方差的 M 估计量</p>
+<p>▶ 当倾向评分由 logistic 回归估计时，使用重叠加权（即 ATO 目标量）对 𝜏ℎ 的闭式一致方差估计量见 Li, Thomas, Li (2019)</p>
+<p>▶ 基于 M 估计，考虑估计倾向评分时的不确定性，在有限样本下具有良好的覆盖率</p>
+<p>▶ 在大样本量研究中很有吸引力</p>
+<p>▶ 如果结局为二元变量且目标量为因果优势比或相对风险，也可以使用 Delta 方法推导相应的闭式方差估计量</p>
+<p><strong>第 39 页</strong></p>
+<p>一个模拟示例 ▶ 模拟 𝑛0 = 𝑛1 = 1000 个单位。 ▶ 单个协变量：𝑋𝑖 ∼ 𝑁 (0, 1) + 2𝑍𝑖 。 ▶ 结局模型：𝑌𝑖 (𝑧) ∼ 𝑁 (𝑋𝑖 , 1) + 𝜏𝑧，且 𝜏 = 1。 ▶ 使用带不同权重的非参数估计量 𝜏ˆℎ 图：各处理组内的协变量分布 未加权 重叠 HT ATT Z=0 Z=1 密度</p>
+<p>密度</p>
+<p>密度</p>
+<p>密度 −2 0 2 4 −2 0 2 4 −2 0 2 4 −2 0 2 4</p>
+<p>X X X X</p>
+<p>未加权 重叠 HT ATT 𝜏ˆ 2.945 1.000 0.581 0.640 𝑆𝐸 ( 𝜏ˆ ) 0.054 0.038 0.386 0.402</p>
+<p><strong>第 40 页</strong></p>
+<p>重新审视 Framingham</p>
+<p><strong>第 41 页</strong></p>
+<p>加权分布</p>
+<p><strong>第 42 页</strong></p>
+<p>加权分布</p>
+<p><strong>第 43 页</strong></p>
+<p>结果：复合心血管死亡</p>
+<p><strong>第 44 页</strong></p>
+<p>结果：全因死亡</p>
+<p><strong>第 45 页</strong></p>
+<p>随机试验中的协变量调整倾向评分加权</p>
+<p>▶ 倾向评分加权是在观察性研究背景下发展起来的 ▶ 倾向评分也可用于随机试验中的协变量调整 ▶ 随机试验中偶然不平衡很常见；协变量调整可提高 精确度 ▶ 带有协变量-处理交互项的 ANCOVA 模型（Yang and Tsiatis, 2001; Lin, 2013）应用广泛，但存在“钓鱼式探索”的可能性， 如果 ANCOVA 设定错误，也会损失效率 ▶ 在随机试验中，倾向评分是已知的（通常为 1/2），如何进行倾向评分加权？</p>
+<p><strong>第 46 页</strong></p>
+<p>用于随机试验中协变量调整的倾向评分加权</p>
+<p>▶ 随机试验中用于协变量调整的倾向评分加权：其流程与观察性研究没有区别</p>
+<ol type="1">
+<li><p>指定一个“工作”倾向评分模型，并为每个个体获得估计的倾向评分</p></li>
+<li><p>使用基于估计倾向评分的倾向评分加权矩估计量作为协变量调整估计量</p></li>
+</ol>
+<p>▶ 逆概率加权（Williamson et al., 2014; Shen et al., 2014）和重叠加权（Zeng et al., 2020）均有效：它们与 ANCOVA 估计量在渐近意义下等价， 都属于同一个半参数族（Tsiatis et al.&nbsp;2008） ▶ 随机试验与观察性研究之间的关键区别：在随机试验中，倾向评分已知且为常数，因此重叠加权中的 ℎ(𝑥) 为常数，从而逆概率加权 和重叠加权对应完全相同的目标量——ATE</p>
+<p><strong>第 47 页</strong></p>
+<p>随机试验中协变量调整的倾向评分加权</p>
+<p>▶ 有限样本性能：重叠加权比逆概率加权更有效率，其性能与具有正确结局模型的 ANCOVA 估计量一样好，有时甚至更优——关键在于重叠加权的精确平衡性质</p>
+<p>▶ 倾向评分加权避免了结局建模，使协变量调整更加客观、透明</p>
+<p>▶ 这是“估计倾向评分优于真实倾向评分”的一个例子 （Rosenbaum, 1987）</p>
+<p>▶ 平衡权重系列中的倾向评分加权方法已在 R 包 PSweight 中实现（可从 CRAN 获取） https://cran.r-project.org/web/packages/PSweight/index.html</p>
+<p><strong>第 48 页</strong></p>
+<p>平衡的核心是什么？</p>
+<p>▶ 上述所有平衡方法都旨在平衡分析者指定的 𝑋 的函数（例如矩）</p>
+<p>▶ 一个棘手的问题是：如果某些对结局模型很重要的 𝑋 的函数未被指定，该怎么办？</p>
+<p>▶ 例如：如果真实的结局模型为 𝑌 ∼ 𝑋1 + 𝑋2 + 𝑋1 𝑋2 ，而我们平衡了 𝑋1 , 𝑋2 , 𝑋12 , 𝑋22 （以及更高阶矩），却没有平衡交互项 𝑋1 𝑋2，而该交互项可能存在严重不平衡，那么最终仍会得到有偏的因果结论</p>
+<p><strong>第 49 页</strong></p>
+<p>平衡的核心是什么？</p>
+<p>▶ 归根结底，结局模型（或生成机制）才是最重要的</p>
+<p>▶ 显而易见却被忽视的问题：不是“如何平衡”，而是“平衡什么”。</p>
+<p>▶ 平衡是（隐含的）一种调整形式</p>
+<p>▶ 我的总体观点是：在观察性研究中，我们需要在一定程度上确保协变量平衡（例如通过倾向评分），然后采用灵活的结局模型</p>
+<p><strong>第 50 页</strong></p>
+<p>以倾向评分作为协变量的回归</p>
+<p>▶ 回顾 {𝑌 (1), 𝑌 (0)} ⊥ 𝑍 |𝑋 意味着 𝑌 (1), 𝑌 (0) ⊥ 𝑍 |𝑒(𝑋)；因此， 因果效应可识别为： 𝜏 = 𝐸 [𝐸 (𝑌 |𝑒(𝑋), 𝑍 = 1) − 𝐸 (𝑌 |𝑒(𝑋), 𝑍 = 0)]</p>
+<p>▶ 以倾向评分为协变量进行回归的动机：𝑙𝑚(𝑌 ∼ 1 + 𝑍 + 𝑒(𝑋)); 将 OLS 拟合中 𝑍 的系数记为 𝜏ˆ𝑒 ▶ 如果倾向评分模型正确，且结局模型确实关于 𝑍 和 𝑒(𝑋) 呈线性，则 𝜏ˆ𝑒 是 𝜏 𝐴𝑇 𝐸 的一致估计 ▶ 问题是：如果结局模型不正确，会怎样？</p>
+<p>▶ 《因果推断入门》中的定理 14.1（Ding, 2024）：如果 {𝑌 (1), 𝑌 (0)} ⊥ 𝑍 |𝑋，则</p>
+<p>𝐸 [ℎ𝑂 (𝑋)𝜏(𝑋)] 𝜏ˆ𝑒 = 𝜏 𝐴𝑇𝑂 = 𝐸 [ℎ𝑂 (𝑋)]</p>
+<p>其中 ℎ𝑂 (𝑋) = 𝑒(𝑋) (1 − 𝑒(𝑋))，𝜏(𝑋) 为 CATE</p>
+<p><strong>第 51 页</strong></p>
+<p>以倾向评分作为协变量的回归 ▶ 《因果推断入门》中的定理 14.1（Ding, 2024）：如果 {𝑌 (1), 𝑌 (0)} ⊥ 𝑍 |𝑋，则 𝐸 [ℎ𝑂 (𝑋)𝜏(𝑋)] 𝜏ˆ𝑒 = 𝜏 𝐴𝑇𝑂 = 𝐸 [ℎ𝑂 (𝑋)] 其中 ℎ𝑂 (𝑋) = 𝑒(𝑋) (1 − 𝑒(𝑋))，𝜏(𝑋) 为 CATE ▶ 定理 14.1 的特殊之处是什么？它是代数性的 ▶ 只要倾向评分模型正确，无论结局模型是否正确设定，该结论都成立 ▶ 不要求正值性假设；即使某些 𝑒(𝑥) = 0 或 1，也仍然成立</p>
+<p>▶ 有用的推论： i. 总体 OLS 将 𝑌 回归于 𝑍 − 𝑒(𝑋) 或 {1, 𝑍 − 𝑒(𝑋)} 的拟合中，𝑍 − 𝑒(𝑋) 的系数也等于 𝜏 𝐴𝑇𝑂</p>
+<ol start="2" type="i">
+<li>总体 OLS 将 𝑌 回归于 {1, 𝑍, 𝑒(𝑋), 𝑋 } 的拟合中，𝑍 的系数等于 𝜏 𝐴𝑇𝑂</li>
+</ol>
+<p><strong>第 52 页</strong></p>
+<p>以倾向评分作为协变量的回归</p>
+<p>定理 14.1 及其推论为 ATO 的三个两步估计量提供了依据： 步骤 1. 拟合倾向评分模型以获得 𝑒(𝑋 ˆ 𝑖) 步骤 2. ▶ （定理 14.1）对 𝑌𝑖 关于 (1, 𝑍𝑖 , 𝑒(𝑋 ˆ 𝑖 )) 进行 OLS 回归，以获得 𝑍𝑖 的系数</p>
+<p>▶ （推论 i）对 𝑌𝑖 关于倾向评分残差 𝑍𝑖 − 𝑒(𝑋 ˆ 𝑖 ) 进行 OLS 回归，以获得 𝑍𝑖 − 𝑒(𝑋 ˆ 𝑖 ) 的系数（Lee, 2018）</p>
+<p>▶ （推论 ii）对 𝑌𝑖 关于 (1, 𝑍𝑖 , 𝑒(𝑋 ˆ 𝑖 ), 𝑋) 进行 OLS 回归，以获得 𝑍𝑖 的系数 – 方法 1 的协变量调整版本，方差更小</p>
+<p>▶ 标准误：OLS 直接给出的 Wald 标准误是不正确的（未能考虑估计倾向评分时的不确定性）。Bootstrap</p>
+<p>▶ 扩展：变系数（同质处理效应）结局模型如何？</p>
+<p><strong>第 53 页</strong></p>
+<p>以下幻灯片不在课程讲授范围内</p>
+<p><strong>第 54 页</strong></p>
+<p>补充 1：聚类数据中的倾向评分</p>
+<p>▶ 医疗保健和政策数据通常具有聚类结构，例如患者按医院、诊所或保险计划聚类</p>
+<p>▶ 我们关注个体被分配处理，并具有个体层面的协变量和结局信息的情形</p>
+<p>▶ 要点（Li, Zaslavsky, Landrum, 2013）： ▶ 有必要在倾向评分分析的至少一个阶段（最好是两个阶段）中纳入聚类信息</p>
+<p>▶ 无混杂假设有多种形式：取决于不同的条件集合，例如是否包含聚类特异性固定/随机效应（尚待解决）</p>
+<p>▶ 标准误估计需要特别谨慎</p>
+<p><strong>第 55 页</strong></p>
+<p>聚类数据中的倾向评分 ▶ 聚类数据中的倾向评分加权流程： ▶ 阶段 1：使用包含聚类特异性效应的固定效应/随机效应/混合效应模型估计倾向评分 ▶ 阶段 2：两种方法 ▶ 方法 1（非参数）：在每个聚类内计算聚类特异性处理效应（使用选定的权重），并根据每个聚类中的总权重对这些效应进行加权平均 ▶ 方法 2（通过结局模型进行增广）：利用多层次（固定效应/随机效应/混合效应）结局模型增广加权估计量。在逆概率加权的情形下，这被称为双重稳健估计量</p>
+<p>▶ 标准误：两种方法 ▶ Bootstrap：重新抽样聚类（而非个体） ▶ 增广加权：三明治估计量（Lunceford and Davidian, 2003），考虑估计倾向评分时的不确定性 ▶ 使用这两种标准误方法的增广估计量已在 PSweight 包中针对逆概率加权、重叠加权和 MW 实现 55 / 69</p>
+<p><strong>第 56 页</strong></p>
+<p>补充 2：用于种族差异分析的倾向评分 ▶ 因果研究：没有操纵就没有因果关系（Holland, 1986）；“原因”至少在假设上必须可操纵</p>
+<p>▶ 种族显然不可操纵</p>
+<p>▶ 医疗保健中的种族差异：不是因果研究</p>
+<p>▶ 问题：倾向评分仍可用于种族差异分析吗？ 健康服务研究者对此存在犹豫和困惑</p>
+<p>▶ 答案：可以，但有一些注意事项。</p>
+<p>▶ 要点： ▶ 倾向评分的平衡性质不涉及潜在结果，也不意味着因果解释 ▶ 种族差异比较所需的假设弱于因果比较</p>
+<p><strong>第 57 页</strong></p>
+<p>受控描述性比较：目标量 Li and Li (2022), 观察性研究</p>
+<p>▶ 种族差异比较属于受控描述性比较： ▶ 对两组之间预先指定的协变量差异进行调整，而不是提供因果解释 ▶ 其他例子：不同年份、外部数据与同期数据的比较（外部对照） ▶ “分配”：定义个体属于两个组或总体之一的不可操纵状态 ▶ 条件平均受控差异（ACD）：</p>
+<p>𝜏(𝑥) ≡ 𝐸 (𝑌 | 𝑍 = 1, 𝑋 = 𝑥) − 𝐸 (𝑌 | 𝑍 = 0, 𝑋 = 𝑥). (6) ▶ 目标量：目标总体上的平均受控差异 𝜏ℎ = 𝐸 𝑔 [𝜏(𝑋)] = . (7) ▶ 𝜏ℎ：两组之间结局 𝑌 的平均净差异，其中协变量分布经过调整，与目标总体 𝑔 中的分布相同 57 / 69</p>
+<p><strong>第 58 页</strong></p>
+<p>因果比较与受控描述性比较 Li and Li (2022), 观察性研究</p>
+<p>▶ 因果比较的假设： ▶ （A1）稳定单元处理值假设（SUTVA）：（i）不存在干扰，（ii）不存在不同版本的处理</p>
+<p>▶ 这是为每个个体定义两个潜在结果所必需的</p>
+<p>▶ （A2）无混杂：不存在未测量的混杂因素 ▶ 这是将潜在结果与观测结局联系起来，并将观测结局之间的差异解释为因果效应所必需的</p>
+<p>▶ （A3）正值性：每个个体属于任一组的概率均非零。</p>
+<p>▶ 受控描述性比较的假设 ▶ ACD 不涉及潜在结果；因此不需要 SUTVA 或无混杂</p>
+<p>▶ 正值性仍然是必要的，出于操作层面的原因（否则方差较大）</p>
+<p><strong>第 59 页</strong></p>
+<p>用于种族差异分析的倾向评分 ▶ 医疗保健中的种族差异：受控描述性比较的一个特殊情形 ▶ 种族差异的倾向评分分析 ▶ 可以使用倾向评分：倾向评分的平衡性质不涉及潜在结果，也不意味着因果解释 ▶ 倾向评分是一维汇总评分，有助于实现协变量之间的平衡 ▶ 目标总体的概念对于种族差异也很重要。不同的权重会得到不同的目标总体： ▶ 逆概率加权：合并待比较两个种族组的总体（两个集合的并集） ▶ 重叠加权：正值性总体——两个种族组之间协变量分布最相似的子总体（两个集合的交集） ▶ ATT 权重：与某个预先指定的种族组（例如白人或黑人）具有相同协变量分布的总体。 59 / 69</p>
+<p><strong>第 60 页</strong></p>
+<p>补充 3：加权与平衡</p>
+<p>▶ 平衡权重在期望意义下平衡协变量，但在有限样本中并不一定达到平衡</p>
+<p>▶ 近期一系列研究提出了可直接平衡协变量、绕过倾向评分估计的估计量</p>
+<p>▶ 目标：寻找权重 𝑤 𝑖，使每个协变量的加权平均值 近似平衡 𝑁 𝑁 1 ∑︁ 1 ∑︁ 𝑤 𝑖 𝑍𝑖 𝑋𝑖 = 𝑤 𝑖 (1 − 𝑍𝑖 ) 𝑋𝑖 𝑁1 𝑖=1 𝑁1 𝑖=1</p>
+<p>▶ 总体思路：在满足一组平衡约束的条件下，最小化权重的变异（例如熵、变异系数）</p>
+<p>▶ 这类权重通常通过优化算法获得</p>
+<p><strong>第 61 页</strong></p>
+<p>加权与平衡</p>
+<p>▶ 文献 ▶ 熵平衡（Hainmueller, 2011） ▶ 协变量平衡倾向评分（CBPS）（Imai and Ratkovic, 2014） ▶ 稳定化平衡权重（Zubizarreta, 2015） ▶ 逆概率倾斜（Graham, Pinto, Egel, 2012; 2016, JEBS） ▶ 近似残差平衡（Athey, Imbens, Wager, 2016）</p>
+<p>▶ 这些估计量以牺牲部分效率为代价实现有限样本平衡</p>
+<p>▶ 开放问题：与使用灵活逻辑斯蒂模型（例如采用幂级数或样条的半参数模型）来估计倾向评分的 DR 估计量相比，这些估计量的优势有多大？</p>
+<p><strong>第 62 页</strong></p>
+<p>协变量平衡倾向评分（CBPS） Imai and Ratkovic (2014)</p>
+<p>▶ 在传统倾向评分分析中，先拟合一个用于倾向评分的模型（例如逻辑斯蒂模型），然后 检查所得的平衡情况并迭代改进模型拟合</p>
+<p>▶ Imai and Ratkovic (2014) 提出了协变量平衡倾向评分（CBPS）方法</p>
+<p>▶ 核心思想：在满足协变量平衡约束的条件下拟合逻辑斯蒂倾向评分模型——即优化逻辑斯蒂模型的似然函数</p>
+<p><strong>第 63 页</strong></p>
+<p>协变量平衡倾向评分（CBPS） Imai and Ratkovic (2014)</p>
+<p>▶ 具体而言，逻辑斯蒂倾向评分模型为</p>
+<p>logit{𝑒 𝛽 (𝑋𝑖 )} = 𝛽0 + 𝑋𝑖 𝛽′ , (8)</p>
+<p>其平衡条件为     𝑍𝑖 𝑓 (𝑋𝑖 ) (1 − 𝑍𝑖 ) 𝑓 (𝑋𝑖 ) E =E 𝑒 𝛽 (𝑋𝑖 ) 1 − 𝑒 𝛽 (𝑋𝑖 )</p>
+<p>其中，𝑓 (𝑋𝑖 ) 是 𝑋𝑖 的 M 维向量值函数</p>
+<p><strong>第 64 页</strong></p>
+<p>协变量平衡倾向评分（CBPS） Imai and Ratkovic (2014)</p>
+<p>▶ 在实际实现中，CBPS 在满足（样本）约束的条件下，获得使模型（8）的似然函数达到最优的倾向评分 𝑁   𝑛   ∑︁ 𝑍𝑖 𝑓 (𝑋𝑖 ) ∑︁ (1 − 𝑍𝑖 ) 𝑓 (𝑋𝑖 ) = . (9) 𝑖=1 𝑒 𝛽 (𝑋𝑖 ) 𝑖=1 1 − 𝑒 𝛽 (𝑋𝑖 )</p>
+<p>▶ 当 𝑓 (𝑋𝑖 ) = 𝑒 ′𝛽 (𝑋𝑖 ) = 𝜕𝑒 𝛽 (𝑋𝑖 )/𝜕 𝛽 时，CBPS 正好是逻辑斯蒂模型（8）的最大似然估计（MLE）。 ▶ 为什么？查看逻辑斯蒂模型（8）的得分函数：</p>
+<p>𝑍𝑖 𝑒 ′𝛽 (𝑋𝑖 ) (1 − 𝑍𝑖 )𝑒 ′𝛽 (𝑋𝑖 ) 𝑛 ( ) 𝑛 ( ) ∑︁ ∑︁ = . (10) 𝑖=1 𝑒 𝛽 (𝑋𝑖 ) 𝑖=1 1 − 𝑒 𝛽 (𝑋𝑖 )</p>
+<p>▶ 平衡约束施加在能够预测倾向评分的协变量上</p>
+<p><strong>第 65 页</strong></p>
+<p>协变量平衡倾向评分（CBPS） Imai and Ratkovic (2014)</p>
+<p>▶ 在逻辑斯蒂模型（8）中，我们有 𝑝 + 1 个参数和 𝑝 + 1 个约束，该模型称为“恰好识别”</p>
+<p>▶ 我们还可以添加更多约束，例如对协变量的高阶矩施加约束</p>
+<p>▶ 此时，倾向评分模型是过度识别的：通常可以提高渐近效率，但会牺牲有限样本性质——本质上是一个广义矩方法（GMM）估计量（Newey and McFadden, 1994）</p>
+<p><strong>第 66 页</strong></p>
+<p>协变量平衡倾向评分（CBPS） Imai and Ratkovic (2014)</p>
+<p>▶ 注意：倾向评分模型可能完全设定错误，但施加的矩条件仍然保持平衡</p>
+<p>▶ CBPS 在很大程度上避免了极端倾向评分，更稳健且平衡性更好</p>
+<p>▶ CBPS 估计完成后，仍然应用逆概率加权来估计平均处理效应</p>
+<p>▶ CBPS 已扩展到多种和连续处理、纵向处理（软件和扩展内容可在 Kosuke Imai 的网页上找到）</p>
+<p><strong>第 67 页</strong></p>
+<p>参考文献</p>
+<p>Horvitz, D. G.; Thompson, D. J. (1952) “从有限总体中不放回抽样的推广”, Journal of the American Statistical Association, 47, 663â685.</p>
+<p>Rosenbaum, P. R. (1987). 基于模型的直接调整。 Journal of the American Statistical Association, 82(398), 387-394.</p>
+<p>Hirano, K., Imbens, G. W., Ridder, G. (2003). 利用估计的倾向评分有效估计平均处理效应。 Econometrica, 71(4), 1161-1189.</p>
+<p>Robins, J. M., Hernan, M. A., Brumback, B. (2000). 流行病学中的边际结构模型与因果推断。 Epidemiology. 550-560</p>
+<p>Lunceford, J. K., Davidian, M. (2004). 利用倾向评分进行分层和加权以估计因果处理效应：一项比较研究。 Statistics in medicine, 23(19), 2937-2960.</p>
+<p>Crump, RK, Hotz, VJ, Imbens, GW, and Mitnik, OA. (2006). 平均处理效应估计中的有限重叠问题。 Biometrika, 96, 187-199.</p>
+<p>Reifeis SA, Hudgens MG. 采用逆概率加权估计时处理组中处理效应的方差。 American Journal of Epidemiology. 2022 Jun;191(6):1092-7.</p>
+<p><strong>第 68 页</strong></p>
+<p>参考文献</p>
+<p>Imai, K., Ratkovic, M. (2014). 协变量平衡倾向评分。 Journal of the Royal Statistical Society: Series B: Statistical Methodology, 243-263.</p>
+<p>Schneider EC, Cleary PD, Zaslavsky AM, Epstein AM. (2001). 流感疫苗接种中的种族差异：管理式医疗是否缩小了非裔美国人与白人之间的差距？ Journal of the American Medical Association. 286(12):1455-60</p>
+<p>Li F, and Li F. (2022). 利用倾向评分研究种族差异。 Observational Studies.</p>
+<p>Li, F, Morgan, LK, and Zaslavsky, AM. (2018). 通过倾向评分加权平衡协变量。 Journal of the American Statistical Association. 113(521), 390-400.</p>
+<p>Li, F, Thomas, LE, and Li, F. (2019). 通过重叠权重处理极端倾向评分。 American Journal of Epidemiology. 188(1), 250-257.</p>
+<p>Li F, Zaslavsky AM, and Landrum MB. (2013). 采用多层数据进行倾向评分加权。 Statistics in Medicine, 32(19), 3373-3387.</p>
+<p><strong>第 69 页</strong></p>
+<p>参考文献</p>
+<p>Tsiatis AA, Davidian M, Zhang M, Lu X. 随机临床试验中两样本处理比较的协变量调整：一种有原则且灵活的方法。 Statistics in Medicine 2008; 27(23): 4658-4677.</p>
+<p>Yang L, Tsiatis AA. 预试验-后试验中处理效应估计量的效率研究。 The American Statistician 2001; 55(4): 314-321.</p>
+<p>Yang S, Ding P. 基于估计倾向评分修剪的观察性研究中因果效应的渐近推断。 Biometrika. 2018 Jun 1;105(2):487-93.</p>
+<p>Lin, W. (2013). 与模型无关的实验数据回归调整笔记：重新审视 Freedman 的批评。 Annals of Applied Statistics, 7(1), 295-318.</p>
+<p>Shen, C., Li, X., Li, L. (2014). 随机研究中用于协变量调整的逆概率加权。 Statistics in medicine, 33(4), 555-568.</p>
+
+
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "已复制");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "已复制");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/hui950319\.github\.io\/causalR\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../notes/duke-sta640/06-chapter-3-3-observational-studies-stratification-and-matching.html" class="pagination-link" aria-label="Chapter 3.3 · Observational Studies: Stratification and Matching">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">Chapter 3.3 · Observational Studies: Stratification and Matching</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../notes/duke-sta640/08-chapter-3-5-doubly-robust-estimation.html" class="pagination-link" aria-label="Chapter 3.5 · Doubly Robust Estimation">
+        <span class="nav-page-text"><span class="chapter-title">Chapter 3.5 · Doubly Robust Estimation</span></span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/duke-sta640/07-chapter-3-4-propensity-score-weighting.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></div></div></footer></body></html>

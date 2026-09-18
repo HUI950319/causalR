@@ -1,0 +1,818 @@
+---
+title: "Lab 3 · Propensity Score Weighting with Multiple Treatments"
+subtitle: "Duke STA 640 · 15 页 · 中文翻译"
+body-classes: course-slides
+---
+
+> 本页是 Duke STA 640 因果推断课程讲义的中文文字翻译。原始 PDF 由课程页面公开提供；
+> 图形、坐标轴文字和 PDF 中的版式仍以原始讲义为准。原始来源：
+> [课程 PDF](https://stat.duke.edu/~fl35/teaching/640/labs/lab-3-PS-multiple.pdf)。
+
+::: {.slide-embed}
+
+::: {.fig-frame}
+```{=html}
+<iframe src="../slides/duke-sta640/21-Lab-3-Propensity-Score-Multiple-Treatments.pdf#view=FitH"
+        title="Lab 3 · Propensity Score Weighting with Multiple Treatments"
+        style="width:100%; aspect-ratio:16/10; min-height:460px; border:0; display:block;">
+  <p>浏览器没有在页内渲染 PDF，请
+  <a href="../slides/duke-sta640/21-Lab-3-Propensity-Score-Multiple-Treatments.pdf">直接打开讲义</a>。</p>
+</iframe>
+```
+:::
+
+<p class="fig-cap">
+<b>原始讲义（15 页）。</b>阅读器支持翻页、缩放和页码跳转；手机上若页内不显示，
+<a href="../slides/duke-sta640/21-Lab-3-Propensity-Score-Multiple-Treatments.pdf">直接打开或下载 PDF</a>。
+</p>
+:::
+
+**第 1 页**
+
+实验：多个处理的倾向评分加权
+
+Fan Li
+
+目录
+0.1    设置：加载程序包   . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   1
+
+1 多个处理组示例：合成 MEPS 数据                                                            1
+1.1 合成 MEPS 数据集 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .            1
+1.2 设计：倾向评分估计与平衡检查 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .              3
+1.3 分析：加权与增广加权 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .              6
+
+0.1       设置：加载程序包
+
+library(PSweight)
+
+1     多个处理组示例：合成 MEPS 数据
+本文旨在展示如何应用 PSweight 程序包，使用平衡权重方法研究多个处理组
+。该示例将基于合成版本的 MEPS 数据集。
+本分析将聚焦于无混杂的描述性比较。
+
+1.1       合成 MEPS 数据集
+
+我们使用 2009 年医疗支出面板调查（MEPS）数据的一个合成数据集。我们的合成数据
+集包括 20 个分类协变量和 5 个连续协变量。我们关注的主要结局是每位个体在 2009 年的
+医疗总支出（healthExp）。我们希望研究亚洲人、黑人、白人和西班牙裔之间的健康差异
+（种族）。
+我们将使用几种不同的方法分析该合成数据集，包括逆概率加权、重叠加权，以及以处理组平均处理效应
+（ATT）为目标的加权方法——该效应基于一个特定的参考组定义。对于每种方法，我们感兴趣的是估计四个
+组中任意两个组的六个边际对比，即在特定目标人群上的边际均值之间的对比，也就是两个组在医疗支出
+方面的平均控制差异。我们同时报告点估计、稳健三明治标准误和相应的 95% 置信区间。
+#Load the synthetic MEPS Data Set
+meps <- read.csv("meps_syn.csv")
+#Transfer race to categorical variables
+meps$race <- factor(meps$race)
+
+下表概述了大多数协变量的含义（Li and Li, 2019）。
+
+1
+
+**第 2 页**
+
+名称                 含义
+pcs                  SF-12 身体成分汇总
+mcs                  SF-12 心理成分汇总
+age                  年龄
+bmi                  体重指数
+sinceCheckUp         距上次常规检查的时间
+male                 性别
+health               自报身体健康状况（五个类别）
+mhealth              自报心理健康状况（五个类别）
+anylim               任何活动受限
+socialLim            任何社会参与受限
+cogLim               任何认知功能受限
+exercise             运动
+hibp                 高血压病史
+chd                  冠心病
+mhealth              肺气肿
+emphysema            肺气肿
+cholesterol          高胆固醇
+cancer               癌症
+stroke               卒中
+angina               心绞痛
+arthritis            关节炎
+asthma               哮喘
+mi                   心肌梗死
+smoke                吸烟状态
+
+#Present the summary statistics of the outcome and the race
+summary(meps$healthExp)
+
+最小值 第一四分位数   中位数       平均值 第三四分位数       最大值
+0     122      984       4570    4006     253186
+summary(meps$race)
+
+亚洲人    黑人 西班牙裔    白人
+1458     4003     5221     9764
+#Ensure the type of categorical variables is correct
+meps_rep <- meps
+meps_rep[,-c(1:4,10,11,27)] <- lapply(meps_rep[,-c(1:4,10,11,27)], factor)
+#Present the summary statistics of all covariates
+summary(meps_rep[,-c(1,27)])
+
+pcs              mcs          sinceCheckUp   smoke     socialLim cogLim
+最小值   : 7.12   最小值    : 1.45   最小值    :1.000   0:16801   0:19582    0:19602
+第一四分位数:43.87   第一四分位数:44.69    第一四分位数:1.000    1: 3645   1: 864     1: 844
+中位数 :53.03    中位数 :53.09    中位数 :1.000
+平均值 :49.13   平均值   :50.62   平均值   :1.999
+第三四分位数:56.71   第三四分位数:57.33    第三四分位数:2.000
+最大值   :71.10   最大值    :73.01   最大值    :6.000
+exercise male             age              bmi        married   health
+0: 8874   0:11189    最小值   :18.00    最小值   : 9.40   0: 9655   1:4667
+1:11572   1: 9257    第一四分位数:31.00    第一四分位数:23.70   1:10791   2:6503
+中位数 :44.00    中位数 :27.10             3:6209
+
+2
+
+**第 3 页**
+
+平均值   :45.63    平均值   :28.06                 4:2374
+第三四分位数:58.00    第三四分位数:31.20                 5: 693
+最大值   :85.00    最大值   :81.40
+mhealth              hibp        chd       angina     mi        stroke       emphysema
+1:7247               0:13645     0:19220   0:19909    0:19689   0:19732      0:20033
+2:6162               1: 6801     1: 1226   1: 537     1: 757    1: 714       1: 413
+3:5507
+4:1286
+5: 244
+
+cholesterol cancer                   diabetes      arthritis asthma    anylim
+0:14212     0:18632                  0:18468       0:15520   0:18532   0:15116
+1: 6234     1: 1814                  1: 1978       1: 4926   1: 1914   1: 5330
+
+1.2             设计：倾向评分估计与平衡检查
+
+首先，我们通过多项逻辑回归拟合倾向评分模型，并直观检查数据的正值性。
+#Specify a multinomial logistic regression model: ps.meps
+ps.meps <- race ~ pcs + mcs + sinceCheckUp + as.factor(smoke) +
+as.factor(socialLim) + as.factor(cogLim) + as.factor(exercise) +
+as.factor(male) + age + bmi + as.factor(married) + as.factor(health) +
+as.factor(mhealth) + as.factor(hibp) + as.factor(chd) +
+as.factor(angina) + as.factor(mi) + as.factor(stroke) + as.factor(emphysema) +
+as.factor(cholesterol) + as.factor(cancer) + as.factor(diabetes) +
+as.factor(arthritis) + as.factor(asthma) + as.factor(anylim)
+#Obtain the propensity score estimates
+bal.meps <- SumStat(ps.formula = ps.meps, weight = c('IPW','overlap','treated'),
+data = meps)
+#Density plots of estimated propensity scores
+plot(bal.meps, type = 'density')
+
+亚洲组的倾向评分
+
+10
+组
+密度
+
+亚洲人
+黑人
+5                                           西班牙裔
+白人
+
+0
+0.0        0.2         0.4
+亚洲组的倾向评分
+
+按 [enter] 继续
+
+3
+
+**第 4 页**
+
+黑人组的倾向评分
+
+6
+
+组
+密度
+
+4
+亚洲人
+黑人
+西班牙裔
+白人
+2
+
+0
+0.0         0.2      0.4      0.6
+黑人组的倾向评分
+
+按 [enter] 继续
+西班牙裔组的倾向评分
+
+4
+
+3
+组
+密度
+
+亚洲人
+2                                                     黑人
+西班牙裔
+白人
+1
+
+0
+0.0          0.2     0.4     0.6
+西班牙裔组的倾向评分
+
+按 [enter] 继续
+白人组的倾向评分
+
+3
+
+2                                                   组
+密度
+
+亚洲人
+黑人
+西班牙裔
+1                                                     白人
+
+0
+0.25     0.50      0.75        1.00
+白人组的倾向评分
+
+我们可以看到，每个组估计的广义倾向评分具有足够的正值性，尽管亚洲组和黑人组的估计广义倾向评分
+呈右偏分布。还有一些个体属于亚洲组的广义倾向评分非常小。
+
+4
+
+**第 5 页**
+
+#Check covariates balance using the metric average standardized differences (ASD)
+plot(bal.meps, metric = 'ASD')
+
+sinceCheckUp
+pcs
+mcs
+bmi
+as.factor(stroke)1
+as.factor(socialLim)1
+as.factor(smoke)1
+as.factor(mi)1
+as.factor(mhealth)5
+as.factor(mhealth)4
+as.factor(mhealth)3
+as.factor(mhealth)2
+as.factor(married)1
+as.factor(male)1                                                                 wt.type
+as.factor(hibp)1                                                                    逆概率加权
+as.factor(health)5                                                                    重叠加权
+as.factor(health)4                                                                    处理组
+未加权
+as.factor(health)3
+as.factor(health)2
+as.factor(exercise)1
+as.factor(emphysema)1
+as.factor(diabetes)1
+as.factor(cogLim)1
+as.factor(cholesterol)1
+as.factor(chd)1
+as.factor(cancer)1
+as.factor(asthma)1
+as.factor(arthritis)1
+as.factor(anylim)1
+as.factor(angina)1
+age
+0.0 0.1                                               1.0
+标准化均值差异
+
+从 love 图中可以得出结论，重叠加权方法对所有协变量的平衡效果相对较好（每个协变量的标准化均值差异
+都较小）。然而，与二元处理情形相比，逆概率加权和 ATT 加权方法不再能有效改善协变量平衡，因为有些协变量
+的标准化均值差异大于未加权情形。
+
+5
+
+**第 6 页**
+
+1.3     分析：加权与增广加权
+
+1.3.1   加权
+
+我们首先使用逆概率加权方法，并比较采用稳健三明治估计量（默认选项）或自助法估计的标准误。
+#Implement IPW weighting method and estimating standard errors by robust sandwich
+#estimator
+ate.meps.ipw <- PSweight(ps.formula = ps.meps, yname = "healthExp", data = meps,
+weight = 'IPW')
+#Implement IPW weighting method and estimating standard errors by bootstrap
+set.seed(0)
+ate.meps.ipw.boot <- PSweight(ps.formula = ps.meps, yname = "healthExp",
+data = meps, weight = 'IPW', bootstrap = TRUE,
+R=50)
+
+自助法 50 个样本
+#Target estimands are the contrasts between any two of races
+contrasts.mult <- rbind(c(-1,1,0,0),c(-1,0,1,0),c(-1,0,0,1),c(0,-1,1,0),
+c(0,-1,0,1),c(0,0,-1,1))
+#Estimates
+summary(ate.meps.ipw, type = 'DIF',
+constrast=contrasts.mult)
+
+闭式推断：
+
+原始组值：     亚洲人, 黑人, 西班牙裔, 白人
+
+对比：
+亚洲人 黑人 西班牙裔 白人
+对比 1      -1     1        0     0
+对比 2      -1     0        1     0
+对比 3      -1     0        0     1
+对比 4       0    -1        1     0
+对比 5       0    -1        0     1
+对比 6       0     0       -1     1
+
+估计值 标准误      下限     上限 Pr(>|z|)
+对比 1 1763.884   426.250 928.449 2599.32 3.501e-05 ***
+对比 2 1683.969   525.208 654.581 2713.36 0.001345 **
+对比 3 2272.107   367.263 1552.284 2991.93 6.148e-10 ***
+对比 4 -79.915    460.401 -982.284 822.45 0.862198
+对比 5 508.223    266.463 -14.036 1030.48 0.056483 .
+对比 6 588.138    405.432 -206.495 1382.77 0.146879
+\---
+显著性代码：0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+summary(ate.meps.ipw.boot, type = 'DIF',
+constrast=contrasts.mult)
+
+使用自助法样本进行推断：
+
+原始组值：     亚洲人，黑人，西班牙裔，白人
+
+6
+
+**第 7 页**
+
+对比：
+亚洲人 黑人 西班牙裔 白人
+对比 1       -1     1        0     0
+对比 2       -1     0        1     0
+对比 3       -1     0        0     1
+对比 4        0    -1        1     0
+对比 5        0    -1        0     1
+对比 6        0     0       -1     1
+
+估计值 标准误      下限     上限 Pr(>|z|)
+对比 1 1763.884   469.202 730.415 2404.24    <2e-16 ***
+对比 2 1683.969   460.716 578.043 2417.75    <2e-16 ***
+对比 3 2272.107   405.019 1335.323 2832.25   <2e-16 ***
+对比 4 -79.915    423.886 -825.774 953.37      0.82
+对比 5 508.223    239.198   53.100 956.79      0.06 .
+对比 6 588.138    338.776 -65.936 1192.17      0.12
+\---
+显著性代码：0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+summary(ate.meps.ipw, type = 'DIF',
+constrast=contrasts.mult)$estimates[,c(1,2,4,5)]
+
+估计值 标准误       下限       上限
+对比 1 1763.88396 426.2503 928.44868 2599.3192
+对比 2 1683.96883 525.2075 654.58101 2713.3567
+对比 3 2272.10661 367.2632 1552.28398 2991.9292
+对比 4 -79.91513 460.4006 -982.28375 822.4535
+对比 5 508.22265 266.4632 -14.03555 1030.4809
+对比 6 588.13778 405.4323 -206.49490 1382.7705
+summary(ate.meps.ipw.boot, type = 'DIF',
+constrast=contrasts.mult)$estimates[,c(1,2,4,5)]
+
+估计值 标准误       下限       上限
+对比 1 1763.88396 469.2018 730.41462 2404.2398
+对比 2 1683.96883 460.7160 578.04299 2417.7485
+对比 3 2272.10661 405.0191 1335.32320 2832.2458
+对比 4 -79.91513 423.8863 -825.77365 953.3747
+对比 5 508.22265 239.1982    53.09958 956.7909
+对比 6 588.13778 338.7759 -65.93630 1192.1724
+稳健三明治估计量和自助法得到的标准误在定性上相似，但仍存在相当大的差异。这里为便于说明，我们将自助法重复次数设为 20，这可能并不充分。我们应至少尝试 100 次，但运行时间会长得多。此后，我们仅报告稳健三明治估计量的标准误。
+使用逆概率加权方法得到的四个种族组中任意两个组之间六个对比的点估计值分别为 1763.9、1684.0、2272.1、−79.9、508.2、588.1。                 相应的标准误估计值为 426.3、525.2、367.3、460.4、266.5、405.4。95% 置信区间分别为
+[928.4, 2599.3]、[654.6, 2713.4]、[1552.3, 2991.9]、[−982.3, 822.5]、[−14.0, 1030.5]、[−206.5, 1382.8]。
+接下来，我们考虑采用逆概率加权修剪方法，以避免倾向评分极小的个体产生过度影响。首先，我们采用固定阈值修剪，阈值 δ = 0.03，即排除最小广义倾向评分小于 0.03 的个体。
+
+7
+
+**第 8 页**
+
+#Apply trimming with delta=0.03
+bal.meps.trim <- SumStat(ps.formula = ps.meps,
+weight = c('IPW','overlap','treated'),
+data = meps, delta = 0.03)
+#Covariates balance after trimming
+plot(bal.meps.trim, metric = 'ASD')
+
+sinceCheckUp
+pcs
+mcs
+bmi
+as.factor(stroke)1
+as.factor(socialLim)1
+as.factor(smoke)1
+as.factor(mi)1
+as.factor(mhealth)5
+as.factor(mhealth)4
+as.factor(mhealth)3
+as.factor(mhealth)2
+as.factor(married)1
+as.factor(male)1                                                                  wt.type
+as.factor(hibp)1                                                                    逆概率加权
+as.factor(health)5                                                                    正值性
+as.factor(health)4                                                                    处理组
+未加权
+as.factor(health)3
+as.factor(health)2
+as.factor(exercise)1
+as.factor(emphysema)1
+as.factor(diabetes)1
+as.factor(cogLim)1
+as.factor(cholesterol)1
+as.factor(chd)1
+as.factor(cancer)1
+as.factor(asthma)1
+as.factor(arthritis)1
+as.factor(anylim)1
+as.factor(angina)1
+age
+0.0 0.1                                               1.0
+标准化均值差异
+
+可以看到，修剪后的协变量平衡得以保持，与未修剪时非常相似。
+#Check the overlap
+#Density plots of estimated propensity scores after trimming
+plot(bal.meps.trim, type = 'density')
+
+亚洲人倾向评分
+
+8
+
+**第 9 页**
+
+12.5
+
+10.0
+
+组
+7.5
+密度
+
+亚洲人
+黑人
+5.0                                                  西班牙裔
+白人
+
+2.5
+
+0.0
+0.0           0.2               0.4
+亚洲人倾向评分
+
+按 [enter] 继续
+黑人倾向评分
+
+6
+
+组
+密度
+
+4                                                        亚洲人
+黑人
+西班牙裔
+白人
+2
+
+0
+0.0           0.2               0.4         0.6
+黑人倾向评分
+
+按 [enter] 继续
+西班牙裔倾向评分
+
+3
+
+组
+密度
+
+2                                                        亚洲人
+黑人
+西班牙裔
+白人
+1
+
+0
+0.0         0.2           0.4         0.6    0.8
+西班牙裔倾向评分
+
+按 [enter] 继续
+白人倾向评分
+
+9
+
+**第 10 页**
+
+3
+
+2                                      组
+密度
+
+亚洲人
+黑人
+西班牙裔
+1                                        白人
+
+0
+0.25      0.50      0.75
+白人倾向评分
+
+如预期，正值性仍得到保持。
+#Check how many patients are excluded
+bal.meps.trim$trim
+
+亚洲人 黑人 西班牙裔 白人
+已修剪              99 1636      1357 3162
+保留           1359 2367      3864 6602
+可以看到，近 30.6% 的患者被修剪掉，且大多来自黑人、西班牙裔和白人组。随后，我们在修剪后使用逆概率加权估计因果风险差。
+#Implement IPW weighting method after trimming
+ate.meps.ipw.trim <- PSweight(ps.formula = ps.meps, yname = "healthExp",
+data = meps,
+weight = 'IPW',delta=0.03)
+#Estimates
+summary(ate.meps.ipw.trim,
+type = 'DIF', constrast=contrast.rhc)$estimates[,c(1,2,4,5)]
+
+估计值 标准误        下限       上限
+对比 1 486.67355 349.0672 -197.485609 1170.8327
+对比 2 529.09068 296.3387 -51.722570 1109.9039
+对比 3 1100.73497 213.8669 681.563478 1519.9065
+对比 4   42.41713 376.7049 -695.910857 780.7451
+对比 5 614.06142 317.5562    -8.337337 1236.4602
+对比 6 571.64429 256.3241    69.258339 1074.0302
+修剪后使用逆概率加权方法得到的点估计值分别为 486.7、529.1、1100.7、42.4、614.1、571.6。
+相应的标准误估计值分别为 349.1、296.3、213.9、376.7、317.6、256.3。95% 置信区间为 [−197.5, 1170.8]、[−51.7, 1109.9]、[681.6, 1519.9]、[−695.9, 780.7]、[−8.3, 1236.5]、[69.3, 1974.0]。
+接下来，我们考虑实施 PSweight 软件包提供的最优修剪程序。最优修剪程序在对称修剪规则类中，使所有成对对比的总渐近方差最小。
+#Optimal triimming
+opt_trim <- PStrim(ps.formula = ps.meps, data = meps, optimal = TRUE)
+#Check how many patients are trimmed
+opt_trim$trim_sum
+
+亚洲人 黑人 西班牙裔 白人
+已修剪              49   917      602 1761
+保留           1409 3086      4619 8003
+
+10
+
+**第 11 页**
+
+可以看到，与上述固定阈值修剪相比，使用最优修剪程序修剪的患者少得多。
+#Extract the trimmed data
+opt_trim_meps <- opt_trim$data
+#Check the overlap
+bal.meps.trim.opt <- SumStat(ps.formula = ps.meps,
+weight = c('IPW','overlap','treated'),
+data = opt_trim_meps)
+#Covariates balance after trimming
+plot(bal.meps.trim.opt, metric = 'ASD')
+
+sinceCheckUp
+pcs
+mcs
+bmi
+as.factor(stroke)1
+as.factor(socialLim)1
+as.factor(smoke)1
+as.factor(mi)1
+as.factor(mhealth)5
+as.factor(mhealth)4
+as.factor(mhealth)3
+as.factor(mhealth)2
+as.factor(married)1
+as.factor(male)1                                                             wt.type
+as.factor(hibp)1                                                               逆概率加权
+as.factor(health)5                                                               正值性
+as.factor(health)4                                                               处理组
+未加权
+as.factor(health)3
+as.factor(health)2
+as.factor(exercise)1
+as.factor(emphysema)1
+as.factor(diabetes)1
+as.factor(cogLim)1
+as.factor(cholesterol)1
+as.factor(chd)1
+as.factor(cancer)1
+as.factor(asthma)1
+as.factor(arthritis)1
+as.factor(anylim)1
+as.factor(angina)1
+age
+0.0 0.1                                           1.0
+标准化均值差异
+
+#Check the overlap
+#Density plots of estimated propensity scores after trimming
+plot(bal.meps.trim.opt, type = 'density')
+
+11
+
+**第 12 页**
+
+亚洲人倾向评分
+
+10
+组
+密度
+
+亚洲人
+黑人
+5
+白人
+
+0
+0.0           0.2           0.4         0.6
+亚洲人倾向评分
+
+按 [enter] 继续
+黑人倾向评分
+
+6
+
+组
+密度
+
+4
+亚洲人
+黑人
+西班牙裔
+白人
+2
+
+0
+0.0           0.2             0.4         0.6
+黑人倾向评分
+
+按 [enter] 继续
+西班牙裔倾向评分
+4
+
+3
+组
+密度
+
+亚洲人
+2
+黑人
+西班牙裔
+白人
+1
+
+0
+0.0         0.2         0.4         0.6     0.8
+西班牙裔倾向评分
+
+按 [enter] 继续
+白人倾向评分
+
+12
+
+**第 13 页**
+
+3
+
+2                                      组
+密度
+
+亚洲人
+黑人
+西班牙裔
+1                                        白人
+
+0
+0.25       0.50      0.75
+White 组的倾向评分
+
+#Implement IPW weighting method after optimal trimming
+ate.meps.ipw.trim.opt <- PSweight(ps.formula = ps.meps, yname = "healthExp",
+data = opt_trim_meps,
+weight = 'IPW')
+#Estimates
+summary(ate.meps.ipw.trim.opt,
+type = 'DIF', constrast=contrast.rhc)$estimates[,c(1,2,4,5)]
+
+估计值 标准误      lwr       upr
+对比 1 472.7739 332.8845 -179.66773 1125.2156
+对比 2 580.9783 321.4221 -48.99739 1210.9541
+对比 3 1227.8875 261.6480 715.06693 1740.7081
+对比 4 108.2044 312.8007 -504.87364 721.2825
+对比 5 755.1136 252.1868 260.83661 1249.3905
+对比 6 646.9091 234.9059 186.50202 1107.3163
+使用最优截尾后的逆概率加权方法得到的点估计分别为 472.8、581.0、1227.9、108.2、755.1、646.9。
+相应的标准误估计值分别为 332.9、321.4、261.6、312.8、252.2、234.9。95%
+置信区间分别为 [−179.7, 1125.2]、[−49.0, 1211.0]、[715.1, 1740.7]、[−504.9, 721.3]、[260.8, 1249.4]、[186.5, 1107.3
+接下来，我们使用 ATT 加权方法。由于我们没有指定“treated”参考总体，因此这
+将基于按字母顺序排列的最后一个值——White。
+#Implement ATT weighting method
+ate.meps.att <- PSweight(ps.formula = ps.meps, yname = "healthExp", data = meps,
+weight = 'treated')
+#Estimates
+summary(ate.meps.att, type = 'DIF',
+constrast=contrasts.mult)$estimates[,c(1,2,4,5)]
+
+估计值 标准误      lwr      upr
+对比 1 1868.3989 519.4885  850.2201 2886.578
+对比 2 1974.5567 772.8915  459.7173 3489.396
+对比 3 2127.5682 419.2562 1305.8411 2949.295
+对比 4 106.1578 737.1359 -1338.6021 1550.918
+对比 5 259.1693 348.2863 -423.4594 941.798
+对比 6 153.0114 669.2296 -1158.6545 1464.677
+使用 ATT 加权方法计算的四个种族中任意两个之间的六个对比分别为 1868.4、1974.6、2127.6、106.2、259.2、153.0。相应的标准误估计值分别为 519.5、772.9、419.3、737.1、348.3、669.2。95% 置信区间分别为
+[850.2, 2886.6]、[459.7, 3489.4]、[1305.8, 2949.3]、[−1338.6, 1550.9]、[−423.5, 941.8]、[−1158.7, 1464.7]。
+
+13
+
+**第 14 页**
+
+接下来，我们使用重叠加权方法。
+#Implement overlap weighting (OW) method
+ate.meps.ow <- PSweight(ps.formula = ps.meps, yname = "healthExp", data = meps,
+weight = 'overlap')
+#Estimates
+summary(ate.meps.ow, type = 'DIF',
+constrast=contrasts.mult)$estimates[,c(1,2,4,5)]
+
+估计值 标准误       lwr       upr
+对比 1 573.04004 271.3975    41.11072 1104.9694
+对比 2 653.77892 273.5201 117.68930 1189.8685
+对比 3 1140.11540 194.9113 758.09619 1522.1346
+对比 4   80.73888 299.8417 -506.94008 668.4178
+对比 5 567.07536 234.0014 108.44100 1025.7097
+对比 6 486.33648 235.5683    24.63104 948.0419
+使用重叠加权方法计算的四个种族中任意两个之间的六个对比分别为 573.0、653.8、1140.1、80.7、567.1、486.3。相应的标准误估计值分别为
+271.4、273.5、194.9、299.8、234.0、235.6。95% 置信区间分别为 [41.1, 1105.0]、[117.7, 1189.9]、[758.1, 1522.1]、[−
+分别。
+总体而言，我们可以看到，重叠加权方法通常具有最小的标准误或最窄的置信区间。
+
+1.3.2    增强加权
+
+本节介绍增强加权方法，并遵循与上一节相同的步骤。
+使用增强逆概率加权方法：
+#Propose a logistic regression model for the outcome: out.meps
+out.meps <- healthExp ~ pcs + mcs + sinceCheckUp + as.factor(smoke) +
+as.factor(socialLim) + as.factor(cogLim) + as.factor(exercise) +
+as.factor(male) + age + bmi + as.factor(married) + as.factor(health) +
+as.factor(mhealth) + as.factor(hibp) + as.factor(chd) +
+as.factor(angina) + as.factor(mi) + as.factor(stroke) + as.factor(emphysema) +
+as.factor(cholesterol) + as.factor(cancer) + as.factor(diabetes) +
+as.factor(arthritis) + as.factor(asthma) + as.factor(anylim)
+#Implement augmented IPW weighting method
+ate.meps.ipw.aug <- PSweight(ps.formula = ps.meps, yname = "healthExp",
+data = meps,
+out.formula = out.meps, weight = 'IPW',
+augmentation = TRUE)
+#Estimates
+summary(ate.meps.ipw.aug, type = 'DIF',
+constrast=contrasts.mult)$estimates[,c(1,2,4,5)]
+
+估计值 标准误       lwr       upr
+对比 1 1364.1376 404.8331 570.67929 2157.5960
+对比 2 1238.0165 486.4954 284.50296 2191.5300
+对比 3 1939.5283 345.1535 1263.03992 2616.0168
+对比 4 -126.1212 429.8559 -968.62329 716.3809
+对比 5 575.3907 260.0400    65.72173 1085.0597
+对比 6 701.5119 374.8389 -33.15878 1436.1825
+
+14
+
+**第 15 页**
+
+使用增强逆概率加权方法计算的四个种族中任意两个之间的六个对比分别为 1364.1、1238.0、1939.5、−126.1、575.4、701.5。相应的标准误估计值分别为 404.8、486.5、345.2、429.9、260.0、374.8。95% 置信区间为
+[570.7, 2157.6]、[284.5, 2191.5]、[1263.0, 2616.0]、[−968.6, 716.4]、[65.7, 1085.1]、[−33.2, 1436.2]，分别。
+使用增强 ATT 方法（再次以 White 组作为参考组）：
+#Implement augmented ATT weighting method
+set.seed(0)
+ate.meps.att.aug <- PSweight(ps.formula = ps.meps, yname = "healthExp",
+data = meps,
+out.formula = out.meps, weight = 'treated',
+augmentation = TRUE,bootstrap = TRUE,R=20)
+#Estimates
+summary(ate.meps.att.aug, type = 'DIF',
+constrast=contrasts.mult)$estimates[,c(1,2,4,5)]
+
+使用增强 ATT 加权方法计算的四个种族中任意两个之间的六个对比分别为 1767.7、1708.3、2132.9、−59.3、365.2、424.6。相应的标准误估计值分别为 448.9、891.4、492.9、777.1、297.0、647.3。95% 置信区间为
+[1234.1, 2601.0]、[682.9, 3550.9]、[1590.0, 3178.1]、[−1041.0, 1542.4]、[98.8, 1046.2]、[−757.3, 1326.4]，分别。
+使用增强重叠加权方法：
+#Implement augmented IPW weighting method
+ate.meps.ow.aug <- PSweight(ps.formula = ps.meps, yname = "healthExp",
+data = meps,
+out.formula = out.meps, weight = 'overlap',
+augmentation = TRUE)
+#Estimates
+summary(ate.meps.ow.aug, type = 'DIF',
+constrast=contrasts.mult)$estimates[,c(1,2,4,5)]
+
+估计值 标准误      lwr      upr
+对比 1 349.0002 262.2000 -164.90241 862.9028
+对比 2 495.3807 259.7314 -13.68347 1004.4448
+对比 3 1201.3525 189.0085 830.90262 1571.8023
+对比 4 146.3805 286.7626 -415.66397 708.4249
+对比 5 852.3523 227.0940 407.25618 1297.4484
+对比 6 705.9718 223.1736 268.55959 1143.3840
+使用增强重叠加权方法计算的四个种族处理中的任意两个之间的六个对比分别为 349.0、495.4、1201.4、146.4、852.4、706.0。相应的标准误估计值分别为 262.2、259.7、189.0、286.8、227.1、223.2。95% 置信区间为
+[−164.9, 862.9]、[−13.7, 1004.4]、[830.9, 1571.8]、[−415.7, 708.4]、[407.3, 1297.4]、[268.6, 1143.4]，分别。
+总体而言，我们可以看到，重叠加权方法通常具有最小的标准误，因而置信区间最窄。
+
+15

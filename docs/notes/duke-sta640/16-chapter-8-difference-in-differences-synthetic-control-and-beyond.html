@@ -1,0 +1,1826 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hans" xml:lang="zh-Hans"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Chapter 8 · Difference-in-Differences, Synthetic Control, and Beyond – 因果推断读书笔记</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../notes/duke-sta640/17-chapter-9-sequential-and-longitudinal-treatments.html" rel="next">
+<link href="../../notes/duke-sta640/15-chapter-7-regression-discontinuity-designs.html" rel="prev">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-4571e413af9019dfdcc70175faf53a1f.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-6dc1a78ab6bae0d3eba54bf33535cf80.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../../site_libs/bootstrap/bootstrap-dark-6382e9162de9198f964ae53196d3447c.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-6dc1a78ab6bae0d3eba54bf33535cf80.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "没有结果",
+    "search-matching-documents-text": "匹配的文档",
+    "search-copy-link-title": "复制搜索链接",
+    "search-hide-matches-text": "隐藏其它匹配结果",
+    "search-more-match-text": "更多匹配结果",
+    "search-more-matches-text": "更多匹配结果",
+    "search-clear-button-title": "清除",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "取消",
+    "search-submit-button-title": "提交",
+    "search-label": "搜索"
+  }
+}</script>
+
+
+</head>
+
+<body class="nav-sidebar docked course-slides quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../notes/duke-sta640.html">Duke STA 640 · 因果推断课程讲义中译</a></li><li class="breadcrumb-item"><a href="../../notes/duke-sta640/16-chapter-8-difference-in-differences-synthetic-control-and-beyond.html"><span class="chapter-title">Chapter 8 · Difference-in-Differences, Synthetic Control, and Beyond</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="搜索" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header sidebar-header-stacked">
+      <a href="../../index.html" class="sidebar-logo-link">
+      </a>
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../../">因果推断读书笔记</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/HUI950319/causalR" title="源代码" class="quarto-navigation-tool px-1" aria-label="源代码"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="切换深色模式"><i class="bi"></i></a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="搜索"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">关于这份笔记</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-logic-chain.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">前三章逻辑链</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/notation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">记号与约定</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/identifiability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">三条识别条件</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/formulas.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">公式卡</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">阶段一 · 估计量全景</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-potential-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 1 章 · Zeus 的心脏移植</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-randomized-experiments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 2 章 · 一枚硬币，还是两枚</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-observational-studies.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 3 章 · 一枚硬币也没抛</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-effect-modification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 4 章 · 没有「治疗的因果效应」这种东西</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 5 章 · 两个处理，一起动手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-causal-diagrams.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 6 章 · 先画假设，再下结论</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-confounding.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 7 章 · 后门关上，可交换性才回来</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-selection-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 8 章 · 进了分析的人，未必还能互换</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-measurement-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 9 章 · 带星号的变量，与担不起因果的箭头</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-random-variability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 10 章 · 该不该撤稿</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">原书第二部分 · 有模型的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w03-why-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 11 章 · 数据不会自己说话</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w03-ip-weighting-msm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w04-standardization-gformula.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 13 章 · 把模型挪到结局那一侧</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w04-g-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 14 章 · 猜一个数，直到它与处理无关</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w05-outcome-regression-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 15 章 · 最常用的方法，为什么排在最后</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w05-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 16 章 · 不要求可交换性的那条路</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w06-causal-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 17 章 · 风险比里藏着一个碰撞变量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w06-variable-selection.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 18 章 · 调整得越多，不等于偏倚越小</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">原书第三部分 · 时变处理的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w07-time-varying-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 19 章 · 先说清策略，才有效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w07-treatment-confounder-feedback.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 20 章 · 调了混杂，反而更错</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w08-g-methods-time-varying.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 21 章 · 三条路线，同一个 0</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w11-target-trial-emulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 22 章 · 先写协议，再看数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w11-causal-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 23 章 · 把中介问题改写成能做的试验</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">郑老师因果推理课程讲义</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-overview.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">课程讲义总览</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w01.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W01 · 因果推断理论与方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w02.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W02 · DAG 与回归、反事实与 G 计算</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w03.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W03 · 倾向得分方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w04.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W04 · 机器学习与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w05.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W05 · 双重稳健估计与双重机器学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w06.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W06 · TMLE 及其衍生方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w07.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W07 · 缺失数据与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w08.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W08 · 中介分析与因果中介</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w09.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W09 · 处理效应异质性分析</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true">
+ <span class="menu-text">Duke STA 640 · 因果推断课程讲义中译</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">课程讲义总览（21 份）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/01-chapter-1-background-and-potential-outcome-framework.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 1 · Background and Potential Outcome Framework</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/02-chapter-2-1-randomized-experiments-fisher-s-and-neyman-s-mode-of-inference.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 2.1 · Randomized Experiments: Fisher’s and Neyman’s Mode of Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/03-chapter-2-2-randomized-experiments-covariate-balance-and-adjustment.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 2.2 · Randomized Experiments: Covariate Balance and Adjustment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/04-chapter-3-1-observational-studies-outcome-regression.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.1 · Observational Studies: Outcome Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/05-chapter-3-2-observational-studies-propensity-score.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.2 · Observational Studies: Propensity Score</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/06-chapter-3-3-observational-studies-stratification-and-matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.3 · Observational Studies: Stratification and Matching</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/07-chapter-3-4-propensity-score-weighting.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.4 · Propensity Score Weighting</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/08-chapter-3-5-doubly-robust-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.5 · Doubly Robust Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/09-chapter-3-6-non-binary-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.6 · Non-binary Treatments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/10-chapter-4-1-treatment-effect-heterogeneity-causal-subgroup-analysis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 4.1 · Treatment Effect Heterogeneity: Causal Subgroup Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/11-chapter-4-2-treatment-effect-heterogeneity-machine-learning-approaches.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 4.2 · Treatment Effect Heterogeneity: Machine Learning Approaches</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/12-chapter-5-sensitivity-analysis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 5 · Sensitivity Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/13-chapter-6-1-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 6.1 · Instrumental Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/14-chapter-6-2-principal-stratification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 6.2 · Principal Stratification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/15-chapter-7-regression-discontinuity-designs.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 7 · Regression Discontinuity Designs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/16-chapter-8-difference-in-differences-synthetic-control-and-beyond.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">Chapter 8 · Difference-in-Differences, Synthetic Control, and Beyond</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/17-chapter-9-sequential-and-longitudinal-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 9 · Sequential and Longitudinal Treatments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/18-chapter-10-bayesian-causal-inference.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 10 · Bayesian Causal Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/19-chapter-11-causal-inference-with-survival-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 11 · Causal Inference with Survival Outcomes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/20-lab-2-propensity-score-matching-and-weighting-binary-treatment.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Lab 2 · Propensity Score Matching and Weighting: Binary Treatment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/21-lab-3-propensity-score-weighting-with-multiple-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Lab 3 · Propensity Score Weighting with Multiple Treatments</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false">
+ <span class="menu-text">causatr 官方文档中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-introduction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 介绍</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-gcomp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的 G-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-ipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的逆概率加权</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-aipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的增强 IPW（双稳健估计）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的倾向评分匹配</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-snm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的结构嵌套均值模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-interventions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 中的干预类型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-natural-history-mtps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">自然历史修改处理政策（宽限期）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-triangulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">方法论三角：g-computation、IPW、AIPW、匹配和 SNM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-longitudinal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">纵向处理：ICE g-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-transportability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">可转运性和可推广性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-missing-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">处理缺失数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-diagnostics.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的诊断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-validation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">针对参考实现的验证</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果效应的方差估计</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-ipw-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IPW 密度比权重和方差理论</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false">
+ <span class="menu-text">Causal Inference in R · 原书中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/01-casual-to-causal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">从随意推断到因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/02-whole-game.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">完整实践：蚊帐与疟疾</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/03-po-counterfactuals.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">潜在结局与反事实</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/04-dags.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">用 DAG 表达因果问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/05-not-just-a-stats-problem.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果推断不只是统计问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/06-stats-models-ci.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">从问题到答案：分层与结局模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/07-prep-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">准备数据以回答因果问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/08-propensity-scores.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">倾向评分</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/09-evaluating-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">评估倾向评分模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/10-estimands.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果估计目标</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/11-outcome-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">拟合加权结局模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/12-other-exposures.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">连续型与分类暴露</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/13-g-comp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">G 计算</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/14-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">异质性处理效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/15-missingness-and-measurement.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">缺失与测量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/16-sensitivity.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">敏感性分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/17-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果中介分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/18-longitudinal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">跨时间的因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/19-time-to-event.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果生存时间模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/20-doubly-robust.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">双稳健模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/21-machine-learning.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">机器学习与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/22-iv-and-friends.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">工具变量及相关方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/23-diff-in-diff.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">双重差分</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/24-evidence.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">证据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/99-references.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">参考文献</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/appendices/A-bootstrap.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">自助法（Bootstrap）</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
+        
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../notes/duke-sta640.html">Duke STA 640 · 因果推断课程讲义中译</a></li><li class="breadcrumb-item"><a href="../../notes/duke-sta640/16-chapter-8-difference-in-differences-synthetic-control-and-beyond.html"><span class="chapter-title">Chapter 8 · Difference-in-Differences, Synthetic Control, and Beyond</span></a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-title">Chapter 8 · Difference-in-Differences, Synthetic Control, and Beyond</span></h1>
+<p class="subtitle lead">Duke STA 640 · 90 页 · 中文翻译</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<blockquote class="blockquote">
+<p>本页是 Duke STA 640 因果推断课程讲义的中文文字翻译。原始 PDF 由课程页面公开提供； 图形、坐标轴文字和 PDF 中的版式仍以原始讲义为准。原始来源： <a href="https://stat.duke.edu/~fl35/teaching/640/Chap8_DID.pdf">课程 PDF</a>。</p>
+</blockquote>
+<div class="slide-embed">
+<div class="fig-frame">
+<iframe src="../slides/duke-sta640/16-Chapter-8-Difference-in-Differences-Synthetic-Control.pdf#view=FitH" title="Chapter 8 · Difference-in-Differences, Synthetic Control, and Beyond" style="width:100%; aspect-ratio:16/10; min-height:460px; border:0; display:block;">
+  <p>浏览器没有在页内渲染 PDF，请
+  <a href="../slides/duke-sta640/16-Chapter-8-Difference-in-Differences-Synthetic-Control.pdf">直接打开讲义</a>。</p>
+</iframe>
+</div>
+<p class="fig-cap">
+<b>原始讲义（90 页）。</b>阅读器支持翻页、缩放和页码跳转；手机上若页内不显示， <a href="../slides/duke-sta640/16-Chapter-8-Difference-in-Differences-Synthetic-Control.pdf">直接打开或下载 PDF</a>。
+</p>
+</div>
+<p><strong>第 1 页</strong></p>
+<p>STA 640 — 因果推断</p>
+<p>第 8 章：基于时间的因果推断： 双重差分、合成控制及其他</p>
+<p>Fan Li</p>
+<p>统计科学系 杜克大学</p>
+<p><strong>第 2 页</strong></p>
+<p>处理组-对照组前后设计</p>
+<p>▶ 处理组-对照组比较不一定是因果比较，因为两组之间可能存在系统性差异</p>
+<p>▶ 可以说，一个个体是自身的“最佳匹配”</p>
+<p>▶ 前后比较（针对同一批个体）不一定是因果比较，因为时间可能发生变化</p>
+<p>▶ 处理组-对照组前后设计结合了二者</p>
+<p>▶ 设置：两个或更多组，个体在两个或更多时期被观测。在某些时期，某些组接受处理（重复横截面或面板数据）</p>
+<p><strong>第 3 页</strong></p>
+<p>处理组-对照组前后设计：示例</p>
+<p>▶ 示例 1（劳动经济学）：评估最低工资对就业的影响（Card and Krueger, 1994） ▶ 个体：新泽西州及其相邻的宾夕法尼亚州东部的快餐店 ▶ 干预：提高州最低工资；新泽西州于 1992 年 4 月 1 日提高最低工资，但宾夕法尼亚州没有 ▶ 结局：就业人数（每家店平均值），在两个地区均于变动前即刻和变动后观测</p>
+<p>▶ 劳动经济学中的经典研究，Card and Krueger（2000）使用更多年份的数据进行了更新</p>
+<p>▶ 在大多数经济学和政策应用中，研究场景是某项政策发生变化，该变化只会影响部分而非全部群组（地区、年龄等）</p>
+<p><strong>第 4 页</strong></p>
+<p>处理组-对照组前后设计：示例</p>
+<p>▶ 示例 2（交通安全研究）：评估安全对策对事故率的影响 ▶ 个体：道路路段（具有相似特征） ▶ 干预：某种新的安全对策（例如道路铺装、照明条件），仅部分个体接受处理 ▶ 结局：事故数，在研究中的所有路段上于处理前后观测</p>
+<p>▶ 这种设置及其相关模型称为经验贝叶斯前后设计（Hauer, 1997）</p>
+<p><strong>第 5 页</strong></p>
+<p>两组前后设计：基本设置</p>
+<p>▶ 两组个体：𝐺 𝑖 = 0, 1（𝐺 𝑖 = 1 为处理组）</p>
+<p>▶ 两个时间时期：𝑇 = 𝑡, 𝑡 + 1（处理前（𝑡）和处理后（𝑡 + 1））</p>
+<p>▶ 对于每个个体 𝑖，我们观测每个时期的结局：𝑌𝑖,𝑡 、𝑌𝑖,𝑡+1， 以及协变量向量 𝑋𝑖</p>
+<p>▶ 两组前后设计的二乘二表（为简单起见省略 𝑖） 处理前 处理后 对照组 𝑌0,𝑡 𝑌0,𝑡+1 处理组 𝑌1,𝑡 𝑌1,𝑡+1 ▶ 记 𝐺、𝑇 每个单元格中的个体数为 𝑁𝐺,𝑇。</p>
+<p><strong>第 6 页</strong></p>
+<p>潜在结果 ▶ 两种不同的设置： ▶ 面板：同一批个体随访多个时期 （𝑁𝐺,𝑇 = 𝑁𝐺） ▶ 重复横截面：每个时期都有不同的（可能重叠的）个体样本，（𝑁𝐺,𝑇 在不同的 𝐺、𝑇 下不同）</p>
+<p>▶ 时间 𝑇 的潜在结果：𝑌𝑇 (1)、𝑌𝑇 (0) ▶ 由于仅在 𝑇 = 𝑡 + 1 时实施处理，定义处理状态：𝑍𝑖𝑇 = 𝐺 𝑖 · 1{𝑇 = 𝑡 + 1}，仅在处理组的处理后时期取 1 ▶ 两组前后设计的二乘二表 处理前 处理后 对照组 𝑌𝑡 (0) 𝑌𝑡+1 (0) 处理组 𝑌𝑡 (0) 𝑌𝑡+1 (1)</p>
+<p><strong>第 7 页</strong></p>
+<p>因果目标量</p>
+<p>▶ 对处理组的平均处理效应（ATT）：</p>
+<p>𝜏ATT = 𝐸 {𝑌𝑖,𝑡+1 (1) − 𝑌𝑖,𝑡+1 (0) | 𝐺 𝑖 = 1} = 𝜇1 − 𝜇0</p>
+<p>▶ 𝜇1 = E{𝑌𝑖,𝑡+1 (1) | 𝐺 𝑖 = 1} = E(𝑌𝑖,𝑡+1 | 𝐺 𝑖 = 1) 可识别</p>
+<p>▶ 𝜇0 = E{𝑌𝑖,𝑡+1 (0) | 𝐺 𝑖 = 1}：反事实 ▶ 任务：基于观测数据推断 𝜇0</p>
+<p>▶ 两种基于不同假设的识别策略： ▶ 双重差分（DID）</p>
+<p>▶ 滞后因变量调整（LDV）</p>
+<p>▶ 为简单起见，以下讨论均隐含地以 𝑋 为条件</p>
+<p><strong>第 8 页</strong></p>
+<p>前后估计量 ▶ 前后估计量：将处理个体与其前一波中的“未处理自身”进行比较：</p>
+<p>𝜏ˆ 𝐵 𝐴 = 𝑌¯1,𝑡+1 − 𝑌¯1,𝑡</p>
+<p>其中 𝑌¯1,𝑡 是 t 时期处理组个体的结局样本均值 ▶ 识别假设：𝜏ˆ 𝐵 𝐴 将处理前（𝑡 时期）的结局作为无处理情况下 𝑡 + 1 时期反事实结局的代理，即</p>
+<p>E[𝑌𝑡+1 (0)|𝐺 = 1] = E[𝑌𝑡 (0)|𝐺 = 1] ▶ 问题：即使没有处理，结局也可能因时间趋势、宏观因素、生命周期效应……在 𝑡 和 𝑡 + 1 之间发生变化</p>
+<p><strong>第 9 页</strong></p>
+<p>横截面估计量 ▶ 横截面估计量：将处理个体与同一波次的对照个体进行比较：</p>
+<p>𝜏ˆ𝐶𝑆 = 𝑌¯1,𝑡+1 − 𝑌¯0,𝑡+1</p>
+<p>其中 𝑌¯1,𝑡（𝑌¯0,𝑡）是 t 时期处理组（对照组）个体的结局样本均值 ▶ 识别假设：𝜏ˆ𝐶𝑆 将 𝑡 + 1 时期对照组的结局作为无处理情况下 𝑡 + 1 时期反事实结局的代理，即</p>
+<p>E[𝑌𝑡+1 (0)|𝐺 = 1] = E[𝑌𝑡+1 (0)|𝐺 = 0] ▶ 问题：即使没有处理，处理组和对照组在可测量和不可测量方面也可能存在系统性差异</p>
+<p><strong>第 10 页</strong></p>
+<p>策略 1：双重差分（DID） 双重差分解决方案：利用 2 × 2 设计及一个核心假设 ▶ “平行趋势”假设：处理组和对照组在无处理情况下经历相同的趋势： E[𝑌𝑡+1 (0) − 𝑌𝑡 (0)|𝐺 = 1] = E[𝑌𝑡+1 (0) − 𝑌𝑡 (0)|𝐺 = 0] (1) ▶ 平行趋势假设（1）等价于“恒定差异”假设：无处理情况下处理组与对照组之间的差异在不同时间保持不变 E[𝑌𝑡+1 (0)|𝐺 = 1] − E[𝑌𝑡+1 (0)|𝐺 = 0] = E[𝑌𝑡 (0)|𝐺 = 1] − E[𝑌𝑡 (0)|𝐺 = 0] (2) ▶ 平行趋势依赖于尺度：对 𝑌 成立，但对 𝑌 的非线性单调变换可能不成立（Athey and Imbens, 2006） 10 / 90</p>
+<p><strong>第 11 页</strong></p>
+<p>图示 Angrist and Pischke, 2009: Mostly Harmless Econometrics</p>
+<p>图：双重差分设计中的因果效应 11 / 90</p>
+<p><strong>第 12 页</strong></p>
+<p>双重差分：识别与估计 ▶ 在平行趋势假设下，双重差分目标量可非参数识别： 𝜇˜ 0,DID = E(𝑌𝑖𝑡 | 𝐺 𝑖 = 1) + E(𝑌𝑖,𝑡+1 | 𝐺 𝑖 = 0) − E(𝑌𝑖𝑡 | 𝐺 𝑖 = 0) ▶ 双重差分估计量取处理个体结局变化与对照个体结局变化之差 ▶ 等价地，双重差分估计量可写为处理组与对照组前后估计量之差 𝜏ˆDID = (𝑌¯1,𝑡+1 − 𝑌¯1,𝑡 ) − (𝑌¯0,𝑡+1 − 𝑌¯0,𝑡 ) = 𝜏ˆ1𝐵 𝐴 − 𝜏ˆ0𝐵 𝐴 其中 𝑌¯𝑔,𝑡 是组 𝑔 在 t 时期的平均结局</p>
+<p><strong>第 13 页</strong></p>
+<p>双重差分为何有效？ ▶ 假设 SUTVA，有</p>
+<p>𝑌𝑡 = 𝑌𝑡 (0), 𝑌𝑡+1 = (1 − 𝐺)𝑌𝑡+1 (0) + 𝐺𝑌𝑡+1 (1), ▶ 因此</p>
+<p>E( 𝜏ˆ0𝐵 𝐴) = E(𝑌¯0,𝑡+1 − 𝑌¯0,𝑡 ) = E[𝑌𝑡+1 (0) − 𝑌𝑡 (0)|𝐺 = 0] (SUTVA) = E[𝑌𝑡+1 (0) − 𝑌𝑡 (0)|𝐺 = 1] (par. trends) = E[𝑌𝑡+1 (0)|𝐺 = 1] − E[𝑌𝑡 |𝐺 = 1] (SUTVA) 同样，有 E( 𝜏ˆ1𝐵 𝐴) = E[𝑌𝑡+1 (1)|𝐺 = 1] − E[𝑌𝑡 |𝐺 = 1] ▶ 两者相减，得到</p>
+<p>E( 𝜏ˆDID ) = E( 𝜏ˆ1𝐵 𝐴 − 𝜏ˆ0𝐵 𝐴) = E[𝑌𝑡+1 (1) − 𝑌𝑡+1 (0)|𝐺 = 1] = 𝜏ATT</p>
+<p><strong>第 14 页</strong></p>
+<p>双重差分估计量：另一种视角</p>
+<p>▶ 另一种写法是，双重差分估计量等于 𝑡 + 1 和 𝑡 时期横截面估计量之差</p>
+<p>𝜏ˆDID = (𝑌¯1,𝑡+1 − 𝑌¯0,𝑡+1 ) − (𝑌¯1,𝑡 − 𝑌¯0,𝑡 ) 𝐶𝑆 = 𝜏ˆ𝑡+1 − 𝜏ˆ𝑡𝐶𝑆</p>
+<p>▶ 根据平行趋势假设的“恒定差异”解释（公式（2）），易见上述双重差分估计量对 𝜏 无偏</p>
+<p>▶ 双重差分利用两次差分消除单组前后估计量的偏差（消除时间趋势）以及单时点横截面估计量的偏差（消除组间差异）</p>
+<p><strong>第 15 页</strong></p>
+<p>双重差分估计量：方差</p>
+<p>▶ 在同方差条件下，双重差分估计量的方差为   2 1 1 1 1 V( 𝜏ˆDID ) ℎ𝑜𝑚𝑜 = 𝜎 · + + + 𝑁11 𝑁10 𝑁01 𝑁00 ▶ 在异方差条件下，双重差分估计量的稳健方差为 2 𝜎11 𝜎2 𝜎2 𝜎2 V( 𝜏ˆDID ) ℎ𝑒𝑡𝑒𝑟 𝑜 = + 10 + 01 + 00 𝑁11 𝑁10 𝑁01 𝑁00 2 可按下式估计 其中，单元格内方差 𝜎𝑔𝑡</p>
+<p>2 1 ∑︁ 𝑆 𝑔𝑡 = (𝑌𝑖 − 𝑌¯𝑔𝑡 ) 2 𝑁𝑔𝑡 − 1 𝑖:𝐺 =𝑔,𝑇 =𝑡 𝑖 𝑖</p>
+<p><strong>第 16 页</strong></p>
+<p>双重差分：回归视角</p>
+<p>▶ 上述内容展示了双重差分估计量的非参数识别</p>
+<p>▶ 对于许多复杂情形（多个组、多个时期、协变量），参数化/建模视角更灵活</p>
+<p>▶ 事实上，在经济学文献中，双重差分通常与一个针对无处理情况下潜在结果、含固定效应的回归模型联系在一起（ Angrist and Pischke, 2009, Chapter 5）</p>
+<p><strong>第 17 页</strong></p>
+<p>双重差分：回归视角 ▶ 回归双重差分模型的核心是针对 𝑌 (0) 的加性固定效应模型（省略 𝑋）：</p>
+<p>𝑌𝑖𝑇 (0) = 𝛼 + 𝛾𝐺 𝑖 + 𝛿𝑇 + 𝜖 𝑖𝑇 , (3)</p>
+<p>其中 E(𝜖 𝑖𝑇 |𝐺 𝑖 , 𝑇) = 0；这里 𝛾 是组固定效应，𝛿𝑇 是时间效应 ▶ 记 𝛼𝑖 ≡ 𝛼 + 𝛾𝐺 𝑖：个体时间固定效应， ▶ 模型（3）蕴含平行趋势假设：对 𝑔 = 0, 1</p>
+<p>E[𝑌𝑡+1 (0)|𝐺 = 𝑔] − E[𝑌𝑡 (0)|𝐺 = 𝑔] = 𝛿𝑡+1 − 𝛿𝑡</p>
+<p>▶ 同样，模型（3）蕴含恒定差异假设：对任意 𝑇</p>
+<p>E[𝑌𝑇 (0)|𝐺 = 1] − E[𝑌𝑇 (0)|𝐺 = 0] = 𝛾</p>
+<p><strong>第 18 页</strong></p>
+<p>双重差分：回归视角</p>
+<p>▶ 除模型（3）外，再为双重差分中的观测结局提出以下模型（此处省略 𝑋）：</p>
+<p>𝑌𝑖𝑇 = 𝛼 + 𝛾𝐺 𝑖 +𝛿𝑇 + 𝜏 · 𝑍𝑖𝑇 +𝜖 𝑖𝑇 (4) | {z } | {z } 𝛼𝑖 𝜏𝐺𝑖 ·1{𝑇=𝑡+1}</p>
+<p>其中 E(𝜖 𝑖𝑇 |𝐺 𝑖 , 𝑇) = 0</p>
+<p>▶ 模型（4）中的系数 𝜏 是 ATT 目标量</p>
+<p>▶ 易见，对模型（4）进行双重差分可得到 𝜏ATT：</p>
+<p>𝜏 = E[(𝑌¯1,𝑡+1 − 𝑌¯1,𝑡 ) − (𝑌¯0,𝑡+1 − 𝑌¯0,𝑡 )] = 𝜏ATT</p>
+<p>因此，其逻辑遵循非参数双重差分思想</p>
+<p><strong>第 19 页</strong></p>
+<p>因果解释</p>
+<p>▶ 模型（4）可转化为潜在结果 𝑌 (1) 的模型：</p>
+<p>𝑌𝑖𝑇 (1) = 𝛼𝑖 + 𝛿𝑇 + 𝜏 + 𝜖 𝑖𝑇 , (5) ▶ 模型（5）（与模型 3 联合）实际上假设所有个体在所有 𝑇 上具有同质的处理效应 𝜏</p>
+<p>𝜏 = 𝑌𝑖𝑇 (1) − 𝑌𝑖𝑇 (0) = E[𝑌𝑖𝑇 (1) − 𝑌𝑖𝑇 (0)]</p>
+<p>▶ 因此 𝜏 是一个因果效应</p>
+<p>▶ 𝜏 是 ATT 还是 ATE？取决于将模型（5）施加于哪个总体</p>
+<p><strong>第 20 页</strong></p>
+<p>因果解释：备注</p>
+<p>▶ 尽管模型 (5) 可以针对所有个体提出，但 仅需针对处理组个体提出该模型，以识别 ATT；ATT 是 非参数设定中的 DID 目标量</p>
+<p>▶ 事实上，由于 𝑌 (1) 仅对处理组个体在 第二个（处理）时期可观测，因此只能 对该子总体（ATT）作出因果性主张，无论模型 假设如何</p>
+<p>▶ 固定效应模型 (3)-(5) 的可加性（组特异性效应和时间特异性效应） 假设在 非参数设定中不是必需的</p>
+<p><strong>第 21 页</strong></p>
+<p>双重差分：回归视角 ▶ 回归型双重差分的优点： ▶ 易于进行推断（点估计和标准误） ▶ 易于纳入协变量 ▶ 易于扩展到多个时期和多个处理</p>
+<p>▶ 回归型双重差分的缺点： ▶ 参数假设，可能存在错误设定</p>
+<p>▶ Athey and Imbens (2006, Econometrica) 将双重差分扩展到了 非线性模型（称为变化中的变化模型），适用于 连续数据和离散数据 ▶ Abadie (2005, RESTAT) 提出了一种半参数方法 基于逆概率加权（IPW） ▶ 双重稳健 DID 也可用（Callaway and Sant’Anna, 2021; Li and Li, 2019）</p>
+<p><strong>第 22 页</strong></p>
+<p>平行趋势假设</p>
+<p>▶ 截至目前，讨论都暂时忽略了 𝑋 ⇒ 条件双重差分 在 𝑋 的分层内</p>
+<p>▶ 条件平行趋势（Heckman, 1997）</p>
+<p>E[𝑌𝑡+1 (0) − 𝑌𝑡 (0)|𝑋, 𝐺 = 1] = E[𝑌𝑡+1 (0) − 𝑌𝑡 (0)|𝑋, 𝐺 = 0]</p>
+<p>▶ DID 允许未观测混杂因素（𝑈）影响分配，只要其 对 𝑌 (0) 的影响是可分离且不随时间变化 (Lechner, 2001)。</p>
+<p><strong>第 23 页</strong></p>
+<p>平行趋势假设</p>
+<p>▶ 如果下式成立</p>
+<p>E[𝑌𝑡+1 (0) − 𝑌𝑡 (0)|𝑋, 𝑈, 𝐺 = 1] = E[𝑌𝑡+1 (0) − 𝑌𝑡 (0)|𝑋, 𝑈, 𝐺 = 0]</p>
+<p>则在以下条件下平行趋势成立</p>
+<p>E[𝑌𝑇 (0)|𝑋, 𝑈, 𝐺 = 𝑔] = E[𝑌𝑇 (0)|𝑋, 𝐺 = 𝑔] + ℎ𝑔 (𝑈, 𝑋), ∀ 𝑔, 𝑇</p>
+<p>▶ 即使存在可加且时间不变的混杂， 只要假定平行趋势，仍然可以对因果参数进行推断：</p>
+<p>𝑌𝑖𝑡 = 𝛼𝑖 + 𝛿𝑡 + 𝜏 · 𝑍𝑖𝑡 + 𝑋𝑖′ 𝛽 + 𝜖 𝑖𝑡 (6)</p>
+<p>回顾 𝛼𝑖 ≡ 𝛼 + 𝛾𝐺 𝑖</p>
+<p><strong>第 24 页</strong></p>
+<p>平行趋势假设</p>
+<p>▶ DID 完全依赖于平行趋势假设的 有效性</p>
+<p>▶ 平行趋势假设在实践中可能被违反： ▶ 时间趋势或宏观因素可能以不同方式影响两组 ▶ 可能存在仅影响其中一组的随时间变化因素（例如， “Ashenfelter’s dip”（Ashenfelter (1978)）：受训者在 参加培训课程前通常会出现收入暂时下降</p>
+<p>⇒ 在 DID 检验中，需要投入大量精力来证明不同组的趋势确实 平行 ▶ 使用负向对照结局间接检验可比性 ▶ 至少需要说明，在处理前时期，比较组在 关键协变量方面是相似的</p>
+<p><strong>第 25 页</strong></p>
+<p>多个对照组</p>
+<p>▶ DID 可以看作多个（三个）对照组的一种情形 （Rosenbaum, 2000）</p>
+<p>▶ 本质上，DID 使用三个对照组来估计处理组的 潜在结果 𝑌 (0)</p>
+<p>▶ 回顾一下，我们之前讨论过使用多个对照组 间接检验无混杂性假设；类似的逻辑 也适用于这里</p>
+<p>▶ 如果三个对照组中的结局相似， 那么结果会比以下情况更可信：两组在初始时 差异很大，且对照组随时间的变化更为 显著的情况</p>
+<p><strong>第 26 页</strong></p>
+<p>多个时期的 DID：序列相关 Bertrand et al., 2004, QJE</p>
+<p>▶ DID 设定通常涉及多个时期 ▶ 序列相关：只有少数观测是真正 独立的。以下情况尤其严重： ▶ 结局存在序列相关 ▶ 处理变量随时间变化很小（例如，仅变化一次） ▶ 面板数据包含多年的数据 ▶ 一种解决方案：将数据压缩为每个单位 在“处理前”只有一个观测，在“处理后”也只有一个观测 ▶ 这样可以处理序列相关，但检验效能会迅速下降</p>
+<p>▶ 不进行压缩时：常规方差估计量常常导致 过度拒绝，而聚类稳健（夹心）方差应 成为标准做法</p>
+<p><strong>第 27 页</strong></p>
+<p>序列相关：简单修正 ▶ 将数据压缩为每家公司在“处理前”的一个观测和一个 “处理后”的观测 ▶ 如果所有处理组在同一时间接受处理，则该方法有效 ▶ 可处理序列相关</p>
+<p>▶ 如果处理是错峰实施的（即在不同时间实施）， 对于每个受处理州而言，“之前”和“之后”不再相同 甚至对对照州也无法定义 ▶ 首先，用组固定效应、时间虚拟变量以及任何 相关协变量对 𝑌𝑔𝑡 进行回归 ▶ 然后，仅将处理州的残差分成两组： 处理前年份的残差和处理后年份的残差 ▶ 然后，在这个两时期面板中通过 OLS 回归 估计处理效应及其标准误</p>
+<p><strong>第 28 页</strong></p>
+<p>多个时期与分期采用的 DID</p>
+<p>▶ 使用固定效应模型，可以直接扩展到 多时期、多组的设定：加入 时间和组固定效应</p>
+<p>▶ 但因果解释较为棘手</p>
+<p>▶ Callaway and Sant’Anna (2021)：严格地构建了 针对多个时间时期、分期采用情形的 DID，使用 潜在结果 ▶ 定义“组-时间平均处理效应”： 组 𝑔 在时间 𝑡 的平均处理效应，其中“组”由 各单位首次接受处理的时间时期定义</p>
+<p>▶ 近年来引用最多的计量经济学/因果推断论文之一</p>
+<p>▶ 讲义末尾的“补充笔记”中有更多细节</p>
+<p><strong>第 29 页</strong></p>
+<p>策略 2：滞后因变量调整 ▶ 假设：在给定 LDV 的条件下具有可忽略性 （或无混杂性）（此处省略 𝑋）</p>
+<p>𝑌𝑖,𝑡+1 (0) ⊥ 𝐺 𝑖 | 𝑌𝑖𝑡 ▶ 可忽略性下的非参数识别：</p>
+<p>𝜇˜ 0,LDV = E{E(𝑌𝑡+1 | 𝐺 = 0, 𝑌𝑡 ) | 𝐺 = 1} ∫ = E(𝑌𝑡+1 | 𝐺 = 0, 𝑌𝑡 = 𝑦)𝐹𝑡 (d𝑦 | 𝐺 = 1)</p>
+<p>▶ 𝐹𝑡 (𝑦 | 𝐺 = 𝑔) = Pr(𝑌𝑡 ≤ 𝑦 | 𝐺 = 𝑔)：组 𝑔 中单位的 𝑌𝑡 的累积分布 函数（𝑔 = 0, 1） ▶ 可忽略性与尺度无关 ▶ 估计策略：使用滞后结局（混杂因素）𝑌𝑡 来 预测 𝑌𝑡+1 (0)</p>
+<p><strong>第 30 页</strong></p>
+<p>半参数识别 ▶ 在 DID（即平行趋势）或 LDV（即可忽略性）下， 我们都可以使用逆概率加权（IPW）以 半参数方式识别目标量 𝜏ATT ▶ 在 DID 下，将倾向评分定义为 𝑒 = Pr(𝐺 = 1)（忽略 𝑋），则 𝜇0 的半参数识别公式为 （Abadie, 2005）   𝑒(1 − 𝐺) (𝑌𝑡+1 − 𝑌𝑡 ) . 𝜇˜ 0,DID = E 𝐺𝑌𝑡 + Pr(𝐺 = 1), (7) 1−𝑒 ▶ 在 LDV 下，将倾向评分定义为 𝑒 = Pr(𝐺 = 1 | 𝑌𝑡 ) （忽略 𝑋），则 𝜇0 的半参数识别公式为 （本质上是 ATT 加权）  . 𝑒(𝑌𝑡 ) 𝜇˜ 0,LDV = E (1 − 𝐺)𝑌𝑡+1 Pr(𝐺 = 1), 1 − 𝑒(𝑌𝑡 )</p>
+<p><strong>第 31 页</strong></p>
+<p>LDV：基于模型的估计</p>
+<p>▶ 在可忽略性假设下，可以简单地通过一个以 LDV 𝑌𝑡 为预测变量的 𝑌𝑡+1 回归模型，对缺失的 潜在结果 𝑌𝑖,𝑡+1 (0) 进行插补：</p>
+<p>𝑌𝑖,𝑡+1 = 𝛼 + 𝛽 · 𝑌𝑖𝑡 + 𝜆 𝑡+1 + 𝜏 · 𝑍𝑖,𝑡+1 + 𝜖𝑖,𝑡+1 (8)</p>
+<p>▶ 模型 (8) 中的系数 𝜏 是 LDV 方法中的因果目标量</p>
+<p>▶ 模型 (8) 中 𝜏 的 OLS 估计值是 LDV 估计量 𝜏ˆLDV</p>
+<p>▶ 另一种方法是对处理前变量进行匹配</p>
+<p><strong>第 32 页</strong></p>
+<p>DID 与 LDV 的比较</p>
+<p>▶ LDV 模型 (8) 与固定效应模型 (4) 有很大不同</p>
+<p>▶ 固定效应模型（平行/独立趋势）假设：</p>
+<p>{𝑌𝑖,𝑡+1 (0) − 𝑌𝑖𝑡 (0)} ⊥ 𝑍𝑖,𝑡+1 |𝛼𝑖 (9)</p>
+<p>其中 𝛼𝑖 是个体特异性固定效应（式 (6)）</p>
+<p>▶ 那么如何结合 DID 和 LDV，即将滞后结局 加入固定效应模型？</p>
+<p>𝑌𝑖,𝑡+1 = 𝛼𝑖 + 𝛽 · 𝑌𝑖𝑡 + 𝜆 𝑡+1 + 𝜏 · 𝑍𝑖,𝑡+1 + 𝜖 𝑖,𝑡+1 (10)</p>
+<p>▶ 遗憾的是，模型 (10) 的 OLS 估计值并不一致 （e.g.&nbsp;Angrist and Pischke, 2009, Chap 5.3）</p>
+<p><strong>第 33 页</strong></p>
+<p>DID 与 LDV 的比较</p>
+<p>▶ 平行趋势与可忽略性：两个不同的假设，彼此不 嵌套</p>
+<p>▶ 实际上，最多只能希望两者之一成立；但哪一个 未知</p>
+<p>▶ 两种常用方法，应使用哪一种？</p>
+<p>▶ 已进行了一些模拟（例如 O’Neil et al.&nbsp;2016）</p>
+<p>▶ Angrist and Pischke (2009)：特定类型的 线性模型下的夹逼关系</p>
+<p>▶ 我们能否给出更内在、更一般且具有 实际意义的结论？</p>
+<p><strong>第 34 页</strong></p>
+<p>DID 与 LDV 之间的夹逼关系 Angrist and Pischke (2009), Ding and Li (2019)</p>
+<p>▶ Angrist and Pischke (2009, Chapter 5 Appendix) 在一个 线性回归模型设定中证明了 DID 与 LDV 估计量之间的 夹逼关系：如果真实处理效应为正， 则 ▶ 如果 LDV 模型 (8) 正确，但错误地使用固定效应 模型 (4)，将高估真实处理效应 ▶ 如果固定效应模型 (4) 正确，但错误地使用 LDV 模型 (8)，将低估真实处理效应 ▶ 当真实处理效应为负时，关系相反 ▶ Ding and Li (2019)：将 AP 的结果扩展到无模型设定： 在温和条件下，无论关于结局的模型假设如何， 夹逼关系都成立（更多技术细节见 补充笔记）</p>
+<p><strong>第 35 页</strong></p>
+<p>实践指南</p>
+<p>▶ 图形检查：绘制对照组处理前后结局的散点图， 观察数据云与线性拟合相距多远</p>
+<p>▶ 报告 DID 和 LDV 两者的结果，给出一个范围， 如果两个假设中的一个正确，该范围能够界定真实处理效应</p>
+<p>▶ 进行敏感性分析，观察两者均不正确时会发生 什么</p>
+<p>▶ 注意：夹逼结果无法回答：如果两个假设均不成立， 真实处理效应是否落在该范围内；如果落在范围外， 则位于哪一侧？这取决于具体情况。</p>
+<p><strong>第 36 页</strong></p>
+<p>示例：最低工资与就业（再访） (Card and Krueger, 1994)</p>
+<p>▶ 最低工资提高对就业的影响</p>
+<p>▶ 1992 年 NJ 最低工资提高前后新泽西州和宾夕法尼亚州的 就业信息</p>
+<p>▶ 单位：快餐店</p>
+<p>▶ 结局：每家餐厅的员工人数</p>
+<p><strong>第 37 页</strong></p>
+<p>示例：图形检查 G=0 经验分布</p>
+<p>1.0 0.8 30</p>
+<p>0.6 Ft(y | G) Yt+1</p>
+<p>20</p>
+<p>0.4 0.2 G=0 10</p>
+<p>G=1</p>
+<p>0.0 5</p>
+<p>10 20 30 40 50 60 70 0 20 40 60</p>
+<p>Yt Yt</p>
+<p>图：左：𝐸 (𝑌𝑡+1 | 𝐺 = 0, 𝑌𝑡 ) 的线性和二次拟合线。右：经验 𝐹𝑡 (𝑦 | 𝐺 = 𝑔)（𝑔 = 0, 1）满足随机单调性（1）。</p>
+<p>▶ 滞后结局的系数：𝛽ˆ = 0.288 &lt; 1, 𝛽ˆ′ = 0.475 &lt; 1 ▶ 理论预测 𝜏ˆDID &gt; 𝜏ˆLDV ▶ 经验估计与理论预测一致 ′ = 0.865 𝜏ˆDID = 2.446, 𝜏ˆLDV = 0.302, 𝜏ˆLDV ▶ 二次模型下得到相同结论 37 / 90</p>
+<p><strong>第 38 页</strong></p>
+<p>例 2：短期选举收益 (Bechtel and Hainmueller, 2011)</p>
+<p>▶ 目标：评估德国 2002 年易北河洪水灾害救援援助的因果效应</p>
+<p>▶ 前期：1998 年；后期：2002 年</p>
+<p>▶ 单位：选举区</p>
+<p>▶ 处理：某个选区是否受到洪水影响</p>
+<p>▶ 结局：社会民主党的得票份额</p>
+<p><strong>第 39 页</strong></p>
+<p>例 2：图形检查 G=0 经验分布</p>
+<p>1.0 60</p>
+<p>0.8 50</p>
+<p>0.6 Ft(y | G) Yt+1</p>
+<p>40</p>
+<p>0.4 30</p>
+<p>0.2 G=0 20</p>
+<p>G=1</p>
+<p>0.0 30 40 50 60 30 40 50 60</p>
+<p>Yt Yt</p>
+<p>图：左：𝐸 (𝑌𝑡+1 | 𝐺 = 0, 𝑌𝑡 ) 的线性拟合线。右：经验 𝐹𝑡 (𝑦 | 𝐺 = 𝑔)（𝑔 = 0, 1）满足随机单调性（1）。</p>
+<p>▶ 滞后结局的系数 𝛽ˆ = 1.002 &gt; 1，且 𝛽ˆ′ = 0.997 &lt; 1 ▶ 理论预测 𝜏ˆDID ≈ 𝜏ˆLDV ▶ 经验估计（几乎相同）与理论预测一致：𝜏ˆDID = 7.144, 𝜏ˆLDV = 7.160, ′ = 7.121 𝜏ˆLDV 39 / 90</p>
+<p><strong>第 40 页</strong></p>
+<p>比较案例研究 ▶ 政策干预通常发生在聚合层面，并影响聚合实体，例如学校，或地理或行政区域 ▶ 比较案例研究：受特定干预影响的单位的聚合结局（如死亡率、平均收入、犯罪率等）的变化，并将其与根据某个未受影响单位对照组估计的相同聚合量的变化进行比较 ▶ 数据特征：(1) 只有一个或少数几个处理单位，以及更多的对照单位；(2) 前后均有较长的时间序列 ▶ 数据矩阵的形状（行是单位，列是时间）：短而宽 ▶ 合成控制（SC）方法（Abadie and Gardeazabal, 2003; Abadie, Diamond, Hainmuller, 2010）是评估比较案例研究最流行的方法 40 / 90</p>
+<p><strong>第 41 页</strong></p>
+<p>例：加利福尼亚州 99 号提案 Abadie, Diamond, Hainmuller, 2010</p>
+<p>▶ 1988 年，加利福尼亚州首次通过了全面的烟草控制立法 ▶ 将香烟税提高 25 美分/包 ▶ 将税收指定用于卫生和反吸烟预算 ▶ 资助反吸烟媒体宣传活动 ▶ 推动全州范围的清洁空气条例 ▶ 每年为反烟草项目提供超过 1 亿美元</p>
+<p>▶ 38 个其他美国州被纳入对照单位集合 （捐赠池，不包括通过类似项目的州）</p>
+<p>▶ 关注 99 号提案对 CA 人均香烟销售量的因果效应</p>
+<p><strong>第 42 页</strong></p>
+<p>香烟消费：CA 与美国其他州 Abadie, Diamond, Hainmuller, 2010</p>
+<p>图：人均香烟销售量趋势：加利福尼亚州与美国其他地区。 42 / 90</p>
+<p><strong>第 43 页</strong></p>
+<p>香烟消费：CA 与 SC-CA Abadie, Diamond, Hainmuller, 2010</p>
+<p>图：人均香烟销售量趋势：加利福尼亚州与合成加利福尼亚州。 43 / 90</p>
+<p><strong>第 44 页</strong></p>
+<p>合成控制（SC）方法 Abadie and Gardeazabal, 2003; Abadie, Diamond, Hainmuller, 2010</p>
+<p>▶ 如果未观测混杂是可分离的，但具有随时间变化的效应，会怎样？ ▶ 考虑如下因子模型（记号：𝑡 = 1, . . . , 𝑇）：</p>
+<p>𝑌𝑖𝑡 (0) = 𝜇𝑖′ 𝜆 𝑡 + 𝛿𝑡 + 𝑋𝑖′ 𝛽 + 𝜖 𝑖𝑡 , (11)</p>
+<p>其中 𝜇𝑖：未观测混杂因素的 𝑟 维向量；𝜆 𝑡： 相应的时变系数；𝑋𝑖：观测到的协变量的 𝑝 维向量。</p>
+<p>▶ 模型（11）推广了双重差分中通常的固定效应模型， 其中 𝜇𝑖′ 𝜆 𝑡 被 𝛼𝑖 替代；在经济学中称为交互固定 效应模型（Bai, 2003），在统计学中称为潜在因子模型</p>
+<p><strong>第 45 页</strong></p>
+<p>合成控制（SC）：形式化设定</p>
+<p>▶ 假设在时期 𝑡 = 1, . . . , 𝑇 内有 𝐽 + 1 个单位</p>
+<p>▶ 进一步假设第一个单位仅在时期 𝑇0 之后接受干预 （1 ≤ 𝑇0 &lt; 𝑇）</p>
+<p>▶ 潜在结果 𝑌𝑖𝑡 (0) 由模型（11）给出，且 𝑌1𝑡 (1) = 𝑌1𝑡 (0) + 𝜏1𝑡 𝑍1𝑡</p>
+<p>▶ 我们关注估计 ATT 目标量集合 {𝜏1,𝑇0 +1 , . . . , 𝜏1𝑇 }，其中</p>
+<p>𝜏1𝑡 = 𝑌1𝑡 (1) − 𝑌1𝑡 (0) = 𝑌1𝑡 − 𝑌1𝑡 (0) for 𝑡 ≥ 𝑇0 + 1</p>
+<p>▶ 合成控制的核心任务是通过对照单位观测到的结局的 凸组合，估计未观测的 𝑌1𝑡 (0)</p>
+<p><strong>第 46 页</strong></p>
+<p>合成控制：理论 ▶ 令 𝑊 = (𝑤 2 , . . . , 𝑤 𝐽+1 ) ′，其中 𝑤 𝑗 ≥ 0 且 Í 𝐽+1 𝑗=2 𝑤 𝑗 = 1。𝑊 的每一种取值都代表一个 潜在的合成控制 ▶ 假设我们可以选择 𝑊 ∗，使处理单位的处理前协变量 和结局得到重现 𝐽+1 ∑︁ 𝐽+1 ∑︁ 𝐽+1 ∑︁ 𝑤 ∗𝑗 𝑋 𝑗 = 𝑋1 , 𝑤 ∗𝑗 𝑌 𝑗1 = 𝑌11 , . . . , 𝑤 ∗𝑗 𝑌 𝑗𝑇0 = 𝑌1𝑇0 𝑗=2 𝑗=2 𝑗=2 ▶ 假设因子模型（11）和相当标准的条件，如果处理前时期 的数量相对于残差方差足够大，则可以证明 Í 𝑌1𝑡 (0) − 𝐽+1 ∗ 𝑗=2 𝑤 𝑗 𝑌 𝑗𝑡 ≈ 0 ▶ 𝜏1𝑡 的一个近似无偏估计量为 𝐽+1 ∑︁ 𝜏ˆ1𝑡 = 𝑌𝑖𝑡 − 𝑤 ∗𝑗 𝑌 𝑗𝑡 , 𝑡 = 𝑇0 + 1, . . . , 𝑇 𝑗=2</p>
+<p><strong>第 47 页</strong></p>
+<p>合成控制：选择 𝑊 ∗</p>
+<p>▶ 令 𝑍1 = (𝑋1′ , 𝑌11 , . . . , 𝑌𝑖𝑇0 ) ′，其为处理单位的处理前 协变量和结局向量 ▶ 类似地，定义 𝑍0 为一个矩阵，其每一列都是每个 对照单位的相同变量 ▶ 选择权重 𝑊 ∗ 以最小化某种差异度量 ||𝑍1 − 𝑍0𝑊 ||，并满足和为 1 的约束 ▶ 一个典型的度量为 √︁ ||𝑍1 − 𝑍0𝑊 || 𝑉 = (𝑍1 − 𝑍0𝑊) ′𝑉 (𝑍1 − 𝑍0𝑊)，</p>
+<p>其中 𝑉 是某个对称半正定矩阵 ▶ 通常将 𝑉 选择为对角矩阵，使每个元素代表每个变量 的相对重要性</p>
+<p><strong>第 48 页</strong></p>
+<p>合成控制：选择最优 𝑉 ▶ 推断程序对任意 𝑉 都有效，且 𝑉 会影响估计量的 均方误差（MSE） ▶ 𝑉 的最优选择为 𝑍1 − 𝑍0𝑊 中的差异分配重要性权重， 并使合成控制估计量的 MSE 最小化 ▶ 一种典型策略是在正定对角矩阵中选择 𝑉，使处理前 结局的均方预测误差（MSPE）最小化 ▶ 令 𝑈1，𝑈0 为移除 𝑋 后 𝑍1，𝑍0 的剩余部分，选择 （除归一化常数外） 𝑉 ∗ = arg min{𝑈1 − 𝑈0𝑊 ∗ (𝑉)}′ {𝑈1 − 𝑈𝑜 𝑊 ∗ (𝑉)} 𝑉 ▶ 这是一个迭代过程——最终目标是选择 𝑊 ∗ (𝑉 ∗ ) 和 𝑉 ∗，以 最小化 ||𝑍1 − 𝑍0𝑊 || 𝑉</p>
+<p><strong>第 49 页</strong></p>
+<p>合成控制：置换推断 Abadie et al, 2010</p>
+<p>▶ 在单位分配的每一种随机置换下计算检验统计量的分布</p>
+<p>▶ 然后评估观测统计量相对于置换分布的极端程度</p>
+<p>▶ 需要大量对照单位，这在比较案例研究中很常见</p>
+<p>▶ 当超过一个单位接受处理时，估计和推断可以扩展（一个开放问题：如果每个处理单位以错开的方式接受处理，情况会怎样？）</p>
+<p><strong>第 50 页</strong></p>
+<p>近期进展</p>
+<p>▶ 合成控制因其简洁性和直观性而非常流行</p>
+<p>▶ 但 SC 所针对的设定本身就很有挑战性：只有一个或至多少数几个处理单位——信息不足（例如正值性）</p>
+<p>▶ 近期进展 ▶ 放松合成控制的凸性约束（Doudchenko and Imbens, 2016） ▶ 结合合成控制和双重差分：合成双重差分（Arkhangelsky, et al.&nbsp;2018） ▶ 矩阵补全方法（Athey et al.&nbsp;2017） ▶ 增强型合成控制（Ben-Michael, Feller, Rothstein, 2018）</p>
+<p><strong>第 51 页</strong></p>
+<p>合成双重差分：设定 Arkhangelsky et al.&nbsp;2021</p>
+<p>▶ 另一项近期工作试图结合合成控制和双重差分估计量的有益特征—— 合成双重差分（SDID）</p>
+<p>▶ 为了直观理解 SDID 估计量，将所有估计量用相同形式写出会有所帮助</p>
+<p>▶ 假设有 𝑁 个单位和 𝑇 个时期</p>
+<p>▶ 前 𝑁 𝑐𝑜 个单位从不接受处理 ▶ 𝑍𝑖𝑡 = 0 for 𝑖 = 1, . . . , 𝑁 𝑐𝑜 and all 𝑡</p>
+<p>▶ 其余 𝑁𝑡𝑟 个单位均在时间 𝑇 𝑝𝑟 𝑒 之后接受处理</p>
+<p>▶ 处理后的时期数为 𝑇 𝑝𝑜𝑠𝑡 = 𝑇 − 𝑇 𝑝𝑟 𝑒</p>
+<p><strong>第 52 页</strong></p>
+<p>合成双重差分：一般加权形式</p>
+<p>▶ 合成控制、双重差分和 SDID 估计量都可以写成 𝑁𝑐𝑜 ∑︁ b 𝛿𝑡𝑟 − 𝜏=b 𝜔 𝛿𝑖 b𝑖 b 𝑖=1</p>
+<p>其中 𝑁 1 ∑︁ 𝛿𝑡𝑟 = b 𝛿𝑖 b 𝑁𝑡𝑟 𝑖=𝑁 +1 𝑐𝑜</p>
+<p>▶ 关键差异在于权重 𝜔𝑖 的估计方式，以及调整后结局 𝛿𝑖 的定义方式</p>
+<p><strong>第 53 页</strong></p>
+<p>合成双重差分：双重差分表达式</p>
+<p>−1 ▶ 双重差分使用恒定权重 𝜔𝑖 = 𝑁 𝑐𝑜</p>
+<p>▶ 双重差分的调整后结局为</p>
+<p>𝑇 𝑇𝑝𝑟𝑒 1 ∑︁ 1 ∑︁ 𝛿𝑖 = b 𝑌𝑖𝑡 − 𝑌𝑖𝑡 𝑁𝑡𝑟 𝑡=𝑇 +1 𝑁 𝑐𝑜 𝑡=1 𝑝𝑟𝑒</p>
+<p>▶ 容易看出，如果只有两个时期且在第二个时期给予处理， 该估计量会简化为我们之前看到的双重差分估计量 ▶ 未加权的双重差分</p>
+<p><strong>第 54 页</strong></p>
+<p>合成双重差分：合成控制表达式</p>
+<p>▶ 另一方面，合成控制使用加权而不是差分来估计未接受 处理时的平均潜在结果</p>
+<p>▶ 合成控制使用在处理单位和对照单位之间平衡处理前 结局的权重 ( 𝑇𝑝𝑟𝑒 𝑁 𝑁 !2) 𝑐𝑜 ∑︁ ∑︁ 1 ∑︁ 𝜔b = arg min 𝜔𝑖𝑌𝑖𝑡 − 𝑌𝑖𝑡 𝜔 ∈Ω 𝑁𝑡𝑟 𝑖=𝑁 +1 𝑡=1 𝑖=1 𝑐𝑜</p>
+<p>满足以下约束 𝑁𝑐𝑜 ∑︁ 1 𝜔𝑖 = 1, 𝜔𝑖 = for all 𝑖 = 𝑁 𝑐𝑜 + 1, . . . , 𝑁 𝑖=1 𝑁𝑡𝑟</p>
+<p><strong>第 55 页</strong></p>
+<p>合成双重差分：合成控制表达式</p>
+<p>▶ 与双重差分不同，合成控制在构造调整后结局时不使用差分</p>
+<p>▶ 合成控制使用 𝑇 1 ∑︁ 𝛿𝑖 = b 𝑌𝑖𝑡 𝑇 𝑝𝑜𝑠𝑡 𝑡=𝑇 𝑝𝑟𝑒 +1</p>
+<p>▶ 实际上只利用处理前时期来估计使两组平衡的权重</p>
+<p>▶ 我们可以看到，因果效应的估计值就是 处理组平均结局（处理后）与 对照组加权后的处理后结局之差</p>
+<p><strong>第 56 页</strong></p>
+<p>合成 DID：结合 DID 与 SC</p>
+<p>▶ SDID 结合了这两个想法</p>
+<p>▶ 首先利用处理前时间段构造单位特定权重 如下 ( 𝑇𝑝𝑟𝑒 𝑁𝑐𝑜 𝑁 !2 ) ∑︁ ∑︁ 1 ∑︁ (𝜔 b) = arg min b0 , 𝜔 𝜔0 + 𝜔𝑖𝑌𝑖𝑡 − 𝑌𝑖𝑡 +𝜁 2 ||𝜔|| 22 𝜔0 , 𝜔 𝑡=1 𝑖=1 𝑁 𝑡𝑟 𝑖=𝑁 +1 𝑐𝑜</p>
+<p>约束条件为 𝑁𝑐𝑜 ∑︁ 1 𝜔𝑖 = 1, 𝜔𝑖 = for all 𝑖 = 𝑁 𝑐𝑜 + 1, . . . , 𝑁 𝑖=1 𝑁𝑡𝑟</p>
+<p><strong>第 57 页</strong></p>
+<p>合成 DID：惩罚项与截距</p>
+<p>▶ 这些与 SC 权重非常相似，但有两点不同</p>
+<p>▶ 为权重添加惩罚项 ▶ 将权重分散到各单位 ▶ 不产生权重非常大的单位/降低变异性</p>
+<p>▶ 添加截距项 𝜔0 ▶ 更容易使处理前趋势平行，而非完全相等 ▶ 这是允许的，因为我们将像 DID 估计量一样使用差分，而差分会消除这一恒定差异</p>
+<p><strong>第 58 页</strong></p>
+<p>合成 DID：解析形式</p>
+<p>▶ SDID 还构造了时间特定权重，𝜆 b𝑡 旨在 平衡暴露前和暴露后的时间段 (𝑁 𝑇∑︁ 𝑝𝑟𝑒 𝑇 !2) 𝑐𝑜 ∑︁ 1 ∑︁ (𝜆 b = arg min b0 , 𝜆) 𝜆0 + 𝜆 𝑡 𝑌𝑖𝑡 − 𝑌𝑖𝑡 𝜆0 ,𝜆 𝑇 𝑝𝑜𝑠𝑡 𝑡=𝑇 𝑖=1 𝑡=1 𝑝𝑟𝑒 +1</p>
+<p>约束条件为 𝑇∑︁ 𝑝𝑟𝑒 1 𝜆 𝑡 = 1, 𝜆𝑡 = for all 𝑡 = 𝑇 𝑝𝑟 𝑒 + 1, . . . , 𝑇 𝑡=1 𝑇 𝑝𝑜𝑠𝑡</p>
+<p><strong>第 59 页</strong></p>
+<p>合成 DID</p>
+<p>▶ SDID 随后使用以下调整后的结局</p>
+<p>𝑇 𝑇∑︁ 𝑝𝑟𝑒 1 ∑︁ 𝛿𝑖 = b 𝑌𝑖𝑡 − 𝜆 b𝑡 𝑌𝑖𝑡 𝑇 𝑝𝑜𝑠𝑡 𝑡=𝑇 𝑝𝑟𝑒 +1 𝑡=1</p>
+<p>▶ 与 DID 调整后的结局非常相似，但 处理前时间段的权重不相等</p>
+<p>▶ 比 DID 更灵活，DID 为每个 处理前时间段分配相等权重 ▶ 平行趋势的加权版本 ▶ 较近的时间段可能比更早的 时间段更合理</p>
+<p><strong>第 60 页</strong></p>
+<p>合成 DID：双重稳健</p>
+<p>▶ 显然，该估计量是 SC 和 DID 的推广 ▶ 更灵活</p>
+<p>▶ 作者表明，该估计量是双重稳健的，即它将在 如果 DID 或 SC 任一者所依据的假设 得到满足时提供一致估计</p>
+<p>▶ 当 DID 表现良好而 SC 表现不佳时，他们发现 SDID 的表现与 DID 相近或优于 DID</p>
+<p>▶ 当 SC 表现良好而 DID 表现不佳时，SDID 的表现与 SC 相当或 优于 SC</p>
+<p><strong>第 61 页</strong></p>
+<p>合成 DID：示例</p>
+<p>▶ 这里展示了各方法如何估计加利福尼亚戒烟项目中的因果 效应，该项目见于 Arkhangelsky et al.&nbsp;(2021)</p>
+<p>▶ 平行趋势看起来存在疑问，而 DID 高估了因果 效应 ▶ 总体而言，SDID 的估计值最小</p>
+<p><strong>第 62 页</strong></p>
+<p>矩阵补全 Athey et al.&nbsp;(2021, JASA)</p>
+<p>▶ Athey et al.&nbsp;(2021) 将面板数据方法中的许多思想加以推广</p>
+<p>▶ 关键洞见是，面板数据中的因果推断问题 本质上是矩阵补全问题</p>
+<p>▶ 如果我们关注控制状态下的潜在结果矩阵 𝑌𝑖𝑡 (0)，我们只能观测到其中一部分值</p>
+<p>▶ 使用矩阵补全方法填补该矩阵，这些方法本身已有 丰富的文献</p>
+<p><strong>第 63 页</strong></p>
+<p>矩阵补全 ▶ 我们可以将潜在结果矩阵和处理矩阵写为</p>
+<p>𝑌 𝑌12 · · · ? ? © 11 ª ­𝑌21 ? · · · ? ? ® 𝒀 (0) = ­ . ­ ® ­ .. .. .. .. ®® ­ . . . ® «𝑌𝑛1 𝑌𝑛2 · · · 𝑌𝑛𝑇 −1 𝑌𝑛𝑇 ¬ 1 1 ··· 0 0 © ª ­1 0 · · · 0 0®® 𝒁 = ­. . . ­ ­ .. .. .. .. ®® ­ .® «1 1 · · · 1 1¬ ▶ 我们的目标是填补缺失数据（矩阵中的 问号）</p>
+<p>▶ 从现在起，简单地用 𝒀 指代 𝒀 (0)</p>
+<p><strong>第 64 页</strong></p>
+<p>矩阵补全</p>
+<p>▶ 可以假设数据定义为</p>
+<p>𝒀 = 𝑳∗ + 𝝐</p>
+<p>并且我们希望学习 𝑳 ∗</p>
+<p>▶ 令 O 表示我们观测到结局的索引集合 (𝑖, 𝑡)，即 对照单位/时间 ▶ M 表示处理单位/时间</p>
+<p>▶ 对于任意矩阵 𝒁，将 𝑃 O ( 𝒁) 和 𝑃⊥O ( 𝒁) 定义为</p>
+<p>    𝑍𝑖𝑡  (𝑖, 𝑡) ∈ O 0   (𝑖, 𝑡) ∈ O 𝑃 O ( 𝒁)𝑖𝑡 = 𝑃⊥O (𝒁)𝑖𝑡 = 0  (𝑖, 𝑡) ∉ O  𝑍𝑖𝑡  (𝑖, 𝑡) ∉ O  </p>
+<p><strong>第 65 页</strong></p>
+<p>矩阵补全</p>
+<p>▶ 那么，我们首先可能会想到最小化平方误差</p>
+<p>1 ∑︁ 1 min (𝑌𝑖𝑡 − 𝐿 𝑖𝑡 ) 2 = min ||𝑃 O (𝒀 − 𝑳)|| 𝐹 𝑳 |O| 𝑳 |O| (𝑖,𝑡 ) ∈ O</p>
+<p>▶ 但这无法帮助我们解决问题 ▶ 显然，我们得到 𝐿 𝑖𝑡 = 𝑌𝑖𝑡，对于 (𝑖, 𝑡) ∈ O ▶ 对重要的点 (𝑖, 𝑡) ∈ M 没有帮助</p>
+<p>▶ 为解决这些问题，可以对矩阵进行正则化 ▶ 单个值 ▶ 秩 ▶ 特征值的大小</p>
+<p><strong>第 66 页</strong></p>
+<p>矩阵补全</p>
+<p>▶ 所提出的估计量为 𝑳 ∗ = b 𝑳+b Γ1𝑇𝑇 + 1 𝑁 b Δ𝑇 其中 未知值通过下式求得   1 𝑇 𝑇 2 arg min ||𝑃 O (𝒀 − 𝑳 − Γ1𝑇 − 1 𝑁 Δ )|| 𝐹 + 𝜆|| 𝑳|| ∗ b b b 𝑳,𝚪,𝚫 |O|</p>
+<p>其中 || 𝑳|| ∗ 是 𝑳 的核范数，其定义为 ∑︁ || 𝑳|| ∗ = 𝜎𝑖 ( 𝑳) 𝑖</p>
+<p>▶ 其中 𝜎𝑖 ( 𝑳) 是 𝑳 的第 𝑖 𝑡 ℎ 个特征值</p>
+<p><strong>第 67 页</strong></p>
+<p>矩阵补全</p>
+<p>▶ 注意，他们不对个体或时间特定的固定效应进行正则化</p>
+<p>▶ 与矩阵补全的标准用法不同，我们通常有相当多的观测数据 ▶ 有足够的数据来估计这些参数</p>
+<p>▶ 实际上，这估计的是一个潜在结果的固定效应模型，但通过 𝑳 允许更复杂的结构 ▶ 通过惩罚项对 𝑳 施加结构</p>
+<p><strong>第 68 页</strong></p>
+<p>矩阵补全</p>
+<p>▶ 有趣的是，他们表明这推广了面板数据文献中许多常用的估计量</p>
+<p>▶ 双重差分、合成控制等估计量都可以用这种方式表述 ▶ 通常不带惩罚项 ▶ 通常对 𝑳 或固定效应施加约束</p>
+<p>▶ 模型也可以扩展为包含协变量</p>
+<p>▶ 在这种模型中，推断具有挑战性，不过作者提出了一种重抽样程序 ▶ 尚不清楚其表现如何</p>
+<p><strong>第 69 页</strong></p>
+<p>同根异叶 Shen et al.&nbsp;2024, Econometrica</p>
+<p>▶ 面板数据方法的关键思想在一篇精彩的 Shen et al.&nbsp;(2024) 的论文中得到凝练：同根异叶： 面板数据中的时间序列与横截面方法</p>
+<p>▶ Dennis Shen 的幻灯片在此处（点击）</p>
+<p><strong>第 70 页</strong></p>
+<p>DID 多期的补充说明</p>
+<p><strong>第 71 页</strong></p>
+<p>多期 DID：设置 Callaway and Sant’Anna, 2021</p>
+<p>▶ 考虑包含 𝑇 个时间段的情形</p>
+<p>▶ 𝐷 𝑖,𝑡 = 1 表示单位 𝑖 在时间段 𝑡 接受处理，否则为 0。</p>
+<p>▶ 假设 1（错位处理采用）：如果 𝐷 𝑡 −1 = 1，则 𝐷𝑡 = 1</p>
+<p>▶ 在错位处理采用下，我们将 𝐺 𝑔 定义为一个虚拟变量， 如果某单位在时间段 𝑔 首次接受处理，则其等于 1： 𝐺 𝑖,𝑔 = 1(𝐺 𝑖 = 𝑔)</p>
+<p>▶ 目标量：组-时间平均处理效应 𝐴𝑇𝑇 (𝑔, 𝑡) = 𝐸 [𝑌𝑡 (𝑔) −𝑌𝑡 (0)|𝐺 𝑔 = 1]</p>
+<p><strong>第 72 页</strong></p>
+<p>识别假设 ▶ 假设 2（A2：有限处理预期）：允许存在固定的 𝛿 期预期。（𝛿 = 1：提前一期） ▶ 对照组定义的两个备选假设： ▶ A3：基于“从未处理”组的条件平行趋势</p>
+<p>𝐸 [𝑌𝑡 (0) − 𝑌𝑡 −1 (0)|𝑋, 𝐺 𝑔 = 1] = 𝐸 [𝑌𝑡 (0) − 𝑌𝑡 −1 (0)|𝑋, 𝐶 = 1]</p>
+<p>其中，若某单位从未参与处理，则 𝐶 = 1 ▶ A3’：基于“尚未处理”组的条件平行趋势</p>
+<p>𝐸 [𝑌𝑡 (0)−𝑌𝑡 −1 (0)|𝑋, 𝐺 𝑔 = 1] = 𝐸 [𝑌𝑡 (0) −𝑌𝑡 −1 (0)|𝑋, 𝐷 𝑠 = 0, 𝐺 𝑔 = 0]</p>
+<p>▶ A4：正值性。Pr(𝐺 𝑔 = 1) &gt; 𝜖</p>
+<p><strong>第 73 页</strong></p>
+<p>非参数识别</p>
+<p>▶ 将 DiD 推广到多个组和时间段时有两个主要挑战 1. 最合适的时间参照是什么？对组 𝑔 观测到未处理潜在结果的最近时间段 2. 最合适的比较组是什么？归根结底要在 A3（从未处理）和 A3’（尚未处理）之间做选择。 ▶ 当处理前协变量不起作用时，在 A3 下：</p>
+<p>𝑛𝑒𝑣 𝐴𝑇𝑇𝑢𝑛𝑐 (𝑔, 𝑡; 𝛿) = 𝐸 [𝑌𝑡 −𝑌𝑔− 𝛿−1 |𝐺 𝑔 = 1] −𝐸 [𝑌𝑡 −𝑌𝑔− 𝛿−1 |𝐶 = 1]</p>
+<p>在 A3’ 下： 𝑛𝑦 𝐴𝑇𝑇𝑢𝑛𝑐 (𝑔, 𝑡; 𝛿) = 𝐸 [𝑌𝑡 −𝑌𝑔− 𝛿−1 |𝐺 𝑔 = 1]−𝐸 [𝑌𝑡 −𝑌𝑔− 𝛿−1 |𝐷 𝑡+ 𝛿 = 0]</p>
+<p><strong>第 74 页</strong></p>
+<p>汇总组-时间平均处理效应</p>
+<p>▶ 汇总各个 𝐴𝑇𝑇 (𝑔, 𝑡)： T ∑︁ ∑︁ 𝜃= 𝑤(𝑔, 𝑡) · 𝐴𝑇𝑇 (𝑔, 𝑡) 𝑔∈ G 𝑡=2</p>
+<p>▶ 可以使用这些参数回答三个重要问题： ▶ 平均处理效应如何随处理暴露时长变化？ ▶ 平均处理效应如何在各组之间变化？ ▶ 截至时间 𝑡˜，该政策在所有组中的累积平均处理效应是多少？</p>
+<p><strong>第 75 页</strong></p>
+<p>估计与推断</p>
+<p>▶ 结局回归（OR）、逆概率加权（IPW）和双重稳健（DR）都是估计处理组平均处理效应的有效方法 ▶ OR：要求研究者正确建模比较组的结局演化（与条件平行趋势假设相关）。 ▶ IPW：要求研究者根据协变量 𝑋 正确建模单位 𝑖 属于组 𝑔 的条件概率。 ▶ 双重稳健：结合 OR 和 IPW，更灵活</p>
+<p><strong>第 76 页</strong></p>
+<p>DID 与 LDV 之间夹逼关系的补充说明</p>
+<p><strong>第 77 页</strong></p>
+<p>DID 与 LDV 之间夹逼关系的补充说明 Ding and Li (2019)</p>
+<p>▶ 如果真实的结局模型为 E(𝑌𝑡+1 | 𝐺, 𝑌𝑡 ) = 𝛼 + 𝜏𝐺 + 𝛽𝑌𝑡 ，那么 𝜏 = 𝜏ATT ▶ LDV 的两个版本 ˆ 𝑡 对照单位： ▶ 拟合 OLS Ê(𝑌𝑡+1 | 𝐺 = 0, 𝑌𝑡 = 𝑦) = 𝛼ˆ + 𝛽𝑌</p>
+<p>𝜏ˆLDV = (𝑌¯1,𝑡+1 − 𝑌¯0,𝑡+1 ) − 𝛽( ˆ 𝑌¯1,𝑡 − 𝑌¯0,𝑡 )</p>
+<p>′ 𝐺 + 𝛽ˆ′𝑌 对所有单位： ▶ 拟合 OLS Ê(𝑌𝑡+1 | 𝐺, 𝑌𝑡 ) = 𝛼ˆ + 𝜏ˆLDV 𝑡</p>
+<p>′ 𝜏ˆLDV = (𝑌¯1,𝑡+1 − 𝑌¯0,𝑡+1 ) − 𝛽ˆ′ (𝑌¯1,𝑡 − 𝑌¯0,𝑡 )</p>
+<p>▶ 与 DID 相比</p>
+<p>𝜏ˆDID = (𝑌¯1,𝑡+1 − 𝑌¯0,𝑡+1 ) − (𝑌¯1,𝑡 − 𝑌¯0,𝑡 )</p>
+<p>▶ 当 𝛽ˆ = 1 或 𝛽ˆ′ = 1 时，DID 和 LDV 估计量相同</p>
+<p><strong>第 78 页</strong></p>
+<p>线性模型下夹逼关系的解释</p>
+<p>▶ 考虑 𝛽ˆ 或 𝛽ˆ′ 小于 1 的情况</p>
+<p>′ 取决于其符号 ▶ 𝜏ˆDID − 𝜏ˆLDV 或 𝜏ˆDID − 𝜏ˆLDV 的符号 𝑌¯1,𝑡 − 𝑌¯0,𝑡</p>
+<p>▶ 处理组的平均 𝑌𝑡 较小 =⇒ 𝜏ˆDID &gt; 𝜏ˆLDV</p>
+<p>▶ 处理组的平均 𝑌𝑡 较大 =⇒ 𝜏ˆDID &lt; 𝜏ˆLDV</p>
+<p>▶ 𝛽ˆ 或 𝛽ˆ′ 偏离 1 的程度 =⇒ 双重差分和 LDV 估计值相差多少</p>
+<p>▶ 数值结果，无随机假设，比 Angrist and Pischke (2009) 更一般</p>
+<p><strong>第 79 页</strong></p>
+<p>关于面板数据和时间序列建模的贝叶斯方法补充说明</p>
+<p><strong>第 80 页</strong></p>
+<p>贝叶斯方法与时间序列建模</p>
+<p>▶ 上述所有方法都采用频率学派的推断方法</p>
+<p>▶ 近期研究利用复杂的贝叶斯时间序列模型来估计随时间变化的处理效应 ▶ 推断是自动进行的 ▶ 易于处理季节性等难以处理的趋势 ▶ 便于使效应随时间变化</p>
+<p>▶ 这些方法通常在拥有大量处理前数据时很有用</p>
+<p>▶ 更多信息见末尾的补充说明</p>
+<p><strong>第 81 页</strong></p>
+<p>贝叶斯方法与时间序列建模</p>
+<p>▶ 我们的数据就是 𝑌𝑡，其中 𝑡 = 1, . . . , 𝑇</p>
+<p>▶ 某项处理在时间 𝑇 𝑝𝑟 𝑒 之后实施，其中 𝑇 𝑝𝑟 𝑒 相对较大</p>
+<p>▶ 希望估计该处理在 𝑇 𝑝𝑟 𝑒 之后每个时间点的影响</p>
+<p>▶ 我们可能（但不一定）有一些同期时间序列 𝑋𝑡，其中 𝑡 = 1, . . . , 𝑇 ▶ 不受处理影响 ▶ 可以是对照单元，也可以是其他变量</p>
+<p><strong>第 82 页</strong></p>
+<p>贝叶斯方法与时间序列建模</p>
+<p>▶ 思路很简单。对 𝑡 ≤ 𝑇 𝑝𝑟 𝑒 的 𝑌𝑡 建模，并用该模型预测在没有实施处理的情况下会发生什么</p>
+<p>▶ 观察到的结局与该预测之间的差异就是因果效应</p>
+<p>▶ 预测的后验分布会自动纳入不确定性</p>
+<p>▶ 这种方法的一个实际优点是，它允许我们使用已被证明可在多种情境下有效的复杂时间序列模型</p>
+<p>▶ 该方法依赖于潜在结果时间序列的平稳性假设</p>
+<p><strong>第 83 页</strong></p>
+<p>贝叶斯方法与时间序列建模</p>
+<p>▶ 一个很好的模型是贝叶斯结构时间序列模型</p>
+<p>𝑌𝑡 = 𝑍𝑡𝑇 𝛼𝑡 + 𝜖 𝑡 𝛼𝑡+1 = 𝑇𝑟 𝛼𝑡 + 𝑅𝑡 𝜂𝑡</p>
+<p>▶ 𝛼𝑡 是时间 𝑡 的一些不可观测状态，第一个方程描述观察到的结局与这些状态之间的关系</p>
+<p>▶ 第二个方程展示这些状态如何随时间发展</p>
+<p>▶ 在这种一般形式下不易看出，但它提供了很大的灵活性 ▶ 季节性效应 ▶ 非线性时间趋势 ▶ 同期协变量或控制结局</p>
+<p><strong>第 84 页</strong></p>
+<p>贝叶斯方法与时间序列建模</p>
+<p>Brodersen, Kay H., et al.&nbsp;“使用贝叶斯结构时间序列模型推断因果影响。” The Annals of Applied Statistics 9.1 (2015): 247-274.</p>
+<p><strong>第 85 页</strong></p>
+<p>贝叶斯方法与时间序列建模</p>
+<p>▶ 前面的示例有一些较难处理的方面</p>
+<p>▶ 一些明显而强烈的季节性效应 ▶ 我们之前学习的估计量如何处理这一问题？</p>
+<p>▶ 在这个示例中，效应相对恒定，但该方法会自动估计随时间变化的不同效应</p>
+<p>▶ 可以扩展到更复杂的设置，例如多个单元下的异质性处理效应（Antonelli and Beck, 2020）或干扰（Manchetti and Bojinov, 2020）</p>
+<p><strong>第 86 页</strong></p>
+<p>安慰剂检验与大量对照时期 ▶ 我们之前已经看到，敏感性分析的一种形式是估计处理对一个不可能受到处理影响的结局的因果效应（负对照） ▶ 我们也可以在面板数据情境下进行这类检验</p>
+<p>Brodersen, Kay H., et al.&nbsp;“使用贝叶斯结构时间序列模型推断因果影响。” The Annals of Applied Statistics 9.1 (2015): 247-274. 86 / 90</p>
+<p><strong>第 87 页</strong></p>
+<p>安慰剂检验与大量对照时期</p>
+<p>▶ 我们并不总能获得可用于该检验的结局</p>
+<p>▶ 在拥有大量处理前数据的面板数据情境下，当我们知道此时不应存在效应（因为政策尚未实施）时，可以对处理前数据进行检验 ▶ 估计较早时间点的因果效应</p>
+<p>▶ 处理前时期还可以检验其他事项 ▶ 平行趋势 ▶ 平稳性假设</p>
+<p><strong>第 88 页</strong></p>
+<p>参考文献 ▶ Card, D. and Krueger, A. B. (1994). 最低工资与就业：新泽西州和宾夕法尼亚州快餐行业的案例研究。American Economic Review 82, 772–793. ▶ Card, D. and Krueger, A. B. (2000). 最低工资与就业：新泽西州和宾夕法尼亚州快餐行业的案例研究：回应。American Economic Review, 90(5), 1397–1420. ▶ Hauer, E. (1997). 道路安全中的观察性前后对照研究：估计公路和交通工程措施对道路安全的影响，Oxford, OX, U.K.，Pergamon: Emerald Group Publishing Limited. ▶ Angrist, J. D. and Pischke, J.-S. (2009), 基本无害的计量经济学：实证研究者的指南，Princeton, NJ: Princeton University Press. ▶ Athey, S. and Imbens, G. W. (2006). 非线性双重差分模型中的识别与推断。Econometrica. 74(2), 431–497. ▶ Abadie, A. (2005). 半参数双重差分估计量。Review of Economic Studies 72, 1–19. ▶ Heckman, J. J., Ichimura, H., and Todd, P. E. (1997). 作为计量经济学评估估计量的匹配：评估职业培训项目的证据。The Review of Economic Studies, 64, 605–654. ▶ Arkhangelsky D, Athey S, Hirshberg DA, Imbens GW, Wager S. 合成双重差分。American Economic Review. (2021). 111(12):4088-118.</p>
+<p><strong>第 89 页</strong></p>
+<p>参考文献</p>
+<p>▶ Menchetti, Fiammetta, and Iavor Bojinov. 使用多元贝叶斯结构时间序列模型估计存在部分干扰时的因果效应。Harvard Business School, 2020. ▶ Antonelli, Joseph, and Brenden Beck. “纽约市社区警务中政策分阶段采用下的异质性因果效应。” arXiv preprint arXiv:2006.07681 (2020). ▶ Callaway, B. and Sant’Anna, P. (2021). 多个时间段下的双重差分。J Econometrics. 225(2), 200-230. ▶ Lechner, M. (2011). 使用双重差分方法估计因果效应。Foundations and Trends in Econometrics, 4, 165–224. ▶ Ashenfelter, O. (1978). 估计培训项目对收入的影响。The Review of Economic and Statistics, 47–57. ▶ Rosenbaum, P. R. (2002). 观察性研究。Springer, New York, NY. ▶ Bertrand, M., Duflo, E., Mullainathan, S. (2004). 我们应在多大程度上信任双重差分估计？The Quarterly Journal of Economics, 119(1), 249–275.</p>
+<p><strong>第 90 页</strong></p>
+<p>参考文献</p>
+<p>▶ Peng, D. and Li, F. (2019). 双重差分与滞后因变量调整之间的夹逼关系。Political Analysis. 27(4), 605-615. ▶ Abadie, A., Diamond, A., and Hainmueller , J. (2010). 用于比较案例研究的合成控制方法：估计加利福尼亚州烟草控制项目的效应。Journal of the American statistical Association, 105(490), 493–505. ▶ Abadie, A., and Gardeazabal, J. (2003). 冲突的经济成本：巴斯克地区的案例研究。American economic review, 93(1), 113–132. ▶ Ben-Michael, Eli, Avi Feller, and Jesse Rothstein. “增强型合成控制方法。” Journal of the American Statistical Association just-accepted (2021): 1-34. ▶ Athey, Susan, et al.&nbsp;“因果面板数据模型的矩阵补全方法。” Journal of the American Statistical Association (2021): 1-15. ▶ Brodersen, Kay H., et al.&nbsp;“使用贝叶斯结构时间序列模型推断因果影响。” The Annals of Applied Statistics 9.1 (2015): 247-274.</p>
+
+
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "已复制");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "已复制");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/hui950319\.github\.io\/causalR\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../notes/duke-sta640/15-chapter-7-regression-discontinuity-designs.html" class="pagination-link" aria-label="Chapter 7 · Regression Discontinuity Designs">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">Chapter 7 · Regression Discontinuity Designs</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../notes/duke-sta640/17-chapter-9-sequential-and-longitudinal-treatments.html" class="pagination-link" aria-label="Chapter 9 · Sequential and Longitudinal Treatments">
+        <span class="nav-page-text"><span class="chapter-title">Chapter 9 · Sequential and Longitudinal Treatments</span></span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/duke-sta640/16-chapter-8-difference-in-differences-synthetic-control-and-beyond.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></div></div></footer></body></html>
