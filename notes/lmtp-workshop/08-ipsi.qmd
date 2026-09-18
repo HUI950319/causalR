@@ -1,0 +1,109 @@
+---
+title: "增量倾向评分干预"
+subtitle: "*Incremental Propensity Score Interventions* · Beyond the ATE 工作坊中译"
+bibliography: lmtp-refs.bib
+nocite: |
+  @diaz2023nonparametric, @diaz2024causal, @kennedy2019nonparametric, @wen2023intervention
+lang: zh
+---
+
+> **来源**：Nick Williams、Kara Rudolph、Iván Díaz，[*Beyond the ATE* · IPSI](https://www.beyondtheate.com/08_R_ipsi.html)
+> （[GitHub 仓库](https://github.com/nt-williams/lmtp-workshop)），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 原站的 webR 交互代码块在本站以静态代码块呈现，不重新执行。
+
+{{< include macros.qmd >}}
+
+```r
+download.file("https://raw.githubusercontent.com/nt-williams/lmtp-workshop/main/data/williams_synthetic.csv", "williams_synthetic.csv")
+covid <- read.csv("williams_synthetic.csv")
+```
+
+回忆一下：**增量倾向评分干预**（IPSI）是一类移位处理条件概率的假设干预。
+我们曾基于风险比，把*提高*接受处理可能性的 IPSI 定义为
+
+$$
+\dd_t(a_t, h_t, \epsilon_t) = \begin{cases}
+a_t &\text{ if } \epsilon_t < \delta \\
+1 &\text{ otherwise.}
+\end{cases}
+$$
+
+假设我们想把启动处理的可能性提高 2 倍。在 R 中可以这样实现：
+
+```r
+delta <- 0.5
+d_ipsi_up <- function(data, trt) {
+  eps <- runif(nrow(data), 0, 1)
+  ifelse(eps < delta, data[[trt]], 1)
+}
+```
+
+## 练习 1
+
+如果我们想把启动处理的可能性*降低* 2 倍呢？请在 R 中实现这个移位函数。提醒一下：
+
+$$
+\dd_t(a_t, h_t, \epsilon_t) = \begin{cases}
+a_t &\text{ if } \epsilon_t < \delta \\
+0 &\text{ otherwise.}
+\end{cases}
+$$
+
+```r
+delta <- 0.5
+d_ipsi_down <- # 在这里写你的移位函数！
+```
+
+<details>
+
+<summary style="color: grey; font-weight: 400;">
+
+✅ 参考答案
+
+</summary>
+
+```r
+delta <- 0.5
+d_ipsi_down <- function(data, trt) {
+  eps <- runif(nrow(data), 0, 1)
+  ifelse(eps < delta, data[[trt]], 0)
+}
+```
+
+</details>
+
+::: {.callout-note appearance="simple"}
+_lmtp_ 已经把 `d_ipsi_up` 和 `d_ipsi_down` 统一实现为一个移位函数工厂 `ipsi()` 了！
+
+-   **提高**处理可能性的风险比 IPSI，应传入大于 1 的值（即：把处理可能性提高 2 倍的
+    风险比 IPSI 等价于 `ipsi(2)`）。
+
+-   **降低**处理可能性的 IPSI，应传入小于 1 的值（即：把处理可能性降低 2 倍的
+    风险比 IPSI 等价于 `ipsi(0.5)`）。
+:::
+
+下面把「把启动处理的可能性提高 2 倍」这个移位函数应用到 `covid` 数据集上。
+
+```r
+W <- c("age", "sex", "bmi", "smoke", "o2",
+       "num_comorbid", "num_symptoms",
+        "bilat", "dyspnea", "hyper")
+
+lmtp_tmle(
+  data = covid,
+  trt = "A",
+  outcome = "event",
+  baseline = W,
+  outcome_type = "binomial",
+  shift = ipsi(2),
+  folds = 1,
+  learners_trt = "SL.glm",
+  learners_outcome = "SL.glm"
+)
+```
+
+------------------------------------------------------------------------
+
+用 _lmtp_ 估计基于风险比的增量倾向评分干预的效应非常简单：
+只要把 `ipsi()` 函数作为 `shift` 参数的输入就行了！
