@@ -1,0 +1,289 @@
+---
+title: "静态干预与因果对比"
+subtitle: "*Static effects and causal contrasts* · Beyond the ATE 工作坊中译"
+bibliography: lmtp-refs.bib
+nocite: |
+  @goyal2020clinical, @williams2022optimising
+tbl-cap-location: top
+lang: zh
+---
+
+> **来源**：Nick Williams、Kara Rudolph、Iván Díaz，[*Beyond the ATE* · Static effects and causal contrasts](https://www.beyondtheate.com/05_R_static.html)
+> （[GitHub 仓库](https://github.com/nt-williams/lmtp-workshop)），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 原站的 webR 交互代码块在本站以静态代码块呈现，**不在本站重新执行**，故不附运行结果；
+> 原文正文中给出的数值结果在译文中照录。
+
+{{< include macros.qmd >}}
+
+```r
+download.file("https://raw.githubusercontent.com/nt-williams/lmtp-workshop/main/data/williams_synthetic.csv", "williams_synthetic.csv")
+covid <- read.csv("williams_synthetic.csv")
+```
+
+## 合成的 COVID 随机对照试验数据
+
+第一个例子我们使用一份 $n = 1000$ 名患者的合成数据集，它来自一项假想的临床试验：
+试验药物旨在降低 COVID-19 住院患者的插管率和死亡率。
+
+-   该数据以一个真实数据库为基础：2020 年 5 月 15 日之前在威尔康奈尔医学院纽约长老会
+    医院住院、经 PCR 确诊 COVID-19 的 1500 余名患者。
+
+-   为了模拟两臂随机对照试验（RCT），我们模拟了一个假想的处理变量（`A`），
+    对每个观测以 0.5 的概率随机分配。
+
+-   所关心的结局（`event`）是住院后 15 天内是否插管或死亡。
+
+-   处理与生存率提高相关。
+
+-   基线协变量包括：年龄、性别、BMI、吸烟状态、患者到急诊后 3 小时内是否需要吸氧、
+    合并症数量、相关症状数量、胸片是否有双侧浸润影、呼吸困难和高血压。
+
+原站在此处渲染出全部 1000 行数据的交互式表格。下面是前 6 行，供了解列的构成：
+
+| days | event | age | sex | bmi | smoke | o2 | num_comorbid | num_symptoms | bilat | dyspnea | hyper | A |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 15 | 0 | 69 | Male | 32.6 | No | No | 0 | 7 | Yes | 0 | 0 | 1 |
+| 7 | 1 | 59 | Male | 30.7 | Former Smoker | Yes | 5 | 1 | Yes | 1 | 1 | 0 |
+| 15 | 0 | 61 | Female | 21.5 | No | No | 4 | 3 | No | 1 | 1 | 0 |
+| 12 | 1 | 49 | Male | 26.9 | No | Yes | 1 | 5 | Yes | 1 | 1 | 0 |
+| 15 | 0 | 41 | Male | 32 | No | No | 0 | 5 | Yes | 1 | 0 | 0 |
+| 11 | 0 | 96 | Female | 30.9 | Former Smoker | No | 3 | 4 | No | 1 | 1 | 1 |
+
+## 总体平均结局
+
+我们的目标是估计这一假想处理对「插管或死亡」的平均处理效应（ATE）：
+
+$$
+\begin{align}
+\theta &= \E(Y^{A=1} - Y^{A=0}) \\
+&= \textcolor{blue}{\E(Y^{A=1})} - \textcolor{red}{\E(Y^{A=0})}\text{.}
+\end{align}
+$$
+
+注意 ATE 由两个参数构成：
+
+1.  在「所有患者都接受处理」的假设世界中，插管或死亡患者的比例
+    （$\textcolor{blue}{\E(Y^{A=1})}$）；
+
+2.  在「没有患者接受处理」的假设世界中，插管或死亡患者的比例
+    （$\textcolor{red}{\E(Y^{A=0})}$）。
+
+我们把这两个参数称为*总体平均结局*（population mean outcomes）。
+下面用前面讨论过的框架，把目标参数改写成干预的函数。令 $\dd_1(a, h) = 1$、
+$\dd_0(a, h) = 0$。于是，
+
+$$
+\theta = \textcolor{blue}{\E(Y^{A^{\dd_1}})} - \textcolor{red}{\E(Y^{A^{\dd_0}})}\text{.}
+$$
+
+记住，我们把这类干预称为**静态的**，因为无论输入是什么，它们都返回同一取值。
+
+## 编写移位函数
+
+那么，怎样把函数 $\dd_1$ 和 $\dd_0$ 翻译成能配合 _lmtp_ 使用的 R 代码呢？
+
+::: {.callout-note appearance="simple"}
+在 _lmtp_ 的估计量中，策略可以用两个参数之一来指定：`shift` 或 `shifted`。
+:::
+
+若使用 `shift`，我们要提供一个形如下面的双参数函数：
+
+```r
+d <- function(data, trt) {
+  # 在这里写代码
+}
+```
+
+-   第一个参数应对应一个包含 $O$ 中全部变量的数据集。
+
+-   第二个参数应接收一个字符串，对应 $O$ 中的变量 $A_t$。
+
+-   该函数应返回一个长度为 $n$ 的向量，其类别与 $A_t$ 相同，且已按 $d_t$ 修改。
+
+对 $\dd_1$，这个函数是：\
+
+```r
+d1 <- function(data, trt) {
+  rep(1, nrow(data))
+}
+```
+
+把这个函数作用到数据上，会返回一个由 1 构成的向量，其长度等于观测数据的行数。
+
+```r
+d1(covid, "A") |> head()
+d1(covid, "A") |> length()
+```
+
+::: {.callout-tip appearance="minimal"}
+**问题**：估计这些参数该用哪种估计量？
+
+<details>
+<summary style="color: grey; font-weight: 400;">✅ 答案</summary>
+<p>因为这是一项非时变研究，我们应当使用 TMLE。</p>
+</details>
+:::
+\
+
+现在用 _lmtp_ 估计 $\E(Y^{A^{\dd_1}})$。
+
+```r
+A <- "A"
+Y <- "event"
+W <- c("age", "sex", "bmi", "smoke", "o2",
+       "num_comorbid", "num_symptoms", "bilat", "dyspnea", "hyper")
+
+set.seed(34465)
+
+treat <- lmtp_tmle(
+  data = covid,
+  trt = "A",
+  outcome = "event",
+  baseline = W,
+  outcome_type = "binomial",
+  shift = d1,
+  folds = 1,
+  learners_trt = "SL.glm",
+  learners_outcome = "SL.glm"
+)
+
+print(treat)
+```
+
+除了用 `shift` 指定干预，我们也可以把 `data` 的一个修改版本传给 `shifted` 参数，
+其中变量 $A_t$ 已被替换为 $A^d_t$。\
+
+```r
+tmp <- covid
+tmp$A <- d1(covid, "A")
+
+head(tmp)
+
+set.seed(34465)
+
+treat <- lmtp_tmle(
+  data = covid,
+  trt = "A",
+  outcome = "event",
+  baseline = W,
+  outcome_type = "binomial",
+  shifted = tmp,
+  folds = 1,
+  learners_trt = "SL.glm",
+  learners_outcome = "SL.glm"
+)
+
+print(treat)
+```
+
+::: {.callout-tip appearance="minimal"}
+**问题**：这个结果该如何解释？
+
+<details>
+<summary style="color: grey; font-weight: 400;">✅ 答案</summary>
+<p>在所有患者都接受处理的假设世界中，住院第 15 天前接受有创机械通气的患者比例期望为
+0.28（95% CI：0.24 至 0.32）。</p>
+</details>
+:::
+
+## _lmtp_ 对象
+
+调用 _lmtp_ 估计量会返回一个类别为 _lmtp_ 的 list。
+
+| 取值 | 说明 |
+|---|---|
+| estimator | 所用的估计量。 |
+| estimate | 估计出的总体 LMTP 效应，为一个 `ife` 对象。 |
+| shift | 指定所关心处理策略的移位函数。 |
+| outcome_reg | 结局回归预测值构成的 $n \times \tau + 1$ 矩阵。第一列的均值用于计算 theta。 |
+| density_ratios | 估计出的非累积密度比构成的 $n \times \tau$ 矩阵。 |
+| fits_m | 一个与 `folds` 等长的 list，含结局回归在每折、每个时点上的拟合结果。 |
+| fits_r | 一个与 `folds` 等长的 list，含密度比估计在每折、每个时点上的拟合结果。 |
+| outcome_type | 结局变量的类型。 |
+
+: _lmtp_ 对象中返回的取值。
+
+让我们查看其中一些取值。
+
+```r
+hist(treat$density_ratios[, 1],
+     main = "Histogram of density ratios",
+     xlab = "Density ratio")
+```
+
+## 练习 1
+
+编写一个函数，估计「没有患者接受处理」时的总体平均结局。
+把结果赋给一个名为 `dont_treat` 的对象。
+
+```r
+d0 <- # 在这里写你的移位函数！
+dont_treat <- # 在这里写你的代码！
+```
+
+<details>
+
+<summary style="color: grey; font-weight: 400;">
+
+✅ 参考答案
+
+</summary>
+
+```r
+d0 <- function(data, trt) {
+  rep(0, nrow(data))
+}
+
+dont_treat <- lmtp_tmle(
+  data = covid,
+  trt = "A",
+  outcome = "event",
+  baseline = W,
+  outcome_type = "binomial",
+  shift = d0,
+  folds = 1,
+  learners_trt = "SL.glm",
+  learners_outcome = "SL.glm"
+)
+
+print(dont_treat)
+```
+
+</details>
+
+::: {.callout-note appearance="simple"}
+_lmtp_ 已经把 `d1` 和 `d0` 实现为 `static_binary_on()` 和 `static_binary_off()` 了！
+:::
+
+## 因果对比
+
+有了 $\E(Y^{A^{\dd_1}})$ 和 $\E(Y^{A^{\dd_0}})$ 的估计，我们就能计算因果对比了。
+先来估计平均处理效应（ATE），为此使用函数 `lmtp_contrast()`。
+
+```r
+lmtp_contrast(treat, ref = dont_treat)
+```
+
+除 ATE 之外，我们还能计算因果风险比和因果优势比。
+
+```r
+lmtp_contrast(treat, ref = dont_treat, type = "rr")
+lmtp_contrast(treat, ref = dont_treat, type = "or")
+```
+
+结果印证了我们已经知道的事实：估计显示该处理与插管或死亡的减少相关。
+
+除了用 `lmtp_contrast`，我们也可以直接对 _lmtp_ 的 `estimate` 对象使用标准算术运算符。
+在后台，_lmtp_ 借助 _ife_ 包做自动微分来计算标准误。
+
+```r
+# ATE
+treat$estimate - dont_treat$estimate
+
+# 对数风险比
+log(treat$estimate) - log(dont_treat$estimate)
+
+# 对数优势比
+log(treat$estimate / (1 - treat$estimate)) - log(dont_treat$estimate / (1 - dont_treat$estimate))
+```
