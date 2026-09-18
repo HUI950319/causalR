@@ -6234,5 +6234,49 @@
       "Causal Inference in R · 原书中译",
       "<span class='chapter-number'>64</span>  <span class='chapter-title'>拟合加权结局模型</span>"
     ]
+  },
+  {
+    "objectID": "notes/r-causal/chapters/12-other-exposures.html",
+    "href": "notes/r-causal/chapters/12-other-exposures.html",
+    "title": "连续型与分类暴露",
+    "section": "",
+    "text": "连续暴露和分类暴露",
+    "crumbs": [
+      "Causal Inference in R · 原书中译",
+      "<span class='chapter-number'>65</span>  <span class='chapter-title'>连续型与分类暴露</span>"
+    ]
+  },
+  {
+    "objectID": "notes/r-causal/chapters/12-other-exposures.html#sec-continuous-exposures",
+    "href": "notes/r-causal/chapters/12-other-exposures.html#sec-continuous-exposures",
+    "title": "连续型与分类暴露",
+    "section": "连续暴露",
+    "text": "连续暴露\n\n\n\n\n\n\n\n\n警告Work-in-progress 🚧\n\n\n\nYou are reading the work-in-progress first edition of Causal Inference in R. This chapter is actively undergoing work and may be restructured or changed. It may also be incomplete.\n\n\n\n\n\n计算连续暴露的倾向评分\n倾向评分可推广到许多其他类型的暴露，包括连续暴露。 其核心流程相同：我们拟合一个以暴露为结局的模型，然后用该模型对第二个结局模型进行加权。 对于连续暴露，线性回归是构建倾向评分最简单的方法。 我们不使用概率，而使用累积分布函数。 然后使用该密度对结局模型进行加权。\n让我们看一个例子。 在 touringplans 数据集中，我们掌握了游乐设施公布等待时间的信息。 我们还掌握少量观测到的实际等待时间数据。 我们要考虑的问题是：早上8点 Seven Dwarfs Mine Train 公布的等待时间是否会影响早上9点的实际等待时间？ 下面是我们的 DAG：\n\n\n代码\nlibrary(tidyverse)\nlibrary(ggdag)\nlibrary(ggokabeito)\n\ncoord_dag &lt;- list(\n  x = c(Season = -1, close = -1, weather = -2, extra = 0, x = 1, y = 2),\n  y = c(Season = -1, close = 1, weather = 0, extra = 0, x = 0, y = 0)\n)\n\nlabels &lt;- c(\n  extra = \"Extra Magic Morning\",\n  x = \"Average posted wait \",\n  y = \"Average actual wait\",\n  Season = \"Ticket Season\",\n  weather = \"Historic high temperature\",\n  close = \"Time park closed\"\n)\n\ndagify(\n  y ~ x + close + Season + weather + extra,\n  x ~ weather + close + Season + extra,\n  extra ~ weather + close + Season,\n  coords = coord_dag,\n  labels = labels,\n  exposure = \"x\",\n  outcome = \"y\"\n) |&gt;\n  tidy_dagitty() |&gt;\n  node_status() |&gt;\n  ggplot(\n    aes(x, y, xend = xend, yend = yend, color = status)\n  ) +\n  geom_dag_edges_arc(\n    curvature = c(rep(0, 7), 0.2, 0, 0.2, 0.2, 0),\n    edge_colour = \"grey70\"\n  ) +\n  geom_dag_point() +\n  geom_dag_label_repel(seed = 1602) +\n  scale_color_okabe_ito(na.value = \"grey90\") +\n  theme_dag() +\n  theme(\n    legend.position = \"none\",\n    axis.text.x = element_text()\n  ) +\n  coord_cartesian(clip = \"off\") +\n  scale_x_continuous(\n    limits = c(-2.25, 2.25),\n    breaks = c(-2, -1, 0, 1, 2),\n    labels = c(\n      \"\\n(one year ago)\",\n      \"\\n(6 months ago)\",\n      \"\\n(3 months ago)\",\n      \"8am-9am\\n(Today)\",\n      \"9am-10am\\n(Today)\"\n    )\n  )\n\n\n\n\n\n\n\n\n图 66.1: Proposed DAG for the relationship between posted wait in the morning at a particular park and the average wait time between 5 pm and 6 pm.\n\n\n\n\n\n在 图 66.1 中，我们假设主要混杂因子是公园闭园时间、历史最高气温、该游乐设施是否有 Extra Magic Morning 时段以及票务季节。 这个 DAG 中也只有这一组最小调整集。 混杂因子先于暴露和结局发生，并且（按定义）暴露先于结局发生。 从理论上说，平均公布等待时间是一个可以操纵的暴露，因为公园可以公布一个不同于其预期的时间。\n该模型与二值暴露情形类似，但由于公布时间是连续变量，我们需要使用线性回归。 由于我们不使用概率，因此将根据正态密度计算权重的分母。 然后使用 dnorm() 函数计算分母：该函数以 .fitted 为均值、以 mean(.sigma) 为标准差，计算 exposure 的正态密度。\n\nlm(\n  exposure ~ confounder_1 + confounder_2,\n  data = df\n) |&gt;\n  augment(data = df) |&gt;\n  mutate(\n    denominator = dnorm(exposure, .fitted, mean(.sigma, na.rm = TRUE))\n  )\n\n\n\n诊断与稳定化\n然而，连续暴露权重对建模选择非常敏感。 一个尤其突出的问题是极端权重的存在，这一问题也可能影响其他类型的暴露。 当部分观测具有极端权重时，倾向评分会变得不稳定，从而导致置信区间变宽。 我们可以使用暴露的边际分布来稳定它们。 计算倾向评分边际分布的一种常见方法，是使用不含预测变量的回归模型。\n\n\n\n\n\n\n注意\n\n\n\n极端权重会使估计值不稳定，从而导致置信区间变宽。 任何未界定的权重都可能出现极端权重问题（包括二值暴露和其他类型暴露的权重）。 不过，像 ATO 这样的有界权重（其范围限定在 0 到 1 之间）不存在这个问题，这也是它们诸多优点之一。\n\n\n\n# for continuous exposures\nlm(\n  exposure ~ 1,\n  data = df\n) |&gt;\n  augment(data = df) |&gt;\n  transmute(\n    numerator = dnorm(exposure, .fitted, mean(.sigma, na.rm = TRUE))\n  )\n\n# for binary exposures\nglm(\n  exposure ~ 1,\n  data = df,\n  family = binomial()\n) |&gt;\n  augment(type.predict = \"response\", data = df) |&gt;\n  select(numerator = .fitted)\n\n然后，我们不再对它们取倒数，而是将权重计算为 numerator / denominator。 让我们在公布等待时间这个例子中试一下。 首先整理数据来回答问题：早上8点公布的等待时间是否会影响9点的实际等待时间？ 我们将基线数据（所有协变量以及8点的公布等待时间）与结局（实际平均等待时间）连接起来。 wait_minutes_actual_avg 有大量缺失，因此目前先删除未观测到的值。\n\nlibrary(tidyverse)\nlibrary(touringplans)\neight &lt;- seven_dwarfs_train_2018 |&gt;\n  filter(wait_hour == 8) |&gt;\n  select(-wait_minutes_actual_avg)\n\nnine &lt;- seven_dwarfs_train_2018 |&gt;\n  filter(wait_hour == 9) |&gt;\n  select(park_date, wait_minutes_actual_avg)\n\nwait_times &lt;- eight |&gt;\n  left_join(nine, by = \"park_date\") |&gt;\n  drop_na(wait_minutes_actual_avg)\n\n首先计算分母模型。 我们将使用 lm() 对包含协变量的 wait_minutes_posted_avg 拟合模型，然后使用 wait_minutes_posted_avg 的拟合预测值（.fitted）通过 dnorm() 计算密度。\n\nlibrary(broom)\ndenominator_model &lt;- lm(\n  wait_minutes_posted_avg ~\n    park_close +\n    park_extra_magic_morning +\n    park_temperature_high +\n    park_ticket_season,\n  data = wait_times\n)\n\ndenominators &lt;- denominator_model |&gt;\n  augment(data = wait_times) |&gt;\n  mutate(\n    denominator = dnorm(\n      wait_minutes_posted_avg,\n      .fitted,\n      mean(.sigma, na.rm = TRUE)\n    )\n  ) |&gt;\n  select(park_date, denominator, .fitted)\n\n仅使用 denominator 的倒数时，我们会得到几个极端权重：\n\ndenominators |&gt;\n  mutate(wts = 1 / denominator) |&gt;\n  ggplot(aes(wts)) +\n  geom_histogram(fill = \"#E69F00\", color = \"white\", bins = 50) +\n  scale_x_log10(name = \"weights\")\n\n\n\n\n\n\n\n图 66.2: A histogram of the inverse probability weights for posted waiting time. Weights for continuous exposures are prone to extreme values, which can unstabilize estimates and variance.\n\n\n\n\n\n在 图 66.2 中，我们看到几个超过100的权重和一个超过10,000的权重；这些极端权重会对特定观测点施加过度影响，使我们将要估计的结果变得复杂。\n现在拟合边际密度，用于计算稳定化权重：\n\nnumerator_model &lt;- lm(\n  wait_minutes_posted_avg ~ 1,\n  data = wait_times\n)\n\nnumerators &lt;- numerator_model |&gt;\n  augment(data = wait_times) |&gt;\n  mutate(\n    numerator = dnorm(\n      wait_minutes_posted_avg,\n      .fitted,\n      mean(.sigma, na.rm = TRUE)\n    )\n  ) |&gt;\n  select(park_date, numerator)\n\n我们还需要按日期将拟合值连接回原始数据集，然后使用 numerator / denominator 计算稳定化权重（swts）。\n\nwait_times_wts &lt;- wait_times |&gt;\n  left_join(numerators, by = \"park_date\") |&gt;\n  left_join(denominators, by = \"park_date\") |&gt;\n  mutate(swts = numerator / denominator)\n\n稳定化权重的极端程度小得多。 稳定化权重的均值应接近1（本例中为 round(mean(wait_times_wts$swts), digits = 2)）；如果是这样，加权后的伪总体（即加权后等效的观测数量）就等于原始样本量。 如果均值远离1，则模型设定错误或正值性违背可能带来问题 (Hernán 和 Robins 2021)。\n\nggplot(wait_times_wts, aes(swts)) +\n  geom_histogram(fill = \"#E69F00\", color = \"white\", bins = 50) +\n  scale_x_log10(name = \"weights\")\n\n\n\n\n\n\n\n图 66.3: A histogram of the stabilized inverse probability weights for posted waiting time. These weights are much more reasonable and will allow the outcome model to behave better.\n\n\n\n\n\n当我们将暴露——平均公布等待时间——与标准化权重进行比较时，仍然有一个异常高的权重。 这是个问题，还是一个有效的数据点？\n\nggplot(wait_times_wts, aes(wait_minutes_posted_avg, swts)) +\n  geom_point(size = 3, color = \"grey80\", alpha = 0.7) +\n  geom_point(\n    data = function(x) filter(x, swts &gt; 10),\n    color = \"firebrick\",\n    size = 3\n  ) +\n  geom_text(\n    data = function(x) filter(x, swts &gt; 10),\n    aes(label = park_date),\n    size = 5,\n    hjust = 0,\n    nudge_x = -15.5,\n    color = \"firebrick\"\n  ) +\n  scale_y_log10() +\n  labs(x = \"Average Posted Wait\", y = \"Stabilized Weights\")\n\n\n\n\n\n\n\n图 66.4: A scatter of the stabilized inverse probability weights for posted waiting time vs. posted waiting times. Days with more values of wait_minutes_posted_avg farther from the mean appear to be downweighted, with a few exceptions. The most unusual weight is for June 23, 2018.\n\n\n\n\n\n\nwait_times_wts |&gt;\n  filter(swts &gt; 10) |&gt;\n  select(\n    park_date,\n    wait_minutes_posted_avg,\n    .fitted,\n    park_close,\n    park_extra_magic_morning,\n    park_temperature_high,\n    park_ticket_season\n  ) |&gt;\n  knitr::kable()\n\n\n\n\n\n\n\n\n\n\n\n\n\npark_date\nwait_minutes_posted_avg\n.fitted\npark_close\npark_extra_magic_morning\npark_temperature_high\npark_ticket_season\n\n\n\n\n2018-06-23\n81\n28.1\n24:00:00\n0\n91.36\nregular\n\n\n\n\n\n我们的模型预测的公布等待时间远低于实际观测值，因此该日期被赋予了更大的权重。 我们不知道公布时间为何如此之高（实际时间低得多），但我们确实找到了当天的一幅艺术家绘图，内容是 Pluto 正在挖掘 Seven Dwarfs Mine Train 的宝藏：Pluto 正在挖掘 Seven Dwarfs Mine Train 宝藏。\n\n\n拟合连续暴露的结局模型",
+    "crumbs": [
+      "Causal Inference in R · 原书中译",
+      "<span class='chapter-number'>65</span>  <span class='chapter-title'>连续型与分类暴露</span>"
+    ]
+  },
+  {
+    "objectID": "notes/r-causal/chapters/12-other-exposures.html#分类暴露",
+    "href": "notes/r-causal/chapters/12-other-exposures.html#分类暴露",
+    "title": "连续型与分类暴露",
+    "section": "分类暴露",
+    "text": "分类暴露\n\n\n\n\n\n\n\n\n警告Work-in-progress 🚧\n\n\n\nYou are reading the work-in-progress first edition of Causal Inference in R. This chapter is unstarted, but don’t worry, it’s on our roadmap.",
+    "crumbs": [
+      "Causal Inference in R · 原书中译",
+      "<span class='chapter-number'>65</span>  <span class='chapter-title'>连续型与分类暴露</span>"
+    ]
+  },
+  {
+    "objectID": "notes/r-causal/chapters/12-other-exposures.html#计算分类暴露的倾向评分",
+    "href": "notes/r-causal/chapters/12-other-exposures.html#计算分类暴露的倾向评分",
+    "title": "连续型与分类暴露",
+    "section": "计算分类暴露的倾向评分",
+    "text": "计算分类暴露的倾向评分\n\nrnorm(5)\n\n[1]  1.69452  0.60246  0.81359 -0.11126 -0.09696\n\n\n\n多个类别下的诊断\n\n\n再次拟合结局模型\n\n\n\n\nHernán, M. A., 和 J. M. Robins. 2021. Causal Inference: What If? Boca Raton: Chapman Hall/CRC.",
+    "crumbs": [
+      "Causal Inference in R · 原书中译",
+      "<span class='chapter-number'>65</span>  <span class='chapter-title'>连续型与分类暴露</span>"
+    ]
   }
 ]
