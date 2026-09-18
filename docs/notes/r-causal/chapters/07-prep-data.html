@@ -1,0 +1,3372 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hans" xml:lang="zh-Hans"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>准备数据以回答因果问题 – 因果推断读书笔记</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+  margin-bottom: 0em;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../notes/r-causal/chapters/06-stats-models-ci.html" rel="prev">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-dark-4571e413af9019dfdcc70175faf53a1f.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-6dc1a78ab6bae0d3eba54bf33535cf80.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../../../site_libs/bootstrap/bootstrap-dark-6382e9162de9198f964ae53196d3447c.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../../../site_libs/bootstrap/bootstrap-6dc1a78ab6bae0d3eba54bf33535cf80.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "没有结果",
+    "search-matching-documents-text": "匹配的文档",
+    "search-copy-link-title": "复制搜索链接",
+    "search-hide-matches-text": "隐藏其它匹配结果",
+    "search-more-match-text": "更多匹配结果",
+    "search-more-matches-text": "更多匹配结果",
+    "search-clear-button-title": "清除",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "取消",
+    "search-submit-button-title": "提交",
+    "search-label": "搜索"
+  }
+}</script>
+
+
+</head>
+
+<body class="nav-sidebar docked quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../notes/r-causal/chapters/01-casual-to-causal.html">Causal Inference in R · 原书中译</a></li><li class="breadcrumb-item"><a href="../../../notes/r-causal/chapters/07-prep-data.html"><span class="chapter-title">准备数据以回答因果问题</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="搜索" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header sidebar-header-stacked">
+      <a href="../../../index.html" class="sidebar-logo-link">
+      </a>
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../../../">因果推断读书笔记</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/HUI950319/causalR" title="源代码" class="quarto-navigation-tool px-1" aria-label="源代码"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="切换深色模式"><i class="bi"></i></a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="搜索"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">关于这份笔记</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w01-logic-chain.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">前三章逻辑链</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/notation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">记号与约定</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/identifiability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">三条识别条件</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/formulas.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">公式卡</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">阶段一 · 估计量全景</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w01-potential-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 1 章 · Zeus 的心脏移植</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w01-randomized-experiments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 2 章 · 一枚硬币，还是两枚</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w01-observational-studies.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 3 章 · 一枚硬币也没抛</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w01-effect-modification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 4 章 · 没有「治疗的因果效应」这种东西</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w01-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 5 章 · 两个处理，一起动手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w02-causal-diagrams.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 6 章 · 先画假设，再下结论</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w02-confounding.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 7 章 · 后门关上，可交换性才回来</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w02-selection-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 8 章 · 进了分析的人，未必还能互换</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w02-measurement-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 9 章 · 带星号的变量，与担不起因果的箭头</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w02-random-variability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 10 章 · 该不该撤稿</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">原书第二部分 · 有模型的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w03-why-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 11 章 · 数据不会自己说话</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w03-ip-weighting-msm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w04-standardization-gformula.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 13 章 · 把模型挪到结局那一侧</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w04-g-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 14 章 · 猜一个数，直到它与处理无关</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w05-outcome-regression-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 15 章 · 最常用的方法，为什么排在最后</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w05-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 16 章 · 不要求可交换性的那条路</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w06-causal-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 17 章 · 风险比里藏着一个碰撞变量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w06-variable-selection.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 18 章 · 调整得越多，不等于偏倚越小</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">原书第三部分 · 时变处理的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w07-time-varying-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 19 章 · 先说清策略，才有效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w07-treatment-confounder-feedback.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 20 章 · 调了混杂，反而更错</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w08-g-methods-time-varying.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 21 章 · 三条路线，同一个 0</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w11-target-trial-emulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 22 章 · 先写协议，再看数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w11-causal-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 23 章 · 把中介问题改写成能做的试验</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">郑老师因果推理课程讲义</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-overview.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">课程讲义总览</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w01.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W01 · 因果推断理论与方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w02.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W02 · DAG 与回归、反事实与 G 计算</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w03.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W03 · 倾向得分方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w04.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W04 · 机器学习与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w05.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W05 · 双重稳健估计与双重机器学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w06.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W06 · TMLE 及其衍生方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w07.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W07 · 缺失数据与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w08.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W08 · 中介分析与因果中介</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w09.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W09 · 处理效应异质性分析</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false">
+ <span class="menu-text">causatr 官方文档中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-introduction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 介绍</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-gcomp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的 G-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-ipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的逆概率加权</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-aipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的增强 IPW（双稳健估计）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的倾向评分匹配</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-snm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的结构嵌套均值模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-interventions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 中的干预类型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-natural-history-mtps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">自然历史修改处理政策（宽限期）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-triangulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">方法论三角：g-computation、IPW、AIPW、匹配和 SNM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-longitudinal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">纵向处理：ICE g-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-transportability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">可转运性和可推广性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-missing-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">处理缺失数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-diagnostics.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的诊断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-validation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">针对参考实现的验证</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果效应的方差估计</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-ipw-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IPW 密度比权重和方差理论</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
+ <span class="menu-text">Causal Inference in R · 原书中译</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/01-casual-to-causal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">从随意推断到因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/02-whole-game.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">完整实践：蚊帐与疟疾</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/03-po-counterfactuals.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">潜在结局与反事实</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/04-dags.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">用 DAG 表达因果问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/05-not-just-a-stats-problem.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果推断不只是统计问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/06-stats-models-ci.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">从问题到答案：分层与结局模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/07-prep-data.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">准备数据以回答因果问题</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">目录</h2>
+   
+  <ul>
+  <li><a href="#sec-data-causal" id="toc-sec-data-causal" class="nav-link active" data-scroll-target="#sec-data-causal">准备用于回答因果问题的数据</a>
+  <ul class="collapse">
+  <li><a href="#sec-data" id="toc-sec-data" class="nav-link" data-scroll-target="#sec-data">数据简介</a></li>
+  <li><a href="#提出因果问题" id="toc-提出因果问题" class="nav-link" data-scroll-target="#提出因果问题">提出因果问题</a></li>
+  <li><a href="#数据整理与目标试验" id="toc-数据整理与目标试验" class="nav-link" data-scroll-target="#数据整理与目标试验">数据整理与目标试验</a></li>
+  <li><a href="#处理多个数据源" id="toc-处理多个数据源" class="nav-link" data-scroll-target="#处理多个数据源">处理多个数据源</a></li>
+  <li><a href="#创建描述性表" id="toc-创建描述性表" class="nav-link" data-scroll-target="#创建描述性表">创建描述性表</a></li>
+  <li><a href="#识别缺失数据" id="toc-识别缺失数据" class="nav-link" data-scroll-target="#识别缺失数据">识别缺失数据</a></li>
+  <li><a href="#sec-explore-assump" id="toc-sec-explore-assump" class="nav-link" data-scroll-target="#sec-explore-assump">探索因果假设</a>
+  <ul class="collapse">
+  <li><a href="#检查正值性违背的单变量方法" id="toc-检查正值性违背的单变量方法" class="nav-link" data-scroll-target="#检查正值性违背的单变量方法">检查正值性违背的单变量方法</a></li>
+  <li><a href="#检查正值性违背的多变量方法" id="toc-检查正值性违背的多变量方法" class="nav-link" data-scroll-target="#检查正值性违背的多变量方法">检查正值性违背的多变量方法</a></li>
+  </ul></li>
+  </ul></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/r-causal/chapters/07-prep-data.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../notes/r-causal/chapters/01-casual-to-causal.html">Causal Inference in R · 原书中译</a></li><li class="breadcrumb-item"><a href="../../../notes/r-causal/chapters/07-prep-data.html"><span class="chapter-title">准备数据以回答因果问题</span></a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-title">准备数据以回答因果问题</span></h1>
+<p class="subtitle lead"><em>Preparing data to answer causal questions</em> · 原书逐章中译</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<blockquote class="blockquote">
+<p><strong>来源</strong>：Malcolm Barrett、Lucy D’Agostino McGowan、Travis Gerke，<a href="https://www.r-causal.org/"><em>Causal Inference in R</em> · Preparing data to answer causal questions</a>。 本页为中文翻译；原书代码块、公式、图表交叉引用和引用键均按原文保留。统计图在网页渲染时由 R 代码生成，静态插图直接引用原文件。 原书仓库采用 CC BY-NC-SA 4.0；代码采用 MIT 许可。请遵守原许可证并注明作者。</p>
+</blockquote>
+<section id="sec-data-causal" class="level1">
+<h1>准备用于回答因果问题的数据</h1>
+<div class="cell">
+<div class="cell-output-display">
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">注记</span>Work-in-progress 🚧
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>You are reading the work-in-progress first edition of <em>Causal Inference in R</em>. This chapter has its foundations written but is still undergoing changes.</p>
+</div>
+</div>
+</div>
+</div>
+<p>在许多方面，为因果推断准备数据和进行探索性分析，与描述和预测中的做法相同。 因果推断的不同之处在于，我们需要思考如何将这一过程与因果问题和目标试验模拟联系起来。 我们还将借此机会更好地了解数据在多大程度上可能满足因果假设；不过，正如我们在 <a href="05-not-just-a-stats-problem.html" class="quarto-xref"><span>因果推断不（只是）一个统计问题</span></a> 中所见，数据永远无法告诉我们判断是否正确。</p>
+<p>让我们看看数据以及接下来几章将要考察的因果问题。</p>
+<section id="sec-data" class="level2">
+<h2 class="anchored" data-anchor-id="sec-data">数据简介</h2>
+<p>本书的大部分内容将使用从 <a href="https://touringplans.com">Touring Plans</a> 获得的数据。 Touring Plans 是一家帮助人们规划迪士尼和环球影城主题公园行程的公司。 他们的目标之一，是利用数据和统计建模，准确预测这些主题公园中游乐设施的等待时间。 <code>{touringplans}</code> R 包包含多个有关迪士尼主题公园游乐设施的数据集。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(touringplans)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>attractions_metadata</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 14 x 8
+   dataset_name name  short_name park  land  opened_on 
+   &lt;chr&gt;        &lt;chr&gt; &lt;chr&gt;      &lt;chr&gt; &lt;chr&gt; &lt;date&gt;    
+ 1 alien_sauce~ Alie~ Alien Sau~ Disn~ Toy ~ 2018-06-30
+ 2 dinosaur     DINO~ DINOSAUR   Disn~ Dino~ 1998-04-22
+ 3 expedition_~ Expe~ Expeditio~ Disn~ Asia  2006-04-07
+ 4 flight_of_p~ Avat~ Flight of~ Disn~ Pand~ 2017-05-27
+ 5 kilimanjaro~ Kili~ Kilimanja~ Disn~ Afri~ 1998-04-22
+ 6 navi_river   Na'v~ Na'vi Riv~ Disn~ Pand~ 2017-05-27
+ 7 pirates_of_~ Pira~ Pirates o~ Magi~ Adve~ 1973-12-17
+ 8 rock_n_roll~ Rock~ Rock Coas~ Disn~ Suns~ 1999-07-29
+ 9 seven_dwarf~ Seve~ 7 Dwarfs ~ Magi~ Fant~ 2014-05-28
+10 slinky_dog   Slin~ Slinky Dog Disn~ Toy ~ 2018-06-30
+11 soarin       Soar~ Soarin'    Epcot Worl~ 2005-05-05
+12 spaceship_e~ Spac~ Spaceship~ Epcot Worl~ 1982-10-01
+13 splash_moun~ Spla~ Splash Mo~ Magi~ Fron~ 1992-07-17
+14 toy_story_m~ Toy ~ Toy Story~ Disn~ Toy ~ 2008-05-31
+# i 2 more variables: duration &lt;dbl&gt;,
+#   average_wait_per_hundred &lt;dbl&gt;</code></pre>
+</div>
+</div>
+<p>此外，该包还包含一个记录公园原始元数据的数据集，其中的观测按日记录。 这些元数据包括某一天沃尔特·迪士尼世界的票价季节（是旺季——想想圣诞节——平季——想想刚开学的时候——还是常规季）、当天公园的历史气温，以及当天是否有特殊活动，例如额外魔法时段（在这段时间里，公园会提前向入住沃尔特·迪士尼世界度假区的游客开放）。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>parks_metadata_raw</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2,079 x 181
+   date       wdw_ticket_season dayofweek dayofyear
+   &lt;date&gt;     &lt;chr&gt;                 &lt;dbl&gt;     &lt;dbl&gt;
+ 1 2015-01-01 &lt;NA&gt;                      5         0
+ 2 2015-01-02 &lt;NA&gt;                      6         1
+ 3 2015-01-03 &lt;NA&gt;                      7         2
+ 4 2015-01-04 &lt;NA&gt;                      1         3
+ 5 2015-01-05 &lt;NA&gt;                      2         4
+ 6 2015-01-06 &lt;NA&gt;                      3         5
+ 7 2015-01-07 &lt;NA&gt;                      4         6
+ 8 2015-01-08 &lt;NA&gt;                      5         7
+ 9 2015-01-09 &lt;NA&gt;                      6         8
+10 2015-01-10 &lt;NA&gt;                      7         9
+# i 2,069 more rows
+# i 177 more variables: weekofyear &lt;dbl&gt;,
+#   monthofyear &lt;dbl&gt;, year &lt;dbl&gt;, season &lt;chr&gt;,
+#   holidaypx &lt;dbl&gt;, holidaym &lt;dbl&gt;, holidayn &lt;chr&gt;,
+#   holiday &lt;dbl&gt;, wdwticketseason &lt;chr&gt;,
+#   wdwracen &lt;chr&gt;, wdweventn &lt;chr&gt;, wdwevent &lt;dbl&gt;,
+#   wdwrace &lt;dbl&gt;, wdwseason &lt;chr&gt;, ...</code></pre>
+</div>
+</div>
+<p>每年都会选出一些日期，在早晨安排额外魔法时段。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>parks_metadata_raw <span class="sc">|&gt;</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="co"># 0: no extra magic hours, 1 extra magic hours</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count</span>(year, mkemhmorn)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 13 x 3
+    year mkemhmorn     n
+   &lt;dbl&gt;     &lt;dbl&gt; &lt;int&gt;
+ 1  2015         0   290
+ 2  2015         1    75
+ 3  2016         0   300
+ 4  2016         1    66
+ 5  2017         0   293
+ 6  2017         1    72
+ 7  2018         0   304
+ 8  2018         1    61
+ 9  2019         0   250
+10  2019         1   115
+11  2020         0   135
+12  2020         1    14
+13  2021         0   104</code></pre>
+</div>
+</div>
+<p>截至 2019 年，每年的数据都覆盖全年（2016 年是闰年）。 当然，2020 年和 2021 年公园受到 COVID-19 疫情限制，因此可用的日期更少。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>parks_metadata_raw <span class="sc">|&gt;</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  <span class="co"># extra magic hours</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count</span>(year, mkemhmorn) <span class="sc">|&gt;</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(year) <span class="sc">|&gt;</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>(<span class="at">days =</span> <span class="fu">sum</span>(n))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 7 x 2
+   year  days
+  &lt;dbl&gt; &lt;int&gt;
+1  2015   365
+2  2016   366
+3  2017   365
+4  2018   365
+5  2019   365
+6  2020   149
+7  2021   104</code></pre>
+</div>
+</div>
+<p>我们还拥有各个游乐设施等待时间的数据。 例如，下面是名为 Seven Dwarfs Mine Train 的游乐设施数据。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_train</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 321,631 x 4
+   park_date  wait_datetime       wait_minutes_actual
+   &lt;date&gt;     &lt;dttm&gt;                            &lt;dbl&gt;
+ 1 2015-01-01 2015-01-01 07:51:12                  NA
+ 2 2015-01-01 2015-01-01 08:02:13                  NA
+ 3 2015-01-01 2015-01-01 08:05:30                  54
+ 4 2015-01-01 2015-01-01 08:09:12                  NA
+ 5 2015-01-01 2015-01-01 08:16:12                  NA
+ 6 2015-01-01 2015-01-01 08:22:16                  55
+ 7 2015-01-01 2015-01-01 08:23:12                  NA
+ 8 2015-01-01 2015-01-01 08:29:12                  NA
+ 9 2015-01-01 2015-01-01 08:37:13                  NA
+10 2015-01-01 2015-01-01 08:44:11                  NA
+# i 321,621 more rows
+# i 1 more variable: wait_minutes_posted &lt;dbl&gt;</code></pre>
+</div>
+</div>
+<p>对于每个 <code>park_date</code>，我们都有若干等待时间报告，包括公布的等待时间（从迪士尼网站显示的时间中抓取，<code>wait_minutes_posted</code>）和实际等待时间（由实际排队的个人报告，<code>wait_minutes_actual</code>）。每一行记录某个 <code>wait_datetime</code> 的公布等待分钟数或实际等待分钟数之一，另一个值在该行中为 <code>NA</code>。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_train <span class="sc">|&gt;</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count</span>(park_date, <span class="at">sort =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2,334 x 2
+   park_date      n
+   &lt;date&gt;     &lt;int&gt;
+ 1 2021-11-08   363
+ 2 2021-10-01   359
+ 3 2021-11-09   344
+ 4 2021-10-29   333
+ 5 2021-10-15   332
+ 6 2021-10-10   330
+ 7 2021-10-05   329
+ 8 2021-10-17   327
+ 9 2021-10-20   327
+10 2021-10-08   323
+# i 2,324 more rows</code></pre>
+</div>
+</div>
+</section>
+<section id="提出因果问题" class="level2">
+<h2 class="anchored" data-anchor-id="提出因果问题">提出因果问题</h2>
+<p>这是我们希望利用这些数据回答的因果问题：</p>
+<p><strong>在 2018 年，Magic Kingdom 早晨是否安排额外魔法时段，与当天上午 9 点至 10 点 Seven Dwarfs Mine Train 的平均公布等待时间之间是否存在关系？</strong></p>
+<p>让我们先用图示表达这个因果问题（<a href="#fig-seven-diag" class="quarto-xref">图&nbsp;<span>61.1</span></a>）。</p>
+<div class="cell">
+<details class="code-fold">
+<summary>代码</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">include_graphics</span>(here<span class="sc">::</span><span class="fu">here</span>(<span class="st">"images/emm-diagram.png"</span>))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div id="fig-seven-diag" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-seven-diag-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="../../../images/emm-diagram.png" class="img-fluid figure-img" width="2219">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-seven-diag-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;61.1: Diagram of the causal question “Is there a relationship between whether there were Extra Magic Hours in the morning at Magic Kingdom and the average posted wait time for the Seven Dwarfs Mine Train the same day between 9 AM and 10 AM in 2018?”
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>过去，入住沃尔特·迪士尼世界度假区酒店的游客可以在额外魔法时段进入公园；在此期间，公园不向其他游客开放。 这些额外时段可能安排在早晨或晚上。 Seven Dwarfs Mine Train 是沃尔特·迪士尼世界 Magic Kingdom 中的一项游乐设施。 Magic Kingdom 可能会、也可能不会在每天安排额外魔法时段。 我们关注的是，早晨的额外魔法时段（“Extra Magic Morning”）是否会导致当天上午 9 点至 10 点 Seven Dwarfs Mine Train 平均公布等待时间发生变化。</p>
+<p><a href="#fig-dag-magic" class="quarto-xref">图&nbsp;<span>61.2</span></a> 是针对这一问题提出的 DAG。 我们假设，是否安排早晨额外魔法时段取决于公园关闭时间、票价季节和历史最高气温。 同样，这三个变量也都是平均公布等待时间的原因。 当然，这是一个大幅简化的 DAG。 此外，迪士尼的<em>某个人</em>知道 2018 年额外魔法时段的分配机制，因此如果我们在那里工作，就会想尽可能多地了解这一过程。 我们设想，暴露和结局背后的实际因果过程都比这里复杂得多。 不过，为了举例，我们会保持简单。</p>
+<div class="cell">
+<details class="code-fold">
+<summary>代码</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggdag)</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggokabeito)</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>coord_dag <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">x =</span> <span class="fu">c</span>(<span class="at">Season =</span> <span class="dv">0</span>, <span class="at">close =</span> <span class="dv">0</span>, <span class="at">weather =</span> <span class="sc">-</span><span class="dv">1</span>, <span class="at">x =</span> <span class="dv">1</span>, <span class="at">y =</span> <span class="dv">2</span>),</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">y =</span> <span class="fu">c</span>(<span class="at">Season =</span> <span class="sc">-</span><span class="dv">1</span>, <span class="at">close =</span> <span class="dv">1</span>, <span class="at">weather =</span> <span class="dv">0</span>, <span class="at">x =</span> <span class="dv">0</span>, <span class="at">y =</span> <span class="dv">0</span>)</span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>labels <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">x =</span> <span class="st">"Extra Magic Morning"</span>,</span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">y =</span> <span class="st">"Average wait"</span>,</span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">Season =</span> <span class="st">"Ticket Season"</span>,</span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">weather =</span> <span class="st">"Historic high temperature"</span>,</span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">close =</span> <span class="st">"Time park closed"</span></span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a><span class="fu">dagify</span>(</span>
+<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a>  y <span class="sc">~</span> x <span class="sc">+</span> close <span class="sc">+</span> Season <span class="sc">+</span> weather,</span>
+<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a>  x <span class="sc">~</span> weather <span class="sc">+</span> close <span class="sc">+</span> Season,</span>
+<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a>  <span class="at">coords =</span> coord_dag,</span>
+<span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a>  <span class="at">labels =</span> labels,</span>
+<span id="cb14-22"><a href="#cb14-22" aria-hidden="true" tabindex="-1"></a>  <span class="at">exposure =</span> <span class="st">"x"</span>,</span>
+<span id="cb14-23"><a href="#cb14-23" aria-hidden="true" tabindex="-1"></a>  <span class="at">outcome =</span> <span class="st">"y"</span></span>
+<span id="cb14-24"><a href="#cb14-24" aria-hidden="true" tabindex="-1"></a>) <span class="sc">|&gt;</span></span>
+<span id="cb14-25"><a href="#cb14-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tidy_dagitty</span>() <span class="sc">|&gt;</span></span>
+<span id="cb14-26"><a href="#cb14-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">node_status</span>() <span class="sc">|&gt;</span></span>
+<span id="cb14-27"><a href="#cb14-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(</span>
+<span id="cb14-28"><a href="#cb14-28" aria-hidden="true" tabindex="-1"></a>    <span class="fu">aes</span>(x, y, <span class="at">xend =</span> xend, <span class="at">yend =</span> yend, <span class="at">color =</span> status)</span>
+<span id="cb14-29"><a href="#cb14-29" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb14-30"><a href="#cb14-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_dag_edges_arc</span>(<span class="at">curvature =</span> <span class="fu">c</span>(<span class="fu">rep</span>(<span class="dv">0</span>, <span class="dv">5</span>), <span class="fl">0.3</span>)) <span class="sc">+</span></span>
+<span id="cb14-31"><a href="#cb14-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_dag_point</span>() <span class="sc">+</span></span>
+<span id="cb14-32"><a href="#cb14-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_dag_label_repel</span>(<span class="at">seed =</span> <span class="dv">1630</span>) <span class="sc">+</span></span>
+<span id="cb14-33"><a href="#cb14-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_okabe_ito</span>(<span class="at">na.value =</span> <span class="st">"grey90"</span>) <span class="sc">+</span></span>
+<span id="cb14-34"><a href="#cb14-34" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_dag</span>() <span class="sc">+</span></span>
+<span id="cb14-35"><a href="#cb14-35" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="st">"none"</span>) <span class="sc">+</span></span>
+<span id="cb14-36"><a href="#cb14-36" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_cartesian</span>(<span class="at">clip =</span> <span class="st">"off"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div id="fig-dag-magic" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-dag-magic-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="07-prep-data_files/figure-html/fig-dag-magic-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-dag-magic-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;61.2: Proposed DAG for the relationship between Extra Magic Hours in the morning at a particular park and the average posted wait time between 9 AM and 10 AM. Here, we believe 1) Extra Magic Hours impacts average wait time and 2) both Extra Magic Hours and average wait time are determined by the time the park closes, historic high temperatures, and ticket season.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>如果我们负责沃尔特·迪士尼世界的运营，可能会想随机安排日期是否有额外魔法时段。 但我们并不负责，因此需要依赖先前收集的观察性数据，并尽力模拟本应建立的目标试验（如果当时能够建立的话）。 这里，我们的观测单位是<em>日期</em>。 <a href="#tbl-tt-7dwarfs" class="quarto-xref">表&nbsp;<span>61.1</span></a> 将因果问题的每个要素与目标试验方案中的相应要素对应起来。</p>
+<div id="tbl-tt-7dwarfs" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-tt-7dwarfs-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+表&nbsp;61.1: 额外魔法时段对平均公布等待时间影响的目标试验方案，以及模拟该目标试验的观察性研究对应方案
+</figcaption>
+<div aria-describedby="tbl-tt-7dwarfs-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 5%">
+<col style="width: 26%">
+<col style="width: 28%">
+<col style="width: 39%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Protocol Step</th>
+<th>Description</th>
+<th>Target Trial</th>
+<th>Emulation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>纳入标准</td>
+<td>研究中应包括哪些日期？</td>
+<td>日期必须来自 2018 年。</td>
+<td>与目标试验相同。</td>
+</tr>
+<tr class="even">
+<td>暴露定义</td>
+<td>在符合纳入条件时，研究中的日期将接受什么精确的暴露？</td>
+<td>暴露：Magic Kingdom 早晨有额外魔法时段。否则为未暴露。</td>
+<td>与目标试验相同。</td>
+</tr>
+<tr class="odd">
+<td>分配程序</td>
+<td>如何将符合条件的日期分配到某种暴露？</td>
+<td>日期以 50% 的概率随机安排是否有早晨额外魔法时段。分配过程不设盲。</td>
+<td>根据数据为日期分配实际暴露状态，例如当天早晨是否有额外魔法时段。通过调整混杂来模拟随机化。</td>
+</tr>
+<tr class="even">
+<td>随访期间</td>
+<td>随访何时开始和结束？</td>
+<td>开始：暴露当天公园开门时；结束：当天上午 10 点。</td>
+<td>与目标试验相同。</td>
+</tr>
+<tr class="odd">
+<td>结局定义</td>
+<td>将测量什么精确的结局？</td>
+<td>当天上午 9 点至 10 点之间 Seven Dwarfs Mine Train 的平均公布等待时间。</td>
+<td>与目标试验相同。</td>
+</tr>
+<tr class="even">
+<td>关注的因果对比</td>
+<td>将估计哪个因果估计目标？</td>
+<td>平均处理效应（ATE）。</td>
+<td>与目标试验相同。</td>
+</tr>
+<tr class="odd">
+<td>分析计划</td>
+<td>将对数据进行哪些处理和统计操作，以估计所关注的因果对比？</td>
+<td>使用逆概率加权计算 ATE，并根据历史最高气温、票价季节和公园关闭时间进行加权。</td>
+<td>与目标试验相同。在本例中，这些变量是混杂因子；调整集的确定依据是我们对 <a href="#fig-dag-magic" class="quarto-xref">图&nbsp;<span>61.2</span></a> 中所示因果结构的假设。</td>
+</tr>
+</tbody>
+</table>
+</div>
+</figure>
+</div>
+</section>
+<section id="数据整理与目标试验" class="level2">
+<h2 class="anchored" data-anchor-id="数据整理与目标试验">数据整理与目标试验</h2>
+<p>你可以把方案中的各个步骤看作需要采取的行动。 在随机试验中，其中许多行动属于试验设计和数据收集的一部分。 在目标试验模拟中，我们通常需要自行对数据应用这些行动，从而准备好回答因果问题。 <a href="#tbl-dplyr" class="quarto-xref">表&nbsp;<span>61.2</span></a> 展示了我们可能需要采取的行动类型（这里使用的是 tidyverse 中的函数）。</p>
+<div id="tbl-dplyr" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-dplyr-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+表&nbsp;61.2: 将目标试验方案要素映射到常用 tidyverse 函数
+</figcaption>
+<div aria-describedby="tbl-dplyr-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 39%">
+<col style="width: 60%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Target trial protocol element</th>
+<th>tidyverse function</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>目标试验方案要素</td>
+<td><code>filter()</code></td>
+</tr>
+<tr class="even">
+<td>暴露定义</td>
+<td><code>mutate()</code></td>
+</tr>
+<tr class="odd">
+<td>分配程序</td>
+<td><code>mutate()</code>、<code>select()</code></td>
+</tr>
+<tr class="even">
+<td>随访期间</td>
+<td><code>mutate()</code>、<code>pivot_longer()</code>、<code>pivot_wider()</code></td>
+</tr>
+<tr class="odd">
+<td>结局定义</td>
+<td><code>mutate()</code></td>
+</tr>
+<tr class="even">
+<td>分析计划</td>
+<td><code>select()</code>、<code>mutate()</code>、<code>*_join()</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+</figure>
+</div>
+<p>要回答因果问题，我们需要处理 <code>seven_dwarfs_train</code> 数据集和 <code>parks_metadata_raw</code> 数据集。 先从 <code>seven_dwarfs_train</code> 数据开始。 <code>{touringplans}</code> 包中的 <code>seven_dwarfs_train</code> 数据集包含以下信息：某条等待时间记录的日期（<code>park_date</code>）、等待时间（<code>wait_datetime</code>）、实际等待时间（<code>wait_minutes_actual</code>）和公布等待时间（<code>wait_minutes_posted</code>）。</p>
+<p>让我们看看这个数据集。 日期范围看起来合理，公布的等待时间也一样。不过，实际等待时间的最小值竟然是 -9.2918^{4}！</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_train <span class="sc">|&gt;</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">reframe</span>(</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">across</span>(</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>      <span class="fu">c</span>(park_date, <span class="fu">starts_with</span>(<span class="st">"wait_minutes"</span>)),</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>      \(.x) <span class="fu">range</span>(.x, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2 x 3
+  park_date  wait_minutes_actual wait_minutes_posted
+  &lt;date&gt;                   &lt;dbl&gt;               &lt;dbl&gt;
+1 2015-01-01              -92918                   0
+2 2021-12-28                 217                 300</code></pre>
+</div>
+</div>
+<p>我们暂时还不会使用这个变量，但最好先删除这一行。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_train <span class="ot">&lt;-</span> seven_dwarfs_train <span class="sc">|&gt;</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(wait_minutes_actual <span class="sc">&gt;=</span> <span class="dv">0</span> <span class="sc">|</span> <span class="fu">is.na</span>(wait_minutes_actual))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>等待时间的分布很宽，实际等待时间的平均值似乎比公布等待时间更短。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_train <span class="sc">|&gt;</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_longer</span>(</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">starts_with</span>(<span class="st">"wait_minutes"</span>),</span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">names_to =</span> <span class="st">"wait_type"</span>,</span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">values_to =</span> <span class="st">"wait_minutes"</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(wait_minutes, <span class="at">fill =</span> wait_type)) <span class="sc">+</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_density</span>(<span class="at">color =</span> <span class="cn">NA</span>) <span class="sc">+</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span>wait_type)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="07-prep-data_files/figure-html/unnamed-chunk-11-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>公布的等待时间也更参差不齐。 它们似乎按 5 分钟进行四舍五入。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_train <span class="sc">|&gt;</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pull</span>(wait_minutes_posted) <span class="sc">|&gt;</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">unique</span>() <span class="sc">|&gt;</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">sort</span>()</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code> [1]   0   5  10  15  20  25  30  35  40  45  50  55
+[13]  60  65  70  75  80  85  90  95 100 105 110 115
+[25] 120 125 130 135 140 145 150 155 160 165 170 175
+[37] 180 185 190 195 200 205 210 215 220 225 230 235
+[49] 240 250 260 270 280 300</code></pre>
+</div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+注记
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>要理解数据的局限性和潜在问题，进行这类数据检查至关重要。 R 提供了许多用于快速汇总数据集的优秀工具，例如 <code>skimr::skim()</code> 和 <code>pointblank::scan_data()</code>。 我们还建议使用类似 <code>{pointblank}</code> 的数据验证工具，将你对数据的预期记录下来并进行检验。</p>
+</div>
+</div>
+<p>我们需要利用这个数据集计算结局，即上午 9 点至 10 点之间的平均公布等待时间。 我们的纳入标准规定，分析范围必须限制在 2018 年的日期。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_9 <span class="ot">&lt;-</span> seven_dwarfs_train <span class="sc">|&gt;</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>  <span class="co"># eligibility criteria</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="fu">year</span>(park_date) <span class="sc">==</span> <span class="dv">2018</span>) <span class="sc">|&gt;</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>  <span class="co"># get hour from wait</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">hour =</span> <span class="fu">hour</span>(wait_datetime)) <span class="sc">|&gt;</span></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>  <span class="co"># outcome definition:</span></span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a>  <span class="co"># calculate average wait minutes by date and hour</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(park_date, hour) <span class="sc">|&gt;</span></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>(</span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">across</span>(</span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a>      <span class="fu">c</span>(</span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a>        wait_minutes_posted,</span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a>        wait_minutes_actual</span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a>      ),</span>
+<span id="cb21-15"><a href="#cb21-15" aria-hidden="true" tabindex="-1"></a>      \(.x) <span class="fu">mean</span>(.x, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb21-16"><a href="#cb21-16" aria-hidden="true" tabindex="-1"></a>      <span class="at">.names =</span> <span class="st">"{.col}_avg"</span></span>
+<span id="cb21-17"><a href="#cb21-17" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb21-18"><a href="#cb21-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">.groups =</span> <span class="st">"drop"</span></span>
+<span id="cb21-19"><a href="#cb21-19" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb21-20"><a href="#cb21-20" aria-hidden="true" tabindex="-1"></a>  <span class="co"># replace NaN with NA</span></span>
+<span id="cb21-21"><a href="#cb21-21" aria-hidden="true" tabindex="-1"></a>  <span class="co"># this occurs when there is a mean of a</span></span>
+<span id="cb21-22"><a href="#cb21-22" aria-hidden="true" tabindex="-1"></a>  <span class="co"># vector of length 0, e.g., no observation for the hour</span></span>
+<span id="cb21-23"><a href="#cb21-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="fu">across</span>(</span>
+<span id="cb21-24"><a href="#cb21-24" aria-hidden="true" tabindex="-1"></a>    <span class="fu">c</span>(</span>
+<span id="cb21-25"><a href="#cb21-25" aria-hidden="true" tabindex="-1"></a>      wait_minutes_posted_avg,</span>
+<span id="cb21-26"><a href="#cb21-26" aria-hidden="true" tabindex="-1"></a>      wait_minutes_actual_avg</span>
+<span id="cb21-27"><a href="#cb21-27" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb21-28"><a href="#cb21-28" aria-hidden="true" tabindex="-1"></a>    \(.x) <span class="fu">if_else</span>(<span class="fu">is.nan</span>(.x), <span class="cn">NA</span>, .x)</span>
+<span id="cb21-29"><a href="#cb21-29" aria-hidden="true" tabindex="-1"></a>  )) <span class="sc">|&gt;</span></span>
+<span id="cb21-30"><a href="#cb21-30" aria-hidden="true" tabindex="-1"></a>  <span class="co"># outcome definition:</span></span>
+<span id="cb21-31"><a href="#cb21-31" aria-hidden="true" tabindex="-1"></a>  <span class="co"># only keep the average wait time between 9 and 10</span></span>
+<span id="cb21-32"><a href="#cb21-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(hour <span class="sc">==</span> <span class="dv">9</span>)</span>
+<span id="cb21-33"><a href="#cb21-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-34"><a href="#cb21-34" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_9</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 362 x 4
+   park_date   hour wait_minutes_posted_avg
+   &lt;date&gt;     &lt;int&gt;                   &lt;dbl&gt;
+ 1 2018-01-01     9                    60  
+ 2 2018-01-02     9                    60  
+ 3 2018-01-03     9                    60  
+ 4 2018-01-04     9                    68.9
+ 5 2018-01-05     9                    70.6
+ 6 2018-01-06     9                    33.3
+ 7 2018-01-07     9                    46.4
+ 8 2018-01-08     9                    69.5
+ 9 2018-01-09     9                    64.3
+10 2018-01-10     9                    74.3
+# i 352 more rows
+# i 1 more variable: wait_minutes_actual_avg &lt;dbl&gt;</code></pre>
+</div>
+</div>
+</section>
+<section id="处理多个数据源" class="level2">
+<h2 class="anchored" data-anchor-id="处理多个数据源">处理多个数据源</h2>
+<p>现在结局已经确定，我们需要获取暴露变量，以及与相关日期的公园特定变量，并可能对其中一些进行调整。 查看 <a href="#fig-dag-magic" class="quarto-xref">图&nbsp;<span>61.2</span></a> 可以发现，我们有三条开放的后门路径。 可以用每条路径上的三个混杂因子将它们关闭：票价季节、公园关闭时间和历史最高气温。 这些变量位于 <code>parks_metadata_raw</code> 数据集中。 由于其中的名称采用原始格式，这些数据还需要额外清理。</p>
+<p>在尝试回答因果问题时，我们经常需要合并多个来源的数据，以确保结局、暴露和混杂因子能够连接在一起。 让我们先清理这些数据，再把它们连接到结局数据。</p>
+<p><code>parks_metadata_raw</code> 包含的变量远多于 <code>seven_dwarfs_train</code>。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>parks_metadata_raw <span class="sc">|&gt;</span></span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">length</span>()</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 181</code></pre>
+</div>
+</div>
+<p>对于本次分析，我们需要 <code>date</code>（观测日期，可作为连接时使用的 ID）、<code>wdw_ticket_season</code>（该日期的票价季节）、<code>wdwmaxtemp</code>（历史最高气温）、<code>mkclose</code>（Magic Kingdom 的关闭时间）以及 <code>mkemhmorn</code>（Magic Kingdom 早晨是否有额外魔法时段）。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>parks_metadata <span class="ot">&lt;-</span> parks_metadata_raw <span class="sc">|&gt;</span></span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>  <span class="do">## exposure definition, assignment procedure,</span></span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>  <span class="do">## and analysis plan: select the ID, exposure, and confounders</span></span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(</span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>    <span class="co"># id</span></span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_date =</span> date,</span>
+<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a>    <span class="co"># exposure</span></span>
+<span id="cb25-8"><a href="#cb25-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_extra_magic_morning =</span> mkemhmorn,</span>
+<span id="cb25-9"><a href="#cb25-9" aria-hidden="true" tabindex="-1"></a>    <span class="co"># confounders</span></span>
+<span id="cb25-10"><a href="#cb25-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_ticket_season =</span> wdw_ticket_season,</span>
+<span id="cb25-11"><a href="#cb25-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_temperature_high =</span> wdwmaxtemp,</span>
+<span id="cb25-12"><a href="#cb25-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_close =</span> mkclose</span>
+<span id="cb25-13"><a href="#cb25-13" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb25-14"><a href="#cb25-14" aria-hidden="true" tabindex="-1"></a>  <span class="do">## eligibility criteria: days in 2018</span></span>
+<span id="cb25-15"><a href="#cb25-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="fu">year</span>(park_date) <span class="sc">==</span> <span class="dv">2018</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+提示
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>我们希望变量名遵循清晰的约定；一种做法是采用 Emily Riederer 提出的“Column Names as Contracts”格式 <span class="citation" data-cites="Riederer_2020">(<a href="../../causatr-introduction.html#ref-Riederer_2020" role="doc-biblioref">Riederer 2020</a>)</span>。 其基本思想是，预先定义一组具有明确含义的词、短语或词干，用来标记信息，并在变量命名时始终一致地使用它们。 例如，在这些数据中，特定于某次等待时间的变量都以 <code>wait</code> 开头（例如 <code>wait_datetime</code> 和 <code>wait_minutes_actual</code>）；从公园元数据中获得、特定于某一天公园的变量都以 <code>park</code> 开头（例如 <code>park_date</code> 或 <code>park_temperature_high</code>）。</p>
+</div>
+</div>
+<p>2018 年每个月有额外魔法时段的日期占 12% 至 16%，但 12 月例外：当月 42% 的日期有早晨额外魔法时段。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>parks_metadata <span class="sc">|&gt;</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(<span class="at">month =</span> <span class="fu">month</span>(park_date)) <span class="sc">|&gt;</span></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">prop =</span> <span class="fu">sum</span>(park_extra_magic_morning) <span class="sc">/</span> <span class="fu">n</span>())</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 12 x 2
+   month  prop
+   &lt;dbl&gt; &lt;dbl&gt;
+ 1     1 0.129
+ 2     2 0.143
+ 3     3 0.161
+ 4     4 0.133
+ 5     5 0.129
+ 6     6 0.167
+ 7     7 0.129
+ 8     8 0.161
+ 9     9 0.133
+10    10 0.161
+11    11 0.133
+12    12 0.419</code></pre>
+</div>
+</div>
+<p>我们也来进一步了解混杂因子。</p>
+<p>并非每个月都会出现所有票价季节类型。 8 月和 9 月没有旺季票价，6 月、7 月或 12 月没有平季票价。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>count_by_month <span class="ot">&lt;-</span> <span class="cf">function</span>(parks_metadata, .var) {</span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>  parks_metadata <span class="sc">|&gt;</span></span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(</span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a>      <span class="at">month =</span> <span class="fu">month</span>(</span>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a>        park_date,</span>
+<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a>        <span class="at">label =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">abbr =</span> <span class="cn">TRUE</span></span>
+<span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a>      )</span>
+<span id="cb28-9"><a href="#cb28-9" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
+<span id="cb28-10"><a href="#cb28-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">count</span>(month, {{ .var }}) <span class="sc">|&gt;</span></span>
+<span id="cb28-11"><a href="#cb28-11" aria-hidden="true" tabindex="-1"></a>    <span class="co"># fill in implicitly missing combos</span></span>
+<span id="cb28-12"><a href="#cb28-12" aria-hidden="true" tabindex="-1"></a>    <span class="fu">complete</span>(</span>
+<span id="cb28-13"><a href="#cb28-13" aria-hidden="true" tabindex="-1"></a>      month,</span>
+<span id="cb28-14"><a href="#cb28-14" aria-hidden="true" tabindex="-1"></a>      {{ .var }},</span>
+<span id="cb28-15"><a href="#cb28-15" aria-hidden="true" tabindex="-1"></a>      <span class="at">fill =</span> <span class="fu">list</span>(<span class="at">n =</span> <span class="dv">0</span>)</span>
+<span id="cb28-16"><a href="#cb28-16" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb28-17"><a href="#cb28-17" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb28-18"><a href="#cb28-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-19"><a href="#cb28-19" aria-hidden="true" tabindex="-1"></a>ticket_season_by_month <span class="ot">&lt;-</span> parks_metadata <span class="sc">|&gt;</span></span>
+<span id="cb28-20"><a href="#cb28-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count_by_month</span>(park_ticket_season)</span>
+<span id="cb28-21"><a href="#cb28-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-22"><a href="#cb28-22" aria-hidden="true" tabindex="-1"></a>ticket_season_by_month <span class="sc">|&gt;</span></span>
+<span id="cb28-23"><a href="#cb28-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">arrange</span>(n, park_ticket_season)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 36 x 3
+   month park_ticket_season     n
+   &lt;ord&gt; &lt;chr&gt;              &lt;int&gt;
+ 1 Aug   peak                   0
+ 2 Sep   peak                   0
+ 3 Jun   value                  0
+ 4 Jul   value                  0
+ 5 Dec   value                  0
+ 6 Jan   peak                   3
+ 7 May   value                  3
+ 8 Feb   peak                   4
+ 9 Jul   peak                   4
+10 Oct   peak                   4
+# i 26 more rows</code></pre>
+</div>
+</div>
+<p>夏季的常规票价日期多得多，而 3 月、5 月和 12 月的旺季票价日期更多（<a href="#fig-ticket-season" class="quarto-xref">图&nbsp;<span>61.3</span></a>）。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>ticket_season_by_month <span class="sc">|&gt;</span></span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(month, n, <span class="at">fill =</span> park_ticket_season)) <span class="sc">+</span></span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_col</span>(<span class="at">position =</span> <span class="st">"fill"</span>, <span class="at">alpha =</span> <span class="fl">0.8</span>) <span class="sc">+</span></span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">"proportion of days"</span>,</span>
+<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="cn">NULL</span>,</span>
+<span id="cb30-7"><a href="#cb30-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">fill =</span> <span class="st">"ticket season"</span></span>
+<span id="cb30-8"><a href="#cb30-8" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb30-9"><a href="#cb30-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">panel.grid.major.x =</span> <span class="fu">element_blank</span>())</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-ticket-season" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-ticket-season-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="07-prep-data_files/figure-html/fig-ticket-season-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-ticket-season-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;61.3: Ticket season by month. The proportion of days of each ticket prices varies across the year. There were many more regular ticket days in the summer and more peak ticket days in March, May, and December. Additionally, there were no peak tickets in August or September or value tickets in June, July, or December.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>在一年中的大部分时间里，Magic Kingdom 营业至 22:00、21:00 或午夜，不过差异相当大，其中有一天在 16:30 结束营业。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a>parks_metadata <span class="sc">|&gt;</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count</span>(park_close, <span class="at">sort =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 8 x 2
+  park_close     n
+  &lt;time&gt;     &lt;int&gt;
+1 22:00        105
+2 23:00         93
+3 24:00         58
+4 18:00         57
+5 21:00         28
+6 20:00         21
+7 25:00          2
+8 16:30          1</code></pre>
+</div>
+</div>
+<p>关闭时间在一年中有所变化，深秋和冬季更常见较早的关闭时间（<a href="#fig-close-time" class="quarto-xref">图&nbsp;<span>61.4</span></a>）。 夏季不会出现某些较早的时间，深秋也不会出现某些较晚的时间。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>parks_metadata <span class="sc">|&gt;</span></span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count_by_month</span>(park_close) <span class="sc">|&gt;</span></span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(month, n, <span class="at">fill =</span> <span class="fu">ordered</span>(park_close))) <span class="sc">+</span></span>
+<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_col</span>(<span class="at">position =</span> <span class="st">"fill"</span>, <span class="at">alpha =</span> <span class="fl">0.85</span>) <span class="sc">+</span></span>
+<span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">"proportion of days"</span>,</span>
+<span id="cb33-7"><a href="#cb33-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="cn">NULL</span>,</span>
+<span id="cb33-8"><a href="#cb33-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">fill =</span> <span class="st">"close time"</span></span>
+<span id="cb33-9"><a href="#cb33-9" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb33-10"><a href="#cb33-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">panel.grid.major.x =</span> <span class="fu">element_blank</span>())</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-close-time" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-close-time-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="07-prep-data_files/figure-html/fig-close-time-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-close-time-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;61.4: Close time for the Magic Kingdom park by month. The close time varies across the year. Earlier close times occur more often in the late fall and winter. There are months where some close times don’t occur in any days, such as early times in the summer and late times in the late fall.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>迪士尼世界位于佛罗里达州，因此天气从不会特别寒冷，但夏季很炎热（<a href="#fig-high-temp" class="quarto-xref">图&nbsp;<span>61.5</span></a>）。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a>parks_metadata <span class="sc">|&gt;</span></span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">month =</span> <span class="fu">month</span>(</span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a>      park_date,</span>
+<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a>      <span class="at">label =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb34-6"><a href="#cb34-6" aria-hidden="true" tabindex="-1"></a>      <span class="at">abbr =</span> <span class="cn">TRUE</span></span>
+<span id="cb34-7"><a href="#cb34-7" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb34-8"><a href="#cb34-8" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb34-9"><a href="#cb34-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(month, park_temperature_high)) <span class="sc">+</span></span>
+<span id="cb34-10"><a href="#cb34-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_jitter</span>(<span class="at">height =</span> <span class="dv">0</span>, <span class="at">width =</span> <span class="fl">0.15</span>, <span class="at">alpha =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
+<span id="cb34-11"><a href="#cb34-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb34-12"><a href="#cb34-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">"historic high</span><span class="sc">\n</span><span class="st">temperature (F)"</span>,</span>
+<span id="cb34-13"><a href="#cb34-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="cn">NULL</span></span>
+<span id="cb34-14"><a href="#cb34-14" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-high-temp" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-high-temp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="07-prep-data_files/figure-html/fig-high-temp-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-high-temp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;61.5: Historic high temperature in farenheit for Walt Disney World by month. Being in a warm climate, the park never gets particularly cold, but the temperature does vary quite a bit throughout the year, with very hot summers.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>现在，让我们把混杂因子和暴露数据（位于 <code>parks_metadata</code> 中）连接到结局数据（位于 <code>seven_dwarfs_9</code> 中），从而建立一个单一的分析数据集。 在本例中，我们有一个简单的一对一匹配，希望将 <code>parks_metadata</code> 附加到 <code>seven_dwarfs_9</code>；可以为此使用左连接。</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+注记
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>连接是数据整理中一个细致而复杂的主题，但通常对于创建分析数据集至关重要。 我们推荐阅读 <em>R for Data Science</em>，其中对连接进行了全面讨论。</p>
+</div>
+</div>
+<p>值得注意的是，并非每一天都有匹配记录。 2018 年有 365 天，这正是 <code>parks_metadata</code> 中的行数。 然而，<code>seven_dwarfs_9</code> 只有 362 行。 我们可以使用反连接来查看 <code>seven_dwarfs_9</code> 中没有匹配的日期。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a>parks_metadata <span class="sc">|&gt;</span></span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">anti_join</span>(seven_dwarfs_9, <span class="at">by =</span> <span class="st">"park_date"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 3 x 5
+  park_date  park_extra_magic_morn~1 park_ticket_season
+  &lt;date&gt;                       &lt;dbl&gt; &lt;chr&gt;             
+1 2018-05-10                       0 regular           
+2 2018-05-11                       1 regular           
+3 2018-05-12                       0 peak              
+# i abbreviated name: 1: park_extra_magic_morning
+# i 2 more variables: park_temperature_high &lt;dbl&gt;,
+#   park_close &lt;time&gt;</code></pre>
+</div>
+</div>
+<p>这连续三天在上午 9 点的公布等待时间记录缺失。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_train <span class="sc">|&gt;</span></span>
+<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(</span>
+<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a>    park_date <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"2018-05-10"</span>, <span class="st">"2018-05-11"</span>, <span class="st">"2018-05-12"</span>),</span>
+<span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">hour</span>(wait_datetime) <span class="sc">==</span> <span class="dv">9</span></span>
+<span id="cb37-5"><a href="#cb37-5" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 0 x 4
+# i 4 variables: park_date &lt;date&gt;,
+#   wait_datetime &lt;dttm&gt;, wait_minutes_actual &lt;dbl&gt;,
+#   wait_minutes_posted &lt;dbl&gt;</code></pre>
+</div>
+</div>
+<p>无论如何，让我们按日期连接这些数据集。 现在，我们有了一个可用于因果分析的单一分析数据集。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_9 <span class="ot">&lt;-</span> seven_dwarfs_9 <span class="sc">|&gt;</span></span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">left_join</span>(parks_metadata, <span class="at">by =</span> <span class="st">"park_date"</span>)</span>
+<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb39-4"><a href="#cb39-4" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_9</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 362 x 8
+   park_date   hour wait_minutes_posted_avg
+   &lt;date&gt;     &lt;int&gt;                   &lt;dbl&gt;
+ 1 2018-01-01     9                    60  
+ 2 2018-01-02     9                    60  
+ 3 2018-01-03     9                    60  
+ 4 2018-01-04     9                    68.9
+ 5 2018-01-05     9                    70.6
+ 6 2018-01-06     9                    33.3
+ 7 2018-01-07     9                    46.4
+ 8 2018-01-08     9                    69.5
+ 9 2018-01-09     9                    64.3
+10 2018-01-10     9                    74.3
+# i 352 more rows
+# i 5 more variables: wait_minutes_actual_avg &lt;dbl&gt;,
+#   park_extra_magic_morning &lt;dbl&gt;,
+#   park_ticket_season &lt;chr&gt;,
+#   park_temperature_high &lt;dbl&gt;, park_close &lt;time&gt;</code></pre>
+</div>
+</div>
+</section>
+<section id="创建描述性表" class="level2">
+<h2 class="anchored" data-anchor-id="创建描述性表">创建描述性表</h2>
+<p>让我们通过创建描述性表，从较高层次了解这个数据集。 R 提供了许多实现这一目的的工具；我们将使用 <code>{gtsummary}</code> 包的 <code>tbl_summary()</code> 函数。 我们还将使用 <code>{labelled}</code> 包来清理表中的变量名。</p>
+<p>在 <a href="#tbl-unweighted-gtsummary" class="quarto-xref">表&nbsp;<span>61.3</span></a> 中，我们看到早晨没有额外魔法时段的日期更多。 略多于半数的日期处于常规票价季节；暴露和未暴露日期都涵盖了三种票价季节。 在关闭时间方面，最常见的时间是 22:00 和 23:00。 此外，还有一些稀疏或空的单元格，例如关闭时间，这些地方可能存在正值性违背。 有早晨额外魔法时段的日期也略凉一些，但差异不大。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gtsummary)</span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(labelled)</span>
+<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_9 <span class="sc">|&gt;</span></span>
+<span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set_variable_labels</span>(</span>
+<span id="cb41-5"><a href="#cb41-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_ticket_season =</span> <span class="st">"Ticket Season"</span>,</span>
+<span id="cb41-6"><a href="#cb41-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_close =</span> <span class="st">"Close Time"</span>,</span>
+<span id="cb41-7"><a href="#cb41-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_temperature_high =</span> <span class="st">"Historic High Temperature"</span></span>
+<span id="cb41-8"><a href="#cb41-8" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb41-9"><a href="#cb41-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb41-10"><a href="#cb41-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_close =</span> <span class="fu">as.character</span>(park_close),</span>
+<span id="cb41-11"><a href="#cb41-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_extra_magic_morning =</span> <span class="fu">factor</span>(</span>
+<span id="cb41-12"><a href="#cb41-12" aria-hidden="true" tabindex="-1"></a>      park_extra_magic_morning,</span>
+<span id="cb41-13"><a href="#cb41-13" aria-hidden="true" tabindex="-1"></a>      <span class="at">labels =</span> <span class="fu">c</span>(<span class="st">"No Extra Magic Hours"</span>, <span class="st">"Extra Magic Hours"</span>)</span>
+<span id="cb41-14"><a href="#cb41-14" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb41-15"><a href="#cb41-15" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb41-16"><a href="#cb41-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tbl_summary</span>(</span>
+<span id="cb41-17"><a href="#cb41-17" aria-hidden="true" tabindex="-1"></a>    <span class="at">by =</span> park_extra_magic_morning,</span>
+<span id="cb41-18"><a href="#cb41-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">include =</span> <span class="fu">c</span>(</span>
+<span id="cb41-19"><a href="#cb41-19" aria-hidden="true" tabindex="-1"></a>      park_ticket_season,</span>
+<span id="cb41-20"><a href="#cb41-20" aria-hidden="true" tabindex="-1"></a>      park_close,</span>
+<span id="cb41-21"><a href="#cb41-21" aria-hidden="true" tabindex="-1"></a>      park_temperature_high</span>
+<span id="cb41-22"><a href="#cb41-22" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb41-23"><a href="#cb41-23" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb41-24"><a href="#cb41-24" aria-hidden="true" tabindex="-1"></a>  <span class="co"># add an overall column to the table</span></span>
+<span id="cb41-25"><a href="#cb41-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_overall</span>(<span class="at">last =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="tbl-unweighted-gtsummary" class="cell quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-unweighted-gtsummary-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+表&nbsp;61.3: A descriptive table of Extra Magic Morning in the touringplans dataset. This table shows the distributions of these variables in the observed population.
+</figcaption>
+<div aria-describedby="tbl-unweighted-gtsummary-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<div id="vvhqrzcztb" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#vvhqrzcztb table {
+  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#vvhqrzcztb thead, #vvhqrzcztb tbody, #vvhqrzcztb tfoot, #vvhqrzcztb tr, #vvhqrzcztb td, #vvhqrzcztb th {
+  border-style: none;
+}
+
+#vvhqrzcztb p {
+  margin: 0;
+  padding: 0;
+}
+
+#vvhqrzcztb .gt_table {
+  display: table;
+  border-collapse: collapse;
+  line-height: normal;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#vvhqrzcztb .gt_caption {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+#vvhqrzcztb .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#vvhqrzcztb .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 3px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#vvhqrzcztb .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#vvhqrzcztb .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#vvhqrzcztb .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#vvhqrzcztb .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#vvhqrzcztb .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#vvhqrzcztb .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#vvhqrzcztb .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#vvhqrzcztb .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#vvhqrzcztb .gt_spanner_row {
+  border-bottom-style: hidden;
+}
+
+#vvhqrzcztb .gt_group_heading {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  text-align: left;
+}
+
+#vvhqrzcztb .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#vvhqrzcztb .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#vvhqrzcztb .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#vvhqrzcztb .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#vvhqrzcztb .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#vvhqrzcztb .gt_stub_row_group {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+  vertical-align: top;
+}
+
+#vvhqrzcztb .gt_row_group_first td {
+  border-top-width: 2px;
+}
+
+#vvhqrzcztb .gt_row_group_first th {
+  border-top-width: 2px;
+}
+
+#vvhqrzcztb .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#vvhqrzcztb .gt_first_summary_row {
+  border-top-style: solid;
+  border-top-color: #D3D3D3;
+}
+
+#vvhqrzcztb .gt_first_summary_row.thick {
+  border-top-width: 2px;
+}
+
+#vvhqrzcztb .gt_last_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#vvhqrzcztb .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#vvhqrzcztb .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#vvhqrzcztb .gt_last_grand_summary_row_top {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: double;
+  border-bottom-width: 6px;
+  border-bottom-color: #D3D3D3;
+}
+
+#vvhqrzcztb .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#vvhqrzcztb .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#vvhqrzcztb .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#vvhqrzcztb .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#vvhqrzcztb .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#vvhqrzcztb .gt_sourcenote {
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#vvhqrzcztb .gt_left {
+  text-align: left;
+}
+
+#vvhqrzcztb .gt_center {
+  text-align: center;
+}
+
+#vvhqrzcztb .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#vvhqrzcztb .gt_font_normal {
+  font-weight: normal;
+}
+
+#vvhqrzcztb .gt_font_bold {
+  font-weight: bold;
+}
+
+#vvhqrzcztb .gt_font_italic {
+  font-style: italic;
+}
+
+#vvhqrzcztb .gt_super {
+  font-size: 65%;
+}
+
+#vvhqrzcztb .gt_footnote_marks {
+  font-size: 75%;
+  vertical-align: 0.4em;
+  position: initial;
+}
+
+#vvhqrzcztb .gt_asterisk {
+  font-size: 100%;
+  vertical-align: 0;
+}
+
+#vvhqrzcztb .gt_indent_1 {
+  text-indent: 5px;
+}
+
+#vvhqrzcztb .gt_indent_2 {
+  text-indent: 10px;
+}
+
+#vvhqrzcztb .gt_indent_3 {
+  text-indent: 15px;
+}
+
+#vvhqrzcztb .gt_indent_4 {
+  text-indent: 20px;
+}
+
+#vvhqrzcztb .gt_indent_5 {
+  text-indent: 25px;
+}
+
+#vvhqrzcztb .katex-display {
+  display: inline-flex !important;
+  margin-bottom: 0.75em !important;
+}
+
+#vvhqrzcztb div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+  height: 0px !important;
+}
+</style>
+
+<table class="gt_table do-not-create-environment cell caption-top table table-sm table-striped small" data-quarto-bootstrap="false">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="gt_col_headings header">
+<th id="label" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" scope="col"><strong>Characteristic</strong></th>
+<th id="stat_1" class="gt_col_heading gt_columns_bottom_border gt_center" data-quarto-table-cell-role="th" scope="col"><strong>No Extra Magic Hours</strong><br>
+N = 302<span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>1</sup></span></th>
+<th id="stat_2" class="gt_col_heading gt_columns_bottom_border gt_center" data-quarto-table-cell-role="th" scope="col"><strong>Extra Magic Hours</strong><br>
+N = 60<span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>1</sup></span></th>
+<th id="stat_0" class="gt_col_heading gt_columns_bottom_border gt_center" data-quarto-table-cell-role="th" scope="col"><strong>Overall</strong><br>
+N = 362<span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>1</sup></span></th>
+</tr>
+</thead>
+<tbody class="gt_table_body">
+<tr class="odd">
+<td class="gt_row gt_left" headers="label">Ticket Season</td>
+<td class="gt_row gt_center" headers="stat_1"><br>
+</td>
+<td class="gt_row gt_center" headers="stat_2"><br>
+</td>
+<td class="gt_row gt_center" headers="stat_0"><br>
+</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;peak</td>
+<td class="gt_row gt_center" headers="stat_1">63 (21%)</td>
+<td class="gt_row gt_center" headers="stat_2">18 (30%)</td>
+<td class="gt_row gt_center" headers="stat_0">81 (22%)</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;regular</td>
+<td class="gt_row gt_center" headers="stat_1">161 (53%)</td>
+<td class="gt_row gt_center" headers="stat_2">35 (58%)</td>
+<td class="gt_row gt_center" headers="stat_0">196 (54%)</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;value</td>
+<td class="gt_row gt_center" headers="stat_1">78 (26%)</td>
+<td class="gt_row gt_center" headers="stat_2">7 (12%)</td>
+<td class="gt_row gt_center" headers="stat_0">85 (23%)</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="label">park_close</td>
+<td class="gt_row gt_center" headers="stat_1"><br>
+</td>
+<td class="gt_row gt_center" headers="stat_2"><br>
+</td>
+<td class="gt_row gt_center" headers="stat_0"><br>
+</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;16:30:00</td>
+<td class="gt_row gt_center" headers="stat_1">1 (0.3%)</td>
+<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
+<td class="gt_row gt_center" headers="stat_0">1 (0.3%)</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;18:00:00</td>
+<td class="gt_row gt_center" headers="stat_1">39 (13%)</td>
+<td class="gt_row gt_center" headers="stat_2">18 (30%)</td>
+<td class="gt_row gt_center" headers="stat_0">57 (16%)</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;20:00:00</td>
+<td class="gt_row gt_center" headers="stat_1">19 (6.3%)</td>
+<td class="gt_row gt_center" headers="stat_2">2 (3.3%)</td>
+<td class="gt_row gt_center" headers="stat_0">21 (5.8%)</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;21:00:00</td>
+<td class="gt_row gt_center" headers="stat_1">28 (9.3%)</td>
+<td class="gt_row gt_center" headers="stat_2">0 (0%)</td>
+<td class="gt_row gt_center" headers="stat_0">28 (7.7%)</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;22:00:00</td>
+<td class="gt_row gt_center" headers="stat_1">93 (31%)</td>
+<td class="gt_row gt_center" headers="stat_2">11 (18%)</td>
+<td class="gt_row gt_center" headers="stat_0">104 (29%)</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;23:00:00</td>
+<td class="gt_row gt_center" headers="stat_1">81 (27%)</td>
+<td class="gt_row gt_center" headers="stat_2">11 (18%)</td>
+<td class="gt_row gt_center" headers="stat_0">92 (25%)</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;24:00:00</td>
+<td class="gt_row gt_center" headers="stat_1">40 (13%)</td>
+<td class="gt_row gt_center" headers="stat_2">17 (28%)</td>
+<td class="gt_row gt_center" headers="stat_0">57 (16%)</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="label">&nbsp;&nbsp;&nbsp;&nbsp;25:00:00</td>
+<td class="gt_row gt_center" headers="stat_1">1 (0.3%)</td>
+<td class="gt_row gt_center" headers="stat_2">1 (1.7%)</td>
+<td class="gt_row gt_center" headers="stat_0">2 (0.6%)</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="label">Historic High Temperature</td>
+<td class="gt_row gt_center" headers="stat_1">84 (78, 89)</td>
+<td class="gt_row gt_center" headers="stat_2">83 (76, 87)</td>
+<td class="gt_row gt_center" headers="stat_0">84 (78, 89)</td>
+</tr>
+</tbody><tfoot class="gt_footnotes">
+<tr class="odd">
+<td colspan="4" class="gt_footnote"><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>1</sup></span> n (%); Median (Q1, Q3)</td>
+</tr>
+</tfoot>
+
+</table>
+
+</div>
+</div>
+</div>
+</figure>
+</div>
+</div>
+</section>
+<section id="识别缺失数据" class="level2">
+<h2 class="anchored" data-anchor-id="识别缺失数据">识别缺失数据</h2>
+<p>识别变量中是否存在缺失数据至关重要，原因正如我们在 <a href="04-dags.html" class="quarto-xref"><span>用 DAG 表达因果问题</span></a> 中看到的，并且我们将在 <span class="quarto-unresolved-ref">?sec-missingness</span> 中进一步探讨。 正如反连接所显示的，我们确实缺少一些数据。 让我们更仔细地看看。 <code>{visdat}</code> 包非常适合快速了解数据中是否存在缺失。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(visdat)</span>
+<span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a><span class="fu">vis_miss</span>(seven_dwarfs_9)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="07-prep-data_files/figure-html/unnamed-chunk-22-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>公布等待时间的缺失观测并不只出现在没有任何观测记录的日期。 有些日期虽然有记录，但记录内容为空。 例如，1 月 24 日有九条记录，但两类等待时间都缺失。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb43"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_train <span class="sc">|&gt;</span></span>
+<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(</span>
+<span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a>    park_date <span class="sc">==</span> <span class="st">"2018-01-24"</span>,</span>
+<span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">hour</span>(wait_datetime) <span class="sc">==</span> <span class="dv">9</span></span>
+<span id="cb43-5"><a href="#cb43-5" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb43-6"><a href="#cb43-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="fu">starts_with</span>(<span class="st">"wait_minutes"</span>))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 9 x 2
+  wait_minutes_actual wait_minutes_posted
+                &lt;dbl&gt;               &lt;dbl&gt;
+1                  NA                  NA
+2                  NA                  NA
+3                  NA                  NA
+4                  NA                  NA
+5                  NA                  NA
+6                  NA                  NA
+7                  NA                  NA
+8                  NA                  NA
+9                  NA                  NA</code></pre>
+</div>
+</div>
+<p>总的来说，除了没有记录的 3 天外，我们只缺少 8 天的公布等待时间，约占全年总天数的 3%。 这一缺失量不太可能显著影响我们的结果。 在第一次分析中，我们将忽略公布等待时间中的缺失值。 实际等待时间的缺失要多得多，这是我们将在 <span class="quarto-unresolved-ref">?sec-missingness</span> 中重新讨论的主题。 由于我们目前还不会使用这个结局，所以也先将其放在一边。</p>
+</section>
+<section id="sec-explore-assump" class="level2">
+<h2 class="anchored" data-anchor-id="sec-explore-assump">探索因果假设</h2>
+<p>正如我们在 <a href="03-po-counterfactuals.html#sec-assump" class="quarto-xref"><span>因果假设</span></a> 和 <a href="05-not-just-a-stats-problem.html" class="quarto-xref"><span>因果推断不（只是）一个统计问题</span></a> 中看到的，数据无法解决进行因果推断所需、却无法验证的假设问题。 不过，数据仍然可以提供有价值的信息。</p>
+<p>可交换性是一个很难检查的假设。 在许多情况下，混杂因子会同时与暴露和结局相关。 然而，混杂因子与这两个变量之间的关系本身可能还受到其他因素混杂。 我们将把可交换性检查留到 <span class="quarto-unresolved-ref">?sec-eval-ps-model</span>，在那里我们会有更好的工具来探查这一假设。</p>
+<p>检查一致性的一种方法，是使用包含多个处理版本的数据。 例如，如果我们的问题关注的是“额外魔法时段”，而不是“早晨额外魔法时段”，就可能违反一致性。 额外魔法时段也会安排在晚上，而且合理推测晚上的时段可能产生不同于早晨时段的影响。 我们可以将两种额外魔法时段分成不同的暴露进行探索。 由于我们已经明确了研究对象，所以这里不计算这一点，但其思路与其他任何分层类型相同。 在这里，我们按照已分配的 <code>exposure</code> 值以及 <code>exposure_type</code> 进行分组；后者用于提供有关暴露的更多细节（例如，对于“额外魔法时段”这一暴露，exposure_type 可以是“早晨”或“晚上”）。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a>dataset <span class="sc">|&gt;</span></span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(exposure, exposure_type) <span class="sc">|&gt;</span></span>
+<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>(...)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>额外魔法时段之间还可能存在更难测量的差异；如果没有大量侦查工作，我们可能无法检查这些差异。 由于我们已经明确使用的是早晨额外魔法时段，因此不再进一步探查这一假设。 在实践中，你需要谨慎做出这样的决定；要熟悉你的暴露及其可能的表现形式。</p>
+<p>让我们深入探讨正值性。 正值性假设要求，在用于实现可交换性的变量的每个水平和组合内，都有暴露和未暴露的研究对象。 我们可以通过按暴露分层，绘制每个候选混杂因子的分布来探索这一点。 这将帮助我们了解，在给定水平下是否缺少暴露或未暴露日期。 不过，区分随机正值性与结构性正值性的唯一方法，是依靠背景知识。 例如，额外魔法时段没有在某个给定关闭时间的日期发生，可能只是巧合（随机违背），但也可能存在这样的日期：根据混杂因子，它们没有资格安排额外魔法时段（结构性违背）。</p>
+<section id="检查正值性违背的单变量方法" class="level3">
+<h3 class="anchored" data-anchor-id="检查正值性违背的单变量方法">检查正值性违背的单变量方法</h3>
+<p><a href="#fig-close" class="quarto-xref">图&nbsp;<span>61.6</span></a> 展示了按日期早晨是否有额外魔法时段分组的 Magic Kingdom 公园关闭时间分布。两种暴露水平都覆盖了协变量空间的大部分范围，但在 Magic Kingdom 于 16:30 或 21:00 关闭的日期中，没有一天安排早晨额外魔法时段。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb46"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(</span>
+<span id="cb46-2"><a href="#cb46-2" aria-hidden="true" tabindex="-1"></a>  seven_dwarfs_9,</span>
+<span id="cb46-3"><a href="#cb46-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">aes</span>(</span>
+<span id="cb46-4"><a href="#cb46-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="fu">factor</span>(park_close),</span>
+<span id="cb46-5"><a href="#cb46-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">group =</span> <span class="fu">factor</span>(park_extra_magic_morning),</span>
+<span id="cb46-6"><a href="#cb46-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">fill =</span> <span class="fu">factor</span>(park_extra_magic_morning)</span>
+<span id="cb46-7"><a href="#cb46-7" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb46-8"><a href="#cb46-8" aria-hidden="true" tabindex="-1"></a>) <span class="sc">+</span></span>
+<span id="cb46-9"><a href="#cb46-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>(<span class="at">position =</span> <span class="st">"fill"</span>, <span class="at">alpha =</span> <span class="fl">0.8</span>) <span class="sc">+</span></span>
+<span id="cb46-10"><a href="#cb46-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb46-11"><a href="#cb46-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">fill =</span> <span class="st">"Extra Magic Morning"</span>,</span>
+<span id="cb46-12"><a href="#cb46-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">"Time of Park Close"</span></span>
+<span id="cb46-13"><a href="#cb46-13" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb46-14"><a href="#cb46-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">panel.grid.major.x =</span> <span class="fu">element_blank</span>())</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-close" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-close-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="07-prep-data_files/figure-html/fig-close-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-close-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;61.6: Distribution of Magic Kingdom park closing time by whether the date had Extra Magic Hours in the morning. Some close times did not have days with Extra Magic Hours, a potential positivity violation.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>我们知道，只有一天在 16:30 结束营业，但有 28 天在 21:00 结束营业；这些日期中没有一天安排早晨额外魔法时段。若没有额外假设或不改变问题，我们很难对协变量空间中的这一范围作出推断。稍后我们将详细探讨这两种做法。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb47"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(hms)</span>
+<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_9 <span class="sc">|&gt;</span></span>
+<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count</span>(park_close, park_extra_magic_morning) <span class="sc">|&gt;</span></span>
+<span id="cb47-4"><a href="#cb47-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">complete</span>(</span>
+<span id="cb47-5"><a href="#cb47-5" aria-hidden="true" tabindex="-1"></a>    park_close,</span>
+<span id="cb47-6"><a href="#cb47-6" aria-hidden="true" tabindex="-1"></a>    park_extra_magic_morning,</span>
+<span id="cb47-7"><a href="#cb47-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">fill =</span> <span class="fu">list</span>(<span class="at">n =</span> <span class="dv">0</span>)</span>
+<span id="cb47-8"><a href="#cb47-8" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb47-9"><a href="#cb47-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(park_close <span class="sc">%in%</span> <span class="fu">parse_hm</span>(<span class="fu">c</span>(<span class="st">"16:30"</span>, <span class="st">"21:00"</span>)))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 4 x 3
+  park_close park_extra_magic_morning     n
+  &lt;time&gt;                        &lt;dbl&gt; &lt;int&gt;
+1 16:30                             0     1
+2 16:30                             1     0
+3 21:00                             0    28
+4 21:00                             1     0</code></pre>
+</div>
+</div>
+<p>我们可以按日期早晨是否有额外魔法时段，使用镜像直方图考察 Magic Kingdom 历史最高气温的分布。要创建镜像直方图，我们将使用 <code>{halfmoon}</code> 包的 <code>geom_mirror_histogram()</code>。查看 <a href="#fig-temp" class="quarto-xref">图&nbsp;<span>61.7</span></a> 可见，暴露组中最高气温低于 60 度的日期非常少。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb49"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(halfmoon)</span>
+<span id="cb49-2"><a href="#cb49-2" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(</span>
+<span id="cb49-3"><a href="#cb49-3" aria-hidden="true" tabindex="-1"></a>  seven_dwarfs_9,</span>
+<span id="cb49-4"><a href="#cb49-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">aes</span>(</span>
+<span id="cb49-5"><a href="#cb49-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> park_temperature_high,</span>
+<span id="cb49-6"><a href="#cb49-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">group =</span> <span class="fu">factor</span>(park_extra_magic_morning),</span>
+<span id="cb49-7"><a href="#cb49-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">fill =</span> <span class="fu">factor</span>(park_extra_magic_morning)</span>
+<span id="cb49-8"><a href="#cb49-8" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb49-9"><a href="#cb49-9" aria-hidden="true" tabindex="-1"></a>) <span class="sc">+</span></span>
+<span id="cb49-10"><a href="#cb49-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_mirror_histogram</span>(<span class="at">bins =</span> <span class="dv">20</span>, <span class="at">alpha =</span> <span class="fl">0.8</span>) <span class="sc">+</span></span>
+<span id="cb49-11"><a href="#cb49-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_y_continuous</span>(<span class="at">labels =</span> abs) <span class="sc">+</span></span>
+<span id="cb49-12"><a href="#cb49-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb49-13"><a href="#cb49-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">fill =</span> <span class="st">"Extra Magic Morning"</span>,</span>
+<span id="cb49-14"><a href="#cb49-14" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">"Historic high temperature (F)"</span></span>
+<span id="cb49-15"><a href="#cb49-15" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-temp" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-temp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="07-prep-data_files/figure-html/fig-temp-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-temp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;61.7: Distribution of historic high temperature at Magic Kingdom by whether the date had Extra Magic Hours in the morning. Only 1 day with Extra Magic Hours had an historic high temperature of less than 60 degress Fahrenheit.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>确实，历史最高气温处于这一水平且安排了早晨额外魔法时段的日期只有一天。如果基于我们对问题的理解，这一点让我们特别担忧，可以考虑修改因果问题，将分析限制在气温较高的日期。这样的修改也会限制我们能够据此得出结论的日期范围。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb50"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb50-1"><a href="#cb50-1" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_9 <span class="sc">|&gt;</span></span>
+<span id="cb50-2"><a href="#cb50-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(park_temperature_high <span class="sc">&lt;</span> <span class="dv">60</span>) <span class="sc">|&gt;</span></span>
+<span id="cb50-3"><a href="#cb50-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count</span>(park_extra_magic_morning)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2 x 2
+  park_extra_magic_morning     n
+                     &lt;dbl&gt; &lt;int&gt;
+1                        0     9
+2                        1     1</code></pre>
+</div>
+</div>
+<p>最后，让我们按日期早晨是否有额外魔法时段，查看票价季节的分布。查看 <a href="#fig-ticket" class="quarto-xref">图&nbsp;<span>61.8</span></a>，我们没有发现任何正值性违背。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb52"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(</span>
+<span id="cb52-2"><a href="#cb52-2" aria-hidden="true" tabindex="-1"></a>  seven_dwarfs_9,</span>
+<span id="cb52-3"><a href="#cb52-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">aes</span>(</span>
+<span id="cb52-4"><a href="#cb52-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> park_ticket_season,</span>
+<span id="cb52-5"><a href="#cb52-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">group =</span> <span class="fu">factor</span>(park_extra_magic_morning),</span>
+<span id="cb52-6"><a href="#cb52-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">fill =</span> <span class="fu">factor</span>(park_extra_magic_morning)</span>
+<span id="cb52-7"><a href="#cb52-7" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb52-8"><a href="#cb52-8" aria-hidden="true" tabindex="-1"></a>) <span class="sc">+</span></span>
+<span id="cb52-9"><a href="#cb52-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>(<span class="at">position =</span> <span class="st">"dodge"</span>, <span class="at">alpha =</span> <span class="fl">0.8</span>) <span class="sc">+</span></span>
+<span id="cb52-10"><a href="#cb52-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb52-11"><a href="#cb52-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">fill =</span> <span class="st">"Extra Magic Morning"</span>,</span>
+<span id="cb52-12"><a href="#cb52-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">"Magic Kingdom Ticket Season"</span></span>
+<span id="cb52-13"><a href="#cb52-13" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb52-14"><a href="#cb52-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">panel.grid.major.x =</span> <span class="fu">element_blank</span>())</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-ticket" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-ticket-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="07-prep-data_files/figure-html/fig-ticket-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-ticket-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;61.8: Distribution of ticket season by whether the date had Extra Magic Hours in the morning. As days with and without Extra Magic Hours happen across all three levels, there don’t appear to be positivity violations.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="检查正值性违背的多变量方法" class="level3">
+<h3 class="anchored" data-anchor-id="检查正值性违背的多变量方法">检查正值性违背的多变量方法</h3>
+<p>在三个混杂因子中，我们看到了一些可能存在正值性违背的证据。由于这里只有很少的变量，我们可以更仔细地检查。先将 <code>park_temperature_high</code> 变量离散化，按三分位数分成三组。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb53"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a>prop_exposed <span class="ot">&lt;-</span> seven_dwarfs_9 <span class="sc">|&gt;</span></span>
+<span id="cb53-2"><a href="#cb53-2" aria-hidden="true" tabindex="-1"></a>  <span class="do">## cut park_temperature_high into tertiles</span></span>
+<span id="cb53-3"><a href="#cb53-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb53-4"><a href="#cb53-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_temperature_high_bin =</span> <span class="fu">cut</span>(</span>
+<span id="cb53-5"><a href="#cb53-5" aria-hidden="true" tabindex="-1"></a>      park_temperature_high,</span>
+<span id="cb53-6"><a href="#cb53-6" aria-hidden="true" tabindex="-1"></a>      <span class="at">breaks =</span> <span class="dv">3</span></span>
+<span id="cb53-7"><a href="#cb53-7" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb53-8"><a href="#cb53-8" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb53-9"><a href="#cb53-9" aria-hidden="true" tabindex="-1"></a>  <span class="do">## bin park close time</span></span>
+<span id="cb53-10"><a href="#cb53-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb53-11"><a href="#cb53-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_close_bin =</span> <span class="fu">case_when</span>(</span>
+<span id="cb53-12"><a href="#cb53-12" aria-hidden="true" tabindex="-1"></a>      <span class="fu">hour</span>(park_close) <span class="sc">&lt;</span> <span class="dv">19</span> <span class="sc">&amp;</span> <span class="fu">hour</span>(park_close) <span class="sc">&gt;</span> <span class="dv">12</span> <span class="sc">~</span> <span class="st">"(1) early"</span>,</span>
+<span id="cb53-13"><a href="#cb53-13" aria-hidden="true" tabindex="-1"></a>      <span class="fu">hour</span>(park_close) <span class="sc">&gt;=</span> <span class="dv">19</span> <span class="sc">&amp;</span> <span class="fu">hour</span>(park_close) <span class="sc">&lt;</span> <span class="dv">24</span> <span class="sc">~</span> <span class="st">"(2) standard"</span>,</span>
+<span id="cb53-14"><a href="#cb53-14" aria-hidden="true" tabindex="-1"></a>      <span class="fu">hour</span>(park_close) <span class="sc">&gt;=</span> <span class="dv">24</span> <span class="sc">|</span> <span class="fu">hour</span>(park_close) <span class="sc">&lt;</span> <span class="dv">12</span> <span class="sc">~</span> <span class="st">"(3) late"</span></span>
+<span id="cb53-15"><a href="#cb53-15" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb53-16"><a href="#cb53-16" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb53-17"><a href="#cb53-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(</span>
+<span id="cb53-18"><a href="#cb53-18" aria-hidden="true" tabindex="-1"></a>    park_close_bin,</span>
+<span id="cb53-19"><a href="#cb53-19" aria-hidden="true" tabindex="-1"></a>    park_temperature_high_bin,</span>
+<span id="cb53-20"><a href="#cb53-20" aria-hidden="true" tabindex="-1"></a>    park_ticket_season</span>
+<span id="cb53-21"><a href="#cb53-21" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb53-22"><a href="#cb53-22" aria-hidden="true" tabindex="-1"></a>  <span class="do">## calculate the proportion exposed in each bin</span></span>
+<span id="cb53-23"><a href="#cb53-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>(</span>
+<span id="cb53-24"><a href="#cb53-24" aria-hidden="true" tabindex="-1"></a>    <span class="at">prop_exposed =</span> <span class="fu">mean</span>(park_extra_magic_morning),</span>
+<span id="cb53-25"><a href="#cb53-25" aria-hidden="true" tabindex="-1"></a>    <span class="at">.groups =</span> <span class="st">"drop"</span></span>
+<span id="cb53-26"><a href="#cb53-26" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb53-27"><a href="#cb53-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">complete</span>(</span>
+<span id="cb53-28"><a href="#cb53-28" aria-hidden="true" tabindex="-1"></a>    park_close_bin,</span>
+<span id="cb53-29"><a href="#cb53-29" aria-hidden="true" tabindex="-1"></a>    park_temperature_high_bin,</span>
+<span id="cb53-30"><a href="#cb53-30" aria-hidden="true" tabindex="-1"></a>    park_ticket_season,</span>
+<span id="cb53-31"><a href="#cb53-31" aria-hidden="true" tabindex="-1"></a>    <span class="at">fill =</span> <span class="fu">list</span>(<span class="at">prop_exposed =</span> <span class="dv">0</span>)</span>
+<span id="cb53-32"><a href="#cb53-32" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb53-33"><a href="#cb53-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-34"><a href="#cb53-34" aria-hidden="true" tabindex="-1"></a>prop_exposed <span class="sc">|&gt;</span></span>
+<span id="cb53-35"><a href="#cb53-35" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(</span>
+<span id="cb53-36"><a href="#cb53-36" aria-hidden="true" tabindex="-1"></a>    <span class="fu">aes</span>(</span>
+<span id="cb53-37"><a href="#cb53-37" aria-hidden="true" tabindex="-1"></a>      <span class="at">x =</span> park_close_bin,</span>
+<span id="cb53-38"><a href="#cb53-38" aria-hidden="true" tabindex="-1"></a>      <span class="at">y =</span> park_temperature_high_bin,</span>
+<span id="cb53-39"><a href="#cb53-39" aria-hidden="true" tabindex="-1"></a>      <span class="at">fill =</span> prop_exposed</span>
+<span id="cb53-40"><a href="#cb53-40" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb53-41"><a href="#cb53-41" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb53-42"><a href="#cb53-42" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_tile</span>() <span class="sc">+</span></span>
+<span id="cb53-43"><a href="#cb53-43" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_viridis_c</span>(<span class="at">begin =</span> <span class="fl">0.1</span>, <span class="at">end =</span> <span class="fl">0.9</span>) <span class="sc">+</span></span>
+<span id="cb53-44"><a href="#cb53-44" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span>park_ticket_season) <span class="sc">+</span></span>
+<span id="cb53-45"><a href="#cb53-45" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb53-46"><a href="#cb53-46" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">"Historic High Temperature (F)"</span>,</span>
+<span id="cb53-47"><a href="#cb53-47" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">"Magic Kingdom Park Close Time"</span>,</span>
+<span id="cb53-48"><a href="#cb53-48" aria-hidden="true" tabindex="-1"></a>    <span class="at">fill =</span> <span class="st">"Proportion of</span><span class="sc">\n</span><span class="st">Days Exposed"</span></span>
+<span id="cb53-49"><a href="#cb53-49" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb53-50"><a href="#cb53-50" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">panel.grid =</span> <span class="fu">element_blank</span>())</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-positivity" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-positivity-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="07-prep-data_files/figure-html/fig-positivity-1.png" class="img-fluid figure-img" width="864">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-positivity-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;61.9: Check for positivity violations across three confounders: historic high temperature, park close time, and ticket season.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p><a href="#fig-positivity" class="quarto-xref">图&nbsp;<span>61.9</span></a> 展示了一个有趣的潜在违背。票价处于旺季且气温较低（历史最高气温在 51 至 65 度之间）的日期中，100% 的日期在早晨安排了额外魔法时段。这一点如果结合数据集稍加思考，其实很合理。在佛罗里达州，既气温寒冷、又会被视为游览 Walt Disney World 的“旺季”时间的日期，只有圣诞节和新年期间的日期。在这段时间里，历史上总是会安排额外魔法时段。</p>
+<p>我们还有九种组合从未处于暴露状态。</p>
+<div class="cell">
+<details class="code-fold">
+<summary>代码</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb54"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb54-1"><a href="#cb54-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gt)</span>
+<span id="cb54-2"><a href="#cb54-2" aria-hidden="true" tabindex="-1"></a>prop_exposed <span class="sc">|&gt;</span></span>
+<span id="cb54-3"><a href="#cb54-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(prop_exposed <span class="sc">%in%</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">0</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb54-4"><a href="#cb54-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">gt</span>() <span class="sc">|&gt;</span></span>
+<span id="cb54-5"><a href="#cb54-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_label</span>(</span>
+<span id="cb54-6"><a href="#cb54-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_close_bin =</span> <span class="st">"Close Time"</span>,</span>
+<span id="cb54-7"><a href="#cb54-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_temperature_high_bin =</span> <span class="st">"Temperature"</span>,</span>
+<span id="cb54-8"><a href="#cb54-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">park_ticket_season =</span> <span class="st">"Ticket Season"</span>,</span>
+<span id="cb54-9"><a href="#cb54-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">prop_exposed =</span> <span class="st">"Proportion Exposed"</span></span>
+<span id="cb54-10"><a href="#cb54-10" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div id="tbl-positivity-check" class="cell quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-positivity-check-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+表&nbsp;61.4: Among binned combinations of confounders, 10 were either always exposed or never exposed. These represent potential positivity violations.
+</figcaption>
+<div aria-describedby="tbl-positivity-check-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<div id="nucwbaomik" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#nucwbaomik table {
+  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#nucwbaomik thead, #nucwbaomik tbody, #nucwbaomik tfoot, #nucwbaomik tr, #nucwbaomik td, #nucwbaomik th {
+  border-style: none;
+}
+
+#nucwbaomik p {
+  margin: 0;
+  padding: 0;
+}
+
+#nucwbaomik .gt_table {
+  display: table;
+  border-collapse: collapse;
+  line-height: normal;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#nucwbaomik .gt_caption {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+#nucwbaomik .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#nucwbaomik .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 3px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#nucwbaomik .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#nucwbaomik .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#nucwbaomik .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#nucwbaomik .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#nucwbaomik .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#nucwbaomik .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#nucwbaomik .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#nucwbaomik .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#nucwbaomik .gt_spanner_row {
+  border-bottom-style: hidden;
+}
+
+#nucwbaomik .gt_group_heading {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  text-align: left;
+}
+
+#nucwbaomik .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#nucwbaomik .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#nucwbaomik .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#nucwbaomik .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#nucwbaomik .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#nucwbaomik .gt_stub_row_group {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+  vertical-align: top;
+}
+
+#nucwbaomik .gt_row_group_first td {
+  border-top-width: 2px;
+}
+
+#nucwbaomik .gt_row_group_first th {
+  border-top-width: 2px;
+}
+
+#nucwbaomik .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#nucwbaomik .gt_first_summary_row {
+  border-top-style: solid;
+  border-top-color: #D3D3D3;
+}
+
+#nucwbaomik .gt_first_summary_row.thick {
+  border-top-width: 2px;
+}
+
+#nucwbaomik .gt_last_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#nucwbaomik .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#nucwbaomik .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#nucwbaomik .gt_last_grand_summary_row_top {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: double;
+  border-bottom-width: 6px;
+  border-bottom-color: #D3D3D3;
+}
+
+#nucwbaomik .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#nucwbaomik .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#nucwbaomik .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#nucwbaomik .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#nucwbaomik .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#nucwbaomik .gt_sourcenote {
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#nucwbaomik .gt_left {
+  text-align: left;
+}
+
+#nucwbaomik .gt_center {
+  text-align: center;
+}
+
+#nucwbaomik .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#nucwbaomik .gt_font_normal {
+  font-weight: normal;
+}
+
+#nucwbaomik .gt_font_bold {
+  font-weight: bold;
+}
+
+#nucwbaomik .gt_font_italic {
+  font-style: italic;
+}
+
+#nucwbaomik .gt_super {
+  font-size: 65%;
+}
+
+#nucwbaomik .gt_footnote_marks {
+  font-size: 75%;
+  vertical-align: 0.4em;
+  position: initial;
+}
+
+#nucwbaomik .gt_asterisk {
+  font-size: 100%;
+  vertical-align: 0;
+}
+
+#nucwbaomik .gt_indent_1 {
+  text-indent: 5px;
+}
+
+#nucwbaomik .gt_indent_2 {
+  text-indent: 10px;
+}
+
+#nucwbaomik .gt_indent_3 {
+  text-indent: 15px;
+}
+
+#nucwbaomik .gt_indent_4 {
+  text-indent: 20px;
+}
+
+#nucwbaomik .gt_indent_5 {
+  text-indent: 25px;
+}
+
+#nucwbaomik .katex-display {
+  display: inline-flex !important;
+  margin-bottom: 0.75em !important;
+}
+
+#nucwbaomik div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+  height: 0px !important;
+}
+</style>
+
+<table class="gt_table do-not-create-environment cell caption-top table table-sm table-striped small" data-quarto-bootstrap="false">
+<thead>
+<tr class="gt_col_headings header">
+<th id="park_close_bin" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" scope="col">Close Time</th>
+<th id="park_temperature_high_bin" class="gt_col_heading gt_columns_bottom_border gt_center" data-quarto-table-cell-role="th" scope="col">Temperature</th>
+<th id="park_ticket_season" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" scope="col">Ticket Season</th>
+<th id="prop_exposed" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">Proportion Exposed</th>
+</tr>
+</thead>
+<tbody class="gt_table_body">
+<tr class="odd">
+<td class="gt_row gt_left" headers="park_close_bin">(1) early</td>
+<td class="gt_row gt_center" headers="park_temperature_high_bin">(51.1,65.2]</td>
+<td class="gt_row gt_left" headers="park_ticket_season">peak</td>
+<td class="gt_row gt_right" headers="prop_exposed">1</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="park_close_bin">(1) early</td>
+<td class="gt_row gt_center" headers="park_temperature_high_bin">(51.1,65.2]</td>
+<td class="gt_row gt_left" headers="park_ticket_season">value</td>
+<td class="gt_row gt_right" headers="prop_exposed">0</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="park_close_bin">(1) early</td>
+<td class="gt_row gt_center" headers="park_temperature_high_bin">(65.2,79.3]</td>
+<td class="gt_row gt_left" headers="park_ticket_season">peak</td>
+<td class="gt_row gt_right" headers="prop_exposed">0</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="park_close_bin">(1) early</td>
+<td class="gt_row gt_center" headers="park_temperature_high_bin">(65.2,79.3]</td>
+<td class="gt_row gt_left" headers="park_ticket_season">value</td>
+<td class="gt_row gt_right" headers="prop_exposed">0</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="park_close_bin">(1) early</td>
+<td class="gt_row gt_center" headers="park_temperature_high_bin">(79.3,93.4]</td>
+<td class="gt_row gt_left" headers="park_ticket_season">peak</td>
+<td class="gt_row gt_right" headers="prop_exposed">0</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="park_close_bin">(2) standard</td>
+<td class="gt_row gt_center" headers="park_temperature_high_bin">(51.1,65.2]</td>
+<td class="gt_row gt_left" headers="park_ticket_season">peak</td>
+<td class="gt_row gt_right" headers="prop_exposed">0</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="park_close_bin">(2) standard</td>
+<td class="gt_row gt_center" headers="park_temperature_high_bin">(51.1,65.2]</td>
+<td class="gt_row gt_left" headers="park_ticket_season">regular</td>
+<td class="gt_row gt_right" headers="prop_exposed">0</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="park_close_bin">(3) late</td>
+<td class="gt_row gt_center" headers="park_temperature_high_bin">(51.1,65.2]</td>
+<td class="gt_row gt_left" headers="park_ticket_season">value</td>
+<td class="gt_row gt_right" headers="prop_exposed">0</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="park_close_bin">(3) late</td>
+<td class="gt_row gt_center" headers="park_temperature_high_bin">(65.2,79.3]</td>
+<td class="gt_row gt_left" headers="park_ticket_season">value</td>
+<td class="gt_row gt_right" headers="prop_exposed">0</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="park_close_bin">(3) late</td>
+<td class="gt_row gt_center" headers="park_temperature_high_bin">(79.3,93.4]</td>
+<td class="gt_row gt_left" headers="park_ticket_season">value</td>
+<td class="gt_row gt_right" headers="prop_exposed">0</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+</figure>
+</div>
+</div>
+<p>这些日期无法安排早晨额外魔法时段，是偶然发生的，还是结构性的不符合条件？如果只是偶然发生，我们能否作出统计假设，从而对数据中协变量空间的这些空白区域进行有效外推？无论是哪一种情况，我们是否都应该改变当前问题，例如调整纳入条件或估计目标？目前，我们将继续分析，不改变研究问题或目标试验模拟，但会记住这些观察结果，并在后续章节探讨其他选择。</p>
+<p>现在，我们已经更好地理解了因果问题和数据（以及它们的局限性），接下来将把注意力转向使用统计模型，以改进对所求答案的估计。</p>
+
+
+<div id="refs" class="references csl-bib-body hanging-indent" data-entry-spacing="0" role="list" style="display: none">
+<div id="ref-Riederer_2020" class="csl-entry" role="listitem">
+Riederer, Emily. 2020. <span>《Column names as contracts》</span>. <em>Emily Riederer</em>. Emily Riederer. <a href="https://emilyriederer.netlify.app/post/column-name-contracts/">https://emilyriederer.netlify.app/post/column-name-contracts/</a>.
+</div>
+</div>
+</section>
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "已复制");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "已复制");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/hui950319\.github\.io\/causalR\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../notes/r-causal/chapters/06-stats-models-ci.html" class="pagination-link" aria-label="从问题到答案：分层与结局模型">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">从问题到答案：分层与结局模型</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/r-causal/chapters/07-prep-data.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></div></div></footer></body></html>
