@@ -6773,5 +6773,93 @@
       "Causal Inference in R · 原书中译",
       "<span class='chapter-number'>78</span>  <span class='chapter-title'>参考文献</span>"
     ]
+  },
+  {
+    "objectID": "notes/r-causal/appendices/A-bootstrap.html",
+    "href": "notes/r-causal/appendices/A-bootstrap.html",
+    "title": "自助法（Bootstrap）",
+    "section": "",
+    "text": "自助法（Bootstrap）\n注记Work-in-progress 🚧\n\n\n\nYou are reading the work-in-progress first edition of Causal Inference in R. This chapter has its foundations written but is still undergoing changes.",
+    "crumbs": [
+      "Causal Inference in R · 附录",
+      "<span class='chapter-number'>79</span>  <span class='chapter-title'>自助法（Bootstrap）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/r-causal/appendices/A-bootstrap.html#sec-boot-alg",
+    "href": "notes/r-causal/appendices/A-bootstrap.html#sec-boot-alg",
+    "title": "自助法（Bootstrap）",
+    "section": "概述",
+    "text": "概述\n自助法是一种简单而灵活的算法，通过有放回重采样来计算统计量。 当不存在计算某个量的闭式解时（因果推断中常见，尤其是在计算标准误时），或者我们怀疑参数方法所使用的假设不适用于某种情形时，这种方法非常有用。\n在 R 中，自助法长期以来一直通过编写函数来计算感兴趣的统计量，最早可以追溯到经典的 boot 包。 本书将使用 rsample，这是一种更现代的重采样工具；但通常我们仍从编写一个用于计算目标估计量的函数开始。\n假设我们想对 this_data 计算 some_statistic()。 要对 R 个重采样进行自助法，我们需要：\n\n对this_data 进行有放回重采样。 在一次给定的自助法重采样中，同一行可能出现多次（也可能一次都不出现），从而模拟底层总体中的抽样过程。\nindices &lt;- sample(\n  # create a vector of indices:\n  # 1 through the number of rows\n  seq_len(nrow(this_data)), \n  # sample a vector indices \n  # that's the same length as `this_data`\n  size = nrow(this_data), \n  replace = TRUE\n)\nbootstrap_resample &lt;- this_data[indices, ]\n在 bootstrap_resample 上拟合 some_statistic()\nestimate &lt;- some_statistic(bootstrap_resample)\n重复 R 次\n\n随后我们会得到 estimates 的分布，据此可以计算总体统计量，例如点估计、标准误和置信区间。",
+    "crumbs": [
+      "Causal Inference in R · 附录",
+      "<span class='chapter-number'>79</span>  <span class='chapter-title'>自助法（Bootstrap）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/r-causal/appendices/A-bootstrap.html#使用-rsample-进行自助法重采样",
+    "href": "notes/r-causal/appendices/A-bootstrap.html#使用-rsample-进行自助法重采样",
+    "title": "自助法（Bootstrap）",
+    "section": "使用 rsample 进行自助法重采样",
+    "text": "使用 rsample 进行自助法重采样\nrsample 是 tidymodels 框架中的一个重采样包，但也适用于 tidymodels 之外的问题。 它比 boot 包有少许额外开销，但因此也更加灵活。\n假设我们有一份包含三个变量 x、z 和 y 的抽样数据，想要计算线性回归中 x 和 z 的系数的置信区间，结局变量为 y。 我们可以使用自助法计算这些置信区间（此外，R 还提供了闭式解）。\n\nlibrary(tidyverse)\nlibrary(rsample)\nset.seed(1)\nn &lt;- 1000\nsampled_data &lt;- tibble(\n  z = rnorm(n),\n  x = z + rnorm(n),\n  y = x + z + rnorm(n)\n)\n\nlm(y ~ x + z, data = sampled_data)\n\n\nCall:\nlm(formula = y ~ x + z, data = sampled_data)\n\nCoefficients:\n(Intercept)            x            z  \n     0.0162       1.0220       1.0270  \n\n\n首先，我们使用 bootstraps() 函数创建一个嵌套数据集，其中每个重采样数据集都存储为 rsplit 对象。\n\nbootstrapped_resamples &lt;- bootstraps(sampled_data, times = 10)\n\nbootstrapped_resamples$splits[[1]]\n\n&lt;Analysis/Assess/Total&gt;\n&lt;1000/373/1000&gt;\n\n\n这里，第一个自助法数据集包含原始行中的 627 行，另有 373 行未被纳入。 如果查看生成的数据框，会看到 1000 行，与原始数据集中的行数相同。 这意味着某些纳入的行会出现不止一次；每一行都是有放回抽取的。 这一比例接近我们的平均预期：每个自助法数据集最终包含原始数据集约三分之二的内容。\n\nboot_resample &lt;- bootstrapped_resamples$splits[[1]] |&gt;\n  as.data.frame()\n\nboot_resample\n\n# A tibble: 1,000 x 3\n         z      x      y\n     &lt;dbl&gt;  &lt;dbl&gt;  &lt;dbl&gt;\n 1  0.244   0.742  0.194\n 2  0.984   0.971  2.84 \n 3 -1.59   -2.33  -3.66 \n 4 -0.0109 -1.47  -0.885\n 5  0.391   0.373  2.99 \n 6 -0.737  -2.64  -3.34 \n 7  0.992   1.53   1.92 \n 8  0.525  -1.12  -3.17 \n 9  0.0773  0.927 -0.801\n10 -1.28   -1.84  -4.69 \n# i 990 more rows\n\n\n正如 概述 中的算法所述，我们会在每个自助法数据集上拟合模型。\n\nlm(y ~ x + z, data = boot_resample)\n\n\nCall:\nlm(formula = y ~ x + z, data = boot_resample)\n\nCoefficients:\n(Intercept)            x            z  \n     0.0245       0.9812       1.0559  \n\n\n我们将其表示为一个函数。\n\nfit_lm &lt;- function(.split) {\n  .df &lt;- as.data.frame(.split)\n  lm(y ~ x + z, data = .df)\n}\n\nbootstrapped_resamples$splits[[1]] |&gt;\n  fit_lm()\n\n\nCall:\nlm(formula = y ~ x + z, data = .df)\n\nCoefficients:\n(Intercept)            x            z  \n     0.0245       0.9812       1.0559  \n\n\n我们不会逐个处理，而是使用迭代在每个重采样数据集上运行回归。 bootstrapped_resamples$splits 是一个列表，因此可以用 map() 遍历它并得到一个列表。 bootstrapped_resamples$splits 具体来说是一个列表列，即数据框中的一列，而这一列本身是一个列表。 我们将利用 bootstrapped_resamples 中已有的结构，把结果存储为另一个列表列。\n\nbootstrapped_resamples &lt;- bootstrapped_resamples |&gt;\n  mutate(lm_results = map(splits, fit_lm))\n\n现在，lm_results 的每个元素都是一个 lm 对象——即对自助法重采样数据集拟合得到的回归模型。 下面是最后一次重采样得到的模型。\n\nbootstrapped_resamples$lm_results[[10]]\n\n\nCall:\nlm(formula = y ~ x + z, data = .df)\n\nCoefficients:\n(Intercept)            x            z  \n     0.0341       1.0381       1.0005  \n\n\n现在，我们拥有模型中三个系数（截距、x 和 z）各自的 10 个估计值。 图 80.1 展示了它们的分布。\n\nlibrary(broom)\nbootstrapped_resamples &lt;- bootstrapped_resamples |&gt;\n  mutate(tidy_results = map(lm_results, tidy))\n\nunnested_results &lt;- bootstrapped_resamples |&gt;\n  select(id, tidy_results) |&gt;\n  unnest(tidy_results)\n\nunnested_results\n\n# A tibble: 30 x 6\n   id      term  estimate std.error statistic   p.value\n   &lt;chr&gt;   &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;\n 1 Bootst~ (Int~  0.0245     0.0321    0.762  4.46e-  1\n 2 Bootst~ x      0.981      0.0313   31.4    6.66e-151\n 3 Bootst~ z      1.06       0.0443   23.8    1.15e- 99\n 4 Bootst~ (Int~  0.0275     0.0329    0.834  4.04e-  1\n 5 Bootst~ x      1.04       0.0311   33.3    4.86e-164\n 6 Bootst~ z      0.997      0.0448   22.3    2.03e- 89\n 7 Bootst~ (Int~  0.00339    0.0340    0.0997 9.21e-  1\n 8 Bootst~ x      1.08       0.0318   33.9    5.10e-168\n 9 Bootst~ z      0.968      0.0466   20.8    5.88e- 80\n10 Bootst~ (Int~  0.00546    0.0321    0.170  8.65e-  1\n# i 20 more rows\n\n\n\nunnested_results |&gt;\n  ggplot(aes(estimate)) +\n  geom_density(fill = \"steelblue\", color = NA) +\n  facet_wrap(~term, scales = \"free\")\n\n\n\n\n\n\n\n图 80.1: The bootstrapped distributions of the coefficients from the model lm(y ~ x + z, data = .df). The distributions were calculated with 10 bootstrapped resamples.\n\n\n\n\n\n重采样次数越多，估计值的分布越平滑。 这里是 1000 次的结果（图 80.2）。\n\nbootstrapped_resamples_1k &lt;- bootstraps(\n  sampled_data,\n  times = 1000\n) |&gt;\n  mutate(\n    lm_results = map(splits, fit_lm),\n    tidy_results = map(lm_results, tidy)\n  )\n\nbootstrapped_resamples_1k |&gt;\n  select(id, tidy_results) |&gt;\n  unnest(tidy_results) |&gt;\n  ggplot(aes(estimate)) +\n  geom_density(fill = \"steelblue\", color = NA) +\n  facet_wrap(~term, scales = \"free\")\n\n\n\n\n\n\n\n图 80.2: The bootstrapped distributions of the coefficients from the model lm(y ~ x + z, data = .df). The distributions were calculated with 1000 bootstrapped resamples.\n\n\n\n\n\n我们可以使用 rsample 中的置信区间函数来计算这些系数分布的信息；这些函数遵循 int_*(nested_results, list_column_name) 的模式。 rsample 要求结果必须是 broom::tidy() 的结果，或者是包含类似列的数据框。\n让我们使用 int_pctl() 获取简单的基于百分位数的置信区间。 它们将得到第 2.5% 和第 97.5% 分位数。\n\nint_pctl(bootstrapped_resamples_1k, tidy_results)\n\n# A tibble: 3 x 6\n  term         .lower .estimate .upper .alpha .method  \n  &lt;chr&gt;         &lt;dbl&gt;     &lt;dbl&gt;  &lt;dbl&gt;  &lt;dbl&gt; &lt;chr&gt;    \n1 (Intercept) -0.0511    0.0164 0.0824   0.05 percenti~\n2 x            0.965     1.02   1.08     0.05 percenti~\n3 z            0.941     1.03   1.11     0.05 percenti~\n\n\n现在，我们得到一个数据框，其中包含每个估计值及其自助法置信区间。 自助法的非凡之处在于，这一套方法可以应用于极其广泛的统计问题，包括那些原本无法求解的问题。",
+    "crumbs": [
+      "Causal Inference in R · 附录",
+      "<span class='chapter-number'>79</span>  <span class='chapter-title'>自助法（Bootstrap）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/r-causal/appendices/A-bootstrap.html#为什么有效",
+    "href": "notes/r-causal/appendices/A-bootstrap.html#为什么有效",
+    "title": "自助法（Bootstrap）",
+    "section": "为什么有效？",
+    "text": "为什么有效？\n为什么这个极其简单的算法能在如此多的问题上表现良好？ 关于自助法的技术细节，请参阅其原始论文和著作 (Efron 1979; Efron 和 Tibshirani 1993)。 但让我们先对其运作方式建立一些直觉。\n考虑一个我们想要了解的总体。 有时我们拥有总体中每个观测的资料，但更多时候，我们需要出于必要性或效率考虑从总体中抽样。\n\nlibrary(tidyverse)\nn &lt;- 1000000\npopulation &lt;- tibble(\n  z = rnorm(n),\n  x = z + rnorm(n),\n  y = x + z + rnorm(n)\n)\n\npopulation 包含 100 万个观测，但我们将从整个总体中随机抽取 200 个观测。 如果还需要进行更多次抽样，我们会独立于原始样本进行。 某个观测可能最终出现在不止一项研究中。 假设已经从同一总体中完成了 20 项这样的研究。\n\nsamples &lt;- map(1:20, ~ population[sample(n, size = 200), ]) |&gt;\n  bind_rows(.id = \"sample\") |&gt;\n  mutate(sample = as.numeric(sample))\n\n由于随机抽样变异，每个样本的 x 均值都略有不同于 population 中的均值，后者为 -6.8199^{-4}。 这些样本估计值都在总体估计值附近波动（图 80.3）。\n\nsample_means &lt;- samples |&gt;\n  group_by(sample) |&gt;\n  summarize(across(everything(), mean))\n\nsamples |&gt;\n  ggplot(aes(x = x)) +\n  geom_histogram() +\n  geom_vline(\n    data = sample_means,\n    aes(xintercept = x),\n    color = \"firebrick\"\n  ) +\n  facet_wrap(~sample)\n\n\n\n\n\n\n\n图 80.3: The distributions of the sample means of x for twenty samples. Each sample is sampled from population and has a sample size of 200.\n\n\n\n\n\n你可能会注意到，从总体中抽样与我们在自助法中进行的抽样有相似之处。 我们把重采样视为其来源总体的代表。 这有助于我们将所看到的分布转换为原始总体的尺度，方式与使用参数置信区间时大致相同。 与从总体中抽样的一个关键区别是，自助法确定的是围绕样本估计值的离散程度，而不是围绕总体估计值的离散程度。 让我们更仔细地看看样本 8。\n\nsample_8 &lt;- samples |&gt;\n  filter(sample == \"8\")\n\nsample_8 |&gt;\n  summarize(across(everything(), mean))\n\n# A tibble: 1 x 4\n  sample       z     x      y\n   &lt;dbl&gt;   &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt;\n1      8 -0.0406 0.100 0.0476\n\n\n样本均值 x 为 0.1。 现在，让我们对这个样本进行自助法重采样，并计算每个自助法重采样中 x 的均值。 图 80.4 中的自助法估计值分布以样本均值为中心，呈对称形状。\n\ncalculate_mean &lt;- function(.split, what = \"x\", ...) {\n  .df &lt;- as.data.frame(.split)\n  t &lt;- t.test(.df[[what]])\n\n  tibble(\n    term = paste(\"mean of\", what),\n    estimate = as.numeric(t$estimate),\n    std.error = t$stderr\n  )\n}\n\ns8_boots &lt;- bootstraps(sample_8, times = 1000, apparent = TRUE)\ns8_boots &lt;- s8_boots |&gt;\n  mutate(boot_mean_x = map(splits, calculate_mean))\n\ns8_boots |&gt;\n  mutate(boot_mean_x = map_dbl(boot_mean_x, \\(.df) .df$estimate)) |&gt;\n  ggplot(aes(x = boot_mean_x)) +\n  geom_histogram() +\n  geom_vline(\n    data = sample_means |&gt; filter(sample == \"8\"),\n    aes(xintercept = x),\n    color = \"firebrick\"\n  )\n\n\n\n\n\n\n\n图 80.4: The bootstrapped distribution of x for a single sample. While we are simulating the sampling process from the underlying population, the distribution is centered around the sample mean, not the population mean.\n\n\n\n\n\n尽管估计值的分布围绕样本均值，但自助法通过模拟从总体中抽样的过程，为置信区间赋予了总体层面的解释。 置信区间是一个频率学派概念，与从同一总体进行多次抽样有关。 对于 95% 置信区间，由样本估计出的置信区间中有 95% 会包含真实的总体估计值。 当这一点成立时（例如，从总体抽取样本的 100 项研究中，有 95 项计算出的置信区间包含总体估计值），我们称这些置信区间具有名义覆盖率。\n例如，让我们计算包含总体 x 均值的置信区间所占的比例。 我们还会增加重采样次数，以更好地近似覆盖率。 （样本数量增加得越多，结果就越接近 95%。）\n\nn_samples &lt;- 1000\n\nsamples &lt;- map(seq_len(n_samples), ~ population[sample(n, size = 200), ]) |&gt;\n  bind_rows(.id = \"sample\") |&gt;\n  mutate(sample = as.numeric(sample))\n\ncis &lt;- samples |&gt;\n  group_by(sample) |&gt;\n  group_modify(~ t.test(.x$x) |&gt; tidy())\n\nbetween(\n  rep(mean(population$x), n_samples),\n  cis$conf.low,\n  cis$conf.high\n) |&gt;\n  mean()\n\n[1] 0.959\n\n\n在许多情形下，自助法能让我们获得具有名义覆盖率的置信区间，就像上面定义明确的参数方法一样。 我们不运行这段代码，因为它需要进行 r_bootstraps * n_samples 次计算，但结果会很相似。\n\nbootstrap_ci &lt;- function(.sample_df, ...) {\n  sample_boots &lt;- bootstraps(.sample_df, times = 1000)\n  sample_boots &lt;- sample_boots |&gt;\n    mutate(boot_mean_x = future_map(splits, calculate_mean))\n\n  sample_boots |&gt;\n    int_pctl(boot_mean_x)\n}\n\nboot_cis &lt;- samples |&gt;\n  group_by(sample) |&gt;\n  group_modify(bootstrap_ci)\n\ncoverage &lt;- between(\n  rep(mean(population$x), n_samples),\n  boot_cis$.lower,\n  boot_cis$.upper\n) |&gt;\n  mean()",
+    "crumbs": [
+      "Causal Inference in R · 附录",
+      "<span class='chapter-number'>79</span>  <span class='chapter-title'>自助法（Bootstrap）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/r-causal/appendices/A-bootstrap.html#为什么要有放回重采样",
+    "href": "notes/r-causal/appendices/A-bootstrap.html#为什么要有放回重采样",
+    "title": "自助法（Bootstrap）",
+    "section": "为什么要有放回重采样？",
+    "text": "为什么要有放回重采样？\n第一次接触自助法的人常常会惊讶地发现，我们进行的是有放回重采样，同一个观测可能在一个自助法样本中出现多次。 上面引用的文献中给出了数学细节；这里列出一些实际原因，帮助你直观理解为什么有放回重采样有效。 首先，如果进行无放回抽样，每次都会得到相同的估计值，因为你得到的只是原始数据集。 对样本进行扰动会使估计值发生变化。 你也可以进行子抽样：从原始数据集取一个更小的、无放回抽样数据集。 然而，与有放回重采样相比，这种方法效果较差，尽管它对其他问题可能有用。 原因与原始总体及其抽样方式有关。 每个样本彼此独立，这意味着某个个体可能出现在多个样本中。 如果限制样本只能包含此前样本中未出现的个体，那么你的抽样方案将不再独立；每个样本都会依赖于之前的样本。 在重采样时让每个观测彼此独立，也使它能够代表原始总体中与它相似的其他观测，这与我们在逆概率加权中提高样本权重的方式很相似（见 第 使用倾向评分）。",
+    "crumbs": [
+      "Causal Inference in R · 附录",
+      "<span class='chapter-number'>79</span>  <span class='chapter-title'>自助法（Bootstrap）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/r-causal/appendices/A-bootstrap.html#应进行多少次自助法重采样",
+    "href": "notes/r-causal/appendices/A-bootstrap.html#应进行多少次自助法重采样",
+    "title": "自助法（Bootstrap）",
+    "section": "应进行多少次自助法重采样？",
+    "text": "应进行多少次自助法重采样？\n本书在大多数问题中使用 1000 次自助法重采样，以平衡稳定性和计算速度。 在实际分析中应该使用多少次？\n你经常会看到几十次或几百次重采样的旧建议，但这些建议来自处理能力更有限的时代。 在现代计算机（甚至个人笔记本电脑）上，进行更多次重采样是可行的。 Hesterberg (2015) 建议：粗略估计使用 1000 次重采样，在需要准确性时使用 1 万到 1.5 万次重采样。 这里所说的“准确性”，是指自助法模拟过程本身导致的方差最小。 一个实用的检验方法是多次尝试使用 R 次重采样，并逐步增加 R，直到你对结果的稳定程度满意为止。\n\n\n\n\n\n\n提示\n\n\n\n每次自助法计算都彼此独立，因此当重采样次数较多时，可以考虑使用并行处理。 采用我们展示的 rsample 方法时，可以使用 furrr 作为 map() 的并行化即插即用替代方案。 furrr 是面向 future 框架、类似 purrr 的 API。\n\nlibrary(future)\nlibrary(furrr)\nn_cores &lt;- availableCores() - 1\nplan(multisession, workers = n_cores)\n\ns8_boots &lt;- s8_boots |&gt;\n  mutate(boot_mean_x = future_map(splits, calculate_mean))",
+    "crumbs": [
+      "Causal Inference in R · 附录",
+      "<span class='chapter-number'>79</span>  <span class='chapter-title'>自助法（Bootstrap）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/r-causal/appendices/A-bootstrap.html#应使用哪种置信区间",
+    "href": "notes/r-causal/appendices/A-bootstrap.html#应使用哪种置信区间",
+    "title": "自助法（Bootstrap）",
+    "section": "应使用哪种置信区间？",
+    "text": "应使用哪种置信区间？\n到目前为止，我们一直使用基于百分位数的置信区间。 它们就是自助法估计值分布的第 2.5% 和第 97.5% 分位数。 这种方法快速、简单且直观。 然而，还存在其他几种自助法置信区间，在某些情形下它们可以获得更好的名义覆盖率。 截至写作时，rsample 还包含另外两种方法：int_t() 和 int_bca()。 int_t() 根据自助法 T 统计量计算置信区间。 int_bca() 计算经过偏差校正和加速的置信区间。\n对于这类置信区间，你需要原始数据集的估计值。 可以通过 bootstraps(data, times = 1000, apparent = TRUE) 告诉 rsample 包含原始数据集（我们已经为 s8_boots 完成了这一步）。 这样将得到 1001 个数据集：原始数据集加上 1000 个自助法数据集。 对于 int_bca()，还需要提供用于计算估计值的函数（传给 .fn 参数）；在本例中，该函数是 calculate_mean。\n\nints &lt;- bind_rows(\n  int_pctl(s8_boots, boot_mean_x),\n  int_t(s8_boots, boot_mean_x),\n  int_bca(s8_boots, boot_mean_x, .fn = calculate_mean)\n)\n\nints\n\n# A tibble: 3 x 6\n  term       .lower .estimate .upper .alpha .method   \n  &lt;chr&gt;       &lt;dbl&gt;     &lt;dbl&gt;  &lt;dbl&gt;  &lt;dbl&gt; &lt;chr&gt;     \n1 mean of x -0.0875     0.102  0.286   0.05 percentile\n2 mean of x -0.0829     0.102  0.295   0.05 student-t \n3 mean of x -0.0876     0.102  0.286   0.05 BCa       \n\n\n在这个例子中，各置信区间非常接近。 这是因为对于像 x 这样服从正态分布的数据，它们都表现良好。\n置信区间名义覆盖率的一个细节是，落在置信区间之外的估计值比例，在区间两侧应该大致相同。 例如，x 的传统 t 检验置信区间就体现了这一点。\n\nc(\n  mean(mean(population$x) &lt; cis$conf.low),\n  mean(mean(population$x) &gt; cis$conf.high)\n)\n\n[1] 0.020 0.021\n\n\n当数据偏斜时，这种对称性并不适用于许多类型的置信区间。 例如，右偏分布可能产生 95% 的区间名义覆盖率，但下界以下的值（分布的左侧）占 1%，而上界以上的值（分布的右侧）占 4%。\nBCa 区间和自助法 t 统计量区间在偏斜数据上表现更好。 值得注意的是，由于中心极限定理，随着样本量增加，均值会趋近于正态分布，而与数据本身的分布无关（但对于偏斜分布，所需样本量可能达到数千，而不是通常引用的 30）。 回归模型中的系数通常也具有相同性质，因为它们是条件均值。 如果中心极限定理已经发挥作用，那么百分位数区间和其他类型的置信区间很可能也具有良好的覆盖率。\n\n\n\n\n\n\n提示\n\n\n\n当你有理由相信自助法分布应该呈现某种特定形态时（例如均值应当服从正态分布），这一结果可以帮助诊断你的分析。例如，在因果推断中，如果看到某个系数呈偏斜分布或呈现其他意外分布，这可能意味着违反了正值性假设（见 第 潜在结局与反事实）。请留意不同自助法重采样之间出乎意料的不稳定性。\n\n\n百分位数区间和 BCa 区间具有变换不变性，这意味着你可以变换已进行自助法处理的估计值，得到的结果与直接对该变换进行自助法处理相同。 一个例子是对数优势比与优势比。 对于自助法 t 统计量区间，根据你实际进行自助法处理的对象不同，可能会得到不同结果。 因此，如果你希望在多个尺度上查看数据，可以考虑使用其中一种方法。\n最后还要考虑计算速度。 百分位数区间速度极快，也不需要额外信息。 自助法 t 区间和 BCa 区间需要原始数据集的信息。 BCa 是三者中计算量最大的。 对于许多问题，现代计算机上的速度差异可以忽略不计；但如果你认为百分位数区间效果良好，而 BCa 的计算时间特别长，使用百分位数置信区间可能更合适。",
+    "crumbs": [
+      "Causal Inference in R · 附录",
+      "<span class='chapter-number'>79</span>  <span class='chapter-title'>自助法（Bootstrap）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/r-causal/appendices/A-bootstrap.html#自助法何时不能直接使用",
+    "href": "notes/r-causal/appendices/A-bootstrap.html#自助法何时不能直接使用",
+    "title": "自助法（Bootstrap）",
+    "section": "自助法何时不能直接使用？",
+    "text": "自助法何时不能直接使用？\n我们在这里介绍的算法对许多计算来说简单而强大，但有些类型的估计值已知不适合使用自助法，或者需要修改算法才能计算具有名义覆盖率的置信区间。 一个典型例子是极值，如最小值或最大值。 例如，对 x 的最小值进行自助法重采样会得到一个奇怪的分布。\n\ncalculate_min &lt;- function(.split, what = \"x\", ...) {\n  .df &lt;- as.data.frame(.split)\n\n  tibble(\n    term = paste(\"min of\", what),\n    estimate = min(.df[[what]])\n  )\n}\n\ns8_boots &lt;- s8_boots |&gt;\n  mutate(boot_min_x = map(splits, calculate_min))\n\ns8_boots |&gt;\n  mutate(boot_min_x = map_dbl(boot_min_x, \\(.df) .df$estimate)) |&gt;\n  ggplot(aes(x = boot_min_x)) +\n  geom_histogram()\n\n\n\n\n\n\n\n图 80.5: The bootstrapped distribution of the sample minimum of x. The bootstrap struggles to calculate a distribution for extrema.\n\n\n\n\n\n其他常见的、无法直接使用自助法的情形包括正则化回归（如套索回归）以及具有强相关结构的数据（如时间序列）。 通常，针对特定问题存在一种可以奏效的自助法变体。 survey 包作者、R 核心团队成员 Thomas Lumley 对自助法无法直接使用的常见情形（以及在这些情形下有效的修改版自助法示例）进行了出色总结 (Lumley 2017)。 另请参阅 Hesterberg (2015)。\n\n\n\n\nEfron, Bradley. 1979. 《Bootstrap Methods: Another Look at the Jackknife》. The Annals of Statistics 7 (1). https://doi.org/10.1214/aos/1176344552.\n\n\nEfron, Bradley, 和 Robert J. Tibshirani. 1993. An Introduction to the Bootstrap. Monographs on Statistics and Applied Probability 57. Boca Raton, Florida, USA: Chapman & Hall/CRC.\n\n\nHesterberg, Tim C. 2015. 《What Teachers Should Know About the Bootstrap: Resampling in the Undergraduate Statistics Curriculum》. The American Statistician 69 (4): 371–86. https://doi.org/10.1080/00031305.2015.1089789.\n\n\nLumley, Thomas. 2017. 《When the bootstrap doesn’t work》. Biased and Inefficient. https://notstatschat.rbind.io/2017/02/01/when-the-bootstrap-doesnt-work/.",
+    "crumbs": [
+      "Causal Inference in R · 附录",
+      "<span class='chapter-number'>79</span>  <span class='chapter-title'>自助法（Bootstrap）</span>"
+    ]
   }
 ]
