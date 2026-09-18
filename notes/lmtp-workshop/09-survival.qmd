@@ -1,0 +1,253 @@
+---
+title: "生存分析"
+subtitle: "*Survival Analysis* · Beyond the ATE 工作坊中译"
+bibliography: lmtp-refs.bib
+nocite: |
+  @diaz2023nonparametric, @diaz2024causal, @young2020causal
+lang: zh
+---
+
+> **来源**：Nick Williams、Kara Rudolph、Iván Díaz，[*Beyond the ATE* · Survival Analysis](https://www.beyondtheate.com/09_R_survival.html)
+> （[GitHub 仓库](https://github.com/nt-williams/lmtp-workshop)），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 原站的 webR 交互代码块在本站以静态代码块呈现，不重新执行；
+> 原文用交互式表格展示的模拟数据，本站改为列说明。
+
+{{< include macros.qmd >}}
+
+```r
+# 载入 hoffman 玩具数据
+download.file("https://raw.githubusercontent.com/nt-williams/lmtp-workshop/main/data/hoffman_toy.csv", "hoffman_toy.csv")
+intubation <- read.csv("hoffman_toy.csv")
+# 载入 williams 玩具数据
+download.file("https://raw.githubusercontent.com/nt-williams/lmtp-workshop/main/data/williams_synthetic.csv", "williams_synthetic.csv")
+covid <- read.csv("williams_synthetic.csv")
+```
+
+## 数据方面的注意事项
+
+-   与结局为二值时类似，生存结局也应编码为 0 和 1，其中 1 表示事件发生，0 表示未发生。
+
+-   与删失变量的编码方式类似，我们把结局视为**退化的**（degenerate）。
+    也就是说，一旦某观测经历了结局事件，其后所有结局变量也都应编码为 1
+    （「末次观测结转」，last-observation-carried-forward）。
+
+## 时点处理的生存问题
+
+到目前为止，我们一直忽略了一点：`covid` 数据集本该当作时点处理的生存问题来处理。
+下面在生存框架下重新估计这一随机处理的效应。
+
+-   我们需要把数据从长格式转换为宽格式；
+
+-   并用末次观测结转来填补结局。
+
+修改后的数据集应该长这样：
+
+![生存结局 + 时点处理的数据结构。改编自 Hoffman 等，2022。](images/data_survival.png){fig-align="center" width="85%"}
+
+```r
+library(dplyr)
+library(tidyr)
+
+covid <- pivot_wider(
+  covid,
+  values_from = "event",
+  names_from = "days",
+  names_prefix = "day_",
+  names_sort = TRUE
+)
+
+covid <-
+  event_locf(covid, paste0("day_", 1:15)) |>
+  mutate(across(starts_with("day_"), ~ replace_na(.x, 0))) |>
+  as.data.frame()
+
+head(covid)
+```
+
+::: {.callout-note appearance="simple"}
+用函数 `event_locf()` 来确保结局变量被正确记录。
+:::
+
+-   我们不必只估计处理对**最后一个时点**结局的效应，而是可以估计处理对**所有随访区间**
+    结局的效应。
+
+下面估计该处理对每一天插管情况的效应。为此可以使用函数 `lmtp_survival()`。
+
+```r
+W <- c("age", "sex", "bmi", "smoke", "o2",
+       "num_comorbid", "num_symptoms", "bilat", "dyspnea", "hyper")
+
+fit <- lmtp_survival(
+  data = covid,
+  trt = "A",
+  outcomes = grep("^day", names(covid), value = TRUE),
+  baseline = W,
+  shift = static_binary_on,
+  folds = 1,
+  estimator = "lmtp_sdr",
+  control = lmtp_control(.learners_outcome_folds = 2,
+                         .learners_trt_folds = 2)
+)
+```
+
+现在可以用生存曲线图把结果可视化。
+
+::: {.callout-note appearance="simple"}
+_lmtp_ 对象的主要结果可以用 `broom` 包的 `tidy()` 函数提取出来。
+:::
+
+```r
+library(ggplot2)
+
+results <- tidy(fit)
+
+ggplot(results, aes(x = time, y = estimate)) +
+  geom_step() +
+  labs(x = "Days", y = "Survival probability") +
+  scale_y_continuous(limits = c(0.65, 1),
+                     n.breaks = 10,
+                     expand = c(0, 0)) +
+  scale_x_continuous(limits = c(1, 15),
+                     n.breaks = 15,
+                     expand = c(0.01, 0))
+```
+
+## 时变处理
+
+@hoffman2023introducing 演示了如何把修正处理策略用于生存结局，
+以评估「避免有创机械通气（IMV）」对第一波 COVID-19 期间纽约市 COVID-19 住院患者
+死亡率的效应。该分析所用数据的一个合成版本已以 `intubation` 的名字载入 R。
+
+![生存结局 + 时变处理的数据结构。改编自 Hoffman 等，2022。](images/data_complex.png){fig-align="center"}
+
+-   数据包含 $n = 2000$ 名 COVID-19 住院观测，随访 $\tau = 14$ 天。
+
+-   含 10 个基线混杂因子和 4 个时变混杂因子。
+
+-   所关心的结局是第 $t$ 天是否死亡的指示变量。
+
+-   观测可能因出院或转院而失访。
+
+原站在此处渲染出该数据集的交互式表格。数据为宽格式：基线协变量为 `age`、`sex`、
+`bmi`、`cad`、`home_o2_yn`、`dm`、`htn`、`cva`、`cirrhosis`、`asthma`、`copd`、
+`active_cancer`；`C_00`–`C_13` 为删失（出院/转院）指示，`I_00`–`I_13` 为处理
+（通气支持水平），`Y_01`–`Y_14` 为逐日死亡指示，`L_a_*`、`L_b_*`、`L_c_*`、`L_d_*`
+为 4 组时变混杂因子。
+
+\
+
+考虑如下干预
+
+$$
+\dd_t(a_t, h_t) = \begin{cases}
+1 \text{ if } a_t = 2\\
+a_t \text{ otherwise},
+\end{cases}
+$$
+
+其中 $A_t$ 是一个三水平分类变量：0 表示不吸氧；1 表示非 IMV 的吸氧支持；2 表示 IMV。
+
+用文字表述，这个函数对应的干预是：把第 $t$ 天自然观测到接受 IMV 的患者，
+改为接受非 IMV 的吸氧支持。下面把这一策略翻译成可配合 _lmtp_ 使用的 R 函数。
+
+```r
+d <- function(data, trt) {
+  ifelse(data[[trt]] == "2", factor("1", levels = 0:2), data[[trt]])
+}
+```
+
+现在可以估计「避免 IMV」对 14 天死亡率的效应了。
+
+```r
+day <- 14
+intubated <- paste0("I_", sprintf("%02d", 0:(day - 1)))
+confounders <- names(intubation)[1:10]
+death <- paste0("Y_", sprintf("%02d", 1:day))
+discharge <- paste0("C_", sprintf("%02d", 0:(day - 1)))
+timevary <- grep("^L_", names(intubation), value = TRUE)
+timevary <- lapply(0:(day - 1), \(x) timevary[grepl(sprintf("%02d", x), timevary)])
+
+lmtp_sdr(
+  intubation,
+  trt = intubated,
+  outcome = death,
+  baseline = confounders,
+  time_vary = timevary,
+  cens = discharge,
+  shift = d,
+  mtp = TRUE,
+  outcome_type = "survival",
+  folds = 1,
+  k = 2
+)
+```
+
+## 竞争风险
+
+在生存分析的语境下，**竞争风险**指的是那些会阻止主要关注事件发生的事件。
+在上一个例子中，我们把出院或转院当作了删失事件。然而这些事件其实是竞争风险，
+因为我们知道：若某患者在第 $t$ 天出院或转出 ICU，那么他当天就没有死亡。
+
+::: {.callout-caution appearance="simple"}
+把竞争风险当作删失事件来处理，实际上是在估计「消除竞争事件」这一干预的效应。
+这一干预所需的识别假设，比不考虑消除竞争事件的干预更强。
+:::
+
+在存在竞争风险时，_lmtp_ 可以估计**累积发病率效应**（cumulative incidence effects）。
+累积发病率效应可以解释为：处理经由包含竞争事件在内的各条路径所产生的*总效应*。
+下面重新评估上述干预对 14 天死亡率的效应，但这次把出院或转院当作竞争风险。
+我们首先需要修改数据：
+
+- 把出院或转院对应的列翻转，使 1 表示发生了出院或转院；
+- 用末次观测结转填补出院和死亡的缺失值，因为二者一旦发生就都是确定性变量
+  （即：若患者死亡，其出院或转院的概率为 0，反之亦然）。
+
+```r
+# 用最近一次观测到的取值填补缺失值的函数
+locf <- function(data, columns) {
+  for (col in columns) {
+    # 取列的位置索引
+    index <- which(names(data) == col)
+
+    # 跳过第一列
+    if (index == 1) {
+      next
+    }
+
+    # 找出有缺失的行
+    na_rows <- is.na(data[[index]])
+    # 用左边一列的取值替换 NA
+    data[[index]][na_rows] <- data[[index - 1]][na_rows]
+  }
+
+  return(data)
+}
+
+intubation <-
+  mutate(intubation, across(starts_with("C_"), function(x) {
+    case_when(x == 1 ~ 0, x == 0 ~ 1, TRUE ~ x)
+  })) |>
+  locf(discharge) |>
+  locf(death) |>
+  mutate(across(all_of(death), \(x) ifelse(is.na(x), 0, x)))
+```
+
+现在可以重新估计该干预的效应了。这次不再把 `discharge` 向量传给 `cens` 参数，
+而是传给 `compete` 参数。
+
+```r
+lmtp_sdr(
+  intubation,
+  trt = intubated,
+  outcome = death,
+  baseline = confounders,
+  time_vary = timevary,
+  compete = discharge,
+  shift = d,
+  mtp = TRUE,
+  outcome_type = "survival",
+  folds = 1,
+  k = 2
+)
+```
