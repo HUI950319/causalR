@@ -1,0 +1,2103 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hans" xml:lang="zh-Hans"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>拟合加权结局模型 – 因果推断读书笔记</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+  margin-bottom: 0em;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
+
+
+<script src="../../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../../">
+<link href="../../../notes/r-causal/chapters/10-estimands.html" rel="prev">
+<script src="../../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-dark-4571e413af9019dfdcc70175faf53a1f.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../../../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../../site_libs/bootstrap/bootstrap-6dc1a78ab6bae0d3eba54bf33535cf80.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../../../site_libs/bootstrap/bootstrap-dark-6382e9162de9198f964ae53196d3447c.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../../../site_libs/bootstrap/bootstrap-6dc1a78ab6bae0d3eba54bf33535cf80.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "没有结果",
+    "search-matching-documents-text": "匹配的文档",
+    "search-copy-link-title": "复制搜索链接",
+    "search-hide-matches-text": "隐藏其它匹配结果",
+    "search-more-match-text": "更多匹配结果",
+    "search-more-matches-text": "更多匹配结果",
+    "search-clear-button-title": "清除",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "取消",
+    "search-submit-button-title": "提交",
+    "search-label": "搜索"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar docked quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../notes/r-causal/chapters/01-casual-to-causal.html">Causal Inference in R · 原书中译</a></li><li class="breadcrumb-item"><a href="../../../notes/r-causal/chapters/11-outcome-model.html"><span class="chapter-title">拟合加权结局模型</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="搜索" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header sidebar-header-stacked">
+      <a href="../../../index.html" class="sidebar-logo-link">
+      </a>
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../../../">因果推断读书笔记</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/HUI950319/causalR" title="源代码" class="quarto-navigation-tool px-1" aria-label="源代码"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="切换深色模式"><i class="bi"></i></a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="搜索"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">关于这份笔记</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w01-logic-chain.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">前三章逻辑链</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/notation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">记号与约定</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/identifiability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">三条识别条件</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/formulas.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">公式卡</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">阶段一 · 估计量全景</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w01-potential-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 1 章 · Zeus 的心脏移植</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w01-randomized-experiments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 2 章 · 一枚硬币，还是两枚</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w01-observational-studies.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 3 章 · 一枚硬币也没抛</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w01-effect-modification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 4 章 · 没有「治疗的因果效应」这种东西</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w01-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 5 章 · 两个处理，一起动手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w02-causal-diagrams.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 6 章 · 先画假设，再下结论</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w02-confounding.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 7 章 · 后门关上，可交换性才回来</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w02-selection-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 8 章 · 进了分析的人，未必还能互换</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w02-measurement-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 9 章 · 带星号的变量，与担不起因果的箭头</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w02-random-variability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 10 章 · 该不该撤稿</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">原书第二部分 · 有模型的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w03-why-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 11 章 · 数据不会自己说话</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w03-ip-weighting-msm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w04-standardization-gformula.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 13 章 · 把模型挪到结局那一侧</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w04-g-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 14 章 · 猜一个数，直到它与处理无关</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w05-outcome-regression-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 15 章 · 最常用的方法，为什么排在最后</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w05-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 16 章 · 不要求可交换性的那条路</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w06-causal-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 17 章 · 风险比里藏着一个碰撞变量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w06-variable-selection.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 18 章 · 调整得越多，不等于偏倚越小</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">原书第三部分 · 时变处理的因果推断</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w07-time-varying-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 19 章 · 先说清策略，才有效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w07-treatment-confounder-feedback.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 20 章 · 调了混杂，反而更错</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w08-g-methods-time-varying.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 21 章 · 三条路线，同一个 0</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w11-target-trial-emulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 22 章 · 先写协议，再看数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/w11-causal-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 23 章 · 把中介问题改写成能做的试验</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">郑老师因果推理课程讲义</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-overview.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">课程讲义总览</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w01.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W01 · 因果推断理论与方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w02.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W02 · DAG 与回归、反事实与 G 计算</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w03.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W03 · 倾向得分方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w04.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W04 · 机器学习与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w05.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W05 · 双重稳健估计与双重机器学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w06.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W06 · TMLE 及其衍生方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w07.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W07 · 缺失数据与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w08.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W08 · 中介分析与因果中介</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/course-zheng-w09.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W09 · 处理效应异质性分析</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false">
+ <span class="menu-text">causatr 官方文档中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-introduction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 介绍</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-gcomp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的 G-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-ipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的逆概率加权</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-aipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的增强 IPW（双稳健估计）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的倾向评分匹配</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-snm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的结构嵌套均值模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-interventions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 中的干预类型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-natural-history-mtps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">自然历史修改处理政策（宽限期）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-triangulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">方法论三角：g-computation、IPW、AIPW、匹配和 SNM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-longitudinal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">纵向处理：ICE g-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-transportability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">可转运性和可推广性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-missing-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">处理缺失数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-diagnostics.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的诊断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-validation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">针对参考实现的验证</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果效应的方差估计</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/causatr-ipw-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IPW 密度比权重和方差理论</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
+ <span class="menu-text">Causal Inference in R · 原书中译</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/01-casual-to-causal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">从随意推断到因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/02-whole-game.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">完整实践：蚊帐与疟疾</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/03-po-counterfactuals.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">潜在结局与反事实</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/04-dags.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">用 DAG 表达因果问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/05-not-just-a-stats-problem.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果推断不只是统计问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/06-stats-models-ci.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">从问题到答案：分层与结局模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/07-prep-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">准备数据以回答因果问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/08-propensity-scores.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">倾向评分</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/09-evaluating-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">评估倾向评分模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/10-estimands.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果估计目标</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../../notes/r-causal/chapters/11-outcome-model.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">拟合加权结局模型</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">目录</h2>
+   
+  <ul>
+  <li><a href="#sec-outcome-model" id="toc-sec-outcome-model" class="nav-link active" data-scroll-target="#sec-outcome-model">拟合加权结局模型</a>
+  <ul class="collapse">
+  <li><a href="#使用匹配数据集" id="toc-使用匹配数据集" class="nav-link" data-scroll-target="#使用匹配数据集">使用匹配数据集</a></li>
+  <li><a href="#在结局模型中使用权重" id="toc-在结局模型中使用权重" class="nav-link" data-scroll-target="#在结局模型中使用权重">在结局模型中使用权重</a></li>
+  <li><a href="#sec-ipw-se" id="toc-sec-ipw-se" class="nav-link" data-scroll-target="#sec-ipw-se">估计 IPW 的不确定性</a>
+  <ul class="collapse">
+  <li><a href="#sec-bootstrap" id="toc-sec-bootstrap" class="nav-link" data-scroll-target="#sec-bootstrap">Bootstrap</a></li>
+  <li><a href="#结局模型三明治估计量" id="toc-结局模型三明治估计量" class="nav-link" data-scroll-target="#结局模型三明治估计量">结局模型三明治估计量</a></li>
+  <li><a href="#考虑倾向评分模型的三明治估计量" id="toc-考虑倾向评分模型的三明治估计量" class="nav-link" data-scroll-target="#考虑倾向评分模型的三明治估计量">考虑倾向评分模型的三明治估计量</a></li>
+  </ul></li>
+  <li><a href="#sec-matching-se" id="toc-sec-matching-se" class="nav-link" data-scroll-target="#sec-matching-se">校正匹配结局模型的标准误</a></li>
+  <li><a href="#sec-binary" id="toc-sec-binary" class="nav-link" data-scroll-target="#sec-binary">二元结局：风险比、风险差和优势比</a>
+  <ul class="collapse">
+  <li><a href="#绝对指标和相对指标" id="toc-绝对指标和相对指标" class="nav-link" data-scroll-target="#绝对指标和相对指标">绝对指标和相对指标</a></li>
+  <li><a href="#sec-non-collapse" id="toc-sec-non-collapse" class="nav-link" data-scroll-target="#sec-non-collapse">不可合并性</a></li>
+  </ul></li>
+  </ul></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/r-causal/chapters/11-outcome-model.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../../notes/r-causal/chapters/01-casual-to-causal.html">Causal Inference in R · 原书中译</a></li><li class="breadcrumb-item"><a href="../../../notes/r-causal/chapters/11-outcome-model.html"><span class="chapter-title">拟合加权结局模型</span></a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-title">拟合加权结局模型</span></h1>
+<p class="subtitle lead"><em>Fitting the weighted outcome model</em> · 原书逐章中译</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<blockquote class="blockquote">
+<p><strong>来源</strong>：Malcolm Barrett、Lucy D’Agostino McGowan、Travis Gerke，<a href="https://www.r-causal.org/"><em>Causal Inference in R</em> · Fitting the weighted outcome model</a>。 本页为中文翻译；原书代码块、公式、图表交叉引用和引用键均按原文保留。统计图在网页渲染时由 R 代码生成，静态插图直接引用原文件。 原书仓库采用 CC BY-NC-SA 4.0；代码采用 MIT 许可。请遵守原许可证并注明作者。</p>
+</blockquote>
+<section id="sec-outcome-model" class="level1">
+<h1>拟合加权结局模型</h1>
+<div class="cell">
+<div class="cell-output-display">
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">注记</span>Work-in-progress 🚧
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>You are reading the work-in-progress first edition of <em>Causal Inference in R</em>. This chapter is mostly complete, but we might make small tweaks or copyedits.</p>
+</div>
+</div>
+</div>
+</div>
+<p>倾向评分工作流将我们的工作分为两部分：暴露模型，即设计阶段；以及结局模型。结局模型基于设计阶段的准备工作，估计因果效应。对于许多结局模型来说，这一阶段比设计阶段简单得多：像平时一样拟合回归模型，但不纳入混杂因子。我们不把混杂因子放进模型，而是使用匹配数据集，或使用倾向评分权重对结局模型加权。不过，这里有个问题：大多数回归工具包默认提供的标准误没有考虑设计阶段。因此，它们往往会给出不正确的不确定性估计。本章将介绍如何在匹配数据集和加权数据集中使用结局模型，并探索几种计算标准误的方法。</p>
+<section id="使用匹配数据集" class="level2">
+<h2 class="anchored" data-anchor-id="使用匹配数据集">使用匹配数据集</h2>
+<p>在匹配数据集上拟合结局模型时，我们只保留原始数据中成功匹配的观测，然后像通常一样在这些数据上拟合模型。就这么简单！例如，像 <a href="08-propensity-scores.html#sec-using-ps" class="quarto-xref"><span>使用倾向评分</span></a> 中那样重新进行匹配，我们将匹配到的观测提取到名为 <code>matched_data</code> 的数据集中。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(broom)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(touringplans)</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(MatchIt)</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_9 <span class="ot">&lt;-</span> seven_dwarfs_train_2018 <span class="sc">|&gt;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(wait_hour <span class="sc">==</span> <span class="dv">9</span>)</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>matchit_obj <span class="ot">&lt;-</span> <span class="fu">matchit</span>(</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>  park_extra_magic_morning <span class="sc">~</span> park_ticket_season <span class="sc">+</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    park_close <span class="sc">+</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    park_temperature_high,</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> seven_dwarfs_9</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>matched_data <span class="ot">&lt;-</span> <span class="fu">get_matches</span>(matchit_obj)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>请记住，在匹配时，我们试图找到数据的一个子集，使因果推断的假设（尤其是可交换性）成立。如果成功做到这一点，就可以在不加入额外协变量的情况下比较两组的等待时间差异，就像在随机试验中一样。把协变量纳入结局模型还有其他充分理由，包括提高精确度、处理异质性处理效应，以及（正如我们将看到的）获得正确的标准误；不过现在，我们先关注眼前这个简单问题：有 Extra Magic Mornings 是否会改变上午 9 点到 10 点之间公布的等待时间？</p>
+<p>要回答这个问题，我们用匹配数据集拟合线性回归。这里，结局是公布的等待时间，暴露是 Extra Magic Mornings。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>matched_outcome <span class="ot">&lt;-</span> <span class="fu">lm</span>(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  wait_minutes_posted_avg <span class="sc">~</span> park_extra_magic_morning,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> matched_data</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>matched_outcome <span class="sc">|&gt;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tidy</span>(<span class="at">conf.int =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2 x 7
+  term   estimate std.error statistic  p.value conf.low
+  &lt;chr&gt;     &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;
+1 (Inte~    67.0       2.37     28.3  1.94e-54    62.3 
+2 park_~     7.87      3.35      2.35 2.04e- 2     1.24
+# i 1 more variable: conf.high &lt;dbl&gt;</code></pre>
+</div>
+</div>
+<p>回想一下，默认情况下，<code>{MatchIt}</code> 会寻找观测对，以帮助我们估计处理组的平均处理效应。这意味着，在有 Extra Magic Mornings 的那些日子中，Extra Magic Mornings 对上午 9 点到 10 点之间平均公布等待时间的预期影响为 7.9 分钟（95% CI：1.2-14.5）。</p>
+<p>使用匹配数据进行回归很直接；不过，<code>lm()</code> 并不知道我们事先用 MatchIt 预处理过数据。这样做会使匹配对之间产生依赖。要得到正确的标准误，我们必须考虑这种聚类 <span class="citation" data-cites="abadie2022">(<a href="../../causatr-introduction.html#ref-abadie2022" role="doc-biblioref">Abadie 和 Spiess 2022</a>)</span>。这比加权时稍微复杂一些——事实上，它会建立在我们用于 IPW 的方法之上——因此，我们会等到 <a href="#sec-matching-se" class="quarto-xref"><span>校正匹配结局模型的标准误</span></a> 再解决这个问题。</p>
+</section>
+<section id="在结局模型中使用权重" class="level2">
+<h2 class="anchored" data-anchor-id="在结局模型中使用权重">在结局模型中使用权重</h2>
+<p>在结局模型中使用倾向评分权重只需多一步：在拟合模型时，告诉回归函数使用这些权重。</p>
+<p>在前面的例子中，我们使用了 ATE 权重；不过，这里将使用 ATT 权重，使效应估计值可以与上面的基于匹配的分析相比较。我们的流程与前面计算倾向评分权重的方法完全相同，只是改用 <code>propensity::wt_att()</code>。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(propensity)</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>propensity_model <span class="ot">&lt;-</span> <span class="fu">glm</span>(</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  park_extra_magic_morning <span class="sc">~</span> park_ticket_season <span class="sc">+</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    park_close <span class="sc">+</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    park_temperature_high,</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> seven_dwarfs_9,</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">family =</span> <span class="fu">binomial</span>()</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_9_with_wt <span class="ot">&lt;-</span> propensity_model <span class="sc">|&gt;</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">augment</span>(<span class="at">type.predict =</span> <span class="st">"response"</span>, <span class="at">data =</span> seven_dwarfs_9) <span class="sc">|&gt;</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">w_att =</span> <span class="fu">wt_att</span>(.fitted, park_extra_magic_morning))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>我们可以使用 <code>weights</code> 参数拟合加权结局模型。注意，在加权时，<code>data</code> 参数仍然使用完整数据集（<code>seven_dwarfs_9_with_wt</code>），这与匹配不同；匹配只使用匹配后的子集。相反，我们平滑地组合每个观测的信息，构造出一个（希望）不存在混杂的伪总体。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>weighted_outcome <span class="ot">&lt;-</span> <span class="fu">lm</span>(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  wait_minutes_posted_avg <span class="sc">~</span> park_extra_magic_morning,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> seven_dwarfs_9_with_wt,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">weights =</span> w_att</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>weighted_outcome <span class="sc">|&gt;</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tidy</span>()</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2 x 5
+  term           estimate std.error statistic   p.value
+  &lt;chr&gt;             &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;
+1 (Intercept)       68.7       1.45     47.3  1.69e-154
+2 park_extra_ma~     6.23      2.05      3.03 2.62e-  3</code></pre>
+</div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">注记</span>匹配与 <code>weights</code>
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>MatchIt 返回一个包含 <code>weights</code> 变量的数据框。在上面的例子中，所有权重都是 1：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">unique</span>(matched_data<span class="sc">$</span>weights)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 1</code></pre>
+</div>
+</div>
+<p>不过，某些匹配方案（例如完全匹配）也使用权重。由于这些权重要么有用（如完全匹配中的权重），要么无害（如每个人权重相等），MatchIt 软件包的作者建议始终在结局模型中设置 <code>weights = weights</code>。在前面的情形中，我们也可以拟合：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>matched_outcome <span class="ot">&lt;-</span> <span class="fu">lm</span>(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  wait_minutes_posted_avg <span class="sc">~</span> park_extra_magic_morning,</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> matched_data,</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">weights =</span> weights</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>同样，这些权重全都是 1，因此结果完全相同。不过，如果你考虑采用其他匹配方法，确保正确指定结局模型是一种稳妥的做法。匹配本身可以看作一种极端的加权形式：每个有匹配对象的人获得非零权重，没有匹配对象的人权重为 0，因此这样做在逻辑上也是一致的。</p>
+</div>
+</div>
+<p>使用加权时，我们估计，在有 Extra Magic Mornings 的那些日子中，Extra Magic Mornings 对上午 9 点到 10 点之间平均公布等待时间的预期影响为 6.2 分钟。</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">提示</span>使用 <code>group_by()</code> 和 <code>summarize()</code> 进行因果推断（再探）
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>在这个简单例子中，加权结局模型等价于加权均值之差。加权总体是一个伪总体，其中倾向评分中的变量不再造成混杂。从理念和实践上说，我们可以直接在这个总体的数据上进行计算。</p>
+<p><code>weighted.mean()</code> 将帮助我们计算伪总体中的均值。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>wt_means <span class="ot">&lt;-</span> seven_dwarfs_9_with_wt <span class="sc">|&gt;</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(park_extra_magic_morning) <span class="sc">|&gt;</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>(</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">average_wait =</span> <span class="fu">weighted.mean</span>(wait_minutes_posted_avg, <span class="at">w =</span> <span class="fu">as.numeric</span>(w_att))</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>wt_means</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2 x 2
+  park_extra_magic_morning average_wait
+                     &lt;dbl&gt;        &lt;dbl&gt;
+1                        0         68.7
+2                        1         74.9</code></pre>
+</div>
+</div>
+<p>差值为 6.23，与加权结局模型给出的结果相同。现在，由于我们已经在权重中处理了混杂，使用 <code>group_by()</code> 和 <code>summarize()</code> 进行因果推断完全没有问题。</p>
+</div>
+</div>
+<p>虽然这种方法会给出我们想要的点估计，但 <code>lm()</code> 函数默认输出的不确定性（标准误和置信区间）是不正确的。问题的原因与匹配略有不同：<code>lm()</code> 认为我们传给 <code>weights</code> 参数的权重是固定权重，就像频数权重一样。然而，我们的权重并不是固定的，而是经过估计得到的。权重本身的估计会引入不确定性，我们需要将这种不确定性传递到点估计周围的不确定性中。</p>
+</section>
+<section id="sec-ipw-se" class="level2">
+<h2 class="anchored" data-anchor-id="sec-ipw-se">估计 IPW 的不确定性</h2>
+<p>逆概率加权是一个两步估计量：首先，我们对暴露拟合回归模型，并根据倾向评分生成权重；然后使用这些权重对结局拟合回归模型。要正确描述第二个模型中的不确定性，我们需要纳入第一个模型带来的不确定性。本章很大一部分内容都聚焦于<strong>统计推断</strong>。虽然我们迄今为止使用的工具是让因果效应估计成为可能的<strong>因果推断</strong>，但<strong>统计推断</strong>是一个更一般的标准误、置信区间和假设检验工具箱，建立在估计量的抽样分布之上。这是统计学课程通常会教授的推断类型。正如描述、预测和因果推断之间的区别一样，这些是彼此独立但相互补充的概念：我们用统计推断检验我们的因果估计是否具有有意义的统计解释；正如我们所见，从因果角度解释估计或假设检验等统计结果，需要依赖因果假设。</p>
+<p>IPW 的不确定性有三种估计方法：</p>
+<ol type="1">
+<li>Bootstrap</li>
+<li>只考虑结局模型的三明治估计量，也称为稳健标准误</li>
+<li>同时考虑倾向评分模型的三明治估计量</li>
+</ol>
+<p>第一种方法的计算成本可能很高，但应该能够得到正确的估计值。Bootstrap 也是解决许多因果推断不确定性问题的一般方法，因此掌握它非常有用。第二种方法计算上更容易，但往往会高估或低估变异性。第三种方法既正确又计算快速；不过，它在数学上更复杂，通常依靠 M-估计的微积分来计算 <span class="citation" data-cites="stefanski2002">(<a href="../../causatr-introduction.html#ref-stefanski2002" role="doc-biblioref">Stefanski 和 Boos 2002</a>)</span>。我们将使用 <code>{propensity}</code> 的 <code>ipw()</code> 函数计算正确的三明治估计量。<code>{WeightIt}</code>、<code>{PSweight}</code> 以及其他一些工具中也实现了这种方法。</p>
+<section id="sec-bootstrap" class="level3">
+<h3 class="anchored" data-anchor-id="sec-bootstrap">Bootstrap</h3>
+<p>我们在 <a href="02-whole-game.html" class="quarto-xref"><span>完整实践：蚊帐与疟疾</span></a> 中使用 Bootstrap 估计蚊帐对疟疾风险的因果效应估计值周围的不确定性（另见 <span class="quarto-unresolved-ref">?sec-appendix-bootstrap</span> 对 Bootstrap 的详细探讨）。这里的算法相同。</p>
+<p>首先，我们创建一个函数，在数据的一个样本上运行一次分析。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>fit_ipw <span class="ot">&lt;-</span> <span class="cf">function</span>(.split, ...) {</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  <span class="co"># get bootstrapped data frame</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  .df <span class="ot">&lt;-</span> <span class="fu">as.data.frame</span>(.split)</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>  <span class="co"># fit propensity score model</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>  propensity_model <span class="ot">&lt;-</span> <span class="fu">glm</span>(</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>    park_extra_magic_morning <span class="sc">~</span> park_ticket_season <span class="sc">+</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>      park_close <span class="sc">+</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>      park_temperature_high,</span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> seven_dwarfs_9,</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">family =</span> <span class="fu">binomial</span>()</span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a>  <span class="co"># calculate inverse probability weights</span></span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a>  .df <span class="ot">&lt;-</span> propensity_model <span class="sc">|&gt;</span></span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a>    <span class="fu">augment</span>(<span class="at">type.predict =</span> <span class="st">"response"</span>, <span class="at">data =</span> .df) <span class="sc">|&gt;</span></span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(</span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>      <span class="at">wts =</span> <span class="fu">wt_att</span>(</span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a>        .fitted,</span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a>        park_extra_magic_morning,</span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a>        <span class="at">exposure_type =</span> <span class="st">"binary"</span></span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a>      )</span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a>  <span class="co"># fit correctly bootstrapped ipw model</span></span>
+<span id="cb12-26"><a href="#cb12-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">lm</span>(</span>
+<span id="cb12-27"><a href="#cb12-27" aria-hidden="true" tabindex="-1"></a>    wait_minutes_posted_avg <span class="sc">~</span> park_extra_magic_morning,</span>
+<span id="cb12-28"><a href="#cb12-28" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> .df,</span>
+<span id="cb12-29"><a href="#cb12-29" aria-hidden="true" tabindex="-1"></a>    <span class="at">weights =</span> wts</span>
+<span id="cb12-30"><a href="#cb12-30" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb12-31"><a href="#cb12-31" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tidy</span>()</span>
+<span id="cb12-32"><a href="#cb12-32" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>然后使用 <code>{rsample}</code> 对数据集进行 Bootstrap，并将该函数应用于每个 Bootstrap 样本。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(rsample)</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="co"># fit ipw model to bootstrapped samples</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>bootstrapped_seven_dwarfs <span class="ot">&lt;-</span> <span class="fu">bootstraps</span>(</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>  seven_dwarfs_9,</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">times =</span> <span class="dv">1000</span>,</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">apparent =</span> <span class="cn">TRUE</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>ipw_results <span class="ot">&lt;-</span> bootstrapped_seven_dwarfs <span class="sc">|&gt;</span></span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">boot_fits =</span> <span class="fu">map</span>(splits, fit_ipw))</span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>ipw_results</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># Bootstrap sampling with apparent sample 
+# A tibble: 1,001 x 3
+   splits            id            boot_fits       
+   &lt;list&gt;            &lt;chr&gt;         &lt;list&gt;          
+ 1 &lt;split [354/134]&gt; Bootstrap0001 &lt;tibble [2 x 5]&gt;
+ 2 &lt;split [354/132]&gt; Bootstrap0002 &lt;tibble [2 x 5]&gt;
+ 3 &lt;split [354/135]&gt; Bootstrap0003 &lt;tibble [2 x 5]&gt;
+ 4 &lt;split [354/130]&gt; Bootstrap0004 &lt;tibble [2 x 5]&gt;
+ 5 &lt;split [354/134]&gt; Bootstrap0005 &lt;tibble [2 x 5]&gt;
+ 6 &lt;split [354/122]&gt; Bootstrap0006 &lt;tibble [2 x 5]&gt;
+ 7 &lt;split [354/129]&gt; Bootstrap0007 &lt;tibble [2 x 5]&gt;
+ 8 &lt;split [354/129]&gt; Bootstrap0008 &lt;tibble [2 x 5]&gt;
+ 9 &lt;split [354/124]&gt; Bootstrap0009 &lt;tibble [2 x 5]&gt;
+10 &lt;split [354/141]&gt; Bootstrap0010 &lt;tibble [2 x 5]&gt;
+# i 991 more rows</code></pre>
+</div>
+</div>
+<p>对数据集的每个重复样本应用 <code>fit_ipw()</code> 后，我们得到一个效应估计值的分布。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>ipw_results <span class="sc">|&gt;</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">estimate =</span> <span class="fu">map_dbl</span>(</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>      boot_fits,</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>      \(.fit) {</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>        .fit <span class="sc">|&gt;</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>          <span class="fu">filter</span>(term <span class="sc">==</span> <span class="st">"park_extra_magic_morning"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>          <span class="fu">pull</span>(estimate)</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(estimate)) <span class="sc">+</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_histogram</span>(<span class="at">bins =</span> <span class="dv">30</span>, <span class="at">fill =</span> <span class="st">"#D55E00FF"</span>, <span class="at">color =</span> <span class="st">"white"</span>, <span class="at">alpha =</span> <span class="fl">0.8</span>) <span class="sc">+</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>()</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-ipw-bootstrap-distribution" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-ipw-bootstrap-distribution-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="11-outcome-model_files/figure-html/fig-ipw-bootstrap-distribution-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-ipw-bootstrap-distribution-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;65.1: Distribution of the bootstrapped IPW point estimates of the effect of Extra Magic Mornings on the average posted wait time between 9 AM and 10 AM. Each of the 1,000 bootstrap replicates refits the propensity model and the weighted outcome regression on a resample of the data, and we plot the resulting <code>park_extra_magic_morning</code> coefficient. The spread captures the combined uncertainty from both estimation steps and is the basis for the bootstrap confidence interval reported below.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>最后，使用 rsample 的 <code>int_*()</code> 函数之一，根据这个分布计算置信区间（这里使用 <code>int_t()</code> 来计算一个简单的、基于 t 统计量的 CI）。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="co"># get t-based CIs</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>boot_estimate <span class="ot">&lt;-</span> <span class="fu">int_t</span>(ipw_results, boot_fits) <span class="sc">|&gt;</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(term <span class="sc">==</span> <span class="st">"park_extra_magic_morning"</span>)</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>boot_estimate</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 1 x 6
+  term           .lower .estimate .upper .alpha .method
+  &lt;chr&gt;           &lt;dbl&gt;     &lt;dbl&gt;  &lt;dbl&gt;  &lt;dbl&gt; &lt;chr&gt;  
+1 park_extra_m~ -0.0800      7.04   11.2   0.05 studen~</code></pre>
+</div>
+</div>
+<p>现在，我们已经将估计倾向评分时引入的不确定性纳入进来，因此可以更准确地说：我们估计，在有 Extra Magic Mornings 的那些日子中，Extra Magic Mornings 对上午 9 点到 10 点之间平均公布等待时间的预期影响为 7 分钟，95% CI（-0.1，11.2）。</p>
+<p>Bootstrap 对各种各样的问题都适用。不过，它既冗长又计算成本高。现在我们来看看两种使用稳健三明治估计量的方法。</p>
+</section>
+<section id="结局模型三明治估计量" class="level3">
+<h3 class="anchored" data-anchor-id="结局模型三明治估计量">结局模型三明治估计量</h3>
+<p>三明治估计量得名于它计算的方差形式：由每个观测残差的变异性构成的“肉”矩阵，被来自模型设计（预测变量和权重）的两份“面包”矩阵夹在中间。当模型假设成立时，面包和肉结合后会给出通常的基于模型的方差；当模型假设不成立时——例如使用 IPW 权重时——三明治形式仍然能给出一致的方差估计。这就是它们被称为“稳健”标准误的原因。</p>
+<p>许多软件包都实现了用于方差估计的三明治估计量，不过我们先用 <code>{sandwich}</code> 软件包手动计算，并将其与 <code>lm()</code> 默认给出的方差比较。<code>vcov()</code> 返回方差—协方差矩阵，<code>tidy()</code> 和 <code>summary()</code> 会在内部使用它来计算标准误。它把我们传入的权重视为固定权重，而在我们的情形中，权重并不是固定的。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">vcov</span>(weighted_outcome)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>                         (Intercept)
+(Intercept)                    2.111
+park_extra_magic_morning      -2.111
+                         park_extra_magic_morning
+(Intercept)                                -2.111
+park_extra_magic_morning                    4.223</code></pre>
+</div>
+</div>
+<p><code>sandwich()</code> 返回一个形状相同的矩阵，其中对角线元素是各系数的方差。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(sandwich)</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="fu">sandwich</span>(weighted_outcome)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>                         (Intercept)
+(Intercept)                    1.488
+park_extra_magic_morning      -1.488
+                         park_extra_magic_morning
+(Intercept)                                -1.488
+park_extra_magic_morning                    8.727</code></pre>
+</div>
+</div>
+<p>两个矩阵并不一致。对于处理系数，三明治方差（8.727）超过基于模型的方差（4.223）的两倍，因此基于模型的标准误低估了处理效应周围的不确定性。对于截距，三明治版本更小。然后，我们可以据此构造稳健置信区间。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>robust_ci <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">estimate =</span> <span class="fu">coef</span>(weighted_outcome)[<span class="dv">2</span>],</span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>  <span class="co"># calculate the robust standard error</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>  <span class="co"># from the robust variance</span></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">robust_se =</span> <span class="fu">sqrt</span>(<span class="fu">sandwich</span>(weighted_outcome)[<span class="dv">2</span>, <span class="dv">2</span>]),</span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a>  <span class="co"># and use the SE to calculate the 95% CI</span></span>
+<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">conf.low =</span> estimate <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> robust_se,</span>
+<span id="cb22-8"><a href="#cb22-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">conf.high =</span> estimate <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> robust_se</span>
+<span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb22-10"><a href="#cb22-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-11"><a href="#cb22-11" aria-hidden="true" tabindex="-1"></a>robust_ci</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 1 x 4
+  estimate robust_se conf.low conf.high
+     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;
+1     6.23      2.95    0.438      12.0</code></pre>
+</div>
+</div>
+<p>现在，让我们再次解释结果，这次以三明治估计量作为不确定性的基础：我们估计，在有 Extra Magic Mornings 的那些日子中，Extra Magic Mornings 对上午 9 点到 10 点之间平均公布等待时间的预期影响为 6.2 分钟，95% CI（0.4，12）。</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">注记</span>HC0、HC1、HC2、HC3……
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>直接调用 <code>sandwich()</code> 得到的方差有时称为 HC0。“HC”代表“heteroskedasticity-consistent”（异方差一致），因为这些技术最初是为处理回归拟合中的异方差而开发的。在小样本中，HC0 往往存在向下偏倚，因为最小二乘残差系统性地低估了真实误差，尤其是在高杠杆点处。多年来，人们提出了一系列改进方法 <span class="citation" data-cites="mansournia2021">(<a href="../../causatr-introduction.html#ref-mansournia2021" role="doc-biblioref">Mansournia 等 2021</a>)</span>。HC1 应用 <span class="math inline">\(n / (n - k)\)</span> 的自由度校正。HC2 和 HC3 则分别将每个平方残差放大，以抵消杠杆作用造成的收缩——HC2 使用 <span class="math inline">\(1 / (1 - h_{ii})\)</span>，HC3 使用 <span class="math inline">\(1 / (1 - h_{ii})^2\)</span>，其中 <span class="math inline">\(h_{ii}\)</span> 是观测 <span class="math inline">\(i\)</span> 的杠杆值。HC3 近似于 Jackknife，这是另一种用于计算方差的重抽样方法。HC4 及其后续方法会在极端点处进一步加强杠杆调整。</p>
+<p><code>sandwich()</code> 函数可以计算上述任何一种变体，只要换用 HC 的“肉”估计量：<code>sandwich(model, meat. = meatHC, type = "HC3")</code>。便捷封装函数 <code>sandwich::vcovHC(model)</code> 做的是同样的事情，默认使用 HC3；许多作者建议把它作为大多数分析的合理起点 <span class="citation" data-cites="long2000">(<a href="../../causatr-introduction.html#ref-long2000" role="doc-biblioref">Long 和 Ervin 2000</a>)</span>。</p>
+</div>
+</div>
+<p>或者，我们可以使用 <code>{marginaleffects}</code> 从拟合模型中计算相同的量，同时内置稳健标准误。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(marginaleffects)</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a><span class="fu">avg_comparisons</span>(</span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>  weighted_outcome,</span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">variables =</span> <span class="st">"park_extra_magic_morning"</span>,</span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">vcov =</span> <span class="st">"HC3"</span></span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+ Estimate Std. Error    z Pr(&gt;|z|)   S 2.5 % 97.5 %
+     6.23          3 2.08   0.0378 4.7  0.35   12.1
+
+Term: park_extra_magic_morning
+Type: response
+Comparison: 1 - 0</code></pre>
+</div>
+</div>
+<p><code>avg_comparisons()</code> 返回一个边际效应：在观测到的协变量分布上，对 <span class="math inline">\(\hat{Y}(1) - \hat{Y}(0)\)</span> 取平均。我们会在 <span class="quarto-unresolved-ref">?sec-g-comp</span> 中更详细地回到这个主题以及 marginaleffects。传入 <code>vcov = "HC3"</code> 会请求使用前一个 callout 中的 HC3 方差估计量。</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">注记</span>使用 survey 拟合加权结局模型
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>另一种拟合相同加权结局模型的方法是使用 <code>{survey}</code> 软件包，它把 IPW 权重视为调查抽样权重，并相应地调整标准误。历史上，R 中许多倾向评分分析都采用这种方法，因此你可能会在实际代码中看到它。你需要将数据和权重封装在一个设计对象中，然后使用 <code>svyglm()</code> 拟合模型：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(survey)</span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>des <span class="ot">&lt;-</span> <span class="fu">svydesign</span>(</span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">ids =</span> <span class="sc">~</span><span class="dv">1</span>,</span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">weights =</span> <span class="sc">~</span>w_att,</span>
+<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> seven_dwarfs_9_with_wt</span>
+<span id="cb26-7"><a href="#cb26-7" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb26-8"><a href="#cb26-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-9"><a href="#cb26-9" aria-hidden="true" tabindex="-1"></a><span class="fu">svyglm</span>(wait_minutes_posted_avg <span class="sc">~</span> park_extra_magic_morning, des) <span class="sc">|&gt;</span></span>
+<span id="cb26-10"><a href="#cb26-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tidy</span>(<span class="at">conf.int =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2 x 7
+  term  estimate std.error statistic   p.value conf.low
+  &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;
+1 (Int~    68.7       1.22     56.2  6.14e-178   66.3  
+2 park~     6.23      2.96      2.11 3.60e-  2    0.410
+# i 1 more variable: conf.high &lt;dbl&gt;</code></pre>
+</div>
+</div>
+<p><code>svyglm()</code> 报告的标准误基于同一组三明治稳健估计量，因此其结果与上面的手动方法具有可比性。</p>
+</div>
+</div>
+</section>
+<section id="考虑倾向评分模型的三明治估计量" class="level3">
+<h3 class="anchored" data-anchor-id="考虑倾向评分模型的三明治估计量">考虑倾向评分模型的三明治估计量</h3>
+<p>正确的三明治估计量还会考虑倾向评分模型中的不确定性。propensity 的 <code>ipw()</code> 函数采用了这种方法。<code>ipw()</code> 是一个自带模型（bring-your-own-model，BYOM）的逆概率加权估计量。它不会替你拟合两个回归模型，而是由你自行拟合，然后将它们提供给 <code>ipw()</code>。这样你可以保留对回归拟合的控制权——更关键的是，保留诊断责任。</p>
+<p>我们已经拟合了两个模型，现在把它们传给 <code>ipw()</code>。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">ipw</span>(propensity_model, weighted_outcome)</span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>results</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Inverse Probability Weight Estimator
+Estimand: ATT 
+
+Propensity Score Model:
+  Call: glm(formula = park_extra_magic_morning ~ park_ticket_season + 
+    park_close + park_temperature_high, family = binomial(), 
+    data = seven_dwarfs_9) 
+
+Outcome Model:
+  Call: lm(formula = wait_minutes_posted_avg ~ park_extra_magic_morning, 
+    data = seven_dwarfs_9_with_wt, weights = w_att) 
+
+Estimates:
+     estimate std.err    z ci.lower ci.upper
+diff     6.23    2.34 2.66     1.64     10.8
+     conf.level p.value   
+diff       0.95  0.0078 **
+---
+Signif. codes:  
+0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1</code></pre>
+</div>
+</div>
+<p>我们也可以将结果整理到一个数据框中。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>results <span class="sc">|&gt;</span></span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">as.data.frame</span>()</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>  effect estimate std.err     z ci.lower ci.upper
+1   diff    6.228   2.339 2.663    1.644    10.81
+  conf.level  p.value
+1       0.95 0.007753</code></pre>
+</div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">注记</span>两步方差：线性化与 M-估计
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>IPW 是一个两步估计量：先拟合倾向模型，然后运行加权结局回归。上面的朴素三明治估计量把倾向评分视为已知常数，完全忽略了倾向评分估计这一步。现在有两种方法可以得到考虑这两个步骤的闭式方差。</p>
+<p><strong>M-估计</strong> <span class="citation" data-cites="stefanski2002 ross2024 williamson2014variance">(<a href="../../causatr-introduction.html#ref-stefanski2002" role="doc-biblioref">Stefanski 和 Boos 2002</a>; <a href="../../causatr-introduction.html#ref-ross2024" role="doc-biblioref">Ross 等 2024</a>; <a href="../../causatr-introduction.html#ref-williamson2014variance" role="doc-biblioref">Williamson, Forbes, 和 White 2014</a>)</span> 将两个阶段堆叠成一个估计方程系统：倾向模型的得分方程与加权结局回归的得分方程同时求解，以得到合并参数向量。联合估计量的方差就是基于整个方程系统构造的通常三明治方差，因此倾向阶段的不确定性会自动传递到结局阶段的方差中。</p>
+<p><strong>线性化</strong> <span class="citation" data-cites="kostouraki2024">(<a href="../../causatr-introduction.html#ref-kostouraki2024" role="doc-biblioref">Kostouraki 等 2024</a>)</span> 按照每个观测逐一处理。每个观测对方差的贡献都写成关于倾向评分系数的 Taylor 展开，并分解为两部分。第一部分是单独来自加权回归的影响函数贡献，等于朴素三明治估计量所计算的结果。第二部分是一个校正项，通过链式法则将该观测在拟合倾向模型中的作用传递到结局估计中。将两部分相加并取平均，就得到闭式方差。</p>
+<p>这两种方法是相互关联的。在 logit 倾向模型下，线性化公式与 M-估计公式在代数上是相同的 <span class="citation" data-cites="kostouraki2024">(<a href="../../causatr-introduction.html#ref-kostouraki2024" role="doc-biblioref">Kostouraki 等 2024</a>)</span>。</p>
+</div>
+</div>
+</section>
+</section>
+<section id="sec-matching-se" class="level2">
+<h2 class="anchored" data-anchor-id="sec-matching-se">校正匹配结局模型的标准误</h2>
+<p>我们已经看到了校正 IPW 估计量的一些方法，现在回到匹配。简单模型 <code>wait_minutes_posted_avg ~ park_extra_magic_morning</code> 没有纳入匹配协变量。匹配会将协变量取值相似的单元配对，因此成对残差之间存在相关性。<code>lm()</code> 和直接调用 <code>sandwich()</code> 都把观测视为相互独立，因而忽略了这种相关性。只有在不放回匹配且结局模型设定正确时，朴素标准误才是有效的 <span class="citation" data-cites="abadie2022">(<a href="../../causatr-introduction.html#ref-abadie2022" role="doc-biblioref">Abadie 和 Spiess 2022</a>)</span>。除此之外，标准误都会有偏。</p>
+<p>有三种修正方法。</p>
+<p>最直接的方法是在结局模型中以正确的函数形式纳入匹配协变量。正确设定模型可以从残差中移除遗漏变量信号，使朴素标准误变得有效。问题在于，我们现在必须避免在结局模型中错误设定所有用于匹配的协变量的函数形式。我们永远无法确定自己是否做到了这一点。另外两种方法无需在结局模型中加入更多变量，而是直接校正标准误，因此更加宽松。</p>
+<p>第二种方法是使用按匹配对聚类的聚类稳健标准误。<code>get_matches()</code> 返回一个 <code>subclass</code> 列，用于标识每一对匹配对象。我们将它作为聚类参数（以公式形式）传给 <code>sandwich::vcovCL()</code>，从而计算聚类稳健方差。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>vcl <span class="ot">&lt;-</span> <span class="fu">vcovCL</span>(matched_outcome, <span class="at">cluster =</span> <span class="sc">~</span>subclass)</span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>robust_ci <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">estimate =</span> <span class="fu">coef</span>(matched_outcome)[[<span class="st">"park_extra_magic_morning"</span>]],</span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">robust_se =</span> <span class="fu">sqrt</span>(vcl[<span class="st">"park_extra_magic_morning"</span>, <span class="st">"park_extra_magic_morning"</span>]),</span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">conf.low =</span> estimate <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> robust_se,</span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">conf.high =</span> estimate <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> robust_se</span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb32-9"><a href="#cb32-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-10"><a href="#cb32-10" aria-hidden="true" tabindex="-1"></a>robust_ci</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 1 x 4
+  estimate robust_se conf.low conf.high
+     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;
+1     7.87      2.73     2.52      13.2</code></pre>
+</div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">注记</span>通过 <code>{marginaleffects}</code> 计算聚类稳健标准误
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><code>marginaleffects::avg_comparisons()</code> 通过向 <code>vcov</code> 传入 <code>~subclass</code>，计算同样的聚类稳健标准误。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">avg_comparisons</span>(</span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a>  matched_outcome,</span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">variables =</span> <span class="st">"park_extra_magic_morning"</span>,</span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">vcov =</span> <span class="sc">~</span>subclass,</span>
+<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">newdata =</span> <span class="fu">filter</span>(matched_data, park_extra_magic_morning <span class="sc">==</span> <span class="dv">1</span>)</span>
+<span id="cb34-6"><a href="#cb34-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+ Estimate Std. Error    z Pr(&gt;|z|)   S 2.5 % 97.5 %
+     7.87       2.73 2.88  0.00393 8.0  2.52   13.2
+
+Term: park_extra_magic_morning
+Type: response
+Comparison: 1 - 0</code></pre>
+</div>
+</div>
+<p>由于我们的目标是 ATT，因此在计算平均比较之前，还需要将数据筛选为处理组；我们会在 <span class="quarto-unresolved-ref">?sec-g-comp</span> 中回到这个主题。</p>
+</div>
+</div>
+<p>第三种方法是聚类 Bootstrap：以完整的匹配对为单位进行重抽样，而不是对行进行重抽样，同时保持匹配本身不变。与 IPW 的 Bootstrap 不同，我们不会在 Bootstrap 内部重新运行 <code>matchit()</code>。对于最近邻匹配估计量，标准 Bootstrap 在理论上是无效的 <span class="citation" data-cites="onthef2008">(<a href="../../causatr-introduction.html#ref-onthef2008" role="doc-biblioref">Abadie 和 Imbens 2008</a>)</span>；相反，我们应该对匹配对进行重抽样 <span class="citation" data-cites="abadie2022">(<a href="../../causatr-introduction.html#ref-abadie2022" role="doc-biblioref">Abadie 和 Spiess 2022</a>)</span>。当我们将 <code>subclass</code> 作为分组变量传给 <code>rsample::group_bootstraps()</code> 时，它会创建这种成对 Bootstrap；“函数—再 Bootstrap”的模式与 <a href="#sec-bootstrap" class="quarto-xref"><span>Bootstrap</span></a> 类似，只是我们不会重新拟合 MatchIt 对象。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>fit_matched <span class="ot">&lt;-</span> <span class="cf">function</span>(.split, ...) {</span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>  .df <span class="ot">&lt;-</span> <span class="fu">as.data.frame</span>(.split)</span>
+<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">lm</span>(</span>
+<span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a>    wait_minutes_posted_avg <span class="sc">~</span> park_extra_magic_morning,</span>
+<span id="cb36-5"><a href="#cb36-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> .df</span>
+<span id="cb36-6"><a href="#cb36-6" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb36-7"><a href="#cb36-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tidy</span>()</span>
+<span id="cb36-8"><a href="#cb36-8" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb36-9"><a href="#cb36-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb36-10"><a href="#cb36-10" aria-hidden="true" tabindex="-1"></a>cluster_boots <span class="ot">&lt;-</span> <span class="fu">group_bootstraps</span>(</span>
+<span id="cb36-11"><a href="#cb36-11" aria-hidden="true" tabindex="-1"></a>  matched_data,</span>
+<span id="cb36-12"><a href="#cb36-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">group =</span> subclass,</span>
+<span id="cb36-13"><a href="#cb36-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">times =</span> <span class="dv">1000</span>,</span>
+<span id="cb36-14"><a href="#cb36-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">apparent =</span> <span class="cn">TRUE</span></span>
+<span id="cb36-15"><a href="#cb36-15" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb36-16"><a href="#cb36-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb36-17"><a href="#cb36-17" aria-hidden="true" tabindex="-1"></a>cluster_results <span class="ot">&lt;-</span> cluster_boots <span class="sc">|&gt;</span></span>
+<span id="cb36-18"><a href="#cb36-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">boot_fits =</span> <span class="fu">map</span>(splits, fit_matched))</span>
+<span id="cb36-19"><a href="#cb36-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb36-20"><a href="#cb36-20" aria-hidden="true" tabindex="-1"></a><span class="fu">int_t</span>(cluster_results, boot_fits) <span class="sc">|&gt;</span></span>
+<span id="cb36-21"><a href="#cb36-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(term <span class="sc">==</span> <span class="st">"park_extra_magic_morning"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 1 x 6
+  term           .lower .estimate .upper .alpha .method
+  &lt;chr&gt;           &lt;dbl&gt;     &lt;dbl&gt;  &lt;dbl&gt;  &lt;dbl&gt; &lt;chr&gt;  
+1 park_extra_ma~   2.67      7.93   13.4   0.05 studen~</code></pre>
+</div>
+</div>
+</section>
+<section id="sec-binary" class="level2">
+<h2 class="anchored" data-anchor-id="sec-binary">二元结局：风险比、风险差和优势比</h2>
+<p>在我们采用的例子中，结局（公布的等待时间）是连续的。使用加权线性回归，可以将 ATE 及其类似估计目标估计为均值之差。均值之差是一个有价值的效应估计目标，但并不是唯一选择。假设我们使用 ATT 权重，对结局回归进行加权，以计算公布等待时间的相对变化。这个相对变化仍然是处理组中的处理效应，只是采用相对尺度。关键在于，无论我们试图估计哪一个具体的估计目标，权重都允许我们对处理组的协变量取平均。有时，人们说“平均处理效应”时，指的是整个样本中结局均值之差，因此明确说明所针对的估计目标是很好的做法。</p>
+<p>那么，对于不是连续型的其他结局类型呢？例如，我们可以把连续的公布等待时间离散化为一个二元指标，表示平均等待时间是否超过 60 分钟。离散化连续变量通常是个坏主意——把结局二分会牺牲信息——但我们将把它作为示例，说明如何处理二元结局问题。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a>seven_dwarfs_9_with_wt <span class="ot">&lt;-</span> seven_dwarfs_9_with_wt <span class="sc">|&gt;</span></span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">wait_over_60 =</span> wait_minutes_posted_avg <span class="sc">&gt;</span> <span class="dv">60</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>对于二元结局，有三种标准选择：风险比、风险差和优势比。对于二元结局，我们计算每个处理组的平均概率。将它们分别记为 <span class="math inline">\(p_{\text{untreated}}\)</span> 和 <span class="math inline">\(p_{\text{treated}}\)</span>。在处理这些概率时，风险差和风险比很容易计算：</p>
+<ul>
+<li>风险差：<span class="math inline">\(p_{\text{treated}} - p_{\text{untreated}}\)</span></li>
+<li>风险比：<span class="math inline">\(p_{\text{treated}} / p_{\text{untreated}}\)</span></li>
+</ul>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+注记
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>这里所说的“风险”是指结局发生的风险。这一说法假定结局是不利的，例如发生某种疾病。有时，你会听到人们把这些量称为“反应比”或“反应差”。更一般地说，可以把它们理解为结局发生概率之差，或概率之比。</p>
+</div>
+</div>
+<p>概率的优势（odds）计算为 <span class="math inline">\(p / (1 - p)\)</span>，因此优势比为：</p>
+<ul>
+<li>优势比：<span class="math inline">\((p_{\text{treated}} / (1 - p_{\text{treated}})) / (p_{\text{untreated}} / (1 - p_{\text{untreated}}))\)</span></li>
+</ul>
+<p>当结局很罕见时，<span class="math inline">\((1 - p)\)</span> 趋近于 1，优势比就近似于风险比。结局越罕见，这种近似越接近。</p>
+<p>logistic 回归模型的一个特点是，其系数是对数优势比；对它们进行指数化即可得到优势比。不过，使用 logistic 回归时，你也可以使用预测概率计算风险差和风险比，正如我们在 <span class="quarto-unresolved-ref">?sec-g-comp</span> 中将看到的。</p>
+<p>与连续型结局一样，我们可以把这些估计目标分别指向总体中的不同子集，例如，未处理组中的风险比、可均匀匹配人群中的优势比，等等。</p>
+<p>这些选项也可以扩展到分类结局。根据分类变量的性质，有多种组织这些选项的方式。对于非有序分类变量，一个常见的估计效应是一系列优势比，其中结局的一个水平作为参考水平（例如，1 对 2、1 对 3 等的 OR）。多项回归模型，如 <code>nnet::multinom()</code>，可以产生这些对数优势比系数，从而扩展 logistic 回归。对于有序结局，<code>MASS::polr()</code> 实现的有序 logistic 回归会估计一系列对数优势比，用于比较结局的每个前一值。与 logistic 回归一样，在这些扩展中也不局限于优势比；你可以使用每个类别的预测概率，计算自己感兴趣的效应。</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+注记
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>病例—对照研究是流行病学中的典型设计，按结局状态抽取参与者 <span class="citation" data-cites="schlesselman1982case">(<a href="../../causatr-introduction.html#ref-schlesselman1982case" role="doc-biblioref">Schlesselman 1982</a>)</span>。研究者招募已经发生结局的病例，并从病例来源的人群中抽取对照。这类研究用于结局罕见的情况。与从暴露发生时开始随访人群的研究相比，它们也可能更快、更便宜。</p>
+<p>由于病例—对照研究的抽样方式，你没有基线风险，因为没有纳入所有未发生结局的个体。有趣的是，你仍然可以恢复优势比。当结局罕见时，优势比近似于风险比。不过，你无法计算风险差。</p>
+</div>
+</div>
+<section id="绝对指标和相对指标" class="level3">
+<h3 class="anchored" data-anchor-id="绝对指标和相对指标">绝对指标和相对指标</h3>
+<p>绝对指标（如风险差）和相对指标（如风险比和优势比）从不同角度反映处理效应。 根据结局的基线概率，绝对指标和相对指标可能会让你得出不同的结论。</p>
+<p>考虑一个罕见结局，其基线概率为0.0001，即每10,000个观测中发生1次事件。 这就是未暴露组的概率。 假设暴露组发生该结局的概率为0.0008。 这比未暴露组高8倍，是一个很大的相对效应。 但在绝对尺度上，它只有0.0007。</p>
+<p>现在考虑一个更常见的结局，其基线概率为0.20。 暴露组发生该结局的概率为0.40。 此时，相对风险为2，而风险差为0.20。 虽然相对效应小得多，但由于结局更常见，它会造成更多结局事件。</p>
+<p>吸烟对健康的影响就是一个很好的例子。 众所周知，吸烟会大幅增加肺癌的相对风险。 但肺癌是一种相当罕见的疾病。 吸烟也会增加心脏病风险，尽管其相对效应远没有肺癌那么高。 然而，心脏病的患病率高得多。 由于风险的绝对变化，死于吸烟相关心脏病的人数多于死于肺癌的人数。 绝对和相对这两种视角都合理且有用。</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">注记</span>需要治疗人数
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>观察概率差异的另一个角度是需要治疗人数（NNT）指标。 它就是风险差的倒数，表示需要对多少名暴露个体进行处理，才能预防或导致1个结局。</p>
+<p>考虑一个产品，其基线购买概率为5%，也就是说100个人中有5个人会购买。 营销团队制作了一则广告，看到广告的人有7%的概率购买该产品。 购买该产品的概率绝对差为0.02，因此需要让50个人看到广告，才能使购买人数增加1人，即 <span class="math inline">\(1 / 0.02 = 50\)</span>。</p>
+<p>NNT由于过于简单而存在不足，但它为处理效应在实践中的实际含义提供了另一个角度。</p>
+</div>
+</div>
+</section>
+<section id="sec-non-collapse" class="level3">
+<h3 class="anchored" data-anchor-id="sec-non-collapse">不可合并性</h3>
+<p>优势比与逻辑回归相关，因此使用起来很方便。 它还有一个特殊性质：具有<strong>不可合并性</strong>。 不可合并性意味着，当你比较整个样本（边际）与亚组（条件）中的优势比时，边际优势比不是条件优势比的加权平均值 <span class="citation" data-cites="Didelez2022 Greenland2021 Greenland2021a">(<a href="../../causatr-introduction.html#ref-Didelez2022" role="doc-biblioref">Didelez 和 Stensrud 2021</a>; <a href="../../causatr-introduction.html#ref-Greenland2021" role="doc-biblioref">Greenland 2021a</a>, <a href="../../causatr-introduction.html#ref-Greenland2021a" role="doc-biblioref">2021b</a>)</span>。 例如，风险比就不具有这一性质。 我们来看一个例子。</p>
+<p>假设我们有一个 <code>outcome</code>、一个 <code>exposure</code> 和一个 <code>covariate</code>。 <code>exposure</code> 会导致 <code>outcome</code>，<code>covariate</code> 也会导致它<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>。 但 <code>covariate</code> 不会导致 <code>exposure</code>；它<em>不是</em>混杂因子。 换句话说，无论是否将 <code>covariate</code> 纳入考虑，<code>exposure</code> 对 <code>outcome</code> 的效应估计都应相同。</p>
+<div class="cell" data-layout-align="center">
+<details class="code-fold">
+<summary>代码</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggdag)</span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a><span class="fu">dagify</span>(</span>
+<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a>  outcome <span class="sc">~</span> exposure <span class="sc">+</span> covariate,</span>
+<span id="cb39-4"><a href="#cb39-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">coords =</span> <span class="fu">time_ordered_coords</span>()</span>
+<span id="cb39-5"><a href="#cb39-5" aria-hidden="true" tabindex="-1"></a>) <span class="sc">|&gt;</span></span>
+<span id="cb39-6"><a href="#cb39-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggdag</span>(<span class="at">use_text =</span> <span class="cn">FALSE</span>) <span class="sc">+</span></span>
+<span id="cb39-7"><a href="#cb39-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_dag_text_repel</span>(<span class="fu">aes</span>(<span class="at">label =</span> name), <span class="at">box.padding =</span> <span class="fl">1.8</span>, <span class="at">direction =</span> <span class="st">"x"</span>) <span class="sc">+</span></span>
+<span id="cb39-8"><a href="#cb39-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_dag</span>()</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div id="fig-dag-nc" class="quarto-float quarto-figure quarto-figure-center anchored" data-fig-align="center">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-dag-nc-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="11-outcome-model_files/figure-html/fig-dag-nc-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="384">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-dag-nc-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;65.2: A DAG showing the causal relationship between <code>outcome</code>, <code>exposure</code>, and <code>covariate</code>. <code>exposure</code> and <code>covariate</code> both cause <code>outcome</code>, but there is no relationship between <code>exposure</code> and <code>covariate</code>. In a logistic regression, the odds ratio for exposure will be non-collapsible over strata of covariate.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>我们来模拟一下。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">123</span>)</span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">10000</span></span>
+<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a>exposure <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fl">0.5</span>)</span>
+<span id="cb40-5"><a href="#cb40-5" aria-hidden="true" tabindex="-1"></a>covariate <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fl">0.5</span>)</span>
+<span id="cb40-6"><a href="#cb40-6" aria-hidden="true" tabindex="-1"></a>outcome <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fu">plogis</span>(<span class="sc">-</span><span class="fl">0.5</span> <span class="sc">+</span> exposure <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> covariate))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<details class="code-fold">
+<summary>代码</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a>odds_ratio <span class="ot">&lt;-</span> <span class="cf">function</span>(tbl) {</span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a>  or <span class="ot">&lt;-</span> (tbl[<span class="dv">2</span>, <span class="dv">2</span>] <span class="sc">*</span> tbl[<span class="dv">1</span>, <span class="dv">1</span>]) <span class="sc">/</span> (tbl[<span class="dv">1</span>, <span class="dv">2</span>] <span class="sc">*</span> tbl[<span class="dv">2</span>, <span class="dv">1</span>])</span>
+<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">round</span>(or, <span class="at">digits =</span> <span class="dv">2</span>)</span>
+<span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb41-5"><a href="#cb41-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-6"><a href="#cb41-6" aria-hidden="true" tabindex="-1"></a>risk_ratio <span class="ot">&lt;-</span> <span class="cf">function</span>(tbl) {</span>
+<span id="cb41-7"><a href="#cb41-7" aria-hidden="true" tabindex="-1"></a>  risk_exposed <span class="ot">&lt;-</span> tbl[<span class="dv">2</span>, <span class="dv">2</span>] <span class="sc">/</span> (tbl[<span class="dv">2</span>, <span class="dv">2</span>] <span class="sc">+</span> tbl[<span class="dv">2</span>, <span class="dv">1</span>])</span>
+<span id="cb41-8"><a href="#cb41-8" aria-hidden="true" tabindex="-1"></a>  risk_unexposed <span class="ot">&lt;-</span> tbl[<span class="dv">1</span>, <span class="dv">2</span>] <span class="sc">/</span> (tbl[<span class="dv">1</span>, <span class="dv">2</span>] <span class="sc">+</span> tbl[<span class="dv">1</span>, <span class="dv">1</span>])</span>
+<span id="cb41-9"><a href="#cb41-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">round</span>(risk_exposed <span class="sc">/</span> risk_unexposed, <span class="at">digits =</span> <span class="dv">2</span>)</span>
+<span id="cb41-10"><a href="#cb41-10" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb41-11"><a href="#cb41-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-12"><a href="#cb41-12" aria-hidden="true" tabindex="-1"></a>marginal_table <span class="ot">&lt;-</span> <span class="fu">table</span>(exposure, outcome)</span>
+<span id="cb41-13"><a href="#cb41-13" aria-hidden="true" tabindex="-1"></a>marginal_or <span class="ot">&lt;-</span> <span class="fu">odds_ratio</span>(marginal_table)</span>
+<span id="cb41-14"><a href="#cb41-14" aria-hidden="true" tabindex="-1"></a>marginal_rr <span class="ot">&lt;-</span> <span class="fu">risk_ratio</span>(marginal_table)</span>
+<span id="cb41-15"><a href="#cb41-15" aria-hidden="true" tabindex="-1"></a>conditional_tables <span class="ot">&lt;-</span> <span class="fu">table</span>(exposure, outcome, covariate)</span>
+<span id="cb41-16"><a href="#cb41-16" aria-hidden="true" tabindex="-1"></a>conditional_or_0 <span class="ot">&lt;-</span> <span class="fu">odds_ratio</span>(conditional_tables[,, <span class="dv">1</span>])</span>
+<span id="cb41-17"><a href="#cb41-17" aria-hidden="true" tabindex="-1"></a>conditional_or_1 <span class="ot">&lt;-</span> <span class="fu">odds_ratio</span>(conditional_tables[,, <span class="dv">2</span>])</span>
+<span id="cb41-18"><a href="#cb41-18" aria-hidden="true" tabindex="-1"></a>conditional_rr_0 <span class="ot">&lt;-</span> <span class="fu">risk_ratio</span>(conditional_tables[,, <span class="dv">1</span>])</span>
+<span id="cb41-19"><a href="#cb41-19" aria-hidden="true" tabindex="-1"></a>conditional_rr_1 <span class="ot">&lt;-</span> <span class="fu">risk_ratio</span>(conditional_tables[,, <span class="dv">2</span>])</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+</div>
+<p>首先，我们来看看所有人中 <code>exposure</code> 与 <code>outcome</code> 之间的关系。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="fu">table</span>(exposure, outcome)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>        outcome
+exposure    0    1
+       0 2036 3021
+       1 1115 3828</code></pre>
+</div>
+</div>
+<p>我们可以使用这个频数表计算优势比：((3828 * 2036) / (3021 * 1115)) = 2.31。</p>
+<p>这个优势比与逻辑回归中对系数取指数后得到的结果相同。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a><span class="fu">glm</span>(outcome <span class="sc">~</span> exposure, <span class="at">family =</span> <span class="fu">binomial</span>()) <span class="sc">|&gt;</span></span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a>  broom<span class="sc">::</span><span class="fu">tidy</span>(<span class="at">exponentiate =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2 x 5
+  term        estimate std.error statistic  p.value
+  &lt;chr&gt;          &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;
+1 (Intercept)     1.48    0.0287      13.8 4.33e-43
+2 exposure        2.31    0.0445      18.9 2.87e-79</code></pre>
+</div>
+</div>
+<p>这与模拟模型中 <code>exp(1)</code> 的系数略有偏差。 加入 <code>covariate</code> 后，结果会更接近。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb46"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a><span class="fu">glm</span>(outcome <span class="sc">~</span> exposure <span class="sc">+</span> covariate, <span class="at">family =</span> <span class="fu">binomial</span>()) <span class="sc">|&gt;</span></span>
+<span id="cb46-2"><a href="#cb46-2" aria-hidden="true" tabindex="-1"></a>  broom<span class="sc">::</span><span class="fu">tidy</span>(<span class="at">exponentiate =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 3 x 5
+  term        estimate std.error statistic  p.value
+  &lt;chr&gt;          &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;
+1 (Intercept)    0.614    0.0378     -12.9 6.07e-38
+2 exposure       2.78     0.0493      20.7 1.33e-95
+3 covariate      7.39     0.0529      37.8 0       </code></pre>
+</div>
+</div>
+<p><code>covariate</code> 不是混杂因子，因此按理说，它不应影响暴露效应估计。 我们来看看按 <code>covariate</code> 分层的条件优势比。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb48"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a><span class="fu">table</span>(exposure, outcome, covariate)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>, , covariate = 0
+
+        outcome
+exposure    0    1
+       0 1572  986
+       1  951 1589
+
+, , covariate = 1
+
+        outcome
+exposure    0    1
+       0  464 2035
+       1  164 2239</code></pre>
+</div>
+</div>
+<p><code>covariate = 0</code> 的人群的优势比为 2.66。 <code>covariate = 1</code> 的人群的优势比为 3.11。 边际优势比 2.31 小于这两个值！</p>
+<p>边际风险比为 1.3。 <code>covariate = 0</code> 人群的风险比为 1.62。 <code>covariate = 1</code> 人群的风险比为 1.14。 在这种情况下，边际风险比是一个加权平均值，可以在协变量的各层之间合并 <span class="citation" data-cites="Huitfeldt2019">(<a href="../../causatr-introduction.html#ref-Huitfeldt2019" role="doc-biblioref">Huitfeldt, Stensrud, 和 Suzuki 2019</a>)</span>。</p>
+<p>当加入某个协变量后优势比发生变化，并且更接近模拟中的模型系数时，人们很容易认为必须纳入该协变量。 这里有一个重要细节：不可合并性<em>不是</em>偏倚。 一些作者将其描述为遗漏变量偏倚，但由于 <code>covariate</code> 不是混杂因子，边际优势比和条件优势比都是正确的。 它们其实对应不同的估计目标。 条件优势比是以 <code>covariate</code> 为条件的 OR。 若要将它与其他优势比进行有意义的比较，其他优势比也需要以 <code>covariate</code> 为条件。 不可合并性是优势比的数值性质；它不会产生偏倚，而是使解释略微复杂一些。 不可合并性的具体表现还取决于数据生成机制是在加性尺度还是乘性尺度上发生的；在乘性尺度上（如我们的模拟），移除一个与结局密切相关的变量会改变效应估计，而在加性尺度上，加入一个与结局密切相关的变量会改变效应，尽管变化幅度较小 <span class="citation" data-cites="Whitcomb2021">(<a href="../../causatr-introduction.html#ref-Whitcomb2021" role="doc-biblioref">Whitcomb 和 Naimi 2020</a>)</span>。 与其担心哪一种优势比才是正确的，我们建议重点关注混杂因子和结局的预测因子：前者是获得无偏估计所必需的，后者有助于降低方差。</p>
+<p>关于优势比与风险比，以及相对尺度与绝对尺度之间的比较，已有大量讨论。 我们建议，对于二分类结局，将三种指标（优势比、风险比和风险差）与结局的基线概率一并报告。 每种指标都从不同角度反映因果效应。 解释时要注意所使用的估计值对应哪个处理组。 例如，使用 ATT 权重计算的平均风险差，是处理组中的平均风险差。</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">注记</span>线性概率模型
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>线性概率模型是估计二分类结局处理效应的另一种常用方法。 线性概率模型在计量经济学和其他领域中都很常见。 它其实就是 OLS，不过研究者通常会使用稳健标准误，因为残差存在异方差性（正如我们所说，许多稳健标准误估计量就是为解决这一问题而设计的）。 其结果是风险差，这是一种可合并的指标。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb50"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb50-1"><a href="#cb50-1" aria-hidden="true" tabindex="-1"></a><span class="fu">lm</span>(outcome <span class="sc">~</span> exposure)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Call:
+lm(formula = outcome ~ exposure)
+
+Coefficients:
+(Intercept)     exposure  
+      0.597        0.177  </code></pre>
+</div>
+</div>
+<p>对于普通的线性概率模型，可以使用 <code>{sandwich}</code> 或 <code>{marginaleffects}</code> 计算稳健标准误。 但是，对于加权或匹配的线性概率模型，需要使用同时考虑这些过程的方法。</p>
+<p>线性概率模型是按加性尺度描述关系的一种便捷方式。 不过，它有一个重要的限制：逻辑回归的取值范围限定在0到1之间，而 OLS 没有这一限制。 这意味着个体预测值可能小于0或大于1，而这对概率而言是不可能的取值。</p>
+<p>我们将在<span class="quarto-unresolved-ref">?sec-g-comp</span>中看到一种使用逻辑回归计算风险差的替代方法。</p>
+</div>
+</div>
+<p>回到等待时间结局的二分类版本，我们可以使用 ATT 权重拟合加权逻辑回归，估计在有 Extra Magic Mornings 的日期，平均等待时间超过60分钟的（边际）优势比。 我们使用 <code>family = quasibinomial()</code> 来避免关于非整数成功次数的警告；由于倾向评分权重不是整数，因此会出现这一警告；使用 <code>family = binomial()</code> 得到的点估计将与此相同。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb52"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a><span class="fu">glm</span>(</span>
+<span id="cb52-2"><a href="#cb52-2" aria-hidden="true" tabindex="-1"></a>  wait_over_60 <span class="sc">~</span> park_extra_magic_morning,</span>
+<span id="cb52-3"><a href="#cb52-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> seven_dwarfs_9_with_wt,</span>
+<span id="cb52-4"><a href="#cb52-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">weights =</span> <span class="fu">as.numeric</span>(w_att),</span>
+<span id="cb52-5"><a href="#cb52-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">family =</span> <span class="fu">quasibinomial</span>()</span>
+<span id="cb52-6"><a href="#cb52-6" aria-hidden="true" tabindex="-1"></a>) <span class="sc">|&gt;</span></span>
+<span id="cb52-7"><a href="#cb52-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tidy</span>(<span class="at">exponentiate =</span> <span class="cn">TRUE</span>, <span class="at">conf.int =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2 x 7
+  term    estimate std.error statistic p.value conf.low
+  &lt;chr&gt;      &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;   &lt;dbl&gt;    &lt;dbl&gt;
+1 (Inter~     1.86     0.158      3.92 1.04e-4    1.37 
+2 park_e~     1.36     0.230      1.34 1.82e-1    0.867
+# i 1 more variable: conf.high &lt;dbl&gt;</code></pre>
+</div>
+</div>
+<p>对于风险差，我们可以将同一个模型拟合为线性概率模型。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb54"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb54-1"><a href="#cb54-1" aria-hidden="true" tabindex="-1"></a><span class="fu">lm</span>(</span>
+<span id="cb54-2"><a href="#cb54-2" aria-hidden="true" tabindex="-1"></a>  wait_over_60 <span class="sc">~</span> park_extra_magic_morning,</span>
+<span id="cb54-3"><a href="#cb54-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> seven_dwarfs_9_with_wt,</span>
+<span id="cb54-4"><a href="#cb54-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">weights =</span> w_att</span>
+<span id="cb54-5"><a href="#cb54-5" aria-hidden="true" tabindex="-1"></a>) <span class="sc">|&gt;</span></span>
+<span id="cb54-6"><a href="#cb54-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tidy</span>(<span class="at">conf.int =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 2 x 7
+  term   estimate std.error statistic  p.value conf.low
+  &lt;chr&gt;     &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;
+1 (Inte~   0.650     0.0350     18.6  2.98e-54   0.582 
+2 park_~   0.0664    0.0495      1.34 1.80e- 1  -0.0309
+# i 1 more variable: conf.high &lt;dbl&gt;</code></pre>
+</div>
+</div>
+<p>与连续结局一样，<code>glm()</code> 和 <code>lm()</code> 默认给出的标准误和置信区间没有考虑倾向评分模型；<a href="#sec-ipw-se" class="quarto-xref"><span>估计 IPW 的不确定性</span></a> 中介绍的 Bootstrap 和 sandwich 方法同样适用于这里。 同样，匹配以及使用 <a href="#sec-matching-se" class="quarto-xref"><span>校正匹配结局模型的标准误</span></a> 中的方法也会按预期工作。</p>
+
+
+<div id="refs" class="references csl-bib-body hanging-indent" data-entry-spacing="0" role="list" style="display: none">
+<div id="ref-onthef2008" class="csl-entry" role="listitem">
+Abadie, Alberto, 和 Guido W. Imbens. 2008. <span>《On the Failure of the Bootstrap for Matching Estimators》</span>. <em>Econometrica</em> 76 (6): 1537–57. <a href="https://doi.org/10.3982/ECTA6474">https://doi.org/10.3982/ECTA6474</a>.
+</div>
+<div id="ref-abadie2022" class="csl-entry" role="listitem">
+Abadie, Alberto, 和 Jann Spiess. 2022. <span>《Robust Post-Matching Inference》</span>. <em>Journal of the American Statistical Association</em> 117 (538): 983–95. <a href="https://doi.org/10.1080/01621459.2020.1840383">https://doi.org/10.1080/01621459.2020.1840383</a>.
+</div>
+<div id="ref-Didelez2022" class="csl-entry" role="listitem">
+Didelez, Vanessa, 和 Mats Julius Stensrud. 2021. <span>《On the Logic of Collapsibility for Causal Effect Measures》</span>. <em>Biometrical Journal</em> 64 (2): 235–42. <a href="https://doi.org/10.1002/bimj.202000305">https://doi.org/10.1002/bimj.202000305</a>.
+</div>
+<div id="ref-Greenland2021" class="csl-entry" role="listitem">
+Greenland, Sander. 2021a. <span>《Noncollapsibility, Confounding, and Sparse-Data Bias. Part 1: The Oddities of Odds》</span>. <em>Journal of Clinical Epidemiology</em> 138 (十月): 178–81. <a href="https://doi.org/10.1016/j.jclinepi.2021.06.007">https://doi.org/10.1016/j.jclinepi.2021.06.007</a>.
+</div>
+<div id="ref-Greenland2021a" class="csl-entry" role="listitem">
+———. 2021b. <span>《Noncollapsibility, Confounding, and Sparse-Data Bias. Part 2: What Should Researchers Make of Persistent Controversies about the Odds Ratio?》</span> <em>Journal of Clinical Epidemiology</em> 139 (十一月): 264–68. <a href="https://doi.org/10.1016/j.jclinepi.2021.06.004">https://doi.org/10.1016/j.jclinepi.2021.06.004</a>.
+</div>
+<div id="ref-Huitfeldt2019" class="csl-entry" role="listitem">
+Huitfeldt, Anders, Mats J. Stensrud, 和 Etsuji Suzuki. 2019. <span>《On the Collapsibility of Measures of Effect in the Counterfactual Causal Framework》</span>. <em>Emerging Themes in Epidemiology</em> 16 (1). <a href="https://doi.org/10.1186/s12982-018-0083-9">https://doi.org/10.1186/s12982-018-0083-9</a>.
+</div>
+<div id="ref-kostouraki2024" class="csl-entry" role="listitem">
+Kostouraki, Andriana, David Hajage, Bernard Rachet, Elizabeth J. Williamson, Guillaume Chauvet, Aurélien Belot, 和 Clémence Leyrat. 2024. <span>《On Variance Estimation of the Inverse Probability-of-Treatment Weighting Estimator: A Tutorial for Different Types of Propensity Score Weights》</span>. <em>Statistics in Medicine</em> 43 (13): 2672–94. <a href="https://doi.org/10.1002/sim.10078">https://doi.org/10.1002/sim.10078</a>.
+</div>
+<div id="ref-long2000" class="csl-entry" role="listitem">
+Long, J. Scott, 和 Laurie H. Ervin. 2000. <span>《Using Heteroscedasticity Consistent Standard Errors in the Linear Regression Model》</span>. <em>The American Statistician</em> 54 (3): 217–24. <a href="https://doi.org/10.1080/00031305.2000.10474549">https://doi.org/10.1080/00031305.2000.10474549</a>.
+</div>
+<div id="ref-mansournia2021" class="csl-entry" role="listitem">
+Mansournia, Mohammad Ali, Maryam Nazemipour, Ashley I. Naimi, Gary S. Collins, 和 Michael J. Campbell. 2021. <span>《Reflection on modern methods: demystifying robust standard errors for epidemiologists》</span>. <em>International Journal of Epidemiology</em> 50 (1): 346–51. <a href="https://doi.org/10.1093/ije/dyaa260">https://doi.org/10.1093/ije/dyaa260</a>.
+</div>
+<div id="ref-ross2024" class="csl-entry" role="listitem">
+Ross, Rachael K, Paul N Zivich, Jeffrey S A Stringer, 和 Stephen R Cole. 2024. <span>《M-estimation for common epidemiological measures: introduction and applied examples》</span>. <em>International Journal of Epidemiology</em> 53 (2): dyae030. <a href="https://doi.org/10.1093/ije/dyae030">https://doi.org/10.1093/ije/dyae030</a>.
+</div>
+<div id="ref-schlesselman1982case" class="csl-entry" role="listitem">
+Schlesselman, J. J. 1982. <em>Case-Control Studies: Design, Conduct, Analysis</em>. Monographs in Epidemiology and Biostatistics. Oxford University Press. <a href="https://books.google.com/books?id=5OkyFkYOn0QC">https://books.google.com/books?id=5OkyFkYOn0QC</a>.
+</div>
+<div id="ref-stefanski2002" class="csl-entry" role="listitem">
+Stefanski, Leonard A., 和 Dennis D. Boos. 2002. <span>《The Calculus of M-Estimation》</span>. <em>The American Statistician</em> 56 (1): 29–38. <a href="https://www.jstor.org/stable/3087324">https://www.jstor.org/stable/3087324</a>.
+</div>
+<div id="ref-Whitcomb2021" class="csl-entry" role="listitem">
+Whitcomb, Brian W, 和 Ashley I Naimi. 2020. <span>《Defining, Quantifying, and Interpreting <span>“</span>Noncollapsibility<span>”</span> in Epidemiologic Studies of Measures of <span>“</span>Effect<span>”</span>》</span>. <em>American Journal of Epidemiology</em> 190 (5): 697–700. <a href="https://doi.org/10.1093/aje/kwaa267">https://doi.org/10.1093/aje/kwaa267</a>.
+</div>
+<div id="ref-williamson2014variance" class="csl-entry" role="listitem">
+Williamson, Elizabeth J, Andrew Forbes, 和 Ian R White. 2014. <span>《Variance reduction in randomised trials by inverse probability weighting using the propensity score》</span>. <em>Statistics in medicine</em> 33 (5): 721–37.
+</div>
+</div>
+</section>
+</section>
+</section>
+<section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn1"><p>如果 <code>exposure</code> 与 <code>outcome</code> 之间不存在关系，那么两者之间的关系就是零效应；无论是否存在 <code>covariate</code>，优势比都具有可合并性。<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "已复制");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "已复制");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/hui950319\.github\.io\/causalR\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../../notes/r-causal/chapters/10-estimands.html" class="pagination-link" aria-label="因果估计目标">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">因果估计目标</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/r-causal/chapters/11-outcome-model.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></div></div></footer></body></html>
