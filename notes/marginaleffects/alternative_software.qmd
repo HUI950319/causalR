@@ -1,0 +1,917 @@
+---
+title: "同类软件对比"
+subtitle: "*Alternative Software* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Alternative Software*](https://marginaleffects.com/bonus/alternative_software.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/alternative_software.qmd`，revision `870f15a0`）。
+> 网站内容 © 2025 Vincent Arel-Bundock, All Rights Reserved；`marginaleffects` 软件代码依 GPL-3 许可。
+> 本页为中文翻译，非原文，经原作者授权翻译并发布。
+> 页面中的代码块由本站在渲染时真实执行，`brmsmargins` 一节除外（原因见该节说明）。
+
+```{r, include = FALSE}
+options(width = 10000)
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  fig.width = 6,
+  fig.asp = .4,
+  warning = FALSE,
+  message = FALSE,
+  comment = "#>"
+)
+```
+
+如果你不喜欢 `marginaleffects`，不妨考虑下面这些替代方案：
+
+* `margins`: https://cran.r-project.org/web/packages/margins/index.html
+* `prediction`: https://cran.r-project.org/web/packages/prediction/index.html
+* `emmeans`: https://cran.r-project.org/web/packages/emmeans/index.html
+* `brmsmargins`: https://joshuawiley.com/brmsmargins/
+* `effects`: https://cran.r-project.org/package=effects
+* `modelbased`: https://easystats.github.io/modelbased/
+* `ggeffects`: https://strengejacke.github.io/ggeffects/
+* `Stata`，StataCorp LLC 出品
+
+## `emmeans`
+
+[`emmeans` 包](https://cran.r-project.org/web/packages/emmeans/index.html)由 Russell V. Lenth 及其同事开发。`emmeans` 是一件真正了不起的软件作品，也是 `R` 生态里的开路者。它*极其*强大，功能上与 `marginaleffects` 有相当大的重叠：边际均值、对比、斜率。即便两个包能算出很多相同的量，`emmeans` 和 `marginaleffects` 在用户界面和计算方式上的理念还是相当不同。
+
+一次 `emmeans` 分析通常这样开始：计算"边际均值"，把所有数值型协变量固定在它们的均值上，并在分类预测变量的平衡网格上求平均。然后用户可以用 `contrast()` 函数估计边际均值之间的差。
+
+`marginaleffects` 包提供了一个 `predictions` 函数，通过计算边际均值可以复现大多数 `emmeans` 分析。不过它典型的分析路径更直接地围绕预测值／拟合值展开。这是一个很有用的出发点，因为在很多情况下，分析者会发现用"预测值的变化"来表达自己的科学问题既容易又直观。例如：
+
+* 处理组和对照组之间，平均预测存活概率相差多少？
+* 大学毕业生和高中毕业生的预测工资之间差多少？
+
+假设我们估计一个含两个连续回归变量及其乘积交互项的线性回归模型：
+
+$$y = \beta_0 + \beta_1 x + \beta_2 z + \beta_3 x \cdot z + \varepsilon$$
+
+在这个模型里，$x$ 对 $y$ 的效应取决于协变量 $z$ 的取值。假设用户想估计：当 $z \in \{-1, 0, 1\}$ 时，$x$ 增加 1 个单位会让 $y$ 的预测值发生什么变化。为此我们用 `comparisons()` 函数。`variables` 参数确定我们关心的科学问题，`newdata` 参数确定我们想在哪个协变量取值网格上求解这个问题：
+
+```{r, eval = FALSE}
+model <- lm(y ~ x * z, data)
+
+comparisons(
+  model,
+  variables = list(x = 1), # what is the effect of 1-unit change in x?
+  newdata = datagrid(z = -1:1) # when z is held at values -1, 0, or 1
+)
+```
+
+正如本文所展示的，`marginaleffects` 也能计算边际均值之间的对比。它还能算各种感兴趣的量，比如原始拟合值、斜率（偏导数），以及边际均值之间的对比。它同时提供了一套灵活的机制，用 delta 方法做（非）线性假设检验；还提供了完全可定制的策略来计算优势比这类量（或者预测结果的任意函数）。
+
+因此，以我（Vincent）带有偏见的看法，`marginaleffects` 相对 `emmeans` 的主要好处是：
+
+* 支持更多模型类型。
+* 用户界面更简单、更直观、高度一致。
+* 更容易对整个数据集计算平均斜率或个体层面的对比。
+* 更容易为自定义网格和连续回归变量计算斜率（也叫边际效应、趋势或偏导数）。
+* 更容易实现参数化 g-公式、实验中的回归调整这类因果推断策略（见相关章节）。
+* 允许通过用户自定义函数计算任意感兴趣的量，并自动用 delta 方法做推断。
+* 用 `plot_predictions()`、`plot_comparisons()` 和 `plot_slopes()` 函数很容易画出常见的图。
+
+平心而论，上面列出的 `marginaleffects` 优势里，有不少归根结底是对用户界面的主观偏好。因此建议读者两个包都试一试，看自己更喜欢哪种界面。
+
+`emmeans` 相对 `marginaleffects` 的主要优势出现在用户专门关心边际均值的时候：这种场合 `emmeans` 往往快得多，而且在处理反变换方面功能丰富。`emmeans` 在效应量方面也更好；特别是 `eff_size()` 函数给出的效应量估计，能同时考虑估计效应和总体标准差两方面的不确定性。
+
+如果你发现 `emmeans` 还有别的特性，欢迎告诉我，我好把它们加进这个列表。
+
+### 对比
+
+据我所知，`emmeans` 没有提供一种简便的方式，来为拟合模型所用数据集的每一行计算个体层面的对比。因此，下面并排展示的语法里总会带上 `newdata=datagrid()`，用来指明我们只想计算一个对比：在回归变量取均值处。不过在 `slopes()` 的日常使用中，这个额外的参数并不必要。
+
+拟合一个模型：
+```{r}
+library(emmeans)
+library(marginaleffects)
+
+mod <- glm(vs ~ hp + factor(cyl), data = mtcars, family = binomial)
+```
+
+link 尺度，两两对比：
+
+```{r}
+emm <- emmeans(mod, specs = "cyl")
+contrast(emm, method = "revpairwise", adjust = "none", df = Inf)
+
+comparisons(mod,
+            type = "link",
+            newdata = "mean",
+            variables = list(cyl = "pairwise"))
+```
+
+response 尺度，参照组：
+
+```{r}
+emm <- emmeans(mod, specs = "cyl", regrid = "response")
+contrast(emm, method = "trt.vs.ctrl1", adjust = "none", df = Inf, ratios = FALSE)
+
+comparisons(mod, newdata = "mean")
+```
+
+### 按组分的对比
+
+下面是一个稍复杂的例子：在一个 `lme4` 混合效应模型里按子组估计对比。先估计模型，并用 `emmeans` 按子组计算两两对比：
+
+```{r}
+library(dplyr)
+library(lme4)
+library(emmeans)
+
+dat <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/lme4/VerbAgg.csv")
+dat$woman <- as.numeric(dat$Gender == "F")
+
+mod <- glmer(
+    woman ~ btype * resp + situ + (1 + Anger | item),
+    family = binomial,
+    data = dat)
+
+emmeans(mod, specs = "btype", by = "resp") |>
+    contrast(method = "revpairwise", adjust = "none")
+```
+
+`emmeans` 是怎么得到这些结果的？大致是这样：
+
+1. 造一个预测网格，模型中分类预测变量的每一种组合占一格，所有数值变量固定在它们的均值上。
+2. 在预测网格的每一格上做调整预测。
+3. 对 `btype`（焦点变量）和 `resp`（`by` 分组变量）的每一种组合，取这些预测值的平均（即边际均值）。
+4. 计算焦点变量 `btype` 不同水平之间边际均值的两两之差（对比）。
+
+简而言之，`emmeans` 计算的是*边际均值*之间的两两对比，而边际均值本身又是调整预测值的平均。这跟 `comparisons()` 默认产生的对比类型不同：后者报告的是调整预测值之间的对比，而*不*在一个预先指定的预测变量网格上求平均。那么 `comparisons()` 做的是什么？
+
+设 `newdata` 是用户提供的数据框（或拟合模型所用的原始数据框），那么：
+
+1. 造一个新数据框 `newdata2`，它与 `newdata` 完全相同，只是焦点变量被抬高了一个水平。
+2. 把对比算成在两个数据集上所做调整预测之差：
+   - `predict(model, newdata = newdata2) - predict(model, newdata = newdata)`
+
+虽然这不是惯常用法，我们仍然可以用 `comparisons()` 来模拟 `emmeans` 的结果。首先，造一个预测网格，模型中分类预测变量的每一种组合占一格：
+
+```{r}
+nd <- datagrid(
+    model = mod,
+    resp = dat$resp,
+    situ = dat$situ,
+    btype = dat$btype)
+nrow(nd)
+```
+
+这个网格有 18 行，对应 `resp`（3 个）、`situ`（2 个）、`btype`（3 个）三个变量各水平的每一种组合（3 * 2 * 3 = 18）。
+
+然后我们在这个网格上计算两两对比：
+
+```{r}
+cmp <- comparisons(mod,
+    variables = list("btype" = "pairwise"),
+    newdata = nd,
+    type = "link")
+nrow(cmp)
+```
+
+一共有 3 个两两对比，对应焦点变量 `btype` 的 3 个水平之间可能的 3 种两两比较：`scold-curse`、`shout-scold`、`shout-curse`。`comparisons()` 函数会为 `newdata` 的每一行都估计这 3 个对比，所以我们得到 $18 \times 3 = 54$ 行。
+
+最后，如果我们想要按 `resp` 变量的各个子组求平均的对比，可以用 `avg_comparisons()` 函数配合 `by` 参数：
+
+```{r}
+avg_comparisons(mod,
+    by = "resp",
+    variables = list("btype" = "pairwise"),
+    newdata = nd,
+    type = "link")
+```
+
+这些结果与 `emmeans` 给出的完全一致（除了用 $t$ 还是用 $z$ 之外）。
+
+### 斜率（边际效应）
+
+据我所知，`emmeans::emtrends` 更适合为少数几个用户指定的取值计算边际效应，而不太适合用于大网格或完整的原始数据集。
+
+response 尺度，用户指定取值：
+
+```{r}
+mod <- glm(vs ~ hp + factor(cyl), data = mtcars, family = binomial)
+
+emtrends(mod, ~hp, "hp", regrid = "response", at = list(cyl = 4))
+
+slopes(mod, newdata = datagrid(cyl = 4))
+```
+
+link 尺度，用户指定取值：
+
+```{r}
+emtrends(mod, ~hp, "hp", at = list(cyl = 4))
+
+slopes(mod, type = "link", newdata = datagrid(cyl = 4))
+```
+
+### 反变换与运算次序
+
+假设我们想在一个平衡网格上计算预测值的平均（边际均值），并且分成 3 个数据子集来算。我们的模型是这样一个 logistic 回归：
+
+```{r}
+#| message: false
+library(emmeans)
+library(marginaleffects)
+dat = get_dataset("thornton")
+mod = glm(outcome ~ incentive + agecat + distance, data = dat, family = binomial)
+```
+
+我们用 `avg_predictions()` 函数计算边际均值：
+
+```{r}
+avg_predictions(mod, newdata = "balanced", by = "agecat")
+```
+
+在内部，这个函数做了下面几步：
+
+1. 造一个平衡网格。
+2. 在 link 尺度上为网格的每一行做预测。
+3. 把预测值反变换回 response 尺度。
+4. 对反变换后的预测值求平均。
+
+用 `emmeans` 可以得到类似——但不完全相同——的结果：
+
+```{r}
+emmeans(mod, ~ agecat, type="response", infer=TRUE, adjust = "none")
+```
+
+差别在于 `emmeans` 默认采用的运算次序不同：
+
+1. 造一个平衡网格。
+2. 在 link 尺度上为网格的每一行做预测。
+3. 对 link 尺度上的预测值求平均。
+4. 把平均后的预测值反变换回去。
+
+`marginaleffects` 之所以采用前一种做法，是因为作者来自这样一个统计传统：习惯用 $E[Pr(Y=1|X=0)]$ 这类写法来定义估计目标，而这种写法自然地暗示应该在 response 尺度上求平均。
+
+`emmeans` 的运算次序可以用 `transform` 和 `type` 两个参数复现：
+
+```{r}
+avg_predictions(mod, 
+  type = "link",
+  transform = mod$family$linkinv,
+  newdata = "balanced", 
+  by = "agecat")
+```
+
+### 更多例子
+
+下面再给几组 `emmeans` 与 `marginaleffects` 的对照：
+
+```{r, eval = FALSE}
+## Example of examining a continuous x categorical interaction using emmeans and marginaleffects
+## Authors: Cameron Patrick and Vincent Arel-Bundock
+
+library(tidyverse)
+library(emmeans)
+library(marginaleffects)
+
+## use the mtcars data, set up am as a factor
+data(mtcars)
+mc <- mtcars |> mutate(am = factor(am))
+
+## fit a linear model to mpg with wt x am interaction
+m <- lm(mpg ~ wt*am, data = mc)
+summary(m)
+
+## 1. means for each level of am at mean wt.
+emmeans(m, "am")
+predictions(m, newdata = datagrid(am = 0:1))
+
+## 2. means for each level of am at wt = 2.5, 3, 3.5.
+emmeans(m, c("am", "wt"), at = list(wt = c(2.5, 3, 3.5)))
+predictions(m, newdata = datagrid(am = 0:1, wt = c(2.5, 3, 3.5))
+
+## 3. means for wt = 2.5, 3, 3.5, averaged over levels of am (implicitly!).
+emmeans(m, "wt", at = list(wt = c(2.5, 3, 3.5)))
+
+## same thing, but the averaging is more explicit, using the `by` argument
+predictions(
+  m,
+  newdata = datagrid(am = 0:1, wt = c(2.5, 3, 3.5)),
+  by = "wt")
+
+## 4. graphical version of 2.
+emmip(m, am ~ wt, at = list(wt = c(2.5, 3, 3.5)), CIs = TRUE)
+plot_predictions(m, condition = c("wt", "am"))
+
+## 5. compare levels of am at specific values of wt.
+## this is a bit ugly because the emmeans defaults for pairs() are silly.
+## infer = TRUE: enable confidence intervals.
+## adjust = "none": begone, Tukey.
+## reverse = TRUE: contrasts as (later level) - (earlier level)
+pairs(emmeans(m, "am", by = "wt", at = list(wt = c(2.5, 3, 3.5))),
+      infer = TRUE, adjust = "none", reverse = TRUE)
+
+comparisons(
+  m,
+  variables = "am",
+  newdata = datagrid(wt = c(2.5, 3, 3.5)))
+
+## 6. plot of pairswise comparisons
+plot(pairs(emmeans(m, "am", by = "wt", at = list(wt = c(2.5, 3, 3.5))),
+      infer = TRUE, adjust = "none", reverse = TRUE))
+
+## Since `wt` is numeric, the default is to plot it as a continuous variable on
+## the x-axis.  But not that this is the **exact same info** as in the emmeans plot.
+plot_comparisons(m, variables = "am", condition = "wt")
+
+## You of course customize everything, set draw=FALSE, and feed the raw data to feed to ggplot2
+p <- plot_comparisons(
+  m,
+  variables = "am",
+  condition = list(wt = c(2.5, 3, 3.5)),
+  draw = FALSE)
+
+ggplot(p, aes(y = wt, x = comparison, xmin = conf.low, xmax = conf.high)) +
+  geom_pointrange()
+
+## 7. slope of wt for each level of am
+emtrends(m, "am", "wt")
+slopes(m, newdata = datagrid(am = 0:1))
+```
+
+## `margins` 与 `prediction`
+
+`R` 的 [`margins`](https://cran.r-project.org/web/packages/margins/index.html) 和 [`prediction`](https://cran.r-project.org/web/packages/prediction/index.html) 两个包由 Thomas Leeper 设计，用来模拟 `Stata` 中 `margins` 命令的行为。这两个包是开路者，对 `marginaleffects` 的开发有很大影响。`marginaleffects` 相对它们的主要好处是：
+
+* 支持更多模型类型
+* 更快
+* 更省内存
+* 用 `ggplot2` 而不是 Base R 画图
+* 测试套件更完整
+* 仍在积极开发
+
+两个包的语法非常相似。
+
+### 平均边际效应
+
+```{r}
+library(margins)
+library(marginaleffects)
+
+mod <- lm(mpg ~ cyl + hp + wt, data = mtcars)
+
+mar <- margins(mod)
+summary(mar)
+
+mfx <- slopes(mod)
+```
+
+### 个体层面的边际效应
+
+在用户指定的数据框上计算边际效应：
+
+```{r}
+head(data.frame(mar))
+
+head(mfx)
+nd <- data.frame(cyl = 4, hp = 110, wt = 3)
+```
+
+### 均值处的边际效应
+
+```{r}
+mar <- margins(mod, data = data.frame(prediction::mean_or_mode(mtcars)), unit_ses = TRUE)
+data.frame(mar)
+
+slopes(mod, newdata = "mean")
+```
+
+### 反事实平均边际效应
+
+`margins` 包的 `at` 参数模仿了 `Stata`：把某些变量固定在用户指定的取值上，并为所提供取值的每一种组合把完整数据集复制一遍（见下面的 `Stata` 一节）。举例来说，如果数据集有 32 行，而用户调用 `at=list(cyl=c(4, 6))`，`margins` 就会计算 64 个个体层面的边际效应估计：
+
+```{r}
+dat <- mtcars
+dat$cyl <- factor(dat$cyl)
+mod <- lm(mpg ~ cyl * hp + wt, data = mtcars)
+
+mar <- margins(mod, at = list(cyl = c(4, 6, 8)))
+summary(mar)
+
+avg_slopes(
+    mod,
+    by = "cyl",
+    newdata = datagrid(cyl = c(4, 6, 8)), grid_type = "counterfactual")
+```
+
+### 调整预测
+
+用 `prediction` 包和用 `marginaleffects` 计算调整预测，语法非常相似：
+
+```{r}
+prediction::prediction(mod) |> head()
+
+marginaleffects::predictions(mod) |> head()
+```
+
+## `Stata`
+
+`Stata` 是一款优秀但昂贵的统计分析软件，由 StataCorp LLC 发行。本节把 `Stata` 的 `margins` 命令与 `marginaleffects` 作对比。
+
+`marginaleffects` 的结果针对 `Stata` 做过大量测试。可以在[测试套件](https://github.com/vincentarelbundock/marginaleffects/tree/main/r/inst/tinytest)里看到我们比对过估计值和标准误的几十种模型。
+
+### 平均边际效应（AME）
+
+边际效应是个体层面的量。要计算"平均边际效应"，我们先为数据集中的每个观测计算边际效应，然后对这些个体层面的边际效应取平均。
+
+#### Stata
+
+Stata 的 `margins` 命令和 `slopes` 函数都能计算平均边际效应（AME）。下面是在 Stata 里估计 AME 的例子：
+
+```
+quietly reg mpg cyl hp wt
+margins, dydx(*)
+
+Average marginal effects                        Number of obs     =         32
+Model VCE    : OLS
+ 
+Expression   : Linear prediction, predict()
+dy/dx w.r.t. : cyl hp wt
+ 
+------------------------------------------------------------------------------
+    |            Delta-method
+    |      dy/dx   Std. Err.      t    P>|t|     [95% Conf. Interval]
+------------------------------------------------------------------------------
+cyl |  -.9416168   .5509164    -1.71   0.098    -2.070118    .1868842
+ hp |  -.0180381   .0118762    -1.52   0.140    -.0423655    .0062893
+ wt |  -3.166973   .7405759    -4.28   0.000    -4.683974   -1.649972
+------------------------------------------------------------------------------
+```
+
+#### marginaleffects
+
+同样的结果可以像下面这样用 `slopes()` 和 `summary()` 得到：
+
+```{r}
+library("marginaleffects")
+mod <- lm(mpg ~ cyl + hp + wt, data = mtcars)
+avg_slopes(mod)
+```
+
+注意 `Stata` 报告的是 t 统计量，而 `marginaleffects` 报告的是 Z。这会让 p 值略有差别，因为这个模型的自由度很低：`mtcars` 只有 32 行。
+
+### 反事实边际效应
+
+"反事实边际效应"是一个特殊的量：把数据集复制若干份，同时把某个回归变量固定在用户定义的取值上，由此得到。
+
+具体来说，Stata 分三步计算反事实边际效应：
+
+  1. 把整个数据集复制 3 份，并在每一份里把 `cyl` 的值设成指定的三个取值之一。
+  2. 为这个大网格里的每个观测计算边际效应。
+  3. 对所关心变量的每个取值，取边际效应的平均。
+
+#### Stata
+
+通过 `at` 参数，Stata 的 `margins` 命令可以估计平均_反事实_边际效应。例子如下：
+
+```
+quietly reg mpg i.cyl##c.hp wt
+margins, dydx(hp) at(cyl = (4 6 8))
+
+Average marginal effects                        Number of obs     =         32
+Model VCE    : OLS
+
+Expression   : Linear prediction, predict()
+dy/dx w.r.t. : hp
+
+1._at        : cyl             =           4
+
+2._at        : cyl             =           6
+
+3._at        : cyl             =           8
+
+------------------------------------------------------------------------------
+             |            Delta-method
+             |      dy/dx   Std. Err.      t    P>|t|     [95% Conf. Interval]
+-------------+----------------------------------------------------------------
+hp           |
+         _at |
+          1  |   -.099466   .0348665    -2.85   0.009    -.1712749   -.0276571
+          2  |  -.0213768    .038822    -0.55   0.587    -.1013323    .0585787
+          3  |   -.013441   .0125138    -1.07   0.293    -.0392137    .0123317
+------------------------------------------------------------------------------
+```
+
+<!-- Adapted from this GitHub issue: https://github.com/strengejacke/ggeffects/issues/249 -->
+
+#### marginaleffects
+
+你可以用 `slopes()` 配合 [`datagrid()`](https://marginaleffects.com/man/r/datagrid.html) 来估计平均反事实边际效应：先用 `datagrid()` 造一个反事实数据集，把完整的原始数据集为 `cyl` 变量的每个可能取值各复制一份，然后用 `by` 参数指定在组内求平均：
+
+```{r}
+mod <- lm(mpg ~ as.factor(cyl) * hp + wt, data = mtcars)
+
+avg_slopes(
+    mod,
+    variables = "hp",
+    by = "cyl",
+    newdata = datagrid(cyl = c(4, 6, 8), grid_type = "counterfactual"))
+```
+
+这等价于对观测层面的边际效应按组求均值（不使用 `by` 参数）：
+
+```{r}
+mfx <- slopes(
+    mod,
+    variables = "hp",
+    newdata = datagrid(cyl = c(4, 6, 8), grid_type = "counterfactual"))
+aggregate(estimate ~ term + cyl, data = mfx, FUN = mean)
+```
+
+<!-- Taken from https://github.com/vincentarelbundock/marginaleffects/issues/226 -->
+
+注意，与 `Stata` 一致，按组求平均的边际效应，其标准误是通过取"均值处的雅可比矩阵"来计算的：
+
+```{r}
+J <- components(mfx, "jacobian")
+J_mean <- aggregate(J, by = list(mfx$cyl), FUN = mean)
+J_mean <- as.matrix(J_mean[, 2:ncol(J_mean)])
+sqrt(diag(J_mean %*% vcov(mod) %*% t(J_mean)))
+```
+
+### 平均反事实调整预测
+
+#### Stata
+
+正如 Stata 的 `margins` 命令能算平均反事实边际效应一样，它也能估计_平均反事实调整预测_。
+
+例子如下：
+
+```
+quietly reg mpg i.cyl##c.hp wt
+margins, at(cyl = (4 6 8))
+
+Predictive margins                              Number of obs     =         32
+Model VCE    : OLS
+
+Expression   : Linear prediction, predict()
+
+1._at        : cyl             =           4
+
+2._at        : cyl             =           6
+
+3._at        : cyl             =           8
+
+------------------------------------------------------------------------------
+             |            Delta-method
+             |     Margin   Std. Err.      t    P>|t|     [95% Conf. Interval]
+-------------+----------------------------------------------------------------
+         _at |
+          1  |   17.44233   2.372914     7.35   0.000     12.55522    22.32944
+          2  |    18.9149   1.291483    14.65   0.000     16.25505    21.57476
+          3  |   18.33318   1.123874    16.31   0.000     16.01852    20.64785
+------------------------------------------------------------------------------
+```
+
+同样地，Stata 在背后做的是：
+
+  1. 把整个数据集复制 3 份，并在每一份里把 `cyl` 的值设成指定的三个取值之一。
+  2. 为这个大网格计算预测值。
+  3. 对 `cyl` 的每个取值取平均预测值。
+
+换句话说，Stata 实现的平均反事实调整预测，是"在观测值处的预测"（`marginaleffects::predictions` 的默认行为）与"在代表性取值处的预测"这两者的混合体。
+
+#### marginaleffects
+
+用 `predictions()` 估计平均反事实调整预测的做法是：第一，把 `datagrid()` 的 `grid_type` 参数设成 `"counterfactual"`；第二，用 `summary()` 的 `by` 参数（或者 `dplyr::summarise()` 这类手写函数）对预测值求平均。
+
+```{r}
+mod <- lm(mpg ~ as.factor(cyl) * hp + wt, data = mtcars)
+
+predictions(
+    mod,
+    by = "cyl",
+    newdata = datagrid(cyl = c(4, 6, 8), grid_type = "counterfactual"))
+
+predictions(
+    mod,
+    newdata = datagrid(cyl = c(4, 6, 8), grid_type = "counterfactual")) |>
+    group_by(cyl) |>
+    summarize(AAP = mean(estimate))
+```
+
+## `brmsmargins`
+
+[`brmsmargins` 包](https://joshuawiley.com/brmsmargins/)由 Joshua Wiley 开发：
+
+> 这个包提供了一些函数，用来从 brms 模型（ http://paul-buerkner.github.io/brms/ ）计算边际效应。一个核心动机是：为仅含固定效应的模型以及混合效应回归模型（包括位置-尺度模型）中的连续和离散预测变量计算平均边际效应（AME）。
+
+`brmsmargins` 相对 `marginaleffects` 的主要优势，是它能按 [Hedeker 等人（2012）](https://doi.org/10.1111/biom.12707)描述的方法计算"边际系数"。
+
+`marginaleffects` 相对 `brmsmargins` 的主要优势是：
+
+1. 支持 60 多种模型类型，而不只是 `brms` 包。
+2. 用户界面更简单（主观判断）。
+3. 在撰写本文时（2022-05-25），`brmsmargins` 尚不支持某些 `brms` 模型，比如多元或多项结果的模型；它也不支持自定义的结果变换。
+
+本节余下部分并排复现 `brmsmargins` 文档中的部分分析，以便凸显两者在语法上的相似与差异。
+
+:::{.callout-note}
+## 本节代码未在本站执行
+下面这一节的 `brms` 模型都指定了 `backend = "cmdstanr"`，需要安装 CmdStan 才能编译采样，而本站的渲染环境没有装它。因此本节的 12 个代码块**按原样展示但未运行**，页面上不会出现它们的输出。代码与上游一字不差，没有为了适配本机环境而改写（比如换成别的 backend）。本页其余部分的代码块都是真实执行的。
+:::
+
+### 固定效应模型的边际效应
+
+#### logistic 回归的 AME
+
+用 `brms` 估计一个 logistic 回归模型：
+
+```{r, message = FALSE, warning = FALSE}
+#| eval: false
+library(brms)
+library(brmsmargins)
+library(marginaleffects)
+library(data.table)
+library(withr)
+setDTthreads(5)
+h <- 1e-4
+
+void <- capture.output(
+    bayes.logistic <- brm(
+      vs ~ am + mpg, data = mtcars,
+      family = "bernoulli", seed = 1234,
+      silent = 2, refresh = 0,
+      backend = "cmdstanr",
+      chains = 4L, cores = 4L)
+)
+```
+
+手动计算 AME：
+
+```{r}
+#| eval: false
+d1 <- d2 <- mtcars
+d2$mpg <- d2$mpg + h
+p1 <- posterior_epred(bayes.logistic, newdata = d1)
+p2 <- posterior_epred(bayes.logistic, newdata = d2)
+m <- (p2 - p1) / h
+quantile(rowMeans(m), c(.5, .025, .975))
+```
+
+
+用 `brmsmargins` 计算 AME：
+
+```{r}
+#| eval: false
+bm <- brmsmargins(
+  bayes.logistic,
+  add = data.frame(mpg = c(0, 0 + h)),
+  contrasts = cbind("AME MPG" = c(-1 / h, 1 / h)),
+  CI = 0.95,
+  CIType = "ETI")
+data.frame(bm$ContrastSummary)
+```
+
+用 `marginaleffects` 计算 AME：
+
+```{r}
+#| eval: false
+avg_slopes(bayes.logistic) 
+```
+
+`marginaleffects` 输出中 `Effect` 列的 `mpg` 那一项，与 `brmsmargins` 输出的 `M` 列相符。
+
+### 混合效应模型的边际效应
+
+用 `brms` 估计一个混合效应 logistic 回归模型：
+
+```{r, message = FALSE, warning = TRUE}
+#| eval: false
+d <- withr::with_seed(
+  seed = 12345, code = {
+    nGroups <- 100
+    nObs <- 20
+    theta.location <- matrix(rnorm(nGroups * 2), nrow = nGroups, ncol = 2)
+    theta.location[, 1] <- theta.location[, 1] - mean(theta.location[, 1])
+    theta.location[, 2] <- theta.location[, 2] - mean(theta.location[, 2])
+    theta.location[, 1] <- theta.location[, 1] / sd(theta.location[, 1])
+    theta.location[, 2] <- theta.location[, 2] / sd(theta.location[, 2])
+    theta.location <- theta.location %*% chol(matrix(c(1.5, -.25, -.25, .5^2), 2))
+    theta.location[, 1] <- theta.location[, 1] - 2.5
+    theta.location[, 2] <- theta.location[, 2] + 1
+    d <- data.table(
+      x = rep(rep(0:1, each = nObs / 2), times = nGroups))
+    d[, ID := rep(seq_len(nGroups), each = nObs)]
+
+    for (i in seq_len(nGroups)) {
+      d[ID == i, y := rbinom(
+        n = nObs,
+        size = 1,
+        prob = plogis(theta.location[i, 1] + theta.location[i, 2] * x))
+        ]
+    }
+    copy(d)
+  })
+
+void <- capture.output(
+    mlogit <- brms::brm(
+      y ~ 1 + x + (1 + x | ID), family = "bernoulli",
+      data = d, seed = 1234,
+      backend = "cmdstanr",
+      silent = 2, refresh = 0,
+      chains = 4L, cores = 4L)
+)
+```
+
+#### AME：包含随机效应
+
+```{r}
+#| eval: false
+bm <- brmsmargins(
+  mlogit,
+  add = data.frame(x = c(0, h)),
+  contrasts = cbind("AME x" = c(-1 / h, 1 / h)),
+  effects = "includeRE",
+  CI = .95,
+  CIType = "ETI")
+data.frame(bm$ContrastSummary)
+
+avg_slopes(mlogit)
+```
+
+#### AME：仅固定效应（总均值）
+
+```{r}
+#| eval: false
+bm <- brmsmargins(
+  mlogit,
+  add = data.frame(x = c(0, h)),
+  contrasts = cbind("AME x" = c(-1 / h, 1 / h)),
+  effects = "fixedonly",
+  CI = .95,
+  CIType = "ETI")
+data.frame(bm$ContrastSummary)
+
+avg_slopes(mlogit, re_formula = NA)
+```
+
+### 位置-尺度模型的边际效应
+
+#### 固定效应位置-尺度模型的 AME
+
+用 `brms` 估计一个仅含固定效应的位置-尺度模型：
+
+```{r, message = FALSE, warning = FALSE}
+#| eval: false
+d <- withr::with_seed(
+  seed = 12345, code = {
+    nObs <- 1000L
+    d <- data.table(
+      grp = rep(0:1, each = nObs / 2L),
+      x = rnorm(nObs, mean = 0, sd = 0.25))
+    d[, y := rnorm(nObs,
+                   mean = x + grp,
+                   sd = exp(1 + x + grp))]
+    copy(d)
+  })
+
+void <- capture.output(
+    ls.fe <- brm(bf(
+      y ~ 1 + x + grp,
+      sigma ~ 1 + x + grp),
+      family = "gaussian",
+      data = d, seed = 1234,
+      silent = 2, refresh = 0,
+      backend = "cmdstanr",
+      chains = 4L, cores = 4L)
+)
+```
+
+#### 仅固定效应
+
+```{r}
+#| eval: false
+bm <- brmsmargins(
+  ls.fe,
+  add = data.frame(x = c(0, h)),
+  contrasts = cbind("AME x" = c(-1 / h, 1 / h)),
+  CI = 0.95, CIType = "ETI",
+  effects = "fixedonly")
+data.frame(bm$ContrastSummary)
+
+avg_slopes(ls.fe, re_formula = NA)
+```
+
+#### 离散变化与分布参数（`dpar`）
+
+计算 `grp=0` 与 `grp=1` 时，`sigma` 参数上调整预测之间的对比：
+
+```{r}
+#| eval: false
+bm <- brmsmargins(
+  ls.fe,
+  at = data.frame(grp = c(0, 1)),
+  contrasts = cbind("AME grp" = c(-1, 1)),
+  CI = 0.95, CIType = "ETI", dpar = "sigma",
+  effects = "fixedonly")
+data.frame(bm$ContrastSummary)
+```
+
+在 `marginaleffects` 里我们用 `comparisons()` 函数配合 `variables` 参数：
+
+```{r}
+#| eval: false
+avg_comparisons(
+  ls.fe,
+  variables = list(grp = 0:1),
+  dpar = "sigma")
+```
+
+#### 连续变量对 sigma 的边际效应
+
+```{r}
+#| eval: false
+bm <- brmsmargins(
+  ls.fe,
+  add = data.frame(x = c(0, h)),
+  contrasts = cbind("AME x" = c(-1 / h, 1 / h)),
+  CI = 0.95, CIType = "ETI", dpar = "sigma",
+  effects = "fixedonly")
+data.frame(bm$ContrastSummary)
+
+avg_slopes(ls.fe, dpar = "sigma", re_formula = NA)
+```
+
+## `fmeffects`
+
+[`fmeffects` 包](https://cran.r-project.org/package=fmeffects)的自述如下：
+
+> fmeffects：用前向边际效应做模型无关的解释。用前向边际效应为任意机器学习模型创建局部、区域和全局的解释。你提供模型和数据，'fmeffects' 计算特征效应。本包基于以下文献中的理论：C. A. Scholbeck, G. Casalicchio, C. Molnar, B. Bischl, and C. Heumann (2022)
+
+顾名思义，这个包聚焦于机器学习模型（用 `mlr3` 或 `tidymodels` 框架估计）情境下的"前向边际效应"。从 0.16.0 版起，`marginaleffects` 也支持这些机器学习框架，而且覆盖了 `fmeffects` 功能的一个超集。考虑一个在 `bikes` 数据上训练的随机森林模型：
+
+```{r, message = FALSE, warning = FALSE}
+#| eval: false
+library("mlr3verse")
+library("fmeffects")
+data("bikes", package = "fmeffects")
+task <- as_task_regr(x = bikes, id = "bikes", target = "count")
+forest <- lrn("regr.ranger")$train(task)
+```
+
+接下来，我们用 `avg_comparisons()` 函数计算*前向*边际效应：
+
+```{r}
+#| eval: false
+avg_comparisons(forest, variables = list(temp = 1), newdata = bikes)
+```
+
+这与 `fmeffects` 包报告的核心量是等价的：
+
+```{r}
+#| eval: false
+mfx <- fme(model = forest, data = bikes, features = list("temp" = 1))
+print(mfx)
+```
+
+`fmeffects` 另一个有意思的特性，是它能用一种非常规的方式处理分类预测变量：先选定一个参照水平，然后计算"该水平下的预测值"与"观测到的各水平下的预测值"（后者可能就等于参照水平）之间的平均差。
+
+在 `bikes` 这个例子里，我们可以回答这样的问题：如果所有日子都是雾天，预期的自行车租借量平均会增加多少？用 `marginaleffects`，我们可以在 `variables` 参数里传一个函数来指定自定义对比：
+
+```{r}
+#| eval: false
+FUN <- function(x) data.frame(lo = x, hi = "misty")
+
+avg_comparisons(
+  forest,
+  newdata = bikes,
+  variables = list(weather = FUN)
+)
+```
+
+还有两项功能值得一提。第一，`fmeffects` 包含一些用递归划分树探索边际效应异质性的函数。[异质性那一章](heterogeneity.html)演示了如何用 `marginaleffects` 达到类似效果。
+
+第二，`fmeffects` 还实现了一种非线性度量。目前 `marginaleffects` 里没有与之对应的东西。
+
+## `effects`
+
+[`effects` 包](https://cran.r-project.org/package=effects)由 John Fox 及其同事创建。
+
++ `marginaleffects` 支持的模型类型比 `effects` 多 30 多种。
++ `effects` 聚焦于["调整预测"](https://marginaleffects.com/chapters/predictions.html)的计算。它画出的图大致相当于 `marginaleffects` 里 `plot_predictions` 和 `predictions` 函数的产物。
++ `effects` 似乎不支持边际效应（斜率）、边际均值或对比。
++ `effects` 用的是 Base 绘图系统，而 `marginaleffects` 用 `ggplot2`。
++ `effects` 提供了*大量*非常强大的选项来定制图形。相比之下，`marginaleffects` 产出的是可以通过链式调用 `ggplot2` 函数来定制的对象。用户也可以调用 `plot_predictions(model, draw=FALSE)` 得到一个预测网格，然后直接用原始数据画出自己需要的图。
+
+`effects` 提供了几项 `marginaleffects` 目前没有的功能，包括：
+
+* 偏残差图
+* 多种绘制调整预测的方式：[包文档](https://cran.r-project.org/web/packages/effects/vignettes/predictor-effects-gallery.pdf)
+
+## `modelbased`
+
+[`modelbased` 包](https://easystats.github.io/modelbased/)由 `easystats` 团队开发。
+
+* 它是 `marginaleffects` 和 `emmeans` 的包装器，用来计算边际均值、对比和斜率。
+* 其功能与这两个底层包并无本质差别，所以是否选用 `modelbased`，主要取决于个人对语法、默认选项和便利功能的偏好。
+
+## `ggeffects`
+
+[`ggeffects`](https://strengejacke.github.io/ggeffects/) 包由 Daniel Lüdecke 开发。
+
+这个包目前处于维护模式。

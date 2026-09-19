@@ -1,0 +1,354 @@
+---
+title: "扩展支持的模型"
+subtitle: "*Extensions* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Extensions*](https://marginaleffects.com/bonus/extensions.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/extensions.qmd`，revision `870f15a0`）。
+> 网站内容 © 2025 Vincent Arel-Bundock, All Rights Reserved；`marginaleffects` 软件代码依 GPL-3 许可。
+> 本页为中文翻译，非原文，经原作者授权翻译并发布。
+> 页面中的代码块由本站在渲染时真实执行。
+
+```{r, include = FALSE}
+options(width = 1000)
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  fig.width = 6,
+  fig.asp = .4,
+  warning = FALSE,
+  message = FALSE,
+  comment = "#>"
+)
+```
+
+本文介绍如何为新的模型类添加支持，以及如何为已支持的模型添加新功能。
+
+## 支持一种新的模型类型
+
+在 `marginaleffects` 里添加对新模型的支持非常容易。我们只需要设置一个全局选项，再定义 4 个很简单的函数。
+
+如果你为某个 CRAN 包产生的模型类添加了支持，欢迎把代码提交到包里：https://github.com/vincentarelbundock/marginaleffects
+
+如果你支持的模型类来自 CRAN *以外*的包，可以把它提交到用户贡献的*非正式*扩展库。目前已有：
+
+* [`countreg` 包](https://github.com/vincentarelbundock/marginaleffects/blob/main/r/sandbox/methods_countreg.R)。感谢 Olivier Beaumais。
+* [`censreg` 包](https://github.com/vincentarelbundock/marginaleffects/blob/main/r/sandbox/methods_censReg.R)。感谢 Oleg Komashko。
+
+本节余下部分会演示怎样为一个模型添加支持：先是频率派模型，然后是贝叶斯模型。
+
+### 频率派模型
+
+首先，我们定义一个拟合模型的函数。通常这个函数会由 CRAN 上发布的某个建模包提供。这里我们自己写一个叫 `lm_manual()` 的函数，用简单的线性代数运算估计线性回归模型，并返回一个类为 `lm_manual` 的对象：
+
+```{r}
+lm_manual <- function(f, data, ...) {
+  # design matrix
+  X <- model.matrix(f, data = data)
+  # response matrix
+  Y <- data[[as.character(f[2])]]
+  # coefficients
+  b <- solve(crossprod(X)) %*% crossprod(X, Y)
+  Yhat <- X %*% b
+  # variance-covariance matrix
+  e <- Y - Yhat
+  df <- nrow(X) - ncol(X)
+  s2 <- sum(e^2) / df
+  V <- s2 * solve(crossprod(X))
+  # model object
+  out <- list(
+    d = data,
+    f = f,
+    X = X,
+    Y = Y,
+    V = V,
+    b = b
+  )
+  # class name: lm_manual
+  class(out) <- c("lm_manual", "list")
+  return(out)
+}
+```
+
+重点：自定义的拟合函数必须给它返回的对象赋一个新的类名。在上面的例子里，模型被赋成了 `lm_manual` 类（见函数倒数第二行代码）。
+
+我们这个新函数复现了 `lm()` 的结果：
+
+```{r}
+model <- lm_manual(mpg ~ hp + drat, data = mtcars)
+model$b
+
+model_lm <- lm(mpg ~ hp + drat, data = mtcars)
+coef(model_lm)
+```
+
+要在 `marginaleffects` 里扩展支持，第一步是告诉这个包我们的新类是被支持的。做法是定义一个全局选项：
+
+```{r}
+library(marginaleffects)
+
+options("marginaleffects_model_classes" = "lm_manual")
+```
+
+接着，我们定义 4 个方法：
+
+1. `get_coef()`
+    - 必需参数：`model`、`...`
+    - 返回：带名字的参数（系数）向量。
+1. `set_coef()`
+    - 必需参数：`model`、`coefs`（带名字的系数向量）、`...`
+    - 返回：一个新的模型对象，其中原来的系数被换成了新向量。
+    - [示例](https://github.com/vincentarelbundock/marginaleffects/blob/main/r/R/set_coef.R)
+1. `get_vcov()`
+    - 必需参数：`model`、`...`
+    - 可选参数：`vcov`
+    - 返回：一个带名字的方阵形式的方差-协方差矩阵。
+1. `get_predict()`
+    - 必需参数：`model`、`newdata`（数据框）、`...`
+    - 可选参数：`type` 以及其他模型特有的参数。
+    - 返回：一个两列的数据框，一列是唯一的 `rowid`，一列是 `estimate` 值。
+
+注意，这几个方法的名字都要带上 `.lm_manual` 后缀，表示 `marginaleffects` 每次需要处理 `lm_manual` 类的对象时应该调用它们。
+
+```{r}
+get_coef.lm_manual <- function(model, ...) {
+  b <- model$b
+  b <- setNames(as.vector(b), row.names(b))
+  return(b)
+}
+
+set_coef.lm_manual <- function(model, coefs, ...) {
+  out <- model
+  out$b <- coefs
+  return(out)
+}
+
+get_vcov.lm_manual <- function(model, ...) {
+  return(model$V)
+}
+
+get_predict.lm_manual <- function(model, newdata, ...) {
+  newX <- model.matrix(model$f, data = newdata)
+  Yhat <- newX %*% model$b
+  out <- data.frame(
+    rowid = seq_len(nrow(Yhat)),
+    estimate = as.vector(Yhat)
+  )
+  return(out)
+}
+```
+
+刚刚定义的这几个方法按预期工作：
+
+```{r}
+get_coef(model)
+
+get_vcov(model)
+
+get_predict(model, newdata = head(mtcars))
+```
+
+现在就可以用 `avg_slopes` 函数了：
+
+```{r}
+avg_slopes(model, newdata = mtcars, variables = c("hp", "drat"))
+
+predictions(model, newdata = mtcars) |> head()
+```
+
+注意，对自定义模型，我们通常必须显式地给出 `newdata` 和 `variables` 两个参数的值。
+
+### 贝叶斯模型
+
+给贝叶斯模型添加支持还要更容易！
+
+贝叶斯模型一般用 MCMC 方法估计，因此所有推断统计量都直接从后验分布的抽样中得到。所以我们唯一要做的，就是定义一个返回预测值后验抽样的 `get_predict()` 方法。
+
+下面用 `rjags` 包举一个简单的例子。先估计一个简单的 logistic 回归模型：
+
+:::{.callout-note}
+## 本节代码未在本站执行
+`rjags` 依赖系统级的 JAGS 程序，本站的渲染环境没有安装它，因此本节的三个代码块**按原样展示但未运行**，页面上不会出现它们的输出。代码本身与上游一字不差，在装有 JAGS 的机器上可以直接复制运行。本页其余部分的代码块都是真实执行的。
+:::
+
+```{r}
+#| eval: false
+#| results: hide
+library(rjags)
+
+dat <- get_dataset("Titanic", "Stat2Data")
+dat <- dat[!is.na(dat$Age), ]
+
+model_string <- "
+model {
+  # Likelihood
+  for (i in 1:N) {
+    y[i] ~ dbern(p[i])
+    logit(p[i]) <- b0 + b1 * x1[i] + b2 * x2[i]
+  }
+
+  # Priors
+  b0 ~ dnorm(0, 0.001)
+  b1 ~ dnorm(0, 0.001)
+  b2 ~ dnorm(0, 0.001)
+}"
+
+data_list <- list(
+  y = dat$Survived,
+  x1 = dat$Age,
+  x2 = dat$SexCode,
+  N = nrow(dat)
+)
+
+model <- jags.model(
+  textConnection(model_string),
+  data = data_list,
+  n.chains = 3
+)
+
+update(model, 1000) # burn-in
+
+samples <- coda.samples(
+  model,
+  c("b0", "b1", "b2"),
+  n.iter = 1000
+)
+```
+
+`samples` 对象里装的是参数的后验抽样。它不是传统意义上的"模型"，但包含了我们为新数据计算预测值所需要的全部信息。
+
+举例来说，下面这段代码返回 3000 个 MCMC 抽样，对应一位 36 岁男性存活概率的后验分布：
+
+```{r}
+#| eval: false
+Age <- 36
+SexCode <- 0
+
+lodds <- as.matrix(samples) %*% c(1, Age, SexCode)
+probs <- exp(lodds) / (1 + exp(lodds))
+```
+
+我们可以把这段代码推广，用来为任意新数据框计算预测值。
+
+```{r}
+#| eval: false
+class(samples) <- c("jags_samples", class(samples))
+
+get_predict.jags_samples <- function(
+  model,
+  newdata,
+  type = c("response", "link"),
+  ...
+) {
+  type <- match.arg(type)
+
+  # Compute predictions for each row of newdata and each posterior draw
+  X <- cbind(1, newdata$Age, newdata$SexCode)
+  est <- as.matrix(model) %*% t(X) # log-odds predictions
+  if (type == "response") {
+    est <- exp(est) / (1 + exp(est)) # probability predictions
+  }
+
+  # Make an empty data frame with the right number of rows
+  out <- data.frame(
+    rowid = seq_len(nrow(newdata)),
+    estimate = 0
+  )
+
+  # Append the posterior draws as an attribute of the output data frame
+  attr(out, "posterior_draws") <- t(est)
+
+  return(out)
+}
+
+# Not strictly necessary, but defining this function silences a warning about
+# missing variance-covariance matrix.
+get_vcov.jags_samples <- function(model, vcov = NULL, ...) {
+  return(NULL)
+}
+```
+
+然后……就好了！
+
+来看看它在 `marginaleffects` 里怎么用：
+
+```{r}
+#| eval: false
+# tell the package that we are adding support for a new class of models:
+options("marginaleffects_model_classes" = "jags_samples")
+
+avg_predictions(samples, variables = "SexCode", newdata = dat)
+
+avg_slopes(samples, variables = "Age", by = "SexCode", newdata = dat)
+
+# etc...
+```
+
+想了解在 `marginaleffects` 里还能对贝叶斯模型做些什么，见[贝叶斯一章](brms.html)。
+
+## 把你的扩展并入主包
+
+如果你写出了可用的扩展，欢迎回馈社区，把代码提交到主包里。做法就是按上面的步骤走完，然后：
+
+1. 把这个包加进永久的受支持模型列表，这样就不必每次会话都调用 `options()`：`R/sanitize_model.R`
+2. 编辑 `website/data/raw/supported_models.csv`，把这个包加进受支持模型的文档里
+3. 在新闻文件 `NEWS.md` 里加一条。
+
+## 修改或扩展已支持的模型
+
+假设你要用 `mclogit::mblogit` 函数估计一个模型。这个包 `marginaleffects` 已经支持了，但你想用一种目前尚未支持的预测 `type`（尺度）：一种"中心化的 link 尺度"。
+
+要做到这一点，我们需要覆盖 `get_predict.mblogit()` 方法。不过，重新给一个用 `library` 加载进来的包所提供的方法赋值可能不安全。稳妥起见，我们给自己的对象赋一个新的模型类（`customclass`），让它继承自 `mblogit`。然后定义一个 `get_predict.customclass` 方法来做我们那种新的预测。
+
+先加载库、估计模型：
+
+```{r}
+library(mclogit)
+library(data.table)
+
+model <- mblogit(
+  factor(gear) ~ am + mpg,
+  data = mtcars,
+  trace = FALSE
+)
+```
+
+告诉 `marginaleffects` 我们要添加对一个新模型类的支持，并给模型对象的一个副本赋上新的继承类名：
+
+```{r}
+options("marginaleffects_model_classes" = "customclass")
+
+model_custom <- model
+
+class(model_custom) <- c("customclass", class(model))
+```
+
+定义新的 `get_predict.customclass` 方法。我们用默认的 `predict()` 函数取得预测值。由于这是一个多项模型，`predict()` 返回的是一个预测值矩阵，响应变量的每个水平占一列。
+
+我们这个新的 `get_predict.customclass` 方法接过这个预测矩阵，对它做变换并重排形状，最终返回一个三列的数据框：`rowid`、`group` 和 `estimate`：
+
+```{r}
+get_predict.customclass <- function(model, newdata, ...) {
+  out <- predict(model, newdata = newdata, type = "link")
+  out <- cbind(0, out)
+  colnames(out)[1] <- dimnames(model$D)[[1]][[1]]
+  out <- out - rowMeans(out)
+  out <- as.data.frame(out)
+  out$rowid <- seq_len(nrow(out))
+  out <- data.table(out)
+  out <- melt(
+    out,
+    id.vars = "rowid",
+    value.name = "estimate",
+    variable.name = "group"
+  )
+}
+```
+
+最后，我们就可以调用任意 `slopes` 族函数并得到结果了。注意，我们这个 `customclass` 类的对象给出的结果，跟默认的 `mblogit` 对象已经不一样了：
+
+```{r}
+avg_predictions(model)
+
+avg_predictions(model_custom)
+```

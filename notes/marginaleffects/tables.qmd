@@ -1,0 +1,118 @@
+---
+title: "结果表格"
+subtitle: "*Tables* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Tables*](https://marginaleffects.com/bonus/tables.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/tables.qmd`，revision `870f15a0`）。
+> 网站内容 © 2025 Vincent Arel-Bundock, All Rights Reserved；`marginaleffects` 软件代码依 GPL-3 许可。
+> 本页为中文翻译，非原文，经原作者授权翻译并发布。
+> 页面中的代码块由本站在渲染时真实执行。
+
+```{r, include = FALSE}
+options(width = 1000)
+## this vignette is in .Rbuildignore because lme4 is not available on old CRAN
+## test machines.
+
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  fig.width = 9,
+  fig.asp = .4,
+  out.width = "100%",
+  warning = FALSE,
+  message = FALSE,
+  comment = "#>"
+)
+```
+
+## `tinytable`
+
+默认情况下，`marginaleffects` 会把结果打印到控制台。不过借助 `tinytable` 包，很容易输出成其他多种格式，包括 HTML、LaTeX、markdown、Word 和 Typst。
+
+https://vincentarelbundock.github.io/tinytable/
+
+例如：
+
+```{r}
+library(marginaleffects)
+mod <- glm(am ~ wt + drat, family = binomial, data = mtcars)
+mfx <- avg_slopes(mod)
+tab <- print(mfx, "tinytable")
+class(tab)
+```
+
+接下来可以用 `tinytable` 的 `style_tt()` 函数给表格设置样式，用 `group_tt()` 添加分组列或分组行，用 `format_tt()` 格式化内容，等等。还可以用 `save_tt()` 把表格存成文件。比如保存为 Word 文档：
+
+```r
+save_tt(tab, "/path/to/table.docx")
+```
+ 
+## `modelsummary`
+
+可以用 [`modelsummary` 包](https://github.com/vincentarelbundock/modelsummary)汇总 `comparisons()` 或 `slopes()` 函数的结果。
+
+```{r}
+library(modelsummary)
+library(marginaleffects)
+
+mod <- glm(am ~ wt + drat, family = binomial, data = mtcars)
+mfx <- avg_slopes(mod)
+
+modelsummary(mfx)
+```
+
+同样的结果也可以用 `modelplot()` 画出来：
+
+```{r}
+modelplot(mfx)
+```
+
+````{comment}
+可以把多个模型或多组边际效应并排展示：
+
+```{r}
+models <- list(
+    glm(am ~ drat, family = binomial, data = mtcars),
+    glm(am ~ wt + drat, family = binomial, data = mtcars))
+models[[1]] <- slopes(models[[1]])
+models[[2]] <- slopes(models[[2]], vcov = "HC3")
+modelsummary(models)
+```
+````
+
+使用 `avg_comparisons()` 函数时（或者对分类变量使用 `avg_slopes()` 函数时），输出会包含两列来唯一确定所关心的量：`term` 和 `contrast`。
+
+```{r}
+dat <- mtcars
+dat$gear <- as.factor(dat$gear)
+mod <- glm(vs ~ gear + mpg, data = dat, family = binomial)
+
+cmp <- avg_comparisons(mod)
+get_estimates(cmp)
+```
+
+可以用 `modelsummary` 函数的 `shape` 参数把表格组织成合适的结构：
+
+```{r}
+modelsummary(cmp, shape = term + contrast ~ model)
+```
+
+交叉对比要麻烦一些，因为同时存在多个分组。看下面这个例子：
+
+```{r}
+mod <- lm(mpg ~ factor(cyl) + factor(gear), data = mtcars)
+cmp <- avg_comparisons(
+  mod,
+  variables = c("gear", "cyl"),
+  cross = TRUE)
+get_estimates(cmp)
+```
+
+如上所示，这里有两个相关的分组列：`contrast_gear` 和 `contrast_cyl`。把这两个列名直接填进 `shape` 参数就行：
+
+```{r}
+modelsummary(
+  cmp,
+  shape = contrast_gear + contrast_cyl ~ model)
+```

@@ -1,0 +1,267 @@
+---
+title: "常见问题"
+subtitle: "*FAQ* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*FAQ*](https://marginaleffects.com/bonus/faq.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/faq.qmd`，revision `870f15a0`）。
+> 网站内容 © 2025 Vincent Arel-Bundock, All Rights Reserved；`marginaleffects` 软件代码依 GPL-3 许可。
+> 本页为中文翻译，非原文，经原作者授权翻译并发布。
+> 页面中的代码块由本站在渲染时真实执行。
+
+```{r, include = FALSE}
+options(width = 1000)
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  fig.width = 9,
+  fig.asp = .4,
+  out.width = "100%",
+  warning = FALSE,
+  message = FALSE,
+  comment = "#>"
+)
+url <- "https://raw.githubusercontent.com/vincentarelbundock/marginaleffects/main/website/data/raw/supported_models.csv"
+dat <- read.csv(url)
+n_support <- nrow(dat)
+```
+
+## 问与答
+
+下面这些链接指向具体问题的讨论（均为英文）：
+
+* [报错：Matrix columns are not supported](https://stackoverflow.com/questions/78568706/marginaleffects-error-matrix-columns-are-not-supported)
+* [图里的置信区间呈锯齿状（不光滑）](https://stackoverflow.com/questions/77556969/wiggly-confidence-interval-with-marginaleffectsplot-slopes/77620185#77620185)
+* [在一段未观测到的取值范围上使用 `plot_predictions()`](https://stackoverflow.com/questions/72723687/plot-cap-response-curve-for-counterfactual-data)
+* [为 `plm` 包的模型画边际效应图](https://stackoverflow.com/questions/73126378/marginal-effects-plot-of-plm/73127507#73127507)
+* [含去均值、多项式或变换后变量的模型](https://stackoverflow.com/questions/73303108/marginal-effects-for-de-meaned-polynomials-in-mixed-models/73305398#73305398)
+* [`nlme::lme` 遇到字符型预测变量时的问题](https://stackoverflow.com/questions/77516330/marginaleffects-package-refuses-service-with-nlme/77517278#77517278)
+* [控制 `plot_*()` 函数中分面的行数与列数](https://github.com/vincentarelbundock/marginaleffects/issues/1107)
+* [`brms` 模型的贝叶斯诊断（Rhat 等）](https://stackoverflow.com/questions/78479179/diagnostic-of-marginal-effects-from-a-brms-model)
+* [多重插补下如何合并预测值](https://stackoverflow.com/questions/77686706/how-to-pool-average-predictions-from-a-multinomial-regression-per-category-in-r/77688581#77688581)
+
+## 在函数、循环、其他环境里调用 `marginaleffects`，或者变量被重新赋值之后
+
+`marginaleffects` 的函数在函数体内、循环里或其他环境中被调用时，有时会失败。要理解原因，需要知道 `marginaleffects` 经常需要操作拟合模型时用的原始数据。为了取到这份原始数据，我们用的是 `insight` 包的 `get_data()` 函数。
+
+大多数情况下，`get_data()` 能从建模包创建的模型对象内部把数据取出来。但有些建模包*不会*把原始数据存进模型对象（为了省内存）。这种情况下，`get_data()` 会去解析调用语句、找出数据对象的名字，然后到全局环境里去找这个对象。当用户在别的环境里拟合模型时（比如在函数调用中），`get_data()` 就可能取不到原始数据。
+
+还有一个相关的问题：用户拟合了模型，之后又给存放数据集的那个变量赋了新值。
+
+建议：
+
+1. 把你的数据集显式地传给 `slopes` 族函数的 `newdata` 参数。
+2. 不要给用于存放建模数据集的变量重新赋值。
+
+另一个办法是在函数内部显式地重新赋值相关变量，确保 `marginaleffects` 能访问到它们。例如：
+
+```r
+get_int_eff = function(formula, data, boot = FALSE){
+  assign("formula", formula, envir = parent.frame())
+  mod = glm(formula = formula, data = data)
+  int_eff = avg_comparisons(
+    model = mod,
+    variables = "am",
+    type = "response")
+  if (boot){
+    int_eff = inferences(int_eff, method = "boot", R = 100, conf_type = "perc")
+  }
+  return(int_eff)
+}
+```
+
+## 为什么不该在拟合模型之后修改原始数据
+
+即使你传了 `newdata`，`marginaleffects` 也经常需要访问原始数据集。原因是大多数模型对象并不保存完整数据，或者它们保存的是一个 `model.frame`，而这个 `model.frame` 未必总能反推回原始变量（公式里某些变换是不可逆的）。结果就是 `insight::get_data()` 常常要到环境里去找一个与模型调用中同名的数据框。
+
+如果你在拟合之后覆盖或修改了那个原始对象，`marginaleffects` 可能会：
+
+- 抛出一些让人摸不着头脑的报错，说变量或因子水平缺失。
+- 悄无声息地用上被改过的值，导致估计结果不对。
+
+要避免这个问题，请在拟合模型和调用 `marginaleffects` 之间保持原始数据对象不变。如果确实必须改，就换一个新的对象名、重新拟合模型，或者尽量通过 `newdata`/`modeldata` 显式传入数据集。
+
+## `avg_comparisons()` 与 `avg_predictions()` 的等价关系
+
+假设我们估计了一个简单的 logit 回归，想计算 `vs` 变量从 0 变到 1 所对应的平均对数优势比。用 `avg_comparisons()` 函数可以这样做：
+
+```{r}
+library(marginaleffects)
+mod <- glm(am ~ vs + scale(drat), family = binomial, mtcars)
+
+avg_comparisons(mod,
+    variables = "vs",
+    comparison = "lnoravg",
+    type = "response")
+```
+
+我们也可以手动指定一个比较"hi"与"lo"预测值的函数，得到同样的结果：
+
+```{r}
+fun <- function(hi, lo) log((mean(hi) / (1 - mean(hi))) / (mean(lo) / (1 - mean(lo))))
+
+comparisons(mod,
+    variables = "vs",
+    comparison = fun,
+    type = "response")
+```
+
+同样的结果还可以用 `predictions()` 函数得到。先把整个数据集复制一遍并替换掉 `vs` 的取值，然后做预测，最后计算对数优势比：
+
+```{r}
+dat0 <- transform(mtcars, vs = 0)
+dat1 <- transform(mtcars, vs = 1)
+
+p0 <- predictions(mod, newdata = dat0, type = "response")
+p1 <- predictions(mod, newdata = dat1, type = "response")
+
+fun(p1$estimate, p0$estimate)
+```
+
+注意，下面这条命令给出的结果是不一样的。原因在于：它并没有复制完整数据集、再把"hi"和"lo"算成全数据上的平均预测值，而是只在 `vs` 分别等于 0 和 1 的那些行的子集上求平均：
+
+```{r}
+p <- avg_predictions(mod, by = "vs", type = "response")
+fun(p$estimate[2], p$estimate[1])
+```
+
+它等价于：
+
+```{r}
+dat0 <- subset(mtcars, vs == 0)
+dat1 <- subset(mtcars, vs == 1)
+
+p0 <- predictions(mod, newdata = dat0, type = "response")
+p1 <- predictions(mod, newdata = dat1, type = "response")
+
+fun(p1$estimate, p0$estimate)
+```
+
+## 日期变量
+
+`marginaleffects` 默认不支持日期型预测变量，主要有两个原因。第一，很多感兴趣的量只对数值变量才有正式定义（比如导数）。第二，像 "2024-11-04" 这样的对象没有自然的算术运算——$\pi$ + "2024-11-04" 这样的求和该怎么理解？出于这个考虑，`marginaleffects` 要求用户在拟合模型之前先把日期变量转成数值变量，这样各种运算才更明确。
+
+在下面的例子里，我们拟合两个模型：一个用日期，一个用日期的整数版本。调用 `predict()` 是为了说明这两个模型给出的预测值完全相同：
+
+```{r}
+#| error: true
+library(lubridate)
+library(marginaleffects)
+set.seed(123)
+
+N <- 100
+Date <- ymd("2024-01-01") + days(sample(0:30, N, replace = TRUE))
+Days <- as.integer(Date)
+Response <- pi * as.integer(Date) + rnorm(N)
+
+mod <- lm(Response ~ Date)
+predict(mod) |> head()
+avg_slopes(mod)
+
+mod <- lm(Response ~ Days)
+predict(mod) |> head()
+avg_slopes(mod)
+```
+
+## 更多绘图定制
+
+正如[绘图那一章](plot.html)所述，目前在 `marginaleffects` 里定制图形有三条路：
+
+1. 使用 `marginaleffects` 包中 `plot_*()` 函数自带的参数。
+2. 用 `ggplot2` 或 `ggExtra` 这类扩展包修改图形对象。
+3. 设 `draw=FALSE` 取出绘图数据，再把这份数据喂给 `ggplot2`、`plot` 或 `lattice` 这类独立的绘图工具。
+
+第 2 和第 3 条路极其灵活，无论是复现默认图形还是画高度定制的可视化都很容易。
+
+当然，有些用户可能还是更愿意直接用 `marginaleffects::plot_*()` 提供的函数参数，而某些参数的缺失会让人恼火。尽管如此，我们还是决定把 `plot_*()` 函数的参数数量保持在很低的水平。这是因为 `ggplot2` 的 `geom_*()`、`facet_*()`、`aes()` 这些函数各自都接受大量选项，而用户的需求又千差万别。要在不把函数撑成几十个参数的庞然大物的前提下照顾到所有需求和可能性，是很困难的。^[注意我们不能把视觉相关的参数塞进 `...`，因为这个机制已经被用来把参数传给 `predict()` 方法了，某些模型类型需要这样做。]
+
+因此，`marginaleffects` 这个包在设计上是有意限定范围的：专注于*计算*，同时提供少量*可视化*选项以便快速探索。需要高度定制或达到发表水准图形的用户，建议使用 `draw=FALSE` 参数配合独立的绘图工具。
+
+理想情况下，会有别人在 `marginaleffects` 之上做一个更丰富的可视化包。我觉得这会是个很酷的项目，如果我帮得上忙，很乐意合作、提供建议和协助。在那之前，欢迎继续在 GitHub 上开 issue 讨论。我很乐意听取反对意见、改进建议或 pull request。
+
+## `plot_*()` 函数里的 `condition` 和 `by` 有什么区别？
+
+这两个参数控制的是：在画预测值、对比或斜率时，模型中的其他变量如何处理。
+
+#### `condition`：针对单个（平均或众数）假想个体的条件估计
+
+它回答这个问题：
+
+> 如果我们改变 `condition` 中指定的焦点预测变量，同时把其他所有协变量固定在它们的均值或众数上，估计量会怎么变？
+
+- 在你的焦点预测变量上构造一个*网格*，同时把**其他所有变量**（在混合模型中也包括随机效应）固定在一个**参照值**上——通常是它们的均值、众数，或用户指定的某个值。
+- 等价于在 `predictions()` 里用 `newdata = datagrid(...)`。
+
+适用于：
+
+- 我们在实质上关心"平均的人"，也就是在所有维度上都恰好取平均值或众数的那个人或单位。
+- 计算代价高，需要快速得到结果。
+- 我们想放在 x 轴上的焦点预测变量是连续的，这会让"对该连续变量的每个唯一取值分别求平均"变得很困难。（这么做常常画出锯齿状的图。）
+
+不适用于：
+
+- 那个假想的平均个体并不存在，或者并不特别有意思。
+
+#### `by`：平均（边际）预测值、斜率与对比
+
+它回答这个问题：
+
+> 在由 `by` 指定的焦点预测变量所定义的各个子组里，平均预测值／对比／斜率是多少？
+
+- 对**原始数据的每一行**都计算预测值，用的是它们各自真实的协变量取值，然后在 `by` 定义的子组内**聚合／求平均**。
+- 等价于在 `predictions()` 或 `avg_predictions()` 里使用 `by`。
+
+适用于：
+
+- 样本大致能代表目标总体。
+- 我们关心的是平均预测值或平均效应，并且要按 `by` 里指定的变量分不同子组做边际化。
+
+不适用于：
+
+- x 轴变量是连续的。因为我们要对 x 轴变量的每一个取值分别求平均，结果就是在非常小的分箱里求平均，而每个箱里控制变量的"构成"还不一样。这会画出锯齿状的图，信息量不大。
+
+顺带一提，我（Vincent）个人几乎总是用 `by`，除非 x 轴变量是连续的、而我想要一条干净光滑的线。
+
+## 怎样给 `datagrid()` 里的函数传参数
+
+没有直接的办法给 `datagrid()` 里的函数传参数。不过用一个"函数工厂"很容易达到你要的效果：
+
+```{r}
+library(marginaleffects)
+seq.range = \(n) \(x) seq(min(x), max(x), length.out = n)
+
+grid <- datagrid(
+  Petal.Width = seq.range(5), 
+  Petal.Length = seq.range(10), 
+  newdata = iris)
+
+dim(grid)
+```
+
+## 在包装函数里使用 `inferences()`
+
+有一个麻烦是：`inferences(method = "boot")` 会重新求值一个存下来的调用。如果包装函数传进去的是局部符号而不是具体的值，那么当这些符号找不到时，自助法就会失败。
+
+一个解决办法是用 `do.call()` 来构造 `avg_comparisons()`，把参数先求值。这样调用里存的就是字面量，自助法重新求值时就不会出问题。
+
+```{r}
+set.seed(1)
+library(marginaleffects)
+
+dat <- data.frame(
+  period = rep(c(0, 1), each = 100),
+  treatment = rep(c(0, 1), times = 100),
+  n = sample(10:100, size = 200, replace = TRUE)
+)
+dat$y <- round(runif(nrow(dat), 0.05, 0.95) * dat$n)
+
+mod <- glm(cbind(y, n - y) ~ treatment * period, data = dat, family = "binomial")
+
+fun <- function(model, var_trt) {
+  args <- list(model = model, variables = var_trt) 
+  out <- do.call(avg_comparisons, args)
+  inferences(out, method = "boot", R = 10, conf_type = "perc")
+}
+
+fun(mod, "treatment")
+```

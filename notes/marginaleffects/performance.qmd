@@ -1,0 +1,325 @@
+---
+title: "性能调优"
+subtitle: "*Performance* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Performance*](https://marginaleffects.com/bonus/performance.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/performance.qmd`，revision `870f15a0`）。
+> 网站内容 © 2025 Vincent Arel-Bundock, All Rights Reserved；`marginaleffects` 软件代码依 GPL-3 许可。
+> 本页为中文翻译，非原文，经原作者授权翻译并发布。
+> 页面中的代码块由本站在渲染时真实执行，「解决办法 B：解析雅可比矩阵」一节除外（原因见该节说明）。
+
+## `marginaleffects` 有时候为什么很慢？
+
+某些 `marginaleffects` 调用之所以慢，主要有四个原因：
+
+1. `predict()` 函数本身慢。
+2. 对比的数量太多。
+3. 网格太大。
+4. 标准误的计算代价高。
+
+下面逐条来看，并给出可能的解决办法。
+
+```{r}
+library(marginaleffects)
+library(microbenchmark)
+library(tictoc)
+options(width = 300)
+
+dat <- get_dataset("airbnb")
+
+mod <- lm(
+    price ~ bathrooms * bedrooms * unit_type * Breakfast * Gym, 
+    data = dat)
+```
+
+## `predict()` 函数慢
+
+为了计算预测值、对比和斜率，`marginaleffects` 必须反复调用 `predict()`。这个函数由实现模型对象的那个包提供，速度可能相差很大。
+
+遗憾的是，既然这个函数不是 `marginaleffects` 自己提供的，能做的优化也就很有限。所以我们直接看其他几个拖慢速度的来源。
+
+## 对比的数量太多
+
+使用 `slopes()` 或 `comparisons()` 这两族函数时，默认行为是把所有焦点预测变量的"效应"逐个算一遍。预测变量一多，代价就上来了。
+
+### 解决办法：`variables` 参数
+
+一个简单的办法是指定 `variables` 参数，只计算你关心的那些预测变量。对比一下：
+
+```{r}
+tic()
+cmp <- avg_comparisons(mod, variables = "bathrooms")
+toc()
+
+tic()
+cmp <- avg_comparisons(mod)
+toc()
+```
+
+## 网格太大
+
+网格变大主要有两种原因。
+
+第一种：拟合模型用的数据集行数很多，而你又没有指定 `newdata` 参数。在上面拟合的例子里，`airbnb` 数据集很大。因此如果不指定 `newdata`，`marginaleffects` 会为数据集的每一行都算一个估计值（以及一个标准误）。这个代价可能非常高。
+
+```{r}
+p <- predictions(mod)
+dim(p)
+```
+
+第二种情况是：用户在 `newdata` 参数里自己指定了一个网格（可能是用 `datagrid()` 辅助函数生成的），而这个网格非常大。
+
+考虑一个简单的数据集，里面有 4 个分类变量，每个都有 26 个可能取值：
+
+```{r}
+let <- data.frame(
+    A = sample(letters, 1000, replace = TRUE),
+    B = sample(letters, 1000, replace = TRUE),
+    C = sample(letters, 1000, replace = TRUE),
+    D = sample(letters, 1000, replace = TRUE)
+)
+nrow(let)
+```
+
+这个数据集有 1000 行。但如果我们用 `datagrid()` 函数造一个"平衡网格"，结果就是 26^4^=456,976 行：
+
+```{r}
+dg <- datagrid(newdata = let, grid_type = "balanced")
+nrow(dg)
+```
+
+### 解决办法 A：在代表性取值上求估计
+
+与其为一个大网格的每一行都计算预测值、对比或斜率，只算少数几个估计值要快得多。比如，你可能只想算一个各项特征都取平均值（或众数）的个体的预测值，或者某些特定取值组合下的预测值。
+
+```{r}
+predictions(mod, newdata = "mean")
+
+predictions(mod, newdata = datagrid(Gym = 1, bathrooms = 2, bedrooms = 6))
+```
+
+### 解决办法 B：对网格做随机抽样
+
+另一个办法是从大网格里随机抽一部分行。只要子集足够大，在它上面算出来的统计量通常和全样本的结果很接近。
+
+下面我们用 `avg_comparisons()` 计算 `bathrooms` 对 `price` 的"平均效应"，可以看到用完整网格和用子集得到的估计值相当接近。
+
+```{r}
+set.seed(48103)
+# random subset of the grid
+sub <- dat[sample(nrow(dat), 1000), ]
+avg_comparisons(mod, variables = "bathrooms", newdata = sub)
+
+# full grid
+avg_comparisons(mod, variables = "bathrooms")
+```
+
+### 解决办法 C：加权网格
+
+当所有预测变量都是分类变量时，还有第三种办法：使用一个由唯一行构成的加权网格。再看我们那个 `airbnb` 模型，它里面有五个分类预测变量：
+
+```{r}
+pred <- insight::find_predictors(mod, flatten = TRUE)
+pred
+```
+
+我们可以构造一个由唯一行组成的网格，并按每一行在原数据集中出现的次数给它赋权重。
+
+```{r}
+#| message: false
+#| warning: false
+library(dplyr)
+grid <- dat |>
+    select(all_of(pred)) |>
+    summarise(weight = n(), .by = all_of(pred))
+```
+
+这个网格比原数据集小得多：
+
+```{r}
+nrow(dat)
+nrow(grid)
+```
+
+现在就可以用 `marginaleffects` 计算感兴趣的量了：用 `wts` 参数把网格"展开"，得到和使用完整数据集一样的结果，但快得多。
+
+```{r}
+# full dataset
+tic()
+p_full <- avg_predictions(mod)
+toc()
+```
+
+```{r}
+# weighted grid
+tic()
+p_subset <- avg_predictions(mod, newdata = grid, wts = "weight")
+toc()
+```
+
+```{r}
+p_full
+p_subset
+```
+
+## 贝叶斯分析
+
+贝叶斯分析可能很吃内存，因为 `marginaleffects` 往往需要为网格的每一行、每一个后验抽样都存一个预测值。对 `brms` 模型，`ndraws` 参数会被传给 `posterior_epred()`，可以用它只对后验抽样的一个子集求值。这样预测矩阵会变小，在某些应用里能把内存需求压到合理范围。
+
+```{r}
+#| eval: false
+avg_comparisons(
+    mod,
+    variables = "treatment",
+    ndraws = 1000
+)
+```
+
+## 标准误的计算代价高
+
+某些 `marginaleffects` 调用耗时的最后一个原因，是标准误本身算起来就贵。当拟合的模型包含很多参数（系数）时尤其如此，因为默认的标准误计算策略要对每个系数至少调用一次 `predict()`。
+
+### 解决办法 A：不算标准误
+
+不算标准误总是快得多。如果你不需要它们，设 `vcov=FALSE`。
+
+```{r}
+tic()
+p <- avg_predictions(mod, vcov = FALSE)
+toc()
+
+tic()
+p <- avg_predictions(mod)
+toc()
+```
+
+### 解决办法 B：解析雅可比矩阵
+
+对很多模型，`marginaleffects` 会用精确的闭式雅可比矩阵来算标准误，而不是用有限差分。这样既更快也更准：默认策略要对每个系数调用一次 `predict()`，而解析路径只需求一个矩阵表达式的值，并且完全不存在步长误差。
+
+只要模型和估计量符合条件，这条路径就会自动启用；没有东西要装，也没有开关要打开。`jacobian_method` 这个组件会报告实际走的是哪条路径。
+
+:::{.callout-note}
+## 本节代码未在本站执行
+解析雅可比矩阵这条路径比本站安装的 marginaleffects 0.32.0 要新：该版本的 `components()` 只提供 `jacobian`，没有 `jacobian_method`，`marginaleffects_analytic_jacobian` 选项也不起作用。因此本节的三个代码块**按原样展示但未运行**。
+
+特别说明下面那个 `microbenchmark` 对比：在 0.32.0 上它不会报错，但由于该选项是空操作，两个函数走的其实是同一条代码路径，跑出来的"对比"会让人误以为量到了解析路径与有限差分之差。与其贴一张看似有意义、实则无意义的计时表，不如不跑。代码与上游一字不差，在装有较新版本的机器上可以直接复制运行。
+:::
+
+```{r}
+#| eval: false
+p <- avg_predictions(mod)
+components(p, "jacobian_method")
+```
+
+符合条件的模型包括 `lm`、`glm`、`MASS::glm.nb()`、`MASS::rlm()`、`brglm2::brglmFit()`、`rms::ols()`、`rms::lrm()`、`quantreg::rq()`、`ivreg::ivreg()`、`geepack::geeglm()` 和 `survey::svyglm()`，在 link 和 response 两种尺度上都适用。预测值、内置的 `comparison` 函数、`by` 分组、权重以及线性形式的 `hypothesis` 参数都受支持。不在这个范围内的情况会自动退回有限差分。
+
+想看看解析路径到底差出多少，可以把它关掉再比一次：
+
+```{r}
+#| eval: false
+#| warning: false
+analytic <- function() {
+    options(marginaleffects_analytic_jacobian = TRUE)
+    avg_predictions(mod)
+}
+finite_differences <- function() {
+    options(marginaleffects_analytic_jacobian = FALSE)
+    avg_predictions(mod)
+}
+microbenchmark(
+    analytic(),
+    finite_differences(),
+    times = 5
+)
+```
+
+```{r}
+#| eval: false
+#| include: false
+options(marginaleffects_analytic_jacobian = TRUE)
+```
+
+### 解决办法 C：并行计算
+
+对于走不了解析路径的模型和调用，还有一个选择是并行计算标准误。
+
+并行化并不总能让 `marginaleffects` 快多少，因为在不同核心或 fork 出来的进程之间传递大数据集本身有开销。以下情形下这个策略更可能有用：
+
+1. 建模包的 `predict()` 函数很慢。
+2. 模型里有*大量*参数。
+3. 网格不至于大到把开销压过收益。
+
+要使用并行计算，我们调用 [`future` 包](https://future.futureverse.org/)的 `plan` 函数，并设置若干全局选项。
+
+:::{.callout-note}
+`inferences()` 函数的并行处理用的是另一个全局选项。细节见该函数的文档。
+:::
+
+下面是一个用 `nycflights13` 数据、模型参数很多的例子。
+
+```{r}
+#| warning: false
+library(mgcv) |> suppressPackageStartupMessages()
+library(tictoc)
+library(future)
+library(nycflights13)
+library(marginaleffects)
+data("flights")
+options(future.globals.maxSize = 8000 * 1024^2) # 8 GB memory
+packageVersion("marginaleffects")
+cores <- 8
+plan(multicore, workers = cores)
+
+flights <- flights |>
+    transform(date = as.Date(paste(year, month, day, sep = "/"))) |>
+    transform(date.num = as.numeric(date - min(date))) |>
+    transform(wday = as.POSIXlt(date)$wday) |>
+    transform(time = as.POSIXct(paste(hour, minute, sep = ":"), format = "%H:%M")) |>
+    transform(time.dt = difftime(time, as.POSIXct('00:00', format = '%H:%M'), units = 'min')) |>
+    transform(time.num = as.numeric(time.dt)) |>
+    transform(dep_delay = ifelse(dep_delay < 0, 0, dep_delay)) |>
+    transform(dep_delay = ifelse(is.na(dep_delay), 0, dep_delay)) |>
+    transform(carrier = factor(carrier)) |>
+    transform(dest = factor(dest)) |>
+    transform(origin = factor(origin))
+
+model <- bam(dep_delay ~ 
+    s(date.num, bs = "cr") +
+    s(wday, bs = "cc", k = 3) +
+    s(time.num, bs = "cr") +
+    s(carrier, bs = "re") +
+    origin +
+    s(distance, bs = "cr") + 
+    s(dest, bs = "re"),
+    data = flights,
+    family = poisson,
+    discrete = TRUE,
+    nthreads = cores)
+
+# there are many parameters
+length(coef(model))
+```
+
+下面比较三种 `predictions()` 调用。
+
+```{r}
+# No standard errors is very fast:
+tic()
+p1 <- predictions(model, vcov = FALSE)
+toc()
+
+# Parallel standard errors is slower
+options("marginaleffects_parallel" = TRUE)
+tic()
+p1 <- predictions(model)
+toc()
+
+# Sequential standard errors is even slower
+options("marginaleffects_parallel" = FALSE)
+tic()
+p2 <- predictions(model)
+toc()
+```
