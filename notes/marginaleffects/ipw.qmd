@@ -1,0 +1,69 @@
+---
+title: "逆概率加权"
+subtitle: "*IPW* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*IPW*](https://marginaleffects.com/bonus/ipw.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/ipw.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+
+
+逆概率加权（IPW）是统计建模中用来消除混杂的一种常用技术。它本质上是对样本重新加权，使其能够代表你所关心的总体。通常我们先估计每个个体接受处理的预测概率，然后把这些概率用作模型拟合中的权重，最后从这个加权模型中计算边际效应、对比、风险差、比值等等。
+
+本章介绍如何用 `marginaleffects` 来做 IPW。篇幅非常短。想要更全面地理解和应用这些方法的读者，可以参考 [Noah Greifer 在这一主题上出色而详尽的工作](https://iqss.github.io/dss-ps/ex-weight.html)，以及 [`WeightIt` 包的教程与网站](https://ngreifer.github.io/WeightIt/)。
+
+为便于说明，我们使用 Lalonde 数据。
+
+```{r, include = FALSE}
+options(width = 10000)
+```
+
+```{r}
+library(marginaleffects)
+data("lalonde", package = "MatchIt")
+head(lalonde)
+```
+
+首先，我们用 logistic 回归模型来估计每个个体接受处理的概率：
+
+```{r}
+m <- glm(treat ~ age + educ + race + re74, data = lalonde, family = binomial)
+```
+
+然后，我们调用 `predictions()` 来提取预测概率。注意我们把原始的 `lalonde` 数据显式传给了 `newdata` 参数，这样可以确保所有原始列都会被带到新数据集 `dat` 中。我们还新建了一列 `wts`，其中存放预测概率的倒数：
+
+```{r}
+tmp <- predictions(m, newdata = lalonde)
+lalonde$wts <- ifelse(tmp$treat == 1, 1 / tmp$estimate, 1 / (1 - tmp$estimate))
+```
+
+接下来，我们用线性回归对所关心的结局建模：1978 年的个人收入（`re78`）。注意我们在模型拟合过程中把预测值用作了权重。
+
+```{r}
+mod <- lm(re78 ~ treat * (age + educ + race + re74), data = lalonde, weights = wts)
+```
+
+最后，我们调用 `avg_comparisons()` 来计算平均处理效应。
+
+```{r}
+#| warning: false
+avg_comparisons(mod,
+    variables = "treat",
+    vcov = "HC3")
+```
+
+默认情况下，`avg_comparisons()` 使用 Hajek 估计量，也就是说，权重会先归一化到总和为 1，然后再进行计算。如果用户想使用 Horvitz-Thompson 估计量——它的归一化会考虑样本量——那么可以像下面这样轻松定义一个自定义的 `comparison` 函数：
+
+```{r}
+ht <- \(hi, lo, w, newdata) {
+    (sum(hi * w) / nrow(newdata)) - (sum(lo * w) / nrow(newdata))
+}
+
+comparisons(mod,
+    comparison = ht,
+    variables = "treat",
+    wts = "wts",
+    vcov = "HC3")
+```
