@@ -1,0 +1,87 @@
+---
+title: "分类协变量"
+subtitle: "*Categorical covariates* · grf 官方教程中译"
+lang: zh
+---
+
+> **来源**：R 包 [grf](https://github.com/grf-labs/grf) 官方教程 [`categorical_inputs.Rmd`](https://github.com/grf-labs/grf/blob/master/r-package/grf/vignettes/categorical_inputs.Rmd)（[原文渲染版](https://grf-labs.github.io/grf/articles/categorical_inputs.html)），作者 Julie Tibshirani、Susan Athey、Erik Sverdrup、Stefan Wager 等，采用 **GPL-3** 许可。
+> 本页为中文翻译，**非原文**；按 GPL-3 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 译自 grf 2.6.1（源码修订 `5bee99b`）。
+> 页内代码与图表由本站以 R 4.4.3 + grf 2.6.1 **重新执行**生成，因随机种子与包版本差异，数值可能与原站略有出入。
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+set.seed(123)
+```
+
+在这个例子中，我们会演示使用 grf 时处理分类变量的几种方式。
+
+下面其中一种方法依赖 `grf` 的姊妹包 [`sufrep`](https://github.com/grf-labs/sufrep)。我们先安装并加载它。
+
+```{r setup}
+library(grf)
+install.packages("https://github.com/grf-labs/sufrep/blob/master/sufrep_0.1.0.tar.gz?raw=true", repos = NULL, type = "source")
+library(sufrep)
+```
+
+假设我们想根据气缸数（`cyl`）、四分之一英里加速时间（`qsec`）和汽车品牌名（`brand`，下面创建）来估计每加仑英里数（`mpg`）。
+
+```{r dataset}
+# Create a categorical column with brand name
+df <- within(mtcars, {
+  # E.g. 'Mazda RX4' --> 'Mazda'
+  brand <- factor(sapply(rownames(mtcars), function(x) strsplit(x, " ")[[1]][1]))
+})
+
+x <- c("cyl", "qsec") # Continuous variables
+g <- c("brand")       # Categorical variable
+
+head(df[c(x, g)])
+```
+
+下面这段代码会报错，因为数据不是数值型的。
+
+```{r problem}
+# rf <- regression_forest(X=df[c(x, g)], Y=df$mpg)
+```
+
+这里可以考虑三种方法。
+
++ 直接给每个类别分配整数（把 'AMC' 转成 1，'Cadillac' 转成 2，依此类推）
++ 对类别做独热编码（有多少个类别就生成多少个二值列）
++ 使用类别的 _充分表示_（sufficient representation）。这里我们用 [`sufrep`](https://github.com/grf-labs/sufrep) 包里的 `means` 方法。
+
+最后一种方法是把 `brand` 列替换成按类别分组后连续列 `cyl` 和 `qsec` 的均值。如果你好奇它为什么有效，或者想进一步了解充分表示，请参阅我们的 `sufrep` 论文（[ArXiv](https://arxiv.org/abs/1908.09874v1)）。
+
+```{r solutions}
+# Solution 1: Transform variable into numbers
+X1 <- within(df[c(x, g)], brand <- as.numeric(brand))
+rf1 <- regression_forest(X1, df$mpg)
+
+
+# Solution 2: One-hot encoding
+X2 <- model.matrix(~ 0 + ., df[c(x, g)])
+rf2 <- regression_forest(X2, df$mpg)
+
+
+# Solution 3: 'Means' encoding using the 'sufrep' package
+encoder <- make_encoder(df[x], df$brand, method="means")
+X3 <- encoder(df[x], df$brand)
+rf3 <- regression_forest(X3, df$mpg)
+```
+
+不同的方法会带来不同的森林性能。
+
+```{r mses}
+mse1 <- mean(rf1$debiased.error)
+mse2 <- mean(rf2$debiased.error)
+mse3 <- mean(rf3$debiased.error)
+
+print("MSE when representing categorical variables as...")
+print(paste0("Integers: ", mse1))
+print(paste0("One-hot vectors: ", mse2))
+print(paste0("'Means' encoding [sufrep]: ", mse3))
+```
