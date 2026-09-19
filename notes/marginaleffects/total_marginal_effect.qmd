@@ -1,0 +1,184 @@
+---
+title: "总边际效应"
+subtitle: "*Total Marginal Effects* · marginaleffects 官方文档中译"
+bibliography: marginaleffects-refs.bib
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Total Marginal Effects*](https://marginaleffects.com/bonus/total_marginal_effect.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/total_marginal_effect.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+> 原文中指向原书章节的交叉引用已改写为指向 marginaleffects.com 的链接（那些章节不在本次翻译范围内）。
+
+
+@MizHan2025 提出了若干策略，用来汇总一个分类自变量不同水平的效应，或者一个自变量在分类因变量不同水平上的效应。本笔记用 `marginaleffects` 实现了其中的一部分策略。这些量的定义和计算都很简单。关于动机和解读，请参阅发表在 *Sociological Science* 上的原文。
+
+## 数据与模型
+
+首先，我们加载所需的包，以及来自「综合社会调查」（General Social Survey）的数据。我们关心的是变量 `race4` 和 `woman` 对变量 `conserv` 的效应。由于 `conserv` 是二值变量，我们拟合一个 logit 模型。
+
+```{r}
+#| warning: false
+library(marginaleffects) # marginal effects
+library(modelsummary) # regression summaries
+library(nanoparquet) # read data
+library(nnet) # multinomial logit
+library(future.apply) # parallel bootstrap
+plan(multisession)
+options(marginaleffects_parallel_inferences = TRUE)
+options(width = 300)
+
+
+# download data
+gss <- read_parquet(url("https://marginaleffects.com/data/Mize_Han_GSS.parquet"))
+
+# fit binary logit model
+mod <- glm(conserv ~ woman + race4 + class, data = gss, family = binomial(link = "logit"))
+get_estimates(mod)
+```
+
+## 分类自变量
+
+### 平均边际效应不平等
+
+@MizHan2025 把「平均边际效应不平等」定义为各个边际效应绝对值的平均。这里对分类预测变量而言，「边际效应」这个说法指的就是 [原书《反事实比较》一章](https://marginaleffects.com/chapters/comparisons.html) 中所说的「反事实比较」。首先，我们计算 `race4` 这个预测变量每一个水平上的边际效应。
+
+```{r}
+cmp <- avg_comparisons(mod,
+  variables = list(race4 = "pairwise"))
+cmp
+```
+
+这些结果表明，从 White 变为 Black，与 `conserv` 等于 1 的概率下降 `{r} sprintf("%.0f", abs(cmp$estimate[1]) * 100)` 个百分点相关联。
+
+这些边际效应绝对值的平均，就是「平均边际效应不平等」：
+
+```{r}
+abs(cmp$estimate)
+
+mean(abs(cmp$estimate))
+```
+
+借助 `hypothesis` 参数，我们可以更方便地计算这个量——而且还能同时得到标准误。
+
+```{r}
+avg_comparisons(mod,
+  variables = list(race4 = "pairwise"),
+  hypothesis = ~ I(mean(abs(x)))
+)
+```
+
+### 加权平均边际效应不平等
+
+@MizHan2025 认为，当样本中不同类别的出现频率存在严重不平衡时，上一节计算的那个量可能并不合适。他们提出的补救办法，是按照各个对比在样本中所占的相对比例对其加权。首先，我们根据样本比例构造一个权重向量。
+
+```{r}
+weights <- prop.table(table(gss$race4))
+weights <- c(
+  (weights["Black"] + weights["White"]) / 3,
+  (weights["Hispanic"] + weights["Black"]) / 3,
+  (weights["Hispanic"] + weights["Other"]) / 3,
+  (weights["Hispanic"] + weights["White"]) / 3,
+  (weights["Other"] + weights["Black"]) / 3,
+  (weights["Other"] + weights["White"]) / 3
+)
+```
+
+接下来，我们定义一个计算加权均值的 `wmean()` 函数，并把它传给 `hypothesis` 参数。
+
+```{r}
+wmean <- function(x) weighted.mean(x, weights)
+avg_comparisons(mod,
+  variables = list(race4 = "pairwise"),
+  hypothesis = ~ I(wmean(abs(x)))
+)
+```
+
+### 模型内部的比较
+
+@MizHan2025 还提出了一种比较不同分类预测变量的边际效应的策略。思路很简单。首先，我们为每一个预测变量计算平均边际效应不平等。做法是用 `variables` 参数为两个所关心的预测变量（`race4` 和 `woman`）计算对比。然后用 `hypothesis` 参数计算所关心的量，注意要在公式右端加上 `|term`，以便对这两个项分别计算所关心的量。
+
+```{r}
+cmp <- avg_comparisons(mod,
+  variables = list(race4 = "pairwise", woman = "pairwise"),
+  hypothesis = ~ I(mean(abs(x))) | term
+)
+cmp
+```
+
+我们发现 `race4` 的估计值比 `woman` 的更大。这个差异在统计上显著吗？这两个估计值彼此可区分吗？为了检验这一点，我们把上面的命令用管道传给 `hypotheses()` 函数。
+
+```{r}
+avg_comparisons(mod,
+  variables = list(race4 = "pairwise", woman = "pairwise"),
+  hypothesis = ~ I(mean(abs(x))) | term) |>
+  hypotheses(~pairwise)
+```
+
+答案是否定的。虽然这两个估计值乍看之下*似乎*不同，但我们无法拒绝二者相等这一原假设。
+
+
+### 跨模型的比较
+
+设想我们希望把 `woman` 这个预测变量在一个控制了 `race` 的模型中的边际效应，与 `woman` 在一个不控制 `race` 的模型中的边际效应作比较。做法是拟合两个模型，然后比较各自的边际效应。首先，我们定义一个 `estimator` 函数，它负责拟合模型，并返回一个带有所关心差值的 `marginaleffects` 对象。^[为提高效率我们设定了 `vcov=FALSE`，因为之后我们会对整个流程做自助法。]
+
+```{r}
+estimator <- function(data) {
+  # fit the two models we wish to compare
+  mod1 <- glm(conserv ~ woman + class + race4, data = data, family = binomial(link = "logit"))
+  mod2 <- glm(conserv ~ woman + class, data = data, family = binomial(link = "logit"))
+  # compute the marginal effects in both models
+  mfx1 <- avg_comparisons(mod1, variables = "woman", vcov = FALSE)
+  mfx2 <- avg_comparisons(mod2, variables = "woman", vcov = FALSE)
+  # compare the two models and store the difference in the estimate column
+  # estimator() must return a marginaleffects object
+  mfx1$estimate <- mfx1$estimate - mfx2$estimate
+  return(mfx1)
+}
+
+estimator(gss)
+```
+
+最后，我们用 `inferences()` 函数对整个流程做自助法，得到置信区间。
+
+```{r}
+inferences(gss, method = "rsample", estimator = estimator)
+```
+
+`Estimate` 列中报告的数值，表示 `woman` 在第一个模型中的边际效应与 `woman` 在第二个模型中的边际效应之*差*。置信区间则表示这个差值的不确定性。
+
+
+
+## 分类因变量
+
+为了展示前几节发展出来的概念如何应用到分类因变量上，我们对 `health` 变量拟合一个多项 logit 模型。我们关注的预测变量是一个名为 `college` 的二值变量。
+
+```{r}
+table(gss$college, gss$health)
+
+mod <- multinom(health ~ college + race4 + class + woman, data = gss, trace = FALSE)
+
+avg_comparisons(mod, variables = c("college", "woman"))
+```
+
+`Estimate` 列中的结果显示的是：取得大学学位对个体属于各个健康类别的概率的估计边际效应。显然，拥有大学学位似乎会提高个体报告自己健康状况良好或极佳的可能性。
+
+和前面一样，我们可以用 `hypothesis` 参数计算 `college` 和 `woman` 这两个预测变量的平均边际效应不平等。
+
+```{r}
+avg_comparisons(mod, 
+  variables = c("college", "woman"), 
+  hypothesis = ~ I(mean(abs(x))) | term)
+```
+
+我们还可以把上面的命令用管道传给 `hypotheses()` 函数，从而比较这两个估计值。
+
+```{r}
+avg_comparisons(mod, 
+  variables = c("college", "woman"), 
+  hypothesis = ~ I(mean(abs(x))) | term) |>
+  hypotheses(~revpairwise)
+```
+
+看起来——在各个结局水平上平均而言——`college` 对 `health` 的效应要大于 `woman` 的效应。
