@@ -1,0 +1,79 @@
+---
+title: "S 值"
+subtitle: "*S Values* · marginaleffects 官方文档中译"
+bibliography: marginaleffects-refs.bib
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*S Values*](https://marginaleffects.com/bonus/svalues.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/svalues.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+
+
+```{r, include = FALSE}
+options(width = 1000)
+## this vignette is in .Rbuildignore because lme4 is not available on old CRAN
+## test machines.
+
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  fig.width = 9,
+  fig.asp = .4,
+  out.width = "100%",
+  warning = FALSE,
+  message = FALSE,
+  comment = "#>"
+)
+```
+
+_S_ 值 --- 即「Shannon 变换」或「二元惊讶值」--- 是一种帮助分析者直观理解 p 值的认知工具 [@RafGre2020]。它让我们可以把 p 值与一个熟悉的博弈结果作比较。
+
+设想这样一件事：我们抛 4 次硬币，看能否拒绝「抛硬币是公平的」这一原假设。如果原假设为真，那么任意一次抛掷出现*正面*的概率是 $\frac{1}{2}$。连续观察到 4 次*正面*的概率是 $\left (\frac{1}{2} \right )^4=\frac{1}{16}=0.0625$。在原假设成立、也就是抛硬币确实公平的世界里，这个概率刻画了连续 4 次正面所带来的「惊讶」程度。
+
+现在考虑另一件事：我们估计一个模型，并用 `marginaleffects::hypotheses()` 来检验其中两个估计出的系数是否相等：
+
+```{r}
+library(marginaleffects)
+dat <- transform(mtcars, cyl = factor(cyl))
+mod <- lm(mpg ~ cyl, dat)
+hyp <- hypotheses(mod, "cyl6 = cyl8")
+hyp
+```
+
+`cyl6` 与 `cyl8` 之间的差是 `r sprintf("%.2f", hyp$estimate)`，对应的 p 值是 `r hyp$p.value`。同样地，这个 p 值可以解读为：如果原假设为真（也就是两个系数实际上确实相等），数据所带来的惊讶程度的一种度量。
+
+要连续抛出多少次*正面*，才会和这个相等性检验一样令人惊讶？为回答这个问题，我们在 $p=\left (\frac{1}{2} \right )^s$ 中解出 $s$。解就是 p 的负 $log_2$：
+
+```{r}
+-log2(hyp$p.value)
+```
+
+确实，用公平硬币连续抛出 9 次*正面*的概率是 $\left (\frac{1}{2} \right )^9=`r .5^9`$，这与我们在系数相等性检验中观察到的 p 值非常接近（见上面 `marginaleffects` 输出中的 _S_ 列）。把我们的 p 值与这样一个熟悉的博弈结果作比较，就得到了一个很好的直观解读：
+
+> 如果 `cyl6` 和 `cyl8` 的系数确实相等，那么纯粹出于偶然而发现绝对差大于 `r sprintf("%.2f", hyp$estimate)`，其令人惊讶的程度就相当于用公平硬币连续抛出 9 次*正面*。
+
+_S_ 值的好处包括
+
+1. 参照一个广为人知的物理过程（抛硬币）来校准分析者的直觉。
+1. 避免把研究结果二分为「显著」与「不显著」这种有问题的做法
+1. 降低对 $\alpha=0.05$ 这类任意显著性阈值的依赖。
+1. 防止人们把 p 值常见地*误*解为「原假设为真的概率」或备择假设的概率。部分原因在于，只要 p<0.5，S 就大于 1。^[感谢 Sander Greenland 提供这一说明。]
+1. 它采用了一个更自然的尺度：「就观察到的检验统计量有多令人惊讶而言，p 值 0.99 与 0.90 之间的差别，和 0.10 与 0.01 之间的差别并不相同。」^[感谢 Zad Rafi 指出这一点，并提供了 [@RafGre2020] 的链接。]
+
+```{r, echo=FALSE, fig.asp=1, fig.width = 5}
+# Create a sequence of p values from 0 to 1
+p_values <- seq(0, 1, length.out = 100)
+
+# Compute the S values using -log2(p)
+S_values <- -log2(p_values)
+
+# Create the plot
+plot(p_values, S_values, type = "l",
+     main = "Deterministic relationship between p and S",
+     xlab = "p",
+     ylab = "S")
+
+text(x = 0.15, y = 6, labels = "Surprising")
+text(x = 0.85, y = .75, labels = "Unsurprising")
+```
