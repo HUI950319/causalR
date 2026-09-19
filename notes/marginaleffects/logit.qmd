@@ -1,0 +1,171 @@
+---
+title: "Logit 模型"
+subtitle: "*Logit* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Logit*](https://marginaleffects.com/bonus/logit.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/logit.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+> 原文中指向原书章节的交叉引用已改写为指向 marginaleffects.com 的链接（那些章节不在本次翻译范围内）。
+
+
+```{r}
+#| include: false
+## this vignette is in .Rbuildignore
+
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  fig.width = 9,
+  fig.asp = .4,
+  out.width = "100%",
+  warning = FALSE,
+  message = FALSE,
+  comment = "#>"
+)
+library(ggplot2)
+theme_set(theme_minimal())
+```
+
+本教程复现了 Frank Harrell 那篇出色的博文中的部分分析：[Avoiding One-Number Summaries of Treatment Effects for RCTs with Binary Outcomes](https://www.fharrell.com/post/rdist/)。这里我们展示如何用 `comparisons()` 轻松计算单一数字汇总，以及个体层面对比的完整分布。
+
+Harrell 博士在上面那篇博文中讨论了 logistic 回归模型的各种汇总方式。他关注的场景是比较两个组，比如随机对照试验。他强调了呈现「单一数字汇总」（例如优势比和平均比例差）可能存在的陷阱。最后，他建议把注意力放在组间比例差的完整分布上。
+
+为避免歧义，在 logistic 回归且所关心的协变量为分类变量的语境下，我们把下列术语作为同义词交替使用：
+
+- 对比（Contrast）
+- 比例差（Proportion difference）
+- 风险差（Risk difference）
+- 绝对风险降低（Absolute risk reduction）
+
+## 数据
+
+我们关注的是 [GUSTO-I 研究](https://www.nejm.org/doi/full/10.1056/NEJM199309023291001)的一个数据子集，该研究把患者随机分配到加速给药的组织型纤溶酶原激活剂（tPA）组或链激酶（SK）组。
+
+加载所需的包和数据，并拟合一个经过协变量调整的 logistic 回归模型。
+
+```{r, message = FALSE, warning = FALSE}
+library(marginaleffects)
+library(modelsummary)
+library(ggplot2)
+library(rms)
+
+load(url(
+"https://github.com/vincentarelbundock/modelarchive/raw/main/data-raw/gusto.rda"
+))
+
+gusto <- subset(gusto, tx %in% c("tPA", "SK"))
+gusto$tx <- factor(gusto$tx, levels = c("tPA", "SK"))
+
+mod <- glm(
+    day30 ~ tx + rcs(age, 4) + Killip + pmin(sysbp, 120) + lsp(pulse, 50) +
+    pmi + miloc + sex, family = "binomial",
+    data = gusto)
+```
+
+### 单一数字汇总
+
+和通常一样，我们可以通过对系数取指数来得到所关心关系的单一数字汇总，也就是优势比（OR）：
+
+```{r, warning = FALSE}
+modelsummary(mod, exponentiate = TRUE, coef_omit = "^(?!txSK)") 
+```
+
+与优势比不同，调整后的风险差会随着控制变量取值的不同而因人而异。`comparisons()` 函数可以为每一个个体计算调整后的风险差。这里我们只展示其中几个：
+
+```{r}
+comparisons(
+    mod,
+    variables = "tx")
+```
+
+总体平均（也就是「边际」）的调整后风险差（[参见这篇教程](https://marginaleffects.com/chapters/gcomputation.html)）可以用 `avg_*()` 系列函数或 `by` 参数得到：
+
+```{r}
+avg_comparisons(mod, variables = "tx")
+```
+
+上面的 `comparisons()` 函数为数据中每一个观测行计算了两种反事实情形下的死亡预测概率（`day30==1`）：`tx` 为 "SK" 时，以及 `tx` 为 "tPA" 时。然后它计算了这两组预测值之间的差。最后，它计算了风险差的总体平均。
+
+除了风险*差*，我们还可以计算总体平均（边际）的调整后风险*比*：
+
+```{r}
+avg_comparisons(
+    mod,
+    variables = "tx",
+    comparison = "lnratioavg",
+    transform = exp)
+```
+
+总体平均（边际）的优势比：
+
+```{r}
+avg_comparisons(
+    mod,
+    variables = "tx",
+    comparison = "lnoravg",
+    transform = "exp")
+```
+
+### 个体层面的汇总
+
+除了估计单一数字汇总，我们还可以用 `comparisons()` 关注个体层面的比例差。这个函数会把拟合好的 logistic 回归模型用于预测每一位患者的结局概率，也就是个体层面的概率。
+
+```{r}
+cmp <- comparisons(mod, variables = "tx")
+cmp
+```
+
+展示每位患者在两种处理方案下的预测概率。
+
+```{r, fig.asp = 1}
+ggplot(cmp, aes(predicted_hi, predicted_lo)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = 3) +
+  coord_fixed() +
+  labs(x = "SK", y = "tPA")
+```
+
+我们可以把个体层面比例差的完整分布表示为累积分布函数：
+
+
+```{r}
+ggplot(cmp, aes(estimate)) + stat_ecdf()
+```
+
+或者把同样的信息画成直方图，并标出均值和中位数。
+
+```{r}
+ggplot(cmp, aes(estimate)) +
+  geom_histogram(bins = 100) +
+  geom_vline(xintercept = mean(cmp$estimate), color = "orange") +
+  geom_vline(xintercept = median(cmp$estimate), color = "darkgreen") +
+  labs(x = "SK - TPA", title = "Distribution of unit-level contrasts")
+```
+
+### 附录
+
+`comparisons()` 在背后执行的是下面这些计算：
+
+```{r}
+d  <- gusto
+
+d$tx = "SK"
+predicted_hi <- predict(mod, newdata = d, type = "response")
+
+d$tx = "tPA"
+predicted_lo <- predict(mod, newdata = d, type = "response")
+
+comparison <- predicted_hi - predicted_lo
+```
+
+原始数据集包含 30510 位患者，因此 `comparisons()` 生成的输出也有同样多的行数。
+
+```{r}
+nrow(gusto)
+```
+
+```{r}
+nrow(cmp)
+```
