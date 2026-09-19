@@ -1,0 +1,97 @@
+---
+title: "评估因果森林的拟合效果"
+subtitle: "*Evaluating a causal forest fit* · grf 官方教程中译"
+lang: zh
+---
+
+> **来源**：R 包 [grf](https://github.com/grf-labs/grf) 官方教程 [`diagnostics.Rmd`](https://github.com/grf-labs/grf/blob/master/r-package/grf/vignettes/diagnostics.Rmd)（[原文渲染版](https://grf-labs.github.io/grf/articles/diagnostics.html)），作者 Julie Tibshirani、Susan Athey、Erik Sverdrup、Stefan Wager 等，采用 **GPL-3** 许可。
+> 本页为中文翻译，**非原文**；按 GPL-3 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 译自 grf 2.6.1（源码修订 `5bee99b`）。
+> 页内代码与图表由本站以 R 4.4.3 + grf 2.6.1 **重新执行**生成，因随机种子与包版本差异，数值可能与原站略有出入。
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+set.seed(123)
+```
+
+```{r setup}
+library(grf)
+library(ggplot2)
+```
+
+## 评估重叠性
+
+要检验 grf 背后的识别假设是否成立，有两个常用的诊断工具：倾向评分（propensity score）直方图和协变量平衡图。
+
+```{r}
+n <- 2000
+p <- 10
+X <- matrix(rnorm(n * p), n, p)
+colnames(X) <- make.names(1:p)
+
+W <- rbinom(n, 1, 0.4 + 0.2 * (X[, 1] > 0))
+Y <- pmax(X[, 1], 0) * W + X[, 2] + pmin(X[, 3], 0) + rnorm(n)
+cf <- causal_forest(X, Y, W)
+```
+
+重叠性（overlap）假设要求每个 $X_i$ 接受处理的概率都为正。我们不应该能够根据个体的协变量确定性地判断它是否接受处理，也就是说，估计出的倾向评分都不应接近 1 或 0。可以用直方图来检查这一点：
+
+```{r}
+hist(e.hat <- cf$W.hat)
+```
+
+还可以画出所有样本的逆倾向加权直方图，检查协变量在处理组和对照组之间是否平衡；这里把每个特征上两组的直方图叠放在一起（用 [ggplot2](https://ggplot2.tidyverse.org/index.html) 绘制，它支持加权直方图）：
+
+```{r, fig.height = 10}
+IPW <- ifelse(W == 1, 1 / e.hat, 1 / (1 - e.hat))
+
+plot.df <- data.frame(value = as.vector(X),
+                      variable = colnames(X)[rep(1:p, each = n)],
+                      W = as.factor(W),
+                      IPW = IPW)
+
+ggplot(plot.df, aes(x = value, weight = IPW, fill = W)) +
+  geom_histogram(alpha = 0.5, position = "identity", bins = 30) +
+  facet_wrap( ~ variable, ncol = 2)
+```
+
+## 评估拟合
+
+森林的摘要函数 [test_calibration](https://grf-labs.github.io/grf/reference/test_calibration.html) 可以用来评估森林的拟合优度。`mean.forest.prediction` 的系数为 1，说明森林的平均预测是正确的；`differential.forest.prediction` 的系数为 1，说明森林捕捉到了潜在信号中的异质性。
+
+```{r}
+test_calibration(cf)
+```
+
+这一做法和这个函数源自计量经济学文献中更早的工作。一个更直观的做法是查看亚组的 ATE，其中亚组按 CATE 预测值的高低划分（Athey & Wager, 2019）。
+这种方法虽然能对异质性给出一些定性的认识，但分组方式很朴素：用来划分亚组的双稳健得分，与用来估计这些组 ATE 的得分并不独立。
+
+[RATE](https://grf-labs.github.io/grf/reference/rank_average_treatment_effect.html) 函数用 CATE 预测值的分位数，把这一做法自动推广到所有可能的亚组上。如果用彼此分开的数据来拟合 CATE 模型和估计 RATE 指标，就能得到一个在没有异质性时期望为零的检验统计量，可以用它为处理效应异质性是否存在构造置信区间。关于这一更推荐的做法，更多细节请见[这篇 vignette](https://grf-labs.github.io/grf/articles/rate.html)。
+
+Athey et al. (2017) 提出了一个偏差度量，用来衡量相对于只看简单的组间均值差，倾向模型和结果模型要多做多少工作才能得到无偏估计：$bias(x) = (e(x) - p) \times (p(\mu(0, x) - \mu_0) + (1 - p) (\mu(1, x) - \mu_1)$。
+
+```{r}
+tau.hat <- predict(cf)$predictions
+
+p <- mean(W)
+Y.hat.0 <- cf$Y.hat - e.hat * tau.hat
+Y.hat.1 <- cf$Y.hat + (1 - e.hat) * tau.hat
+
+bias <- (e.hat - p) * (p * (Y.hat.0 - mean(Y.hat.0))  + (1 - p) * (Y.hat.1 - mean(Y.hat.1)))
+```
+
+按结果变量的标准差缩放后：
+
+```{r}
+hist(bias / sd(Y))
+```
+
+更多细节见 Athey et al. (2017) 的 D 节。
+
+## 参考文献
+Athey, Susan and Stefan Wager. Estimating Treatment Effects with Causal Forests: An Application. _Observational Studies_, 5, 2019. ([arxiv](https://arxiv.org/abs/1902.07409))
+
+Athey, Susan, Guido Imbens, Thai Pham, and Stefan Wager. Estimating average treatment effects: Supplementary analyses and remaining challenges. _American Economic Review_, 107(5), May 2017: 278-281. ([arxiv](https://arxiv.org/abs/1702.01250))
