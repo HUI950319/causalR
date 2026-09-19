@@ -1,0 +1,1350 @@
+---
+title: "超级学习"
+subtitle: "*Super Learning* · tlverse 官方手册中译"
+bibliography: tlverse-refs.bib
+lang: zh
+---
+
+> **来源**：[*Targeted Learning in R: Causal Data Science with the `tlverse` Software Ecosystem*](https://tlverse.org/tlverse-handbook/)，作者 Mark van der Laan、Jeremy Coyle、Nima Hejazi、Ivana Malenica、Rachael Phillips、Alan Hubbard，采用 **[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)** 许可。
+> 本页为中文翻译，**非原文**；依 CC BY 4.0 保留原作者署名与许可证声明，并标明本页是经过修改（翻译）的版本。
+> 原作品按「现状」提供，原作者不附任何明示或默示的担保（见 CC BY 4.0 第 5 节免责声明）；译文中的任何疏漏由译者负责，不代表原作者观点。
+> 译自源码仓库 [tlverse/tlverse-handbook](https://github.com/tlverse/tlverse-handbook) 修订 `2931693`（2024-09-21）的 `06-sl3.Rmd`。本章作者为 *Rachael Phillips*。
+> **本站渲染环境的一处设置**：本页开头额外插入了一个隐藏代码块，把 `future.globals.maxSize` 调高到 8 GiB。原因是 `sl3::cv_risk` 通过 `origami` / `future.apply` 并行求交叉验证风险时，需要导出约 2.5 GiB 的已拟合学习器闭包，超过 `future` 默认的 500 MiB 上限而报错。该设置只影响并行时允许传输的对象大小上限，**不改变任何统计设定、算法或计算结果**；原书各代码块本身逐字未动。
+> **格式适配说明**：原书用于区分 HTML/LaTeX 输出的内联 R 判断（`is_latex_output()` / `is_html_output()`）在本站只保留 HTML 分支；原文指向 tlverse.org 各章的站内链接改为指向本站对应中译页。其余代码块按原文逐字保留，并由本站以 R 4.4.3 重新执行，因此运行耗时等数值会与原书不同。
+
+```{=html}
+<span class="math inline">
+\(\DeclareMathOperator{\expit}{expit}\)
+\(\DeclareMathOperator{\logit}{logit}\)
+\(\DeclareMathOperator*{\argmin}{\arg\!\min}\)
+\(\newcommand{\indep}{\perp\!\!\!\perp}\)
+\(\newcommand{\R}{\mathbb{R}}\)
+\(\newcommand{\E}{\mathbb{E}}\)
+\(\newcommand{\M}{\mathcal{M}}\)
+\(\newcommand{\I}{\mathbb{I}}\)
+</span>
+```
+
+# 超级学习 {#sl3}
+
+*Rachael Phillips*
+
+基于 [`sl3` `R` 包](https://github.com/tlverse/sl3)，作者为 *Jeremy Coyle、Nima Hejazi、Ivana Malenica、Rachael Phillips 与 Oleg Sofrygin*。
+
+### 学习目标
+
+读完本章之后，你将能够：
+
+1. 选择一个由真实预测函数最优化的表现度量；或者反过来，把所关心的真实预测定义为该表现度量的最优化元。
+2. 组装一套多样化的学习器集合（"库"），供超级学习器考虑。具体来说，你应当能够：
+
+     a. 通过修改调参参数来定制一个学习器；
+     b. 用不同的调参参数设定，从同一个基学习器创建出多个变体；
+     c. 把筛选器（screener）与学习器耦合起来，构造出只把筛选器选出的那一小部分协变量作为协变量来考虑的学习器。
+
+3. 指定一个能最优化所关心目标函数的元学习器（meta-learner）。
+4. 结合手头的预测问题、分析在现实世界中的预期用途、统计模型、样本量、协变量个数，以及离散结局的结局发生率，为所选的库与元学习器给出论证。
+5. 依据交叉验证风险估计表与超级学习器系数，解读超级学习器的拟合结果。
+
+## 引言
+
+数据分析中一项常见任务是预测，也就是利用观测数据学习一个函数，它以协变量／预测变量上的数据为输入，输出一个预测值。有时，所关心的科学问题本身适合作因果效应估计。但即便在这类预测并不居于台前的场景中，预测任务也嵌在流程之内。举例来说，在针对平均处理效应的靶向最小损失估计（TMLE）中，估计结局回归与倾向性评分都需要预测建模。
+
+从数据中对关系建模有多种可用策略，我们把它们交替称为"估计量"、"算法"和"学习器"。对某些数据，必须用能够捕捉变量间复杂关系的算法才能充分建模；对另一些数据，参数型回归学习器可能就拟合得相当不错。对于给定的数据集与预测问题，一般不可能事先知道哪种方法最好。
+
+超级学习器（Super Learner, SL）解决了"选哪个算法"的问题，因为它可以同时考虑许多算法——从最简单的参数回归，到最复杂的机器学习算法（例如神经网络、支持向量机等）。此外，已经证明在大样本下，给定所指定的学习器集合，它的表现能达到尽可能好（与那个未知的先知一样好）[@vdl2003unified; @vdl2004asymptotic; @dudoit2005asymptotics; @vaart2006oracle]。SL 代表了一种完全预先设定、灵活且有理论依据的预测建模方法。它已被证明在各种应用中都具有自适应性与稳健性，即便样本量很小也是如此。关于 SL 流程的详细说明有大量文献可查 [@polley2010super; @naimi2018stacked]。关于设定 SL 的实务考量——包括如何指定一个丰富而多样的学习器库、如何为 SL 选择表现度量，以及如何指定交叉验证（CV）方案——在一篇预印本文章中有介绍 [@rvp2022super]。这里，我们聚焦于介绍 `sl3`，也就是 `tlverse` 中面向 SL 的标准软件包。
+
+## 用 `sl3` 做超级学习
+
+## 如何拟合超级学习器
+
+本节演示用 `sl3` 拟合任意 SL 的核心功能。在随后的各节中，我们会介绍 `sl3` 的更多功能。
+
+用 `sl3` 拟合任意 SL 都包含以下三个步骤：
+
+1. 用 `make_sl3_Task` 定义预测任务；
+2. 用 `Lrnr_sl` 实例化 SL；
+3. 用 `train` 把 SL 拟合到该任务上。
+
+#### 贯穿全章的 WASH Benefits 数据示例
+
+我们将以 WASH Benefits 孟加拉国研究为例，引导这次对 `sl3` 的概览。在这项研究中，我们关心的是用协变量／预测变量（包括社会经济地位变量、孕周以及母亲的各项特征）来预测儿童发育结局——身高别体重 z 评分。关于该数据集的更多信息，见[「示例数据集」](03-data.qmd#wash)一章。
+
+#### 预备工作
+
+首先，我们需要把数据与相关包载入 R 会话。
+
+##### 载入数据
+
+```{r site-render-setup, include=FALSE}
+# 本站渲染环境设置，非原书代码：
+# sl3::cv_risk 经 origami -> future.apply 并行时，需要向 worker 导出约 2.5 GiB 的
+# 已拟合学习器闭包，超过 future 包默认的 500 MiB 上限（future.globals.maxSize）。
+# 这里把上限调高，使该步骤能够正常完成；不改变任何统计设定或计算结果。
+options(future.globals.maxSize = 8 * 1024^3)
+```
+
+```{r setup-handbook-utils-noecho, echo = FALSE}
+library(data.table)
+library(knitr)
+library(dplyr)
+```
+
+我们将用 `data.table` R 包中的 `fread` 函数载入 WASH Benefits 示例数据集：
+
+```{r load-data}
+washb_data <- fread(
+  paste0(
+    "https://raw.githubusercontent.com/tlverse/tlverse-data/master/",
+    "wash-benefits/washb_data.csv"
+  ),
+  stringsAsFactors = TRUE
+)
+```
+
+接着，我们看一眼数据集的前几行：
+
+```{r show-data-normal-noeval, eval = FALSE}
+head(washb_data)
+```
+
+```{r show-data-handbook, echo = FALSE}
+head(washb_data) %>%
+  kable() %>%
+  kableExtra::kable_styling(fixed_thead = TRUE) %>%
+  kableExtra::scroll_box(width = "100%", height = "300px")
+```
+
+##### 安装 `sl3` 软件（按需）
+
+安装任何包之前，我们建议先清空 R 工作空间，再重启 R 会话。在 RStudio 中，可以依次点击 "Session" → "Clear Workspace"，再点击 "Session" → "Restart R"。
+
+我们可以用 `devtools` R 包提供的 `install_github` 函数来安装 `sl3`。本材料中使用的是 `sl3` 的开发（"devel"）版本，因此下面演示如何安装该版本。
+
+```{r install-sl3, eval = FALSE}
+library(devtools)
+install_github("tlverse/sl3@devel")
+```
+
+R 包装好之后，我们建议再次重启 R 会话。
+
+##### 载入 `sl3` 软件
+
+`sl3` 装好后，我们就可以像加载其他 `R` 包一样加载它：
+
+```{r load-sl3}
+library(sl3)
+```
+
+### 1. 用 `make_sl3_Task` 定义预测任务
+
+`sl3_Task` 对象定义了所关心的预测任务。回忆一下，在这个演示例子中，我们的任务是用 WASH Benefits 孟加拉国示例数据集，学习一个关于协变量的函数来预测身高别体重 Z 评分 `whz`。
+
+```{r task}
+# create the task (i.e., use washb_data to predict outcome using covariates)
+task <- make_sl3_Task(
+  data = washb_data,
+  outcome = "whz",
+  covariates = c("tr", "fracode", "month", "aged", "sex", "momage", "momedu",
+                 "momheight", "hfiacat", "Nlt18", "Ncomp", "watmin", "elec",
+                 "floor", "walls", "roof", "asset_wardrobe", "asset_table",
+                 "asset_chair", "asset_khat", "asset_chouki", "asset_tv",
+                 "asset_refrig", "asset_bike", "asset_moto", "asset_sewmach",
+                 "asset_mobile")
+)
+
+# let's examine the task
+task
+```
+
+`sl3_Task` 会记录各变量在预测问题中所扮演的角色。与预测任务相关的额外信息（例如观测层面的权重、offset、id、CV 折）同样可以在 `make_sl3_Task` 中指定。`sl3` 中默认的 CV 折结构是 V=10 折的 V 折交叉验证（VFCV）。如果在任务中指定了 `id`，则采用聚集型的 V=10 VFCV 方案；如果结局类型是二值或分类的，则采用分层的 V=10 VFCV 方案。通过传入一个 `origami` 折对象（由 `origami` R 包中的 `make_folds` 函数生成），可以指定不同的 CV 方案。更多信息请参阅上一章关于交叉验证的内容，或查阅 `origami` 的 `make_folds` 函数文档（例如在 RStudio 中加载 `origami` R 包后，在控制台输入 "?make_folds"）。关于 `sl3_Task` 的更多细节，请参阅其文档（例如在 R 中输入 "?sl3_Task"）。
+
+*小提示：* 如果你输入 `task$` 然后按 Tab 键（若不在 RStudio 中则按两下 Tab），就可以看到所有可从 `task$` 对象访问的活动字段、公共字段以及方法。这个 `$` 就像一把钥匙，可以打开一个对象的许多内部结构。在下一节中，我们会看到如何用 `$` 深入 SL 拟合对象——从 SL 拟合结果或候选学习器中取得预测、检视 SL 拟合结果或其候选者，以及汇总 SL 拟合结果。
+
+### 2. 用 `Lrnr_sl` 实例化超级学习器
+
+要创建 `Lrnr_sl`，我们至少需要指定一组供 SL 作为候选者考虑的学习器。这组算法通常也被称为"库"（library）。我们还可以指定元学习器，也就是把各学习器集成起来的那个算法（注意这一部分是可选的，因为 `sl3` 中已经设好了默认值）。关于如何针对手头预测任务来定制 SL 设定（包括库与元学习器）的逐步指引，参见《设定超级学习器的实务考量》[@rvp2022super]。
+
+学习器具有一些属性，用以标明它们支持哪些特性。我们可以用 `sl3_list_properties()` 函数列出至少被一个学习器支持的全部属性：
+
+```{r list-properties}
+sl3_list_properties()
+```
+
+由于 `whz` 是连续结局，我们可以用 `sl3_list_learners()` 找出支持该结局类型的学习器：
+
+```{r list-learners}
+sl3_list_learners(properties = "continuous")
+```
+
+现在我们对一些学习器有了概念，让我们实例化其中几个。下面我们实例化 `Lrnr_glm` 与 `Lrnr_mean`，分别是主效应项广义线性模型（GLM）和均值模型。
+
+```{r learners}
+lrn_glm <- Lrnr_glm$new()
+lrn_mean <- Lrnr_mean$new()
+```
+
+上面创建的这两个学习器都只用了默认的调参参数。我们也可以定制学习器的调参参数，以纳入多样化的不同设定，并把同一个学习器在不同调参设定下作为不同候选者来考虑。
+
+下面，我们以同一个基学习器 `Lrnr_glmnet`（即带弹性网正则化的 GLM）为基础，创建出两个不同的候选者：一个 L2 惩罚／岭回归，一个 L1 惩罚／lasso 回归。
+
+```{r more-learners}
+# penalized regressions:
+lrn_ridge <- Lrnr_glmnet$new(alpha = 0)
+lrn_lasso <- Lrnr_glmnet$new(alpha = 1)
+```
+
+上面通过在 `Lrnr_glmnet` 中设定 `alpha`，我们定制了该学习器的调参参数。下面实例化 `Lrnr_hal9001` 时，我们展示如何同时修改多个调参参数（具体是 `max_degree` 与 `num_knots`）。
+
+我们再实例化一些不强加线性或单调关系的学习器，从而把候选集合进一步扩充到非参数学习器。
+
+```{r more-learners-np}
+# spline regressions:
+lrn_polspline <- Lrnr_polspline$new()
+lrn_earth <- Lrnr_earth$new()
+
+# fast highly adaptive lasso (HAL) implementation
+lrn_hal <- Lrnr_hal9001$new(max_degree = 2, num_knots = c(3,2), nfolds = 5)
+
+# tree-based methods
+lrn_ranger <- Lrnr_ranger$new()
+lrn_xgb <- Lrnr_xgboost$new()
+```
+
+我们再加入一个广义可加模型（GAM）和一个贝叶斯 GLM，让将要作为 SL 候选者的这个池子更加多样。
+
+```{r more-learners-final}
+lrn_gam <- Lrnr_gam$new()
+lrn_bayesglm <- Lrnr_bayesglm$new()
+```
+
+现在我们已经实例化了一组学习器，需要把它们组织到一起，好让 SL 把它们当作候选者。在 `sl3` 中，我们通过创建一个所谓的学习器 `Stack` 来做到这一点。`Stack` 的创建方式与创建学习器相同——这是因为 `Stack` 本身就是一个学习器；它与其他所有学习器有着相同的接口。`Stack` 的特别之处在于它一次考虑多个学习器：它可以同时训练它们，从而让它们的预测能够被组合和／或比较。
+
+```{r stack}
+stack <- Stack$new(
+  lrn_glm, lrn_mean, lrn_ridge, lrn_lasso, lrn_polspline, lrn_earth, lrn_hal,
+  lrn_ranger, lrn_xgb, lrn_gam, lrn_bayesglm
+)
+stack
+```
+
+可以看到，stack 中各学习器的名字都很长。这是因为 `sl3` 中学习器的默认命名方式比较笨重：对每个学习器，`sl3` 会把每一个调参参数都放进名字里。在下一节[「为学习器命名」](#naming-learners)中，我们会展示几种让用户按自己意愿给学习器命名的方法。
+
+现在我们已经实例化了一组学习器并把它们堆叠到一起，可以实例化 SL 了。我们将使用默认的元学习器，对连续结局而言就是非负最小二乘（NNLS）回归（`Lrnr_nnls`）。出于演示目的，我们仍然把它显式写出来。
+
+```{r make-sl}
+sl <- Lrnr_sl$new(learners = stack, metalearner = Lrnr_nnls$new())
+```
+
+### 3. 用 `train` 把超级学习器拟合到预测任务上
+
+把 SL 拟合到预测任务的最后一步，是调用 `train` 并传入该任务。调用 `train` 之前，我们会设定随机数发生器以保证结果可复现，同时给它计时。
+
+```{r train-sl}
+start_time <- proc.time() # start time
+
+set.seed(4197)
+sl_fit <- sl$train(task = task)
+
+runtime_sl_fit <- proc.time() - start_time # end time - start time = run time
+runtime_sl_fit
+```
+
+拟合这个 SL 花了 `r round(as.numeric(runtime_sl_fit["elapsed"]),1)` 秒（`r round(as.numeric(runtime_sl_fit["elapsed"])/60,1)` 分钟）。
+
+#### 小结
+
+本节演示了用 `sl3` 拟合任意 SL 的核心功能，它包含以下三个步骤：
+
+1. 用 `make_sl3_Task` 定义预测任务；
+2. 用 `Lrnr_sl` 实例化 SL；
+3. 用 `train` 把 SL 拟合到该任务上。
+
+这个例子仅用于演示。关于如何针对手头预测任务构造一个设定得当的 SL，其逐步指引参见 @rvp2022super。
+
+## `sl3` 的其他话题
+
+## 获取预测
+
+### 超级学习器与候选学习器的预测
+
+我们借用上面拟合好的 SL 对象 `sl_fit`，来获得 SL 对每位受试者 `whz` 的预测值。
+
+```{r sl-predictions}
+sl_preds <- sl_fit$predict(task = task)
+head(sl_preds)
+```
+
+我们也可以从 SL 中的某个候选学习器获得预测值。下面我们取 GLM 学习器的预测。
+
+```{r glm-predictions}
+glm_preds <- sl_fit$learner_fits$Lrnr_glm_TRUE$predict(task = task)
+head(glm_preds)
+```
+
+注意，SL 的预测值对应的是候选学习器的所谓"全量拟合"（full fits），即这些候选者是在整个分析数据集上拟合的，也就是作为 `data` 传给 `make_sl3_Task` 的全部数据。@rvp2022super 中的图 2 提供了 SL 拟合流程的可视化概览。
+
+```{r glm-predictions-fullfit}
+# we can also access the candidate learner full fits directly and obtain
+# the same "full fit" candidate predictions from there
+# (we split this into two lines to avoid overflow)
+stack_full_fits <- sl_fit$fit_object$full_fit$learner_fits$Stack$learner_fits
+glm_preds_full_fit <- stack_full_fits$Lrnr_glm_TRUE$predict(task)
+
+# check that they are identical
+identical(glm_preds, glm_preds_full_fit)
+```
+
+下面我们把 `whz` 的观测值，以及 SL、GLM 和均值模型对 `whz` 的预测值可视化出来。
+
+```{r predvobs}
+# table of observed and predicted outcome values and arrange by observed values
+df_plot <- data.table(
+  Obs = washb_data[["whz"]], SL_Pred = sl_preds, GLM_Pred = glm_preds,
+  Mean_Pred = sl_fit$learner_fits$Lrnr_mean$predict(task)
+)
+df_plot <- df_plot[order(df_plot$Obs), ]
+```
+
+```{r predvobs-head, eval = FALSE}
+head(df_plot)
+```
+
+```{r predvobs-head-handbook, echo = FALSE}
+head(df_plot) %>%
+  kable() %>%
+  kableExtra::kable_styling(fixed_thead = TRUE) %>%
+  kableExtra::scroll_box(width = "100%", height = "300px")
+```
+
+```{r predobs-plot, fig.asp = .55, fig.cap = "Observed and predicted values for weight-for-height z-score (whz)"}
+# melt the table so we can plot observed and predicted values
+df_plot$id <- seq(1:nrow(df_plot))
+df_plot_melted <- melt(
+  df_plot, id.vars = "id",
+  measure.vars = c("Obs", "SL_Pred", "GLM_Pred", "Mean_Pred")
+)
+
+library(ggplot2)
+ggplot(df_plot_melted, aes(id, value, color = variable)) +
+  geom_point(size = 0.1) +
+  labs(x = "Subjects (ordered by increasing whz)",
+       y = "whz") +
+  theme(legend.position = "bottom", legend.title = element_blank(),
+        axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  guides(color = guide_legend(override.aes = list(size = 1)))
+```
+
+### 交叉验证预测
+
+我们也可以取得候选学习器的交叉验证（CV）预测。做法有好几种。
+
+```{r cv-predictions}
+# one way to obtain the CV predictions for the candidate learners
+cv_preds_option1 <- sl_fit$fit_object$cv_fit$predict_fold(
+  task = task, fold_number = "validation"
+)
+# another way to obtain the CV predictions for the candidate learners
+cv_preds_option2 <- sl_fit$fit_object$cv_fit$predict(task = task)
+
+# we can check that they are identical
+identical(cv_preds_option1, cv_preds_option2)
+```
+
+```{r cv-predictions-head, eval = FALSE}
+head(cv_preds_option1)
+```
+
+```{r cv-predictions-head-handbook, echo = FALSE}
+head(cv_preds_option1) %>%
+  kable() %>%
+  kableExtra::kable_styling(fixed_thead = TRUE) %>%
+  kableExtra::scroll_box(width = "100%", height = "300px")
+```
+
+##### `predict_fold`
+
+获取 CV 预测的第一种做法 `cv_preds_option1` 用到了 `predict_fold` 函数，它跨所有折取得验证集上的预测。这个函数只对 `sl3` 中经过交叉验证的学习器拟合对象存在，例如 `Lrnr_sl` 中的那些。除了在 `predict_fold` 中传入 `fold_number = "validation"` 之外，我们还可以设 `fold_number = "full"`，以取得那些在整个数据集（即传给 `make_sl3_Task` 的全部数据）上拟合的学习器的预测。例如，下面我们展示：上面算出的 `glm_preds` 同样可以通过设 `fold_number = "full"` 得到。
+
+```{r glm-predict-fold}
+full_fit_preds <- sl_fit$fit_object$cv_fit$predict_fold(
+  task = task, fold_number = "full"
+)
+glm_full_fit_preds <- full_fit_preds$Lrnr_glm_TRUE
+
+# check that they are identical
+identical(glm_preds, glm_full_fit_preds)
+```
+
+我们也可以给 `predict_fold` 的 `fold_number` 参数传入一个介于 1 与 CV 折数之间的具体整数；这一用法的示例见下一部分。
+
+##### 手工计算交叉验证预测
+
+我们可以"手工"得到 CV 预测：逐折取数，然后用拟合好的候选学习器（它们是在每一折的训练集上训练的）去预测验证集的结局（这些结局在训练中未曾出现）。
+
+```{r cv-predictions-long}
+##### CV predictions "by hand" #####
+# for each fold, i, we obtain validation set predictions:
+cv_preds_list <- lapply(seq_along(task$folds), function(i){
+  
+  # get validation dataset for fold i:
+  v_data <- task$data[task$folds[[i]]$validation_set, ]
+  
+  # get observed outcomes in fold i's validation dataset:
+  v_outcomes <- v_data[["whz"]]
+
+  # make task (for prediction) using fold i's validation dataset as data, 
+  # and keeping all else the same:
+  v_task <- make_sl3_Task(covariates = task$nodes$covariates, data = v_data)
+  
+  # get predicted outcomes for fold i's validation dataset, using candidates 
+  # trained to fold i's training dataset
+  v_preds <- sl_fit$fit_object$cv_fit$predict_fold(
+    task = v_task, fold_number = i
+  )
+  # note: v_preds is a matrix of candidate learner predictions, where the 
+  # number of rows is the number of observations in fold i's validation dataset 
+  # and the number of columns is the number of candidate learners (excluding 
+  # any that might have failed)
+  
+  # an identical way to get v_preds, which is used when we calculate the 
+  # cv risk by hand in a later part of this chapter:
+  # v_preds <- sl_fit$fit_object$cv_fit$fit_object$fold_fits[[i]]$predict(
+  #   task = v_task
+  # )
+  
+  # we will also return the row indices for fold i's validation set, so we 
+  # can later reorder the CV predictions and make sure they are equal to what 
+  # we obtained above
+  return(list("v_preds" = v_preds, "v_index" = task$folds[[i]]$validation_set))
+})
+
+# extract the validation set predictions across all folds
+cv_preds_byhand <- do.call(rbind, lapply(cv_preds_list, "[[", "v_preds"))
+
+# extract the indices of validation set observations across all folds
+# then reorder cv_preds_byhand to correspond to the ordering in the data
+row_index_in_data <- unlist(lapply(cv_preds_list, "[[", "v_index"))
+cv_preds_byhand_ordered <- cv_preds_byhand[order(row_index_in_data), ]
+# now we can check that they are identical
+identical(cv_preds_option1, cv_preds_byhand_ordered)
+```
+
+### 对新数据作预测
+
+如果想对新数据取得预测值，我们需要用新数据创建一个新的 `sl3_Task`。另外，这个新 `sl3_Task` 中的协变量必须与训练所用 `sl3_Task` 中的协变量完全一致。举例来说，假设我们有新的协变量数据 `washb_data_new`，想用拟合好的 SL 来取得身高别体重 z 评分的预测值。
+
+```{r predictions-new-task, eval = FALSE}
+# we do not evaluate this code chunk, as `washb_data_new` does not exist
+prediction_task <- make_sl3_Task(
+  data = washb_data_new, # assuming we have some new data for predictions
+  covariates = c("tr", "fracode", "month", "aged", "sex", "momage", "momedu", 
+                 "momheight", "hfiacat", "Nlt18", "Ncomp", "watmin", "elec", 
+                 "floor", "walls", "roof", "asset_wardrobe", "asset_table", 
+                 "asset_chair", "asset_khat", "asset_chouki", "asset_tv", 
+                 "asset_refrig", "asset_bike", "asset_moto", "asset_sewmach", 
+                 "asset_mobile")
+)
+sl_preds_new_task <- sl_fit$predict(task = prediction_task)
+```
+
+### 反事实预测
+
+反事实预测是指在某项所关心干预之下的预测值。回忆前面所述，我们可以用新数据创建一个协变量与训练时一致的 `sl3_Task`，从而取得对新数据的预测值。以 WASH Benefits 孟加拉国研究为例，假设我们想取得在"对处理 `tr` 施加干预、把它设为营养＋水＋环境卫生＋洗手方案"之下，每位受试者身高别体重 z 评分（`whz`）结局的预测。
+
+首先我们需要复制一份数据集，然后在副本中对 `tr` 施加干预，用副本数据与训练任务相同的协变量创建一个新的 `sl3_Task`，最后从拟合好的 SL（上一节中我们把它命名为 `sl_fit`）取得预测。
+
+```{r cf-predictions-static}
+### 1. Copy data
+tr_intervention_data <- data.table::copy(washb_data) 
+
+### 2. Define intervention in copied dataset
+tr_intervention <- rep("Nutrition + WSH", nrow(washb_data))
+# NOTE: When we intervene on a categorical variable (such as "tr"), we need to 
+#       define the intervention as a categorical variable (ie a factor).
+#       Also, even though not all levels of the factor will be represented in 
+#       the intervention, we still need this factor to reflect all of the 
+#       levels that are present in the observed data
+tr_levels <- levels(washb_data[["tr"]])
+tr_levels
+tr_intervention <- factor(tr_intervention, levels = tr_levels)
+tr_intervention_data[,"tr" := tr_intervention, ]
+
+### 3. Create a new sl3_Task
+# note that we do not need to specify the outcome in this new task since we are 
+# only using it to obtain predictions
+tr_intervention_task <- make_sl3_Task(
+  data = tr_intervention_data, 
+  covariates = c("tr", "fracode", "month", "aged", "sex", "momage", "momedu", 
+                 "momheight", "hfiacat", "Nlt18", "Ncomp", "watmin", "elec", 
+                 "floor", "walls", "roof", "asset_wardrobe", "asset_table", 
+                 "asset_chair", "asset_khat", "asset_chouki", "asset_tv", 
+                 "asset_refrig", "asset_bike", "asset_moto", "asset_sewmach", 
+                 "asset_mobile")
+)
+### 4. Get predicted values under intervention of interest
+# SL predictions of what "whz" would have been had everyone received "tr" 
+# equal to "Nutrition + WSH"
+counterfactual_pred <- sl_fit$predict(tr_intervention_task)
+```
+
+注意，这类"每位受试者都接受同一种干预"的干预被称为"静态"（static）干预。随受试者特征而变化的干预则被称为"动态"（dynamic）干预。例如，我们可以考虑这样一种干预：若受试者家中有冰箱，就把处理设为所期望的（营养＋水＋环境卫生＋洗手）方案，否则设为不含营养成分的（水＋环境卫生＋洗手）方案。
+
+```{r cf-predictions-dynamic}
+dynamic_tr_intervention_data <- data.table::copy(washb_data) 
+
+dynamic_tr_intervention <- ifelse(
+  washb_data[["asset_refrig"]] == 1, "Nutrition + WSH", "WSH"
+)
+dynamic_tr_intervention <- factor(dynamic_tr_intervention, levels = tr_levels)
+dynamic_tr_intervention_data[,"tr" := dynamic_tr_intervention, ]
+
+dynamic_tr_intervention_task <- make_sl3_Task(
+  data = dynamic_tr_intervention_data, 
+  covariates = c("tr", "fracode", "month", "aged", "sex", "momage", "momedu", 
+                 "momheight", "hfiacat", "Nlt18", "Ncomp", "watmin", "elec", 
+                 "floor", "walls", "roof", "asset_wardrobe", "asset_table", 
+                 "asset_chair", "asset_khat", "asset_chouki", "asset_tv", 
+                 "asset_refrig", "asset_bike", "asset_moto", "asset_sewmach", 
+                 "asset_mobile")
+)
+### 4. Get predicted values under intervention of interest
+# SL predictions of what "whz" would have been had every subject received "tr" 
+# equal to "Nutrition + WSH" if they had a fridge and "WSH" if they didn't have 
+# a fridge
+counterfactual_pred <- sl_fit$predict(dynamic_tr_intervention_task)
+```
+
+## 汇总超级学习器的拟合结果
+
+### 超级学习器系数／已拟合元学习器的摘要
+
+我们有几种方式可以看到元学习器是如何把各学习器组合成一个函数的。在我们的演示例子中，对连续结局采用的是默认的 NNLS 元学习器。对于那些只是学习一个加权组合的元学习器，我们可以查看它们的系数。
+
+```{r sl-coefs-simple}
+round(sl_fit$coefficients, 3)
+```
+
+我们也可以直接访问元学习器的拟合对象来查看系数。
+
+```{r metalearner-fit}
+metalrnr_fit <- sl_fit$fit_object$cv_meta_fit$fit_object
+round(metalrnr_fit$coefficients, 3)
+```
+
+对于那些不是由一组简单主效应项回归系数所定义的、更复杂的元学习器（例如非参数元学习器），直接访问元学习器拟合对象同样很方便。
+
+### 交叉验证的预测表现
+
+我们可以得到一张表，列出 SL 中每个学习器的交叉验证（CV）预测表现，也就是 CV 风险。下面我们用平方误差损失作为评价函数，这等价于以均方误差（MSE）作为汇总预测表现的指标。之所以用 MSE，是因为它对于估计条件均值是一个有效的指标，而在 WASH Benefits 这个例子中，我们学习预测函数正是为了估计条件均值。关于如何选择合适的表现度量，更多信息见 @rvp2022super。
+
+```{r sl-summary}
+cv_risk_table <- sl_fit$cv_risk(eval_fun = loss_squared_error)
+```
+
+```{r cv-risk-summary, eval = FALSE}
+cv_risk_table[,c(1:3)]
+```
+
+```{r cv-risk-summary-handbook, echo = FALSE}
+cv_risk_table[,c(1:3)] %>%
+  kable() %>%
+  kableExtra::kable_styling(fixed_thead = TRUE) %>%
+  kableExtra::scroll_box(width = "100%", height = "300px")
+```
+
+##### 手工计算交叉验证的预测表现
+
+与上面"手工"取得 CV 预测的做法类似，我们也可以用一种把流程摊开来的方式计算 CV 表现／风险。具体做法是：逐折取数，用拟合好的候选学习器（它们在每一折的训练集上训练）去预测验证集的结局（这些结局在训练中未曾出现），然后度量预测表现（即风险）。随后把每个候选学习器各折的风险在所有折上取平均，得到 CV 风险。`cv_risk` 函数在内部完成了这一切；下面我们展示如何手工做一遍，这有助于理解 CV 风险及其计算方式。
+
+```{r cv-risk-byhand}
+##### CV risk "by hand" #####
+# for each fold, i, we obtain predictive performance/risk for each candidate:
+cv_risks_list <- lapply(seq_along(task$folds), function(i){
+  
+  # get validation dataset for fold i:
+  v_data <- task$data[task$folds[[i]]$validation_set, ]
+  
+  # get observed outcomes in fold i's validation dataset:
+  v_outcomes <- v_data[["whz"]]
+
+  # make task (for prediction) using fold i's validation dataset as data, 
+  # and keeping all else the same:
+  v_task <- make_sl3_Task(covariates = task$nodes$covariates, data = v_data)
+  
+  # get predicted outcomes for fold i's validation dataset, using candidates 
+  # trained to fold i's training dataset
+  v_preds <- sl_fit$fit_object$cv_fit$fit_object$fold_fits[[i]]$predict(v_task)
+  # note: v_preds is a matrix of candidate learner predictions, where the 
+  # number of rows is the number of observations in fold i's validation dataset 
+  # and the number of columns is the number of candidate learners (excluding 
+  # any that might have failed)
+  
+  # calculate predictive performance for fold i for each candidate
+  eval_function <- loss_squared_error # valid for estimation of conditional mean
+  v_losses <- apply(v_preds, 2, eval_function, v_outcomes)
+  cv_risks <- colMeans(v_losses)
+  return(cv_risks)
+})
+# average the predictive performance across all folds for each candidate
+cv_risks_byhand <- colMeans(do.call(rbind, cv_risks_list))
+cv_risk_table_byhand <- data.table(
+  learner = names(cv_risks_byhand), MSE = cv_risks_byhand
+)
+# check that the CV risks are identical when calculated by hand and function
+# (ignoring small differences by rounding to the fourth decimal place)
+identical(
+  round(cv_risk_table_byhand$MSE,4), round(as.numeric(cv_risk_table$MSE),4)
+)
+```
+
+### 交叉验证的超级学习器
+
+从上面的 CV 风险表中可以看到，SL 本身并未列出。这是因为除非我们对 SL 做交叉验证，或者把它作为候选者放进另一个 SL 中，否则我们并没有 SL 的 CV 风险；后一种做法见[下一小节](#discrete-super-learner)。下面我们展示如何用 `cv_sl` 函数得到 SL 的 CV 风险估计。和前面调用 `sl$train` 时一样，我们会设定随机数发生器以保证结果可复现，并给它计时。
+
+```{r cvsl, eval = FALSE}
+start_time <- proc.time()
+
+set.seed(569)
+cv_sl_fit <- cv_sl(lrnr_sl = sl_fit, task = task, eval_fun = loss_squared_error)
+
+runtime_cv_sl_fit <- proc.time() - start_time
+runtime_cv_sl_fit
+```
+
+```{r cvsl-load, eval = TRUE, echo = FALSE}
+library(here)
+load(here("notes", "tlverse", "data", "fit_objects", "cv_sl_fit.Rdata"))
+load(here("notes", "tlverse", "data", "fit_objects", "runtime_cv_sl_fit.Rdata"))
+runtime_cv_sl_fit
+```
+
+拟合这个 CV SL 花了 `r round(as.numeric(runtime_cv_sl_fit["elapsed"]),1)` 秒（`r round(as.numeric(runtime_cv_sl_fit["elapsed"])/60,1)` 分钟）。
+
+```{r cvsl-risk-summary, eval = FALSE}
+cv_sl_fit$cv_risk[,c(1:3)]
+```
+
+```{r cvsl-risk-summary-handbook, echo = FALSE}
+cv_sl_fit$cv_risk[,c(1:3)] %>%
+  kable() %>%
+  kableExtra::kable_styling(fixed_thead = TRUE) %>%
+  kableExtra::scroll_box(width = "100%", height = "300px")
+```
+
+SL 的 CV 风险为 `r round(cv_sl_fit$cv_risk[nrow(cv_sl_fit$cv_risk),3], 4)`，低于所有候选者的 CV 风险。
+
+通过查看 SL 在每一折上的系数，我们可以看到 SL 的拟合在各折之间是如何变化的。
+
+```{r cvsl-risk-summary-coefs, eval = FALSE}
+round(cv_sl_fit$coef, 3)
+```
+
+```{r cvsl-risk-summary-coefs-handbook, echo = FALSE}
+round(cv_sl_fit$coef, 3) %>%
+  kable() %>%
+  kableExtra::kable_styling(fixed_thead = TRUE) %>%
+  kableExtra::scroll_box(width = "100%", height = "300px")
+```
+
+### 超级学习器的 revere 交叉验证预测表现
+
+我们还可以用所谓的 "revere" 来得到 SL 的**部分** CV 风险：其中 SL 各候选学习器的拟合是交叉验证过的，但元学习器的拟合不是。计算 revere-CV 的表现／风险估计几乎不需要额外时间，因为我们已经有了候选者的 CV 拟合。这并不是说 revere-CV 的 SL 表现可以取代真正 CV SL 所得的结果。**当元学习器是简单模型时**（例如 NNLS），revere 可以用来非常快速地考察 SL 的 CV 风险的一个近似下界。在 `cv_risk` 中设定 `get_sl_revere_risk = TRUE`，就可以输出基于 revere 的 CV 风险估计。
+
+```{r sl-revere-risk}
+cv_risk_w_sl_revere <- sl_fit$cv_risk(
+  eval_fun = loss_squared_error, get_sl_revere_risk = TRUE
+)
+```
+
+```{r sl-revere-risk-summary, eval = FALSE}
+cv_risk_w_sl_revere[,c(1:3)]
+```
+
+```{r sl-revere-risk-handbook, echo = FALSE}
+cv_risk_w_sl_revere[,c(1:3)] %>%
+  kable() %>%
+  kableExtra::kable_styling(fixed_thead = TRUE) %>%
+  kableExtra::scroll_box(width = "100%", height = "300px")
+```
+
+##### 手工计算超级学习器的 revere 交叉验证预测表现
+
+下面我们展示如何手工计算 SL 的 revere-CV 预测表现／风险，这或许有助于理解 revere，以及它如何被用来得到 SL 的部分 CV 表现／风险估计。
+
+```{r sl-revere-risk-byhand}
+##### revere-based risk "by hand" #####
+# for each fold, i, we obtain predictive performance/risk for the SL
+sl_revere_risk_list <- lapply(seq_along(task$folds), function(i){
+  # get validation dataset for fold i:
+  v_data <- task$data[task$folds[[i]]$validation_set, ]
+
+  # get observed outcomes in fold i's validation dataset:
+  v_outcomes <- v_data[["whz"]]
+
+  # make task (for prediction) using fold i's validation dataset as data,
+  # and keeping all else the same:
+  v_task <- make_sl3_Task(
+    covariates = task$nodes$covariates, data = v_data
+  )
+
+  # get predicted outcomes for fold i's validation dataset, using candidates
+  # trained to fold i's training dataset
+  v_preds <- sl_fit$fit_object$cv_fit$fit_object$fold_fits[[i]]$predict(v_task)
+
+  # make a metalevel task (for prediction with sl):
+  v_meta_task <- make_sl3_Task(
+    covariates = sl_fit$fit_object$cv_meta_task$nodes$covariates,
+    data = v_preds
+  )
+
+  # get predicted outcomes for fold i's metalevel dataset, using the fitted
+  # metalearner, cv_meta_fit
+  sl_revere_v_preds <- sl_fit$fit_object$cv_meta_fit$predict(task=v_meta_task)
+  # note: cv_meta_fit was trained on the metalevel dataset, which contains the
+  # candidates' cv predictions and validation dataset outcomes across ALL folds,
+  # so cv_meta_fit has already seen fold i's validation dataset outcomes.
+
+  # calculate predictive performance for fold i for the SL
+  eval_function <- loss_squared_error # valid for estimation of conditional mean
+  # note: by evaluating the predictive performance of the SL using outcomes
+  # that were already seen by the metalearner, this is not a cross-validated
+  # measure of predictive performance for the SL.
+  sl_revere_v_loss <- eval_function(
+    pred = sl_revere_v_preds, observed = v_outcomes
+  )
+  sl_revere_v_risk <- mean(sl_revere_v_loss)
+  return(sl_revere_v_risk)
+})
+# average the predictive performance across all folds for the SL
+sl_revere_risk_byhand <- mean(unlist(sl_revere_risk_list))
+sl_revere_risk_byhand
+
+# check that our calculation by hand equals what is output in cv_risk_table_revere
+sl_revere_risk <- as.numeric(cv_risk_w_sl_revere[learner=="SuperLearner","MSE"])
+sl_revere_risk
+```
+
+之所以说这不是一个完全交叉验证的风险估计，是因为上面那个 `cv_meta_fit` 对象（也就是训练好的元学习器）此前是在**所有**折的 CV 预测构成的**整个**矩阵上拟合的（即元层数据集；更多细节见 @rvp2022super 的图 2）。这就是为什么基于 revere 的风险不是真正的 CV 风险。如果元学习器不是简单的回归函数，而是使用了更灵活的学习器（例如随机森林），那么所得 SL 的 revere-CV 风险估计对 CV 风险估计的近似就会更差。这是因为越灵活的学习器越容易过拟合。当元学习器采用简单参数回归时（例如我们 SL 中用的 `Lrnr_nnls`，即默认的 NNLS 元学习器），revere-CV 风险就是一种快速考察 SL 的 CV 风险估计之近似值的办法，可以把它看作 CV 风险估计的一个大致下界。这一点在我们的例子中成立：用简单的 NNLS 元学习器时，SL 的 revere 风险估计（`r round(sl_revere_risk, 4)`）与 SL 的 CV 风险估计（`r round(cv_sl_fit$cv_risk[nrow(cv_sl_fit$cv_risk),2], 4)`）非常接近，且略低一些。
+
+## 离散超级学习器 {#discrete-super-learner}
+
+离散 SL（discrete SL, dSL）是一种使用"赢者通吃"式元学习器的 SL，该元学习器称为交叉验证选择器。因此，dSL 与交叉验证表现最好的那个候选者完全相同；它的预测也与该候选者的预测相同。在 `sl3` 中，交叉验证选择器是 `Lrnr_cv_selector`（更多细节见 `Lrnr_cv_selector` 文档）；在 `sl3` 中，把 `Lrnr_cv_selector` 用作 `Lrnr_sl` 的元学习器，就实例化出一个 dSL。
+
+```{r make-dSL}
+cv_selector <- Lrnr_cv_selector$new(eval_function = loss_squared_error)
+dSL <- Lrnr_sl$new(learners = stack, metalearner = cv_selector)
+```
+
+和之前一样，我们用学习器的 `train` 方法把它拟合到预测任务上。
+
+```{r fit-dSL}
+set.seed(4197)
+dSL_fit <- dSL$train(task)
+```
+
+沿着上面[「汇总超级学习器的拟合结果」](#汇总超级学习器的拟合结果)一节的做法，我们可以看到 `Lrnr_cv_selector` 元学习器是如何把各候选者组合成一个函数的。
+
+```{r summarize-dSL-coefs}
+round(dSL_fit$coefficients, 3)
+```
+
+我们也可以把候选者的 CV 风险与系数并排查看：
+
+```{r summarize-dSL-cv-risk}
+dSL_cv_risk_table <- dSL_fit$cv_risk(eval_fun = loss_squared_error)
+```
+
+```{r summarize-dSL-cv-risk-tbl, eval = FALSE}
+dSL_cv_risk_table[,c(1:3)]
+```
+
+```{r summarize-dSL-cv-risk-tbl-handbook, echo = FALSE}
+dSL_cv_risk_table[,c(1:3)] %>%
+  kable() %>%
+  kableExtra::kable_styling(fixed_thead = TRUE) %>%
+  kableExtra::scroll_box(width = "100%", height = "300px")
+```
+
+多元自适应样条回归这个候选者（`Lrnr_earth`）的 CV 风险最低。确实，我们那个赢者通吃的元学习器 `Lrnr_cv_selector` 给了它权重 1，其余全部为零；由此得到的 dSL 就由这个加权组合定义，也就是说 `dSL_fit` 将与 `Lrnr_earth` 的全量拟合完全相同。下面我们验证 `dSL_fit` 的预测与 `Lrnr_earth` 的预测完全一致。
+
+```{r verify-dSL-preds}
+dSL_pred <- dSL_fit$predict(task)
+earth_pred <- dSL_fit$learner_fits$Lrnr_earth_2_3_backward_0_1_0_0$predict(task)
+identical(dSL_pred, earth_pred)
+```
+
+### 把集成超级学习器作为候选者放进离散超级学习器
+
+我们建议用 CV 来评估 SL 的预测表现。上面我们展示了如何用 `cv_sl` 做到这一点。我们也看到，当把某个学习器作为候选者放进 SL 时（用 `sl3` 的说法，就是把学习器放进传给 `Lrnr_sl` 的 `learners` 那个 `Stack` 里），我们就能查看它的 CV 风险。此外，使用 dSL 时，取得最低 CV 风险的那个候选者就定义了最终的 SL。因此我们可以用 dSL 来自动化这样一个流程：得到一个最终 SL，它代表交叉验证预测表现最好的那个候选者。
+
+集成 SL（ensemble SL, eSL）是一种以任意参数或非参数算法作为元学习器的 SL。因此，eSL 由多个候选者的组合所定义；它的预测由多个候选者预测的组合所定义。当把 eSL 及其候选学习器一起作为 dSL 的候选者时，eSL 的 CV 表现就可以与构造它所用的那些学习器作比较，而最终的 SL 将是取得最低 CV 风险的那个候选者。下面我们展示如何把一个 eSL、以及多个 eSL，作为候选者放进 dSL。
+
+回忆第 2 节中定义的 SL 对象 `sl`：
+
+```{r recall-eSL}
+# in the section 2 we defined Lrnr_sl as
+# sl <- Lrnr_sl$new(learners = stack, metalearner = Lrnr_nnls$new())
+```
+
+`sl` 是一个 eSL，因为它用 NNLS 作元学习器。下面我们把 `sl` 改名为 `eSL_metaNNLS`，以明确它是一个以 NNLS 为元学习器的 eSL。注意，这个 eSL 中的候选学习器就是传给 `learners` 参数的那些，即 `stack`。
+
+```{r rename-eSL}
+# let's rename it to clarify that this is an eSL that uses NNLS as meta-learner
+eSL_metaNNLS <- sl
+```
+
+要把 `eSL_metaNNLS` 作为 `stack` 中的一个额外候选者，我们可以创建一个新的 stack，同时包含原来的候选学习器和这个 eSL。
+
+```{r eSL-in-stack}
+stack_with_eSL <- Stack$new(stack, eSL_metaNNLS)
+```
+
+要实例化一个以 `eSL_metaNNLS` 及构造它所用的那些单个学习器为候选者的 dSL，我们定义一个新的 `Lrnr_sl`，把 `stack_with_eSL` 作为候选者、把 `Lrnr_cv_selector` 作为元学习器。
+
+```{r eSL-in-dSL}
+cv_selector <- Lrnr_cv_selector$new(eval_function = loss_squared_error)
+dSL <- Lrnr_sl$new(learners = stack_with_eSL, metalearner = cv_selector)
+```
+
+把 eSL 作为候选者放进 dSL，使得 eSL 的 CV 表现可以与构造它所用的其他学习器作比较。这与上面调用 CV SL（`cv_sl`）类似。二者的区别在于：把 eSL 作为 dSL 的候选者，自动化了"让最终 SL 成为 CV 预测表现最好（即 CV 风险最低）的那个学习器"这一流程。如果 eSL 胜过其他任何候选者，dSL 最终就会选中它，所得的 SL 就是这个 eSL。这一做法的另一个优势是，可以同时评估多个采用更灵活元学习器方法（例如 HAL 这类非参数机器学习算法）的 eSL。
+
+下面我们展示如何把多个 eSL 作为候选者放进一个 dSL：
+
+```{r make-sl-discrete-multi-esl}
+# instantiate more eSLs
+eSL_metaNNLSconvex <- Lrnr_sl$new(
+  learners = stack, metalearner = Lrnr_nnls$new(convex = TRUE)
+)
+eSL_metaLasso <- Lrnr_sl$new(learners = stack, metalearner = lrn_lasso)
+eSL_metaEarth <- Lrnr_sl$new(learners = stack, metalearner = lrn_earth)
+eSL_metaRanger <- Lrnr_sl$new(learners = stack, metalearner = lrn_ranger)
+eSL_metaHAL <- Lrnr_sl$new(learners = stack, metalearner = lrn_hal)
+# adding the eSLs to the stack that defined them
+stack_with_eSLs <- Stack$new(
+  stack, eSL_metaNNLS, eSL_metaNNLSconvex, eSL_metaLasso, eSL_metaEarth, 
+  eSL_metaRanger, eSL_metaHAL
+)
+# specify dSL
+dSL <- Lrnr_sl$new(learners = stack_with_eSLs, metalearner = cv_selector)
+```
+
+我们放进这个 dSL 的候选者包括：
+
+1. 与前面相同的那个 eSL，`eSL_metaNNLS`；
+2. 在 (1) 中被当作候选者的那些学习器；
+3. 一个 eSL，其候选学习器与 (1) 相同，元学习器为带凸组合约束的 NNLS；
+4. 一个 eSL，其候选学习器与 (1) 相同，元学习器为 lasso，使用第 2 节中实例化的 `lrn_lasso`；
+5. 一个 eSL，其候选学习器与 (1) 相同，元学习器为多元自适应回归样条（earth），使用第 2 节中实例化的 `lrn_earth`；
+6. 一个 eSL，其候选学习器与 (1) 相同，元学习器为 ranger，使用第 2 节中实例化的 `lrn_ranger`；以及
+7. 一个 eSL，其候选学习器与 (1) 相同，元学习器为 HAL，使用第 2 节中实例化的 `lrn_hal`。
+
+在 `sl3` 中，让 dSL 跑这么多 eSL 目前计算量非常大，因为这相当于为每个 eSL 各跑一次交叉验证 SL。对于像上面定义的 `dSL` 这类计算密集的学习器，推荐使用并行编程（下文会介绍）。也就是说，应当在调用 `dSL$train(task)` 之前先定义好并行处理方案，以缩短运行时间。
+
+## 并行处理
+
+利用 `sl3` 内置的并行处理支持很简单，它依托 [`future` R 包](https://cran.r-project.org/web/packages/future/index.html)——该包通过 futures 为 R 表达式的顺序与并行处理提供了一套轻量、统一的 Future API。引用 `future` 包的文档：「本包实现了顺序、多核、多会话与集群 futures。借助它们，R 表达式可以在本机求值、在一组本地机器上并行求值，或分布在本地与远程机器的混合环境中求值。本包的扩展还实现了通过计算集群调度器等方式处理 futures 的其他后端。由于其统一的 API，从本机顺序执行切换到例如远程计算集群上的分布式处理，无需修改任何代码。本包的另一个长处是，全局变量与函数会被自动识别并按需导出，因而很容易调整既有代码来使用 futures。」
+
+要在 `sl3` 中使用 `future`，只需像下面这样选择一个 futures `plan()`。
+
+```{r fit-sl-parallel}
+# let's load the future package and set n-1 cores for parallel processing
+library(future)
+ncores <- availableCores()-1
+ncores
+plan(multicore, workers = ncores)
+# now, let's re-train sl in parallel for demonstrative purposes
+# we will also set a stopwatch so we can see how long this takes
+start_time <- proc.time()
+
+set.seed(4197)
+sl_fit_parallel <- sl$train(task)
+
+runtime_sl_fit_parallel <- proc.time() - start_time
+runtime_sl_fit_parallel
+```
+
+## 默认的数据预处理
+
+`sl3` 要求分析用数据集（即由结局与协变量上的观测构成的数据集）不含任何缺失值，也不含字符型与因子型协变量。本小节回顾 `sl3` 中在内部处理这些问题的默认功能；具体来说，这一数据预处理发生在调用 `make_sl3_Task` 时。
+
+用户也可以在创建 `sl3_Task` 之前自行完成任何（需要的）预处理，从而绕过下文讨论的默认功能。关于分析用数据集预处理的更多信息与通用指引（包括高维场景下预处理的考量），见 @rvp2022super 的「Preliminaries: Analytic dataset pre-processing」一节。
+
+回忆一下，`sl3_Task` 对象定义了所关心的预测任务。上面演示例子中的任务，是用 WASH Benefits 孟加拉国数据学习一个关于协变量的函数来预测身高别体重 Z 评分 `whz`。关于 `sl3_Task` 的更多细节，请参阅其文档（例如在 R 中输入 "?sl3_Task"）。下面我们实例化该任务，以便考察 `washb_data` 的预处理。
+
+```{r task-with-warning, warning=TRUE}
+# create the task (i.e., use washb_data to predict outcome using covariates)
+task <- make_sl3_Task(
+  data = washb_data,
+  outcome = "whz",
+  covariates = c("tr", "fracode", "month", "aged", "sex", "momage", "momedu", 
+                 "momheight", "hfiacat", "Nlt18", "Ncomp", "watmin", "elec", 
+                 "floor", "walls", "roof", "asset_wardrobe", "asset_table", 
+                 "asset_chair", "asset_khat", "asset_chouki", "asset_tv", 
+                 "asset_refrig", "asset_bike", "asset_moto", "asset_sewmach", 
+                 "asset_mobile")
+)
+```
+
+### 插补与缺失指示变量
+
+注意上面创建任务时出现的那条警告（在上一节创建任务时我们把它静默了）。这条警告说明检测到协变量数据有缺失，并已作插补。对每一个含缺失值的协变量列，`sl3` 用中位数插补缺失的连续协变量，用众数插补离散（二值与分类）协变量。
+
+此外，对每个含缺失值的协变量，还会加入一列指示该值是否被插补的变量。这些所谓的"缺失指示"协变量可能很有帮助，因为协变量缺失的模式本身可能对预测结局有信息量。
+
+用户完全可以在创建 sl3 任务之前自行处理协变量数据中的缺失。无论如何，我们都建议把缺失指示变量作为协变量纳入。为完整起见，我们更细致地考察一下这一点。用一个例子来看会更容易理解。
+
+首先，看看数据中的缺失情况：
+
+```{r which-data-missing}
+# which columns have missing values, and how many observations are missing?
+colSums(is.na(washb_data))
+```
+
+可以看到协变量 `momage` 与 `momheight` 有缺失观测。我们看几行含缺失值的数据：
+
+```{r data-missing}
+some_rows_with_missingness <- which(!complete.cases(washb_data))[31:33]
+# note: we chose 31:33 because missingness in momage & momheight is there
+washb_data[some_rows_with_missingness, c("momage", "momheight")]
+```
+
+当我们用含缺失协变量值的 `washb_data` 调用 `make_sl3_Task` 时，`momage` 与 `momheight` 分别被各自的中位数插补（因为它们是连续变量），并且为它们各加了一个缺失指示变量（以前缀 "delta_" 标记）。见下：
+
+```{r task-data-imputed}
+task$data[some_rows_with_missingness,
+          c("momage", "momheight", "delta_momage", "delta_momheight")]
+colSums(is.na(task$data))
+```
+
+确实，可以看到 `washb_task$data` 中已没有缺失值。缺失指示变量在该观测**不在**原始数据中时取 0，在该观测**在**原始数据中时取 1。
+
+如果传给 `make_sl3_Task` 的数据含缺失的结局值，则会抛出错误。创建任务时，通过设定 `drop_missing_outcome = TRUE` 可以很容易地丢弃缺失结局。一般来说，除非所关心的问题纯粹是预测，否则我们不建议在数据预处理阶段丢弃缺失结局。这是因为完整病例分析通常是有偏的；假定缺失是完全随机的往往并不现实，因此直接丢弃结局缺失的观测并不安全。举例来说，在估计那些允许靶向最小损失估计的 estimand 时（即路径可微的 estimand，包括因果推断中大多数不违反正性的参数，以及后续各章讨论的那些），本应体现在所关心问题表述中的缺失（例如"在无失访的情况下，用药物 A 治疗相对于标准治疗的平均效应会是多少"）同样被纳入估计流程之中。也就是说，失访的概率本身就是一个被近似（例如用 SL）的预测函数，并被纳入目标参数的估计以及推断／不确定性量化之中。
+
+### 字符型与分类型协变量
+
+首先，任何字符型协变量都会被转换为因子。然后所有因子型协变量都会被独热编码（one-hot encoded），即因子的各个水平变成一组二值指示变量。例如，因子 `cats` 及其独热编码如下所示：
+
+```{r kitty}
+cats <- c("calico", "tabby", "cow", "ragdoll", "mancoon", "dwarf", "calico")
+cats <- factor(cats)
+cats_onehot <- factor_to_indicators(cats)
+cats_onehot
+```
+
+`cats` 的第二个值是 "tabby"，因此 `cats_onehot` 的第二行在 tabby 列下取值为 1。`cats` 的每个水平（除了其中一个）都在 `cats_onehot` 表中有对应列。第一个和最后一个 `cats` 都是 "calico"，因此 `cats_onehot` 的第一行与最后一行在所有列上都是 0，以此表示那个未在表中显式出现的水平。
+
+`sl3` 中的学习器是在任务的 `X` 对象上训练的；对使用 CV 的学习器，则是在 `X` 的某个子样本上训练。我们看看任务 `X` 对象的前六行：
+
+```{r show-X, eval = FALSE}
+head(task$X)
+```
+
+```{r show-X-handbook, echo = FALSE}
+head(task$X) %>%
+  kable() %>%
+  kableExtra::kable_styling(fixed_thead = TRUE) %>%
+  kableExtra::scroll_box(width = "100%", height = "300px")
+```
+
+可以看到，WASH Benefits 数据集中任何字符型列都被转换为因子，而所有因子（`tr`、`momedu`、`hfiacat` 和 `fracode`）都被独热编码了。也可以看到，上面讲的那两个缺失指示变量是 `task$X` 的最后两列：`delta_momage` 与 `delta_momheight`。插补后的 `momage` 与 `momheight` 同样在任务的 `X` 对象中。
+
+## 学习器文档
+
+学习器及其部分调参参数的文档，可以在 R 会话中查到（例如要看 `Lrnr_glmnet` 的参数，可以在 RStudio 的 R 控制台输入 "?Lrnr_glmnet"），也可以在线查阅 [`sl3` 学习器参考手册](https://tlverse.org/sl3/reference/index.html#section-sl-learners)。`sl3` 中的所有学习器都只是对 R 中其他软件包已有函数的包装。例如，`sl3` 的 `Lrnr_xgboost` 是 `sl3` 中用于拟合 XGBoost（极端梯度提升）算法的学习器。正如 `Lrnr_xgboost` 文档所述，「该学习器借助 `xgboost` 包、通过 `xgb.train` 为 `xgboost` 模型提供拟合流程」。一般而言，`sl3` 中某个学习器的文档会把读者指向 `sl3` 所包装的那个原始函数与原始包。有鉴于此，`sl3` 的学习器文档是查阅任何学习器的好起点，因为它会准确告诉我们该学习器基于哪个包、哪个函数。不过，对某个学习器作任何深入考察（例如对全部调参参数的详细解释，或它如何对数据建模），通常都需要参考原始包。沿用上面的例子：虽然 `Lrnr_xgboost` 的文档会提供一些信息，比如让我们知道 `Lrnr_xgboost` 用的是 `xgboost` 包的 `xgb.train` 函数，但要对 `sl3` 中可用的 XGBoost 算法有最深入的理解，还是要去参考 `xgboost` R 包及其 `xgb.train` 函数。
+
+## 为学习器命名 {#naming-learners}
+
+回忆一下，上面例子中我们的 `Stack` 名字很长。
+
+```{r stack-names}
+stack
+```
+
+这里我们展示几种让用户给学习器命名的方法。第一种是在实例化时命名，如下所示：
+
+```{r name-glm, eval = FALSE}
+lrn_glm <- Lrnr_glm$new(name = "GLM")
+```
+
+我们可以在实例化任何学习器时指定它的 `name`。上面我们把 GLM 学习器命名为 "GLM"。
+
+另外，我们也可以在创建 `Stack` 时指定各学习器的名字：
+
+```{r stack-pretty}
+learners_pretty_names <- c(
+  "GLM" = lrn_glm, "Mean" = lrn_mean, "Ridge" = lrn_ridge, 
+  "Lasso" = lrn_lasso, "Polspline" = lrn_polspline, "Earth" = lrn_earth, 
+  "HAL" = lrn_hal, "RF" = lrn_ranger, "XGBoost" = lrn_xgb, "GAM" = lrn_gam, 
+  "BayesGLM" = lrn_bayesglm
+)
+stack_pretty_names <- Stack$new(learners_pretty_names)
+stack_pretty_names
+```
+
+## 在调参参数网格上定义学习器
+
+可以在一个调参参数网格上创建定制化的学习器。对于那些需要细致调参的高度灵活的学习器，考虑不同的调参设定往往很有帮助。不过这很费时间，因此需要考虑计算上的可行性。另外，当有效样本量较小时，高度灵活的学习器多半表现不好，因为它们通常需要大量数据才能拟合好模型。关于有效样本量，以及如何定制 SL 设定以在手头预测任务上表现良好的逐步指引，见 @rvp2022super。
+
+我们展示两种在调参参数网格上定制学习器的方法。第一种是"自己动手"，它要求用户或其合作者了解该算法及其调参参数，以便自行给出一组合适的调参设定。第二种方法不要求用户具备该算法的专门知识（尽管有些了解仍有帮助）；它借助 `caret` 软件，在一个网格上自动选出一组"最优"的调参参数。
+
+### 自己动手的网格
+
+下面我们展示如何手工创建 XGBoost 学习器 `Lrnr_xgboost` 的若干变体。这个例子仅用于演示；用户应当查阅文档，并结合计算可行性与自身的预测任务，为任务指定合适的调参参数网格。
+
+```{r lrnr-grid-diy}
+grid_params <- list(
+  max_depth = c(3, 5, 8),
+  eta = c(0.001, 0.1, 0.3),
+  nrounds = 100
+)
+grid <- expand.grid(grid_params, KEEP.OUT.ATTRS = FALSE)
+
+xgb_learners <- apply(grid, MARGIN = 1, function(tuning_params) {
+  do.call(Lrnr_xgboost$new, as.list(tuning_params))
+})
+xgb_learners
+```
+
+在上面的例子中，我们考虑了网格中所有可能的组合，创建出九个 XGBoost 学习器。如果想给它们各自取自定义的名字，也可以这么做：
+
+```{r lrnr-grid-diy-names}
+names(xgb_learners) <- c(
+  "XGBoost_depth3_eta.001", "XGBoost_depth5_eta.001", "XGBoost_depth8_eta.001", 
+  "XGBoost_depth3_eta.1", "XGBoost_depth5_eta.1", "XGBoost_depth8_eta.1", 
+  "XGBoost_depth3_eta.3", "XGBoost_depth5_eta.3", "XGBoost_depth8_eta.3"
+)
+```
+
+### 用 `caret` 自动搜索网格并选择
+
+我们可以用 `Lrnr_caret` 来使用 `caret` 软件。正如 `Lrnr_caret` 文档所述，`Lrnr_caret`「使用 `caret` 包的 `train` 函数来自动调优一个预测模型」。下面，我们实例化一个将由 `caret` 自动调优的神经网络，并把该学习器命名为 "NNET_autotune"。
+
+```{r lrnr-grid-caret, eval = FALSE}
+lrnr_nnet_autotune <- Lrnr_caret$new(method = "nnet", name = "NNET_autotune")
+```
+
+## 带交互项的学习器与 `formula` 接口
+
+如果已知（或有可能）协变量之间存在交互作用，那么我们可以纳入能够捕捉这种作用的学习器——或者显式地（例如在库中加入一个在公式里指定了交互项的参数回归学习器），或者隐式地（例如在库中加入能够从经验上学到交互作用的树类算法）。
+
+在 `sl3` 中定义协变量之间交互项的一种方式是使用 `formula`。这个参数存在于 `Lrnr_base` 中，而 `sl3` 中每个学习器都继承自它；尽管 `formula` 并未显式地出现在学习器的参数列表里，它正是通过这一继承而可用的。这一实现方式让 `formula` 可以传给所有学习器，即便那些本身并不原生支持 `formula` 的学习器也可以。下面我们展示如何指定一个考虑所有协变量之间两两交互的 GLM 学习器。
+
+```{r interaction-learner}
+lrnr_glm_interaction <- Lrnr_glm$new(formula = "~.^2")
+```
+
+从上面可以看到，`formula` 在 R 中的一般行为在 `sl3` 中同样适用。关于这一语法的更多细节，见 `stats` R 包中 `formula` 的 Details 部分（例如在 RStudio 的控制台输入 "?formula"，信息会显示在 Help 标签页）。
+
+## 协变量筛选
+
+一个丰富的学习器库，其特征之一是能有效处理高维协变量。当数据中协变量数目相对于有效样本量而言很多时（见 @rvp2022super 的图 1 流程图），候选学习器应当与一系列所谓的"筛选器"（screener）耦合。筛选器不过是一个返回协变量子集的函数。它的用意是与某个候选学习器耦合，从而定义出一个新的候选学习器——这个新学习器把筛选器返回的那一小部分协变量当作自己的协变量。
+
+当数据维度非常高时，协变量筛选是必不可少的；而在任何 SL 或机器学习应用中，它都可能很实用。凡是考虑了与结局之关联的协变量筛选，都必须经过交叉验证，否则会让算法预测表现的估计产生偏倚。把"筛选器—学习器"耦合体作为额外候选者纳入 SL 库，我们就是在对协变量筛选做交叉验证。各 CV 折中保留下来的协变量可能各不相同。
+
+所谓"一系列筛选器"，是指一组降维程度各异、并且采用不同拟合流程的筛选器（例如：基于 lasso 的筛选器保留系数非零的协变量；基于重要性的筛选器按某种重要性指标保留最重要的前 $j$ 个协变量）。`sl3` 中当前可用的筛选器在下面各部分分别介绍。
+
+我们会看到，要在 `sl3` 中定义一个筛选器与学习器的耦合体，需要创建一个 `Pipeline`。`Pipeline` 是一组按顺序拟合的学习器，其中前一个学习器的拟合结果被用来定义下一个学习器的任务。
+
+### 基于变量重要性的筛选器
+
+基于变量重要性的筛选器按某种重要性指标保留最重要的前 $j$ 个协变量。`sl3` 中由 `Lrnr_screener_importance` 提供这一筛选器，参数 $j$（默认为五）由用户通过 `num_screen` 参数给出。用户还可以通过 `learner` 参数选择所采用的重要性指标。任何带 importance 方法的学习器都可以用在 `Lrnr_screener_importance` 中；目前包括以下这些：
+
+```{r screener-properties}
+sl3_list_learners(properties = "importance")
+```
+
+我们来考虑基于 `Lrnr_ranger` 变量重要性排序的协变量筛选，按 `ranger` 的 "impurity_corrected" 重要性选出最重要的前十个协变量。我们把这个筛选器与 `Lrnr_glm` 耦合，定义出一个新学习器，它会：（1）按 `ranger` 的 "impurity_corrected" 重要性选出最重要的前十个协变量；（2）把筛选器选出的协变量传给 `Lrnr_glm`，于是 `Lrnr_glm` 依据这一缩减后的协变量集合拟合模型。如上所述，这种耦合确立了一个新的学习器，需要定义一个 `Pipeline`。`Pipeline` 正是 `sl3` 中从（1）走到（2）的方式。
+
+```{r screener-importance}
+ranger_with_importance <- Lrnr_ranger$new(importance = "impurity_corrected")
+RFscreen_top10 <- Lrnr_screener_importance$new(
+  learner = ranger_with_importance, num_screen = 10
+)
+RFscreen_top10_glm <- Pipeline$new(RFscreen_top10, lrn_glm)
+```
+
+我们甚至可以为整个 `Stack` 定义 `Pipeline`，这样其中每个学习器都会在筛选器选出的那十个协变量上拟合。
+
+```{r screener-importance-stack}
+RFscreen_top10_stack <- Pipeline$new(RFscreen_top10, stack)
+```
+
+### 基于系数阈值的筛选器
+
+`Lrnr_screener_coefs` 依据协变量在一个（可能带正则化的）GLM 中所估系数的大小来筛选协变量。`threshold`（默认 1e-3）规定了系数——因而也是协变量——被保留所需的最小绝对值。此外还可以选择性地提供 `max_retain` 参数，把选出的协变量数目限制在不超过 `max_retain`。
+
+我们来考虑用 `Lrnr_screener_coefs` 筛选协变量，选出 lasso 回归系数非零的那些变量。我们把这个筛选器与 `Lrnr_glm` 耦合，定义出一个新学习器，它会：（1）选出 lasso 回归系数非零的协变量；（2）把筛选器选出的协变量传给 `Lrnr_glm`，于是 `Lrnr_glm` 依据这一缩减后的协变量集合拟合模型。其结构与上面非常相似。
+
+```{r screener-coefs}
+lasso_screen <- Lrnr_screener_coefs$new(learner = lrn_lasso, threshold = 0)
+lasso_screen_glm <- Pipeline$new(lasso_screen, lrn_glm)
+```
+
+我们同样可以为整个 `Stack` 定义 `Pipeline`，这样其中每个学习器都会在 lasso 筛选器选出的那部分协变量上拟合。
+
+```{r screener-stack}
+lasso_screen_stack <- Pipeline$new(lasso_screen, stack)
+```
+
+### 基于相关性的筛选器
+
+`Lrnr_screener_correlation` 通过做相关性检验（默认 Pearson）来提供协变量筛选流程，然后选出（1）排名靠前的变量（默认），或者（2）p 值低于用户指定阈值的变量。
+
+我们来考虑用 `Lrnr_screener_coefs` 筛选协变量。下面演示如何用一个 `Stack` 搭出 pipeline，其形式与前面的例子相同；单个学习器的 `Pipeline` 也与前面的例子一样。
+
+```{r screener-corr}
+# select top 10 most correlated covariates
+corRank_screen <- Lrnr_screener_correlation$new(
+  type = "rank", num_screen = 10
+)
+corRank_screen_stack <- Pipeline$new(corRank_screen, stack)
+
+# select covariates with correlation p-value below 0.05, and a minimum of 3
+corP_screen <- Lrnr_screener_correlation$new(
+  type = "threshold", pvalue_threshold = 0.05, min_screen = 3
+)
+corP_screen_stack <- Pipeline$new(corP_screen, stack)
+```
+
+### 增补型筛选器
+
+增补型筛选器的特别之处在于，它强制某些协变量总是被纳入。也就是说，如果某个筛选器剔除了一个"必留"协变量，`Lrnr_screener_augment` 会在 `Pipeline` 中的学习器拟合之前把它重新加回来。下面给出该筛选器的用法示例。我们假定 `aged` 与 `momage` 是必须保留在学习器拟合中的协变量。
+
+```{r screener-augment}
+keepme <- c("aged", "momage")
+# using corRank_screen as an example, but any instantiated screener can be 
+# supplied as screener.
+corRank_screen_augmented <- Lrnr_screener_augment$new(
+  screener = corRank_screen, default_covariates = keepme
+)
+corRank_screen_augmented_glm <- Pipeline$new(corRank_screen_augmented, lrn_glm)
+```
+
+当领域专家强烈认为某些协变量集合必须被纳入（即便在筛选流程之下也是如此）时，`Lrnr_screener_augment` 就很有用。
+
+### 带一系列筛选器的 `Stack`
+
+上面提到，我们希望考虑一系列筛选器以让库更多样。这里我们展示如何用其他学习器 stack 创建一个新的 `Stack`，其中既包含不作筛选的学习器，也包含与各种筛选器耦合的学习器。
+
+```{r screeners-stack}
+screeners_stack <- Stack$new(stack, corP_screen_stack, corRank_screen_stack, 
+                             lasso_screen_stack, RFscreen_top10_stack)
+```
+
+可以把这个 `screeners_stack` 作为 `Lrnr_sl` 的 `learners` 传入，从而定义出一个 SL，它的候选者既包括不作筛选的学习器，也包括与各种筛选器耦合的学习器。
+
+## `sl3` 的进阶功能
+
+## 变量重要性度量
+
+变量重要性可能既有趣又有信息量，但它也可能自相矛盾、令人困惑。尽管如此，我们的合作者往往都喜欢它，因此我们在 `sl3` 中做了一个评估变量重要性的函数。`sl3` 的 `importance` 函数返回一张表，其中变量按重要性递减排列（即最重要的排在第一行）。
+
+`sl3` 中的重要性度量，基于"移除或置换某个协变量（或协变量分组）后拟合的 SL"与"使用实际观测协变量（或协变量分组）拟合的 SL"之间预测表现的比值或差值，并对所有协变量逐一如此计算。照此，预测表现的比值／差值越大，该协变量（或协变量组）在 SL 预测中就越重要。
+
+这一度量的直觉是：它计算在"丢掉某个协变量（或某一组协变量）、其余一切保持不变"时的预测风险（例如 MSE），并把这个预测风险与来自完整分析数据集的风险作比较。如果预测风险之比为 1，或差值为 0，那么丢掉那个协变量（组）没有产生影响，按这一度量它就不重要。这一流程对所有协变量／分组重复进行。如上所述，我们可以移除每个协变量（或协变量组）并在没有它的情况下重新拟合 SL，也可以只是把它置换掉（更快），指望这种打乱能破坏其中原有的有意义信息。用置换代替移除的想法能节省大量时间，`randomForest` 的变量重要性度量中也采用了这一做法。不过置换法风险更大。`sl3` 的 `importance` 默认是移除每个协变量再重新拟合。下面我们使用 `permute` 方式，因为它快得多。
+
+我们来考察 `sl_fit` 的 `sl3` 变量重要性度量——`sl_fit` 就是我们上面在 WASH Benefits 示例数据集上拟合的那个 SL。我们定义了一个基于家庭资产的协变量分组用于重要性评估，因为这组变量反映了研究参与者的社会经济地位（SES）。
+
+```{r varimp}
+assets <- c("asset_wardrobe", "asset_table", "asset_chair", "asset_khat",
+            "asset_chouki", "asset_tv", "asset_refrig", "asset_bike", 
+            "asset_moto", "asset_sewmach", "asset_mobile", "Nlt18", "Ncomp", 
+            "watmin", "elec", "floor", "walls", "roof")
+set.seed(983)
+washb_varimp <- importance(
+  fit = sl_fit, eval_fun = loss_squared_error, type = "permute", 
+  covariate_groups = list("assets" = assets)
+)
+```
+
+```{r varimp-print, eval = FALSE}
+washb_varimp
+```
+
+```{r varimp-print-handbook, echo = FALSE}
+washb_varimp %>%
+  kable(digits = 4) %>%
+  kableExtra::kable_styling(fixed_thead = TRUE) %>%
+  kableExtra::scroll_box(width = "100%", height = "300px")
+```
+
+```{r varimp-plot, fig.asp = .62, fig.cap = "sl3 variable importance for predicting weight-for-height z-score with WASH Benefits example dataset"}
+# plot variable importance
+importance_plot(x = washb_varimp)
+```
+
+按照 `sl3` 的变量重要性度量（以各协变量被置换后的均方误差 MSE 差值来评估），所拟合 SL（`sl_fit`）在预测身高别体重 z 评分（`whz`）时最重要的变量是儿童年龄（`aged`）和反映研究对象社会经济地位的家庭资产（`assets`）。
+
+## 条件密度估计
+
+在某些场景中，估计因变量在其之前的预测变量／协变量条件下的条件密度可能很有用。在因果推断的语境下，这最常出现在处理变量取连续值的时候。具体来说，当估计连续取值处理的处理机制（常称为**广义倾向性评分**）时，就需要条件密度估计（CDE）。与二值处理的经典倾向性评分（PS，即给定协变量下接受处理的条件概率）$\mathbb{P}(A = 1 \mid W)$ 相比，广义 PS 是处理 $A$ 在给定协变量 $W$ 条件下的条件密度 $\mathbb{P}(A \mid W)$。
+
+CDE 往往需要与非常具体的算法实现绑定的专门方法。据我们所知，文献中提出的通用且灵活的 CDE 算法寥寥无几。我们在 `sl3` 中实现了其中两种：一种是半参数 CDE 方法，它对底层分布（高阶）矩的恒定性作了某些假设；另一种则利用条件风险函数与密度函数之间的关系，通过汇合风险回归（pooled hazard regression）来做 CDE。两种方法都很灵活，因为它们都允许用任意回归函数或机器学习算法来估计冗余量（分别是条件均值与条件风险）。下面我们分别阐述这两个框架。重要的是，依据 @dudoit2005asymptotics 及相关工作，适用于密度估计的损失函数是负对数密度损失 $L(\cdot) = -\log(p_n(\cdot))$。
+
+### 受矩约束的位置—尺度族
+
+这一类半参数 CDE 方法利用了通用形式 $\rho(Y - \mu(X) / \sigma(X))$，其中 $Y$ 是所关心的因变量（例如 PS 中的处理 $A$），$X$ 是预测变量（例如 PS 中的协变量 $W$），$\rho$ 是一个指定的边际密度函数，而 $\mu(X) = \E(Y \mid X)$ 与 $\sigma(X) = \E[(Y - \mu(X))^2 \mid X]$ 是因变量的冗余函数，可以灵活地估计。在这一框架内表述的 CDE 流程，可以刻画为属于**条件位置—尺度**族，即 $p_n(Y \mid X) = \rho((Y - \mu_n(X)) / \sigma_n(X))$。用条件位置—尺度族做 CDE 并非没有潜在缺点（例如对密度函数形式的限制可能导致误设偏倚），但这一策略的灵活之处在于，它允许用任意机器学习算法来估计 $Y$ 在给定 $X$ 下的条件均值 $\mu(X) = \E(Y \mid X)$，以及 $Y$ 在给定 $X$ 下的条件方差 $\sigma(X) = \E[(Y - \mu(X))^2 \mid X]$。
+
+在数据有限的场景中，"目标密度属于某个位置—尺度族"这一假设所施加的额外结构，可能因为能在数据支撑稀薄的区域作平滑而带来好处。不过在实践中，我们无从知道这一假设是否成立、何时成立。这一流程并非我们自己的新贡献（我们也未能在文献中找到它的正式表述）；尽管如此，我们在下面给出一个非正式的算法梗概。该算法假定我们能获得观测数据随机变量 $O = (Y, X)$ 的 $n$ 份独立同分布（i.i.d.）副本、一个**事先设定**的核函数 $\rho$、一个用于估计 $\mu(X)$ 的候选回归流程 $f_{\mu}$，以及一个用于估计 $\sigma(X)$ 的候选回归流程 $f_{\sigma}$。
+
+1. 通过施用回归估计量 $f_{\mu}$ 来估计 $Y$ 在给定 $X$ 下的条件均值 $\mu(X) = \E[Y \mid X]$，得到 $\hat{\mu}(X)$。
+2. 通过施用回归估计量 $f_{\sigma}$ 来估计 $Y$ 在给定 $X$ 下的条件方差 $\sigma(X) = \mathbb{V}[Y \mid X]$，得到 $\hat{\sigma}^2(X)$。注意这一步只涉及条件均值 $\E[(Y - \hat{\mu}(X))^2 \mid X]$ 的估计。
+3. 用核平滑估计 $(Y - \hat{\mu}(X))^2 / \hat{\sigma}^2(X)$ 的一维密度，得到 $\hat{\rho}(Y)$。
+4. 构造出估计的条件密度 $p_n(Y \mid X) = \hat{\rho}((Y - \hat{\mu}(X)) / \hat{\sigma}(X))$。
+
+这个算法梗概涵盖了该 CDE 方法的两种形式，它们在上面第二步处分道扬镳。为简化方法，可以选择只估计条件均值 $\mu(X)$，而把条件方差假定为恒定（即简单地估计为残差的边际均值 $\E[(Y - \hat{\mu}(X))^2]$）。基于所作的方差假设，这一子类 CDE 方法具有**同方差误差**。另一种做法是把条件方差估计为残差 $(Y - \hat{\mu}(X))^2$ 在给定 $X$ 下的条件均值 $\E[(Y - \hat{\mu}(X))^2 \mid X]$，其中用候选算法 $f_{\sigma}$ 来求这个期望。两种做法都已在 `sl3` 中实现，对应学习器 `Lrnr_density_semiparametric`。`mean_learner` 参数指定 $f_{\mu}$，可选的 `var_learner` 参数指定 $f_{\sigma}$。下面我们演示用这一方法做 CDE。
+
+```{r cde-using-locscale, eval = FALSE}
+# semiparametric density estimator with homoscedastic errors (HOSE)
+hose_hal_lrnr <- Lrnr_density_semiparametric$new(
+  mean_learner = Lrnr_hal9001$new()
+)
+# semiparametric density estimator with heteroscedastic errors (HESE)
+hese_rf_glm_lrnr <- Lrnr_density_semiparametric$new(
+  mean_learner = Lrnr_ranger$new()
+  var_learner = Lrnr_glm$new()
+)
+
+# SL for the conditional treatment density
+sl_dens_lrnr <- Lrnr_sl$new(
+  learners = list(hose_hal_lrnr, hese_rf_glm_lrnr),
+  metalearner = Lrnr_solnp_density$new()
+)
+```
+
+### 汇合风险回归
+
+`sl3` 中另一种可用的 CDE 方法最初由 @diaz2011super 提出，它利用了（条件）风险函数与密度函数之间的关系。为构建这一 CDE 框架，@diaz2011super 提出把支撑集为 $\mathcal{Y}$ 的连续因变量 $Y$ 依据分箱数目 $T$ 和某种分箱流程（例如把 $\mathcal{Y}$ 切成 $T$ 个长度完全相同的箱）离散化。调参参数 $T$ 在概念上对应于经典核密度估计中带宽的选择。离散化之后，每个单元由一组记录来表示，而表示某个给定单元的记录数取决于该单元所落入的那个箱（沿离散化后的支撑集）的序号。
+
+举例来说，这一流程的一次具体实施可能把 $Y$ 的支撑集划成 $T = 4$ 个等长的箱（注意这需要 $T+1$ 个切点）：$[\alpha_1, \alpha_2), [\alpha_2, \alpha_3), [\alpha_3, \alpha_4), [\alpha_4, \alpha_5]$（注意最右侧区间是闭区间，其余只是半闭）。接着会构造一个人工的重复测量数据集，其中每个单元最多由 $T$ 条记录表示。为更好地理解这一结构，考虑某个单元 $O_i = (Y_i, X_i)$，其 $Y_i$ 值落在第三个箱 $[\alpha_3, \alpha_4)$ 内。这个单元将由三条不同的记录表示：$\{Y_{ij}, X_{ij}\}_{j=1}^3$，其中 $\{\{Y_{ij} = 0\}_{j=1}^2$，$Y_{i3} = 1\}$，以及 $X_i$ 的三份完全相同的副本 $\{X_{ij}\}_{j=1}^3$。这种"同一单元用多条记录表示"的形式，使得"$Y_i$ 落入离散化支撑集上某个给定箱"的条件风险概率，可以用标准的二值回归技术来评估。
+
+事实上，这一提议把二值回归问题重新表述为一组相应的风险回归：$\mathbb{P} (Y \in [\alpha_{t-1}, \alpha_t) \mid X) = \mathbb{P} (Y \in [\alpha_{t-1}, \alpha_t) \mid Y \geq \alpha_{t-1}, X) \times \prod_{j = 1}^{t -1} \{1 - \mathbb{P} (Y \in [\alpha_{j-1}, \alpha_j) \mid Y \geq \alpha_{j-1}, X) \}$。这里，$Y \in \mathcal{Y}$ 落入箱 $[\alpha_{t-1}, \alpha_t)$ 的概率可以直接用二值回归流程估计——办法是把相应的似然，重新表述为在这种重复测量结构数据集中一个二值变量的似然。最后，把风险估计按箱宽 $\lvert \alpha_t - \alpha_{t-1} \rvert$ 重新标度，就可以映射为密度估计，即对 $\alpha_{t-1} \leq a < \alpha_t$，有 $p_{n, \alpha}(Y \mid X) = \mathbb{P}(Y \in [\alpha_{t-1}, \alpha_t) \mid X) / \lvert \alpha_t - \alpha_{t-1} \rvert$。下面我们给出该算法的非正式梗概。
+
+1. 施用某种流程把 $Y$ 的观测支撑范围 $\max(Y) - \min(Y)$ 划分为 $T$ 个箱：$[\alpha_1, \alpha_2), \ldots, [\alpha_{t-1}, \alpha_t), [\alpha_t, \alpha_{t+1}]$。
+2. 把观测数据展开为重复测量数据结构，把每个单独观测表示为最多 $T$ 条记录的集合，并在每条记录旁记录该观测的 ID。对单个单元 $i$，其记录集合形如 $\{Y_{ij}, X_{ij}\}_{j=1}^{T_i}$，其中 $X_{ij}$ 在指标集 $\mathcal{J}$ 上保持不变，$Y_{ij}$ 是一个在其最后一个指标处（即 $Y_i$ 所落入的那个箱）由 $0$ 跳到 $1$ 的二值计数过程，而 $T_i \leq T$ 标明 $Y_i$ 落在其支撑集上的哪个箱。
+3. 用任意二值回归估计量或合适的机器学习算法，估计在给定 $X$ 条件下归入某箱的风险概率 $\mathbb{P}(Y_i \in [\alpha_{t-1}, \alpha_t) \mid X)$。
+4. 对每个观测 $i = 1, \ldots, n$，把累积风险除以 $X_i$ 所落入那个箱的宽度，从而把条件风险概率估计重新标度到条件密度的尺度上。如果支撑集被划分为大小相等的箱（每箱约 $n/T$ 个样本），这就相当于按一个常数重新标度；如果支撑集被划分为范围相等的箱，则各箱的标度可能不同。
+
+这一提议的一个关键要素，是可以灵活地使用任意二值回归流程或合适的机器学习算法来估计 $\mathbb{P}(Y \in [\alpha_{t-1}, \alpha_t) \mid X)$，这便于纳入集成学习之类的灵活技术 [@breiman1996stacked; @vdl2007super]。这种极高的灵活度与 `sl3` 的底层设计原则完美契合；不过我们尚未以其完全的一般性实现这一方法。这一 CDE 方法的一个版本——它把原提议中的任意二值回归限定为高度自适应 lasso（HAL）算法 [@benkeser2016hal]——由 [`haldensify` 包](https://github.com/nhejazi/haldensify) [@hejazi2020haldensify] 支持（`haldensify` 中的 HAL 实现由 [`hal9001` 包](https://github.com/tlverse/hal9001) [@coyle2020hal9001; @hejazi2020hal9001] 提供）。这一使用 `haldensify` 的 CDE 算法在 `sl3` 中被封装为学习器 `Lrnr_haldensify`，演示如下。
+
+```{r cde-using-pooledhaz, eval = FALSE}
+# learners used for conditional densities for (g_n)
+haldensify_lrnr <- Lrnr_haldensify$new(
+  n_bins = c(5, 10)
+)
+```
+
+## 习题
+
+### 二值结局预测
+
+按下面的步骤，用现有协变量数据预测心肌梗死（`mi`）的概率。我们感谢埃默里大学生物统计与生物信息学助理教授 David Benkeser 博士公开了这份心血管健康研究（Cardiovascular Health Study, CHS）数据。
+
+```{r ex-setup}
+# load the data set
+library(readr)
+db_data <- url(
+  paste0(
+    "https://raw.githubusercontent.com/benkeser/sllecture/master/",
+    "chspred.csv"
+  )
+)
+chspred <- read_csv(file = db_data, col_names = TRUE)
+```
+
+先快速看一眼数据：
+
+```{r ex-head, eval = FALSE}
+head(chspred)
+```
+
+```{r ex-head-handbook, echo = FALSE}
+head(chspred) %>%
+  kable() %>%
+  kableExtra::kable_styling(fixed_thead = TRUE) %>%
+  kableExtra::scroll_box(width = "100%", height = "300px")
+```
+
+1. 创建一个 `sl3` 任务，把心肌梗死 `mi` 设为结局，并使用所有可用的协变量数据。
+2. 用七个相对较快的基学习算法构造一个库（即不要考虑 BART 或 HAL）。为其中一个学习器定制调参参数。至少纳入一个筛选器—学习器耦合体。
+3. 构造 SL 并在该任务上训练它。
+4. 在你的拟合对象后加上 `$cv_risk(loss_squared_error)`，打印 SL 的拟合结果。
+
+## 结语
+
+- 超级学习器（SL）是一种通用方法，可以应用于各种能由损失函数定义的估计与预测问题。
+
+- 把 SL 返回的估计量代入目标参数映射是很直接的。
+    + 例如，假设我们要估计某个二值处理干预的平均处理效应（ATE）：$\Psi_0 = E_{0,W}[E_0(Y|A=1,W) - E_0(Y|A=0,W)]$。
+    + 我们可以用在原始数据上训练好的 SL（记作 `sl_fit`），预测所有受试者在每种干预下的结局。我们要做的只是取两种所关心干预下反事实结局的平均之差。
+    + 就上面的 $\Psi_0$ 而言，我们首先需要两个长度为 $n$ 的预测结局向量，分别对应两种干预。一个向量代表"把所有受试者都设为接受 $A=1$"这一干预下的预测结局，即对所有 $i=1,\ldots,n$ 的 $Y_i|A_i=1,W_i$；另一个向量代表"把所有受试者都设为接受 $A=0$"这一干预下的预测结局，即对所有 $i=1,\ldots,n$ 的 $Y_i|A_i=0,W_i$。
+    + 拿到这两个反事实预测结局向量之后，我们只需求平均再作差，就把 SL 估计量"代入"了目标参数映射。
+    + 在 `sl3` 中，就我们当前的 ATE 例子而言，可以用 `mean(sl_fit$predict(A1_task)) - mean(sl_fit$predict(A0_task))` 实现；其中 `A1_task$data` 在数据的处理列上全为 1（或对应接受处理的那个水平），其余保持不变，而 `A0_task$data` 在处理列上全为 0（或对应不接受处理的那个水平）。
+- 取得反事实预测结局、并创建这些反事实 `sl3` 任务，是一个值得做的练习。然而，把 SL 的拟合结果代入目标参数映射，偏倚太大（例如把 `mean(sl_fit$predict(A1_task)) - mean(sl_fit$predict(A0_task))` 的结果称作 ATE 的估计）。那样我们得到的 ATE 估计量，是为估计预测函数而优化的，而不是为估计 ATE 而优化的！
+- 归根结底，我们想要的是一个能最好地逼近我们所关心问题的估计量。也就是说，我们在意的是尽可能把 $\psi_0$ 估计好。SL 是帮我们走到那一步的关键一环：反事实预测结局估计（如上文所述），以及其他由 SL 得到的估计（例如倾向性评分），在估计 $\psi_0$ 时都扮演关键角色。但 SL 并不是估计流程的终点。具体来说，如果我们只是把 SL 的估计代入目标参数，就不会得到目标 estimand 的渐近线性估计量；SL 不是有效的代入型估计量，也不支持统计推断。这为什么要紧？
+
+  + 渐近线性估计量是指以 $\frac{1}{\sqrt{n}}$ 的速率收敛到 estimand 的估计量，因而允许作正式的统计推断，即置信区间与 $p$ 值（见 @vdl2011targeted 第 4–6 章）。
+  + 代入型（plug-in）估计量之所以可取，是因为它们同时尊重统计模型的局部与全局约束（例如结局的取值界限），并且有限样本性质更好（见 @vdl2011targeted 第 6 章）。
+  + 有效（efficient）估计量在这一意义上是最优的：它具有尽可能小的方差，因而最为精确。一个估计量是有效的，当且仅当它是渐近线性的且影响曲线等于正则梯度（canonical gradient）（见 @vdl2011targeted 第 6 章）。
+
+      + 正则梯度是一个针对特定目标 estimand 的数学对象，它给出了该估计问题难度的信息（@vdl2011targeted 第 5 章）。后续各章会展示多种正则梯度。
+      + 从业者不必会计算正则梯度，也能说清一个估计量值得拥有哪些性质（例如代入型、支持有效推断、有效，以及优化有限样本表现的能力）。正是这些性质促使人们使用 TMLE，因为 TMLE 满足它们。
+
+- TMLE 是一套通用策略，它成功地构造出有效且渐近线性、并在有限样本下稳健的代入型估计量。
+- SL 对纯预测非常好用，也适合为似然中各成分取得初始估计（这是 TMLE 的第一步）；但我们还需要第二步——靶向／更新／波动（targeting/updating/fluctuation）——才能具备上面提到的那些理想统计性质。
+- 在接下来的各章中，我们会聚焦于各种靶向最大似然估计量与靶向最小损失估计量，二者都简称 TMLE。
+
+## 附录
+
+### 习题 1 参考解答 {#sl3ex1-sol}
+
+下面是上文[「二值结局预测」](#二值结局预测)习题的一种可能解答。
+
+```{r ex-key, eval=FALSE}
+db_data <- url(
+  "https://raw.githubusercontent.com/benkeser/sllecture/master/chspred.csv"
+)
+chspred <- read_csv(file = db_data, col_names = TRUE)
+data.table::setDT(chspred)
+
+# make task
+chspred_task <- make_sl3_Task(
+  data = chspred,
+  covariates = colnames(chspred)[-1],
+  outcome = "mi"
+)
+
+# make learners
+glm_learner <- Lrnr_glm$new()
+lasso_learner <- Lrnr_glmnet$new(alpha = 1)
+ridge_learner <- Lrnr_glmnet$new(alpha = 0)
+enet_learner <- Lrnr_glmnet$new(alpha = 0.5)
+# curated_glm_learner uses formula = "mi ~ smoke + beta"
+curated_glm_learner <- Lrnr_glm_fast$new(covariates = c("smoke", "beta"))
+mean_learner <- Lrnr_mean$new() # That is one mean learner!
+glm_fast_learner <- Lrnr_glm_fast$new()
+ranger_learner <- Lrnr_ranger$new()
+svm_learner <- Lrnr_svm$new()
+xgb_learner <- Lrnr_xgboost$new()
+
+# screening
+screen_cor <- make_learner(Lrnr_screener_correlation)
+glm_pipeline <- make_learner(Pipeline, screen_cor, glm_learner)
+
+# stack learners together
+stack <- make_learner(
+  Stack,
+  glm_pipeline, glm_learner,
+  lasso_learner, ridge_learner, enet_learner,
+  curated_glm_learner, mean_learner, glm_fast_learner,
+  ranger_learner, svm_learner, xgb_learner
+)
+
+# make and train SL
+sl <- Lrnr_sl$new(
+  learners = stack
+)
+sl_fit <- sl$train(chspred_task)
+sl_fit$cv_risk(loss_squared_error)
+```

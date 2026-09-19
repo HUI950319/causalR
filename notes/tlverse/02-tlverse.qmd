@@ -1,0 +1,183 @@
+---
+title: "关于 `tlverse` 与软件配置"
+subtitle: "*About the tlverse* / *Software Setup* · tlverse 官方手册中译"
+bibliography: tlverse-refs.bib
+lang: zh
+---
+
+> **来源**：[*Targeted Learning in R: Causal Data Science with the `tlverse` Software Ecosystem*](https://tlverse.org/tlverse-handbook/)，作者 Mark van der Laan、Jeremy Coyle、Nima Hejazi、Ivana Malenica、Rachael Phillips、Alan Hubbard，采用 **[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)** 许可。
+> 本页为中文翻译，**非原文**；依 CC BY 4.0 保留原作者署名与许可证声明，并标明本页是经过修改（翻译）的版本。
+> 原作品按「现状」提供，原作者不附任何明示或默示的担保（见 CC BY 4.0 第 5 节免责声明）；译文中的任何疏漏由译者负责，不代表原作者观点。
+> 译自源码仓库 [tlverse/tlverse-handbook](https://github.com/tlverse/tlverse-handbook) 修订 `2931693`（2024-09-21）的 `02-tlverse.Rmd`，对应原书第一部分「预备知识」的 *About the `tlverse`* 与 *Software Setup* 两章。
+
+# 关于 `tlverse` {#tlverse}
+
+## 什么是 `tlverse`？
+
+`tlverse` 是一套在 `R` 中做靶向学习的新框架，其灵感来自 `R` 包的 [`tidyverse` 生态](https://tidyverse.org)。
+
+与 [`tidyverse`](https://tidyverse.org/) 类比：
+
+> `tidyverse` 是一组有明确主张的、为数据科学而设计的 `R` 包。所有包共享同一套底层设计理念、语法和数据结构。
+
+那么，[`tlverse`](https://tlverse.org) 就是：
+
+> 一组有明确主张的、面向靶向学习的 `R` 包，共享同一套底层设计理念、语法和核心数据结构。`tlverse` 既要为构建基于靶向学习的数据分析提供工具，也要为实现新颖的、最前沿的靶向学习方法提供工具。
+
+## `tlverse` 的组成
+
+所有靶向学习方法都是靶向最大似然（或最小损失）估计量，即 TMLE。构造任何一个靶向学习估计量都要经过两个阶段：
+
+1. 灵活地学习数据生成分布的某些特定成分，通常借助机器学习（例如超级学习），得到冗余参数（nuisance parameter）的**初始估计**；
+2. 通过一个精心构造的、基于参数模型的更新步骤（即极大似然估计 MLE），把上一步得到的初始估计纳入进来，从而得到 TML 估计量。
+
+构成 `tlverse` 软件生态核心的两个包——`sl3` 与 `tmle3`——分别对应上述两个目标。二者共同提供的通用功能，让人能够针对某个具体的统计估计问题，搭建出量身定制的 TMLE。
+
+构成 `tlverse` **核心**的软件包是：
+
+* [`sl3`](https://github.com/tlverse/sl3)：现代的超级机器学习
+  * *是什么？* 超级学习器（Super Learner）算法的现代面向对象实现，采用了 `R` 编程中新近发展起来的范式。
+  * *为什么？* 其设计借鉴现代思想以加快计算速度，易于扩展且面向未来，是 `tlverse` 的基石之一。
+
+* [`tmle3`](https://github.com/tlverse/tmle3)：靶向学习的引擎
+  * *是什么？* 一个通用框架，通过识别并实现一系列常见的统计估计流程来简化靶向学习。
+  * *为什么？* 它提供统一的接口与引擎，既能容纳当前靶向学习的各种算法路线，又保持足够灵活，可以支撑新兴统计技术在成熟时的实现。
+
+除了驱动 `tlverse` 的这两台引擎之外，还有几个在**后台**发挥重要作用的辅助包：
+
+* [`origami`](https://github.com/tlverse/origami)：交叉验证的通用框架 [@coyle2018origami]
+  * *是什么？* 一个灵活的交叉验证通用框架。
+  * *为什么？* 交叉验证是保证误差估计诚实、防止过拟合的关键环节。它既是超级学习器集成建模算法的核心组成部分，也是构造 TML 估计量不可或缺的一环。
+
+* [`delayed`](https://github.com/tlverse/delayed)：面向依赖型任务的并行化框架
+  * *是什么？* 一个基于任务依赖关系的延迟计算（即 futures）框架。
+  * *为什么？* 在大规模部署计算密集型算法时，高效分配计算资源至关重要。
+
+`tlverse` 的一条关键原则是**可扩展性**。也就是说，这个软件生态希望在新的靶向学习估计量成熟时能够支持它们的开发。为达到这种灵活度，我们采用这样的模式：把面向不同因果推断问题的新估计量类分别放在各自的包里实现，而它们全都依赖 `sl3` 与 `tmle3` 提供的核心机制。目前有三个这样的例子：
+
+* [`tmle3mopttx`](https://github.com/tlverse/tmle3mopttx)：`tlverse` 中的最优处理
+  * *是什么？* 学习一条最优规则，并估计在该规则下的结局均值。
+  * *为什么？* 在精准医疗以及其他“一刀切”式处理方案并不合适的场景中，最优处理是一件有力的工具。
+
+* [`tmle3shift`](https://github.com/tlverse/tmle3shift)：`tlverse` 中基于修正处理策略的随机移位干预
+  * *是什么？* 用随机移位干预来评估连续取值处理的变化。
+  * *为什么？* 并非所有处理变量都是二值或分类的。估计对连续取值处理进行干预的总效应，提供了一条途径去考察效应如何随处理变量的移位而变化。
+
+* [`tmle3mediate`](https://github.com/tlverse/tmle3mediate)：`tlverse` 中的因果中介分析
+  * *是什么？* 用于评估处理通过中介变量产生的直接效应与间接效应的技术。
+  * *为什么？* 评估一项处理的总效应，并不能告诉我们它可能是通过哪些路径起作用的。当收集到中介变量时，就可以转而评估直接效应与间接效应这类参数，它们能说明处理的**作用机制**。
+
+## `R6` 类系统入门
+
+`tlverse` 的设计遵循基本的面向对象编程（OOP）原则，采用 [`R6` OOP 框架](https://adv-r.hadley.nz/r6.html)。虽然我们已尽量让人不必太操心 OOP 就能用上 `tlverse` 各包，但对 `tlverse` 的结构有些直觉仍然有帮助。下面我们简要梳理 OOP 中的几个关键概念。已熟悉 OOP 基础的读者可以跳过本节。
+
+### 类、字段与方法
+
+OOP 的核心概念是**对象**：数据与函数的集合，对应某个概念上的单元。对象主要有两类元素：
+
+1. **字段**（fields），可以看作名词，是关于对象的信息；
+2. **方法**（methods），可以看作动词，是对象能够执行的动作。
+
+对象是**类**的成员，类规定了这些具体的字段和方法是什么。类可以从其他类（有时称为基类）继承元素——因此，彼此相似但不完全相同的类，可以共享一部分定义。
+
+OOP 有许多不同的实现，这些概念的实现与使用方式各有差异。`R` 本身就有好几种实现，包括 `S3`、`S4`、引用类和 `R6`。`tlverse` 使用的是 `R6` 实现。在 `R6` 中，类对象的方法和字段通过 `$` 运算符访问。关于 `R` 各种 OOP 系统更完整的介绍，见 Hadley Wickham 所著《*Advanced R*》[@wickham2014advanced] 的 http://adv-r.had.co.nz/OO-essentials.html。
+
+### 面向对象编程：`Python` 与 `R`
+
+从第一个公开发布的版本（1991 年的 0.9 版）起，OO 概念（带继承的类）就已内置于 Python 之中。相比之下，`R` 的 OO “路数”继承自它的前身 `S`——后者最早发布于 1976 年。在最初的 15 年里，`S` 完全不支持类；然后突然之间，`S` 接连被加装了两套 OO 框架：1991 年的非正式类 `S3`，以及 1998 年的正式类 `S4`。这个过程一直在延续，为了改善 `R` 中乏善可陈的 OO 支持，新的 OO 框架不时被推出，包括引用类（`R5`，2010 年）和 `R6`（2014 年）。其中 `R6` 的行为最接近 Python 的类（也最接近 C++、Java 这类以 OOP 为中心的语言），比如方法定义是类定义的一部分，以及允许按引用修改对象。
+
+# 软件配置 {#setup}
+
+## 配置 `R` 与 RStudio
+
+**`R`** 和 **RStudio** 是两个独立的下载与安装项。`R` 是底层的统计计算环境；RStudio 是一个图形化集成开发环境（IDE），它让使用 `R` 变得容易得多、交互性也更强。你需要先安装 `R`，再安装 RStudio。
+
+### Windows
+
+#### 如果你已经装了 `R` 和 RStudio
+
+* 打开 RStudio，点击 “Help” > “Check for updates”。如果有新版本，退出 RStudio 并下载最新版 RStudio。
+* 要查看自己正在用的 `R` 版本，启动 RStudio，控制台里最先出现的信息就标明了当前运行的 `R` 版本。或者输入 `sessionInfo()`，它同样会显示你运行的 `R` 版本。到 [CRAN 网站](https://cran.r-project.org/bin/windows/base/)查看是否有更新的版本；若有，请下载安装。如果你想从系统中移除旧版本，可以[查阅这里](https://cran.r-project.org/bin/windows/base/rw-FAQ.html#How-do-I-UNinstall-R_003f)了解更多信息。
+
+#### 如果你还没装 `R` 和 RStudio
+
+* 从 [CRAN 网站](http://cran.r-project.org/bin/windows/base/release.htm)下载 `R`。
+* 运行刚下载的 `.exe` 文件。
+* 前往 [RStudio 下载页](https://www.rstudio.com/products/rstudio/download/#download)。
+* 在 *Installers* 下选择 **RStudio x.yy.zzz - Windows XP/Vista/7/8**（其中 x、y、z 代表版本号）。
+* 双击文件进行安装。
+* 装好后打开 RStudio，确认它能正常工作且没有报错信息。
+
+### macOS / Mac OS X
+
+#### 如果你已经装了 `R` 和 RStudio
+
+* 打开 RStudio，点击 “Help” > “Check for updates”。如果有新版本，退出 RStudio 并下载最新版 RStudio。
+* 要查看自己正在用的 `R` 版本，启动 RStudio，终端里最先出现的信息就标明了当前运行的 `R` 版本。或者输入 `sessionInfo()`，它同样会显示你运行的 `R` 版本。到 [CRAN 网站](https://cran.r-project.org/bin/macosx/)查看是否有更新的版本；若有，请下载安装。
+
+#### 如果你还没装 `R` 和 RStudio
+
+* 从 [CRAN 网站](http://cran.r-project.org/bin/macosx)下载 `R`。
+* 选择最新 `R` 版本对应的 `.pkg` 文件。
+* 双击下载好的文件安装 R。
+* 建议同时安装 [XQuartz](https://www.xquartz.org/)（某些包需要它）。
+* 前往 [RStudio 下载页](https://www.rstudio.com/products/rstudio/download/#download)。
+* 在 *Installers* 下选择 **RStudio x.yy.zzz - Mac OS X 10.6+ (64-bit)**（其中 x、y、z 代表版本号）。
+* 双击文件安装 RStudio。
+* 装好后打开 RStudio，确认它能正常工作且没有报错信息。
+
+### Linux
+
+* 按你所用发行版的说明操作，见 [CRAN](https://cloud.r-project.org/bin/linux)，那里提供了在常见发行版上获取最新 `R` 版本的信息。对多数发行版来说，你也可以用包管理器（例如 Debian/Ubuntu 上运行 `sudo apt-get install r-base`，Fedora 上运行 `sudo yum install R`），但我们不推荐这种做法，因为这样装到的版本通常已经过时。无论如何，请确保你用的是最新版本的 `R`。
+* 前往 [RStudio 下载页](https://www.rstudio.com/products/rstudio/download/#download)。
+* 在 *Installers* 下选择与你的发行版匹配的版本，用你偏好的方式安装（例如 Debian/Ubuntu 上在终端执行 `sudo dpkg -i rstudio-x.yy.zzz-amd64.deb`）。
+* 装好后打开 RStudio，确认它能正常工作且没有报错信息。
+
+以上配置说明改编自 [Data Carpentry: R for Data Analysis and Visualization of Ecological Data](http://www.datacarpentry.org/R-ecology-lesson/) 所撰写的版本。
+
+## 安装 `tlverse` {#installtlverse}
+
+`tlverse` 生态的各个包目前托管在 https://github.com/tlverse，尚未上架 [CRAN](https://CRAN.R-project.org/)。你可以用 [`usethis` 包](https://usethis.r-lib.org/)来安装它们：
+
+```{r installation, eval=FALSE}
+install.packages("devtools")
+devtools::install_github("tlverse/tlverse")
+```
+
+`tlverse` 依赖大量同样托管在 GitHub 上的其他包。正因如此，你可能会看到如下错误：
+
+```
+Error: HTTP error 403.
+  API rate limit exceeded for 71.204.135.82. (But here's the good news:
+  Authenticated requests get a higher rate limit. Check out the documentation
+  for more details.)
+
+  Rate limit remaining: 0/60
+  Rate limit reset at: 2019-03-04 19:39:05 UTC
+
+  To increase your GitHub API rate limit
+  - Use `usethis::create_github_token()` to create a Personal Access Token.
+  - Use `usethis::edit_r_environ()` and add the token as `GITHUB_PAT`.
+```
+
+这只是说明 `R` 在太短的时间窗口里从 GitHub 安装了太多包。要解决它，你需要告诉 `R` 如何以你的身份使用 GitHub（你需要一个 GitHub 账号）。按以下步骤操作：
+
+1. 在 `R` 控制台输入 `usethis::create_github_token()`，它会把你引导到 GitHub 上创建新个人访问令牌（Personal Access Token, PAT）的页面。
+2. 直接点击页面底部的 “Generate token” 即可创建 PAT。
+3. 复制你的 PAT，它是一长串小写字母和数字。
+4. 在 `R` 控制台输入 `usethis::edit_r_environ()`，它会在 RStudio 的源码窗口中打开你的 `.Renviron` 文件。
+
+    a. 如果调用 `usethis::edit_r_environ()` 之后 `.Renviron` 文件没有弹出来，那就试着输入 `Sys.setenv(GITHUB_PAT = "yourPAT")`，把引号里换成你的 PAT。如果这一步没有报错，就直接跳到第 8 步。
+
+5. 在 `.Renviron` 文件中输入 `GITHUB_PAT=`，然后把 PAT 粘贴在等号之后，中间不留空格。
+6. 在 `.Renviron` 文件中按回车键，确保文件以一个新行结尾。
+7. 保存 `.Renviron` 文件。下面的例子展示了这一语法应有的样子。
+
+  ```{r renviron-example, results="asis", eval=FALSE}
+  GITHUB_PAT=yourPAT
+
+  ```
+
+8. 重启 R。你可以通过 RStudio 界面顶部 “Session” 选项卡的下拉菜单重启 `R`。必须重启 `R`，改动才会生效！
+
+完成这些步骤之后，你应该就能顺利安装那个先前报错的包了。

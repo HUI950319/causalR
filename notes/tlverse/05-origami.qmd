@@ -1,0 +1,624 @@
+---
+title: "交叉验证"
+subtitle: "*Cross-validation* · tlverse 官方手册中译"
+bibliography: tlverse-refs.bib
+lang: zh
+---
+
+> **来源**：[*Targeted Learning in R: Causal Data Science with the `tlverse` Software Ecosystem*](https://tlverse.org/tlverse-handbook/)，作者 Mark van der Laan、Jeremy Coyle、Nima Hejazi、Ivana Malenica、Rachael Phillips、Alan Hubbard，采用 **[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)** 许可。
+> 本页为中文翻译，**非原文**；依 CC BY 4.0 保留原作者署名与许可证声明，并标明本页是经过修改（翻译）的版本。
+> 原作品按「现状」提供，原作者不附任何明示或默示的担保（见 CC BY 4.0 第 5 节免责声明）；译文中的任何疏漏由译者负责，不代表原作者观点。
+> 译自源码仓库 [tlverse/tlverse-handbook](https://github.com/tlverse/tlverse-handbook) 修订 `2931693`（2024-09-21）的 `05-origami.Rmd`。本章作者为 *Ivana Malenica*。
+> **格式适配说明**：原书用于区分 HTML/LaTeX 输出的内联 R 判断（`is_latex_output()` / `is_html_output()`）在本站只保留 HTML 分支。其余代码块按原文逐字保留，并由本站以 R 4.4.3 重新执行。
+
+```{=html}
+<span class="math inline">
+\(\DeclareMathOperator{\expit}{expit}\)
+\(\DeclareMathOperator{\logit}{logit}\)
+\(\DeclareMathOperator*{\argmin}{\arg\!\min}\)
+\(\newcommand{\indep}{\perp\!\!\!\perp}\)
+\(\newcommand{\R}{\mathbb{R}}\)
+\(\newcommand{\E}{\mathbb{E}}\)
+\(\newcommand{\M}{\mathcal{M}}\)
+\(\newcommand{\I}{\mathbb{I}}\)
+</span>
+```
+
+# 交叉验证 {#origami}
+
+*Ivana Malenica*
+
+基于 [`origami` `R` 包](https://github.com/tlverse/origami)，作者为 *Jeremy Coyle、Nima Hejazi、Ivana Malenica 与 Rachael Phillips*。
+
+## 学习目标
+
+读完本章之后，你将能够：
+
+1. 区分训练集、验证集与测试集。
+
+2. 理解损失函数、风险与交叉验证的概念。
+
+3. 针对待估的泛函参数，选择合适的损失函数。
+
+4. 理解并比较适用于 i.i.d. 数据的不同交叉验证方案。
+
+5. 理解并比较适用于时间依赖数据的不同交叉验证方案。
+
+6. 用 `origami` `R` 包搭好合适的折（fold）结构、构建基于折的自定义函数，并对所提函数做交叉验证。
+
+7. 用 `origami` `R` 包为超级学习器搭好合适的交叉验证结构。
+
+## 引言
+
+沿着[《靶向学习路线图》](04-roadmap.qmd#roadmap)，本章开始细谈估计这一步。为了得到目标参数的估计，我们需要决定如何评价估计流程的表现好坏。任何算法（估计量）的表现（或者说误差），对应的是它对来自同一数据生成过程的独立数据集的泛化能力。评估算法的表现极其重要——它给出算法表现好坏的定量度量，并指导我们在一组（或称一个"库"的）算法中作出选择。为了评估一个算法或一个算法库的表现，我们引入**损失函数**的概念，它定义了**风险**（risk），也就是**期望预测误差**。我们的目标是估计估计量的真实表现（风险）。下一章我们会细谈如何估计一个算法库中各算法的表现，以便挑出表现最好的那个。下文中，我们提出一种借助观测数据和 `origami` 包 [@coyle2018origami; @coyle-cran-origami] 中实现的**交叉验证**流程来做到这一点的方法。
+
+## 背景
+
+理想情况下，在数据充裕的场景中（即观测数不受限），我们会把数据集分成三部分：
+
+1. 训练集，
+2. 验证集，以及
+3. 测试集（或称留出集）。
+
+训练集用来拟合所关心的算法；我们在验证集上评估拟合结果的表现，验证集可用来估计预测误差（例如用于算法调参或选择）。所选算法的最终误差则由测试集（留出集）给出，这部分数据被完全隔离开来，直到最后的模型评估环节之前，算法从未接触过这些观测。有人可能会问：既然训练数据现成可用，为什么不直接用训练误差来评估所提算法的表现？遗憾的是，训练误差是拟合后算法泛化能力的有偏估计，因为它用同一批数据既做拟合又做评估。
+
+由于数据往往稀缺，把数据集拆成训练、验证、测试三份可能限制过大，因为这会让可用于训练的数据少得太多。在没有大数据集、也没有专门测试集的情况下，我们必须诉诸那些通过高效地重复利用样本来估计算法真实表现的方法。重抽样方法（例如自助法）的做法是：从训练集中反复抽样，并把算法拟合到这些样本上。重抽样方法虽然常常计算量很大，但在评估算法、以及在一组算法中作选择时格外有用。此外，相比只把算法在全部训练数据上拟合一次，它们还能让我们更了解拟合结果的变异性与稳健性。
+
+### 引入：交叉验证
+
+本章我们聚焦于**交叉验证**——一件评估任意算法如何从样本推广到其所来自的目标总体的基本工具。交叉验证已在现代统计学的各个方面得到广泛应用，其中或许以统计机器学习最为突出。已经证明，在大样本（即渐近）意义下，交叉验证流程对于算法选择是最优的。具体而言，当估计被应用于从预测变量与结局的联合分布中抽取的独立样本时，交叉验证后的算法估计的是真实风险。
+
+用于模型选择时，交叉验证具有强有力的最优性性质。渐近最优性结果表明，交叉验证选择器（在风险意义下）渐近地表现得与最优的先知（oracle）选择器一样好——后者是一个可以自由获知真实但未知的数据生成分布的假想流程。关于这些理论结果的更多细节，建议参阅 @vdl2003unified、@vdl2004asymptotic、@dudoit2005asymptotics 与 @vaart2006oracle。
+
+`origami` 包提供了一套交叉验证工具。下文中，我们会介绍 `origami` 中现成可用的各类交叉验证方案，介绍该包的总体结构，并演示这些流程在各种应用场景中的用法。
+
+## 估计路线图：这些是怎么拼到一起的？
+
+与我们定义[《靶向学习路线图》](04-roadmap.qmd#roadmap)的方式类似，我们可以定义**估计路线图**，作为估计过程的指南。具体来说，统一的基于损失的估计框架 [@vdl2003unified; @vdl2004asymptotic; @dudoit2005asymptotics; @vaart2006oracle; @vdl2007super] 依赖交叉验证来构造、选择估计量并评估其表现，它由三个主要步骤构成：
+
+1. **损失函数**：
+把目标参数定义为期望损失（风险）的最小化元，所选的完整数据损失函数要能代表我们想要的表现度量。这里的完整数据，指的是包含（例如）缺失过程在内的完整数据。再把完整数据损失函数映射为观测数据损失函数，二者期望相同，并由此得到风险的估计量。
+
+2. **算法**：
+构造一个关于所关心参数的有限候选估计量集合。
+
+3. **交叉验证方案**：
+施用合适的交叉验证，并用交叉验证风险在候选者中选出表现最好的估计量。评估最终所得估计量的整体表现。
+
+## 示例：交叉验证与预测
+
+介绍完[估计路线图](04-roadmap.qmd#roadmap)之后，我们可以用预测为例，更精确地界定我们的目标。设观测数据为 $O = (W, Y)$，单元层面的数据结构可写作 $O_i = (W_i, Y_i)$，$i = 1, \ldots, n$。我们记 $Y_i$ 为所关心的结局／因变量，$W_i$ 为 $p$ 维的协变量（预测变量）集合。我们假定这 $n$ 个单元是独立的（或条件独立的）且同分布的。记 $\psi_0(W)$ 为所关心的目标参数，也就是我们希望估计的那个量（estimand）。在这个例子中，我们关心的是在给定协变量条件下结局的条件期望，$\psi_0(W) = \E(Y \mid W)$。按照[估计路线图](04-roadmap.qmd#roadmap)，我们选择合适的损失函数 $L$，使得 $\psi_0(W) = \text{argmin}_{\psi} \E_0[L(O, \psi(W))]$。注意，真实目标参数 $\psi_0(W)$ 是风险（所选损失函数的期望值）的最小化元。对于连续结局的条件期望，合适的损失函数可以是均方误差。于是我们可以把 $L$ 定义为 $L(O, \psi(W)) = (Y_i -\psi(W_i)^2$。注意，能够估计该 estimand 的算法可以有很多（即很多不同的 $\psi$）。我们怎么知道 $\psi_0(W)$ 的各个候选估计量各自做得如何？为了挑出表现最好的候选估计量并评估其整体表现，我们使用交叉验证。训练集中的观测用来拟合（训练）估计量，验证集中的观测用来评估（验证）它的风险。
+
+接下来，我们引入一套足够灵活、能表示任意交叉验证方案的记号。具体地，我们定义一个**划分向量** $B_n = (B_n(i): i = 1, \ldots, n) \in \{0,1\}^n$。
+
+$B_n$ 的一次实现定义了把数据随机划分为训练子集与验证子集的一种方式，使得
+
+$$B_n(i) = 0, \ \ \text{第 i 个样本属于训练集}$$
+$$B_n(i) = 1, \ \ \text{第 i 个样本属于验证集。}$$
+
+我们可以进一步把 $P_{n, B_n}^0$ 与 $P_{n, B_n}^1$ 分别定义为训练集与验证集的经验分布。于是 $n_0 = \sum_i (1 - B_n(i))$ 与 $n_1 = \sum_i B_n(i)$ 分别表示训练集与验证集中的样本数。划分向量 $B_n$ 的具体分布，定义了交叉验证方案的类型，可针对手头的问题与数据集来定制。
+
+## `origami` 中的交叉验证方案
+
+存在多种不同的划分方案，各自针对所关心问题的关键细节而设计，这些细节包括数据规模、结局的发生率，以及依赖结构（单元之间或跨时间）。下文中，我们介绍 `origami` 包中可用的各种交叉验证方案，并进而在实际数据分析示例中演示它们的用法。
+
+### WASH Benefits 研究示例
+
+为了演示不同的交叉验证方案，我们将使用 WASH Benefits 示例数据集（详细信息见[第 3 章](03-data.qmd#wash)）。具体来说，我们关心的是用现有协变量数据预测身高别体重 Z 评分（`whz`）。在这个演示中，我们先把数据当作从未知分布 $P_0$ 中独立同分布（i.i.d.）抽取的随机样本。为了看清每种交叉验证方案在做什么，我们把数据子集取为仅 $n=30$。注意，每一行代表一个 i.i.d. 抽样单元，以行号为索引。
+
+```{r setup}
+library(data.table)
+library(origami)
+library(knitr)
+library(dplyr)
+
+# load data set and take a peek
+washb_data <- fread(
+  paste0(
+    "https://raw.githubusercontent.com/tlverse/tlverse-data/master/",
+    "wash-benefits/washb_data.csv"
+  ),
+  stringsAsFactors = TRUE
+)
+```
+
+```{r origami_washb_example_table1, echo=FALSE}
+n_samp <- 30
+washb_data <- washb_data[seq_len(n_samp), ]
+head(washb_data) %>%
+  kable() %>%
+  kableExtra::kable_styling(fixed_thead = TRUE) %>%
+  kableExtra::scroll_box(width = "100%", height = "300px")
+```
+
+上面展示的是这 `r n_samp` 行数据中的前几行。
+
+### 适用于 i.i.d. 数据的交叉验证
+
+#### 重代入（Re-substitution）
+
+重代入法或许是估计已拟合算法之风险的最简单策略。在这种交叉验证方案下，所有观测单元同时被用于训练集和验证集。
+
+下面我们用 `origami` 的 `folds_resubstitution` 函数演示重代入法的用法。要设置 `folds_resubstitution`，我们只需指定希望分配到训练集与验证集的抽样单元总数；记住，数据集的每一行都是一个唯一的 i.i.d. 抽样单元。另外，请留意 `origami` 输出的结构：
+
+1. **v：** 交叉验证的折；
+2. **training_set：** 训练集中样本的索引；
+3. **validation_set：** 验证集中样本的索引。
+
+`origami` 输出的这种结构——一个由若干折构成的 `list`——在本章介绍的所有交叉验证方案中都是一致的。下面展示重代入法生成的折：
+
+```{r resubstitution}
+folds <- folds_resubstitution(nrow(washb_data))
+folds
+```
+
+#### 留出（Holdout）
+
+留出法，又称验证集方法，做法是把可用数据随机分成训练集与验证（留出）集。随后用训练集中的观测拟合（"训练"）模型，再用验证集中的观测来评估（"验证"）它。通常数据集会按 $60:40$、$70:30$、$80:20$ 甚至 $90:10$ 的训练／验证比例来划分。
+
+留出法直观且计算开销小；但它确实有一个缺点：如果我们把"随机划分数据为训练集与验证集"这个过程重复一遍，得到的经验风险交叉验证估计可能差别很大。具体而言，在验证集上求得的损失函数经验均值（即经验风险）可能高度变异，取决于哪些样本被分进了训练与验证。总体来看，留出法的交叉验证经验风险变异更大，因为它还包含了随机划分本身带来的变异——这并不理想。对于分类问题（结局变量为二值或分类），还有一个额外缺点：训练集与验证集中两类（或多类）结局的分布可能失衡，导致训练好而验证差，或者反过来——不过这可以通过在交叉验证过程中引入分层来纠正。最后请注意，我们并没有把全部数据都用于训练或评估所提算法的表现，这本身就可能引入偏倚。
+
+#### 留一（Leave-one-out）
+
+留一交叉验证方案与留出法密切相关，因为它同样把数据集分成训练集与验证集；只不过它不是把数据集划成大小相近的几份，而是用**单个**观测作为验证集。这样一来，绝大多数抽样单元都被用于拟合（训练）候选学习算法。由于只有单个抽样单元（例如 $O_1 = (W_1, Y_1)$）被排除在拟合过程之外，留一交叉验证可以给出偏倚更小的风险估计。通常，留一法不会像留出法那样高估风险。另一方面，由于风险估计基于单个抽样单元，它通常是一个高度变异的估计。
+
+我们可以不断重复"把数据集拆成训练集与验证集"这一过程，直到每个抽样单元都当过一次验证集。沿用上面的例子，留一交叉验证方案的下一轮可能用 $O_2 = (W_2, Y_2)$ 作验证集（之前扮演该角色的是 $O_1 = (W_1, Y_1)$），而其余 $n-1$ 个抽样单元进入训练集。把这个做法重复 $n$ 次，就得到 $n$ 个风险估计，例如 $MSE_1, MSE_2, \ldots, MSE_n$（这里是以单元 $i$ 为验证集时的均方误差 MSE 估计）。真实风险的估计就是这 $n$ 个留一风险估计的平均。留一交叉验证方案给出的风险估计虽然比留出法偏倚更小（但变异更大），但当 $n$ 很大时，它的计算开销可能非常高。
+
+下面我们用 `origami` 的 `folds_loo(n)` 函数演示留一交叉验证方案的用法。与重代入法类似，设置 `folds_loo(n)` 只需要交叉验证流程所要作用的抽样单元总数。下面展示留一交叉验证生成的前两折。
+
+```{r loo}
+folds <- folds_loo(nrow(washb_data))
+folds[[1]]
+folds[[2]]
+```
+
+#### $V$ 折（$V$-fold）
+
+留一方案的一个替代是 $V$ 折交叉验证。这一方案把数据集随机划分为 $V$ 个大小相等（或近似相等）的部分。对每个部分 $v=1,\ldots,V$，第 $v$ 折由第 $v$ 个部分（它构成第 $v$ 折的验证集）及其补集（构成第 $v$ 折的训练集）定义。算法被分别拟合 $V$ 次，对应 $V$ 个训练集。随后通过验证集上得到的预测来评估每一折所拟合算法的风险。一个已拟合算法的交叉验证风险（例如 MSE），就是它在所有折上的平均风险。在 $V$ 折交叉验证下，所有观测都参与了训练与验证两个阶段，从而避免候选学习算法只对数据的某个子集（例如某个给定的训练集）过拟合。
+
+对于有 $n$ 个抽样单元的数据集，取 $v=n$ 的 $V$ 折交叉验证就退化为留一法。类似地，若令 $n=1$，就能得到留出法对候选学习算法表现的估计。除了计算上的优势之外，$V$ 折交叉验证往往能给出对真实底层风险更准确的估计。其根源在于这两种交叉验证方案所对应的偏倚—方差权衡不同：留一方案偏倚可能更小，但方差大得多（因为验证集中只有单个单元）。当 $n$ 远大于 $v$ 时，这一差别会更加明显。在 $V$ 折交叉验证方案下，我们最终是在 $v$ 个验证折上对风险估计取平均，而这些估计之间的相关性通常低于留一拟合所得风险估计之间的相关性。由于许多高度相关的量的均值具有更高的方差，留一法的风险估计方差会高于相应的 $V$ 折交叉验证估计。
+
+现在，让我们看看 `origami` 中的 $V$ 折交叉验证怎么用！下一章我们会转向研究超级学习器算法——一种能够从大量候选学习算法构成的库中选出"最佳"算法的算法——我们既想拟合它，**也**想评估它的表现。超级学习器算法默认采用 $V$ 折交叉验证方案。要设置 $V$ 折交叉验证，我们需要调用 `origami` 的 `folds_vfold(n, V)` 函数。`folds_vfold(n, V)` 的两个必需参数是：待交叉验证的样本单元总数，以及我们希望划分的折数。
+
+例如，取 $V=2$ 时，我们会得到两折，每折的训练集与验证集中各约有 $n/2$ 个抽样单元。
+
+```{r cv}
+folds <- folds_vfold(nrow(washb_data), V = 2)
+folds[[1]]
+folds[[2]]
+```
+
+#### 蒙特卡洛（Monte Carlo）
+
+在蒙特卡洛交叉验证方案中，我们**不放回地**随机选取数据的某个比例构成训练集，其余抽样单元归入验证集。这样，数据集就被随机分成两个独立的部分：一个含 $n_0 = n \cdot (1 - p)$ 个观测的训练集，和一个含 $n_1 = n \cdot p$ 个观测的验证集。把这个过程重复很多次，蒙特卡洛交叉验证方案就随机生成了许多组训练／验证划分。
+
+由于各折之间的划分是独立的，同一个观测单元可以多次出现在验证集中；请注意，这是蒙特卡洛方案与 $V$ 折方案之间一个显著的区别。对于给定的抽样比例 $p$，若能重复无穷多次，蒙特卡洛交叉验证方案将是最优的——当然，这在计算上并不可行。借助蒙特卡洛交叉验证，可以探索比 $V$ 折交叉验证多得多的数据集划分，从而（可能）得到（跨划分而言）变异更小的风险估计，但代价是偏倚增大（因为这些划分之间相关）。由于蒙特卡洛交叉验证生成的众多划分在抽样单元上有重叠，要达到 $V$ 折交叉验证仅用 $V$ 个划分就能达到的（无偏性意义上的）表现水平，需要更多划分，因而也需要更多计算时间。
+
+下面我们用 `origami` 的 `folds_montecarlo(n, V, pvalidation)` 函数演示蒙特卡洛交叉验证方案的用法。要设置 `folds_montecarlo(n, V, pvalidation)`，我们需要：
+
+1. 希望交叉验证的观测总数；
+2. 折数；以及
+3. 放入验证集的观测比例。
+
+例如，取 $V=2$、$pvalidation = 0.2$，我们得到两折，每折验证集中各约有 $6$ 个抽样单元。
+
+```{r montecarlo}
+folds <- folds_montecarlo(nrow(washb_data), V = 2, pvalidation = 0.2)
+folds[[1]]
+folds[[2]]
+```
+
+#### 自助法（Bootstrap）
+
+与蒙特卡洛交叉验证方案一样，自助法交叉验证方案同样是随机选取抽样单元构成训练集，其余抽样单元归入验证集；区别在于这里是**有放回**抽样。这个过程随后被重复多次，每次都随机生成新的训练／验证划分。与蒙特卡洛方案不同的是，各折中训练集与验证集的单元总数（即两部分的大小）并不固定。另外，顾名思义，抽样是有放回进行的（如同自助法 [@davison1997bootstrap]），因此完全相同的观测单元可能出现在多个训练集中。验证集中观测单元所占的比例是一个随机变量，其期望约为 $0.368$。
+
+下面我们用 `origami` 的 `folds_bootstrap(n, V)` 函数演示自助法交叉验证方案的用法。要设置 `folds_bootstrap(n, V)`，我们需要指定：
+
+1. 希望交叉验证的观测总数；以及
+2. 折数。
+
+例如，取 $V=2$，我们得到两折，各折验证集中的抽样单元数目互不相同。
+
+```{r bootstrap}
+folds <- folds_bootstrap(nrow(washb_data), V = 2)
+folds[[1]]
+folds[[2]]
+```
+
+### 适用于时间序列数据的交叉验证
+
+`origami` 包还支持多种面向时间序列数据的交叉验证方案，既适用于单条时间序列，也适用于具有任意时间依赖与网络依赖的多条时间序列。
+
+### `AirPassenger` 数据示例
+
+为了演示面向时间序列的不同交叉验证方案，我们将使用 *AirPassenger* 数据；这是一个被广泛使用、可自由获取的数据集。*AirPassenger* 数据集随 `R` 一同提供，给出了 1949 至 1960 年间国际航线旅客的月度总量。
+
+**目标：** 我们希望利用 1949 至 1960 年的历史数据，预测未来 $h$ 时间跨度上的航空旅客数量。
+
+```{r plot_airpass}
+library(ggfortify)
+
+data(AirPassengers)
+AP <- AirPassengers
+
+autoplot(AP) +
+  labs(
+    x = "Date",
+    y = "Passenger numbers (1000's)",
+    title = "Air Passengers from 1949 to 1961"
+  )
+
+t <- length(AP)
+```
+
+#### 滚动原点（Rolling origin）
+
+滚动原点交叉验证方案很适合"在线"学习算法——在这类场景中，大量数据流必须被持续地（且尊重时间顺序地）拟合，学习算法的拟合会随着数据不断累积而（持续）更新。一般而言，滚动原点方案先定义一个初始训练集，随后每迭代一次，训练集就增长一批 $m$ 个观测，验证集大小保持不变；训练时间与验证时间之间可能存在一个大小为 $h$ 的间隔（滞后窗口）；不断加入新的折，直到验证集触及时刻 $t$ 为止。训练集中包含的时间点始终落后于验证集中的时间点。
+
+为进一步说明滚动原点交叉验证，下面展示一个产生三折的例子。这里第一个窗口为十五个时间点，我们先在其上训练候选学习算法。随后我们在十个时间点上评估它的表现，训练集与验证集之间有五个时间点的间隔（$h$）。
+
+接下来，我们在更长的数据流（25 个时间点，含最初的那十五个）上训练学习算法。然后在（时间上）向前十个时间点处评估它的表现。
+
+```{r, fig.cap="Rolling origin CV", results="asis", echo=FALSE}
+knitr::include_graphics(path = "img/png/rolling_origin.png")
+```
+
+下面我们用 `origami` 的 `folds_rolling_origin(n, first_window, validation_size, gap, batch)` 函数演示滚动原点交叉验证方案的用法。要设置 `folds_rolling_origin(n, first_window, validation_size, gap, batch)`，我们需要：
+
+1. 希望交叉验证的时间点总数（`n`）；
+2. 第一个训练集的大小（`first_window`）；
+3. 验证集的大小（`validation_size`）；
+4. 训练集与验证集之间的间隔（`gap`）；以及
+5. 每轮交叉验证中训练集增长的步长（`batch`）。
+
+我们的时间序列有 $t=144$ 个时间点。把 `first_window` 设为 $50$、`validation_size` 设为 10、`gap` 设为 5、`batch` 设为 20，可得到四个时间序列折；下面展示前两折。
+
+```{r rolling_origin}
+folds <- folds_rolling_origin(
+  n = t,
+  first_window = 50, validation_size = 10, gap = 5, batch = 20
+)
+folds[[1]]
+folds[[2]]
+```
+
+#### 滚动窗口（Rolling window）
+
+滚动窗口交叉验证方案不像滚动原点那样在每轮迭代中往训练集里不断添加时间点，而是把训练样本沿时间向前"滚动" $m$ 个（时间）单位。举例来说，这一策略在使用参数型学习算法时可能很有用——这类算法往往对矩（例如均值、方差）或参数的漂移非常敏感，而这种漂移本身又很难在建模阶段显式地纳入考虑。滚动窗口方案在计算上也更高效；在训练数据大到不便取用的流式数据分析场景中，它可能比滚动原点更合适。与滚动原点方案不同，滚动窗口方案每轮迭代中训练集里的抽样单元数目始终相同。
+
+下图演示了使用三个时间序列折的滚动窗口交叉验证。第一个窗口为 15 个时间点，我们先在其上训练候选学习算法。与前一个演示一样，我们在 10 个时间点上评估其表现，训练集与验证集之间有 5 个时间点的间隔。但在下一折中，我们改为在离原点更远的时间点上（这里是 10 个时间点）训练该学习算法。注意，新折中训练集的大小与第一折相同（都是 15 个时间点）。这一设置让训练集在时间上（以及跨折之间）保持可比，这一点与滚动原点交叉验证方案不同。随后我们在未来的 10 个时间点上评估候选学习算法的表现。
+
+```{r, fig.cap="Rolling window CV", results="asis", echo=FALSE}
+knitr::include_graphics(path = "img/png/rolling_window.png")
+```
+
+下面我们用 `origami` 的 `folds_rolling_window(n, window_size, validation_size, gap, batch)` 函数演示滚动窗口交叉验证方案的用法。要设置 `folds_rolling_window(n, window_size, validation_size, gap, batch)`，我们需要指定以下参数：
+
+1. 希望交叉验证的时间点总数（`n`）；
+2. 训练集的大小（`window_size`）；
+3. 验证集的大小（`validation_size`）；
+4. 训练集与验证集之间的间隔（`gap`）；以及
+5. 每轮交叉验证中训练集更新的步长（`batch`）。
+
+把 `window_size` 设为 $50$、`validation_size` 设为 10、`gap` 设为 5、`batch` 设为 20，我们同样得到 4 个时间序列折；下面展示前两折。
+
+```{r rolling_window}
+folds <- folds_rolling_window(
+  n = t,
+  window_size = 50, validation_size = 10, gap = 5, batch = 20
+)
+folds[[1]]
+folds[[2]]
+```
+
+#### 滚动原点 + $V$ 折
+
+滚动原点交叉验证方案的一个变体是滚动原点 $V$ 折交叉验证方案，它把样本间的依赖也纳入考虑。与标准的滚动原点方案不同，在这一混合方案下，训练集与验证集中的抽样单元**不再**相同；它通过在时间序列设置中引入 $V$ 折交叉验证来做到这一点。这里，学习算法的预测是在那些被排除于训练步骤之外的时间序列观测单元的未来时间点上评估的，从而既照顾到跨时间的潜在依赖，也照顾到跨观测单元的潜在依赖。要在 `origami` 中使用滚动原点 $V$ 折交叉验证方案，可以调用 `folds_vfold_rolling_origin_pooled(n, t, id, time, V, first_window, validation_size, gap, batch)` 函数。下图中，我们展示 $V=2$ 折，以及两个时间序列（滚动原点）交叉验证折。
+
+```{r, fig.cap="Rolling origin V-fold CV", results="asis", echo=FALSE}
+knitr::include_graphics(path = "img/png/rolling_origin_v_fold.png")
+```
+
+#### 滚动窗口 + $V$ 折
+
+正如上面所述的方案一样，滚动窗口方法与滚动原点方法一样，可以通过引入 $V$ 折划分成分，扩展到支持具有任意样本层面依赖的多条时间序列。这一滚动窗口 $V$ 折交叉验证方案可以通过 `origami` 的 `folds_vfold_rolling_window_pooled(n, t, id, time, V, window_size, validation_size, gap, batch)` 函数使用。下图展示了 $V=2$ 折与两个时间序列（滚动窗口）交叉验证折。
+
+```{r, fig.cap="Rolling window V-fold CV", results="asis", echo=FALSE}
+knitr::include_graphics(path = "img/png/rolling_window_v_fold.png")
+```
+
+## `origami` 的总体工作流
+
+在深入细节之前，我们先花点时间回顾 `origami` `R` 包中的一些基本功能。`origami` 的主力函数是 `cross_validate()`。开始之前，用户必须定义折结构，以及一个作用于每一折的函数（用 `origami` 的术语说，这个 `cv_fun()` 通常规定了候选学习算法如何被训练、其预测如何被验证）。
+
+一旦传给 `cross_validate()`，这个主力函数就会把指定的函数（即 `cv_fun()`）逐折迭代应用，并以有意义的方式合并各折的结果。我们会在后面的小节中看到它的实际效果——现在，先给出这一过程各步骤的具体细节。
+
+### （1）定义折
+
+传给 `cross_validate` 的 `folds` 对象是一个由折构成的 `list`；这样的 `list` 对象由辅助函数 `make_folds()` 生成。每一折都是一个 `list`，包含一个 `"training"` 索引向量、一个 `"validation"` 索引向量，以及一个 `"fold_index"`（它在整个折 `list` 中的次序）。`make_folds()` 函数支持前一节介绍的多种交叉验证方案。`make_folds()` 还可以保证某个给定变量各水平之间的均衡（通过 `strata_ids` 参数），也可以把同一独立单元上的所有观测保持在一起（通过 `cluster_ids` 参数）。
+
+### （2）定义折函数
+
+`cross_validate()` 的 `cv_fun` 参数是一个自定义函数，它对每一折执行某些操作（同样，这**通常**是指候选学习算法的训练，以及在给定训练／验证划分——即单个折——上的评估）。该函数的第一个参数是 `fold`，它给出某个训练／验证划分中各单元的索引（注意，这第一个参数由 `cross_validate()` 自动传给 `cv_fun()`，其间它会向 `make_folds()` 生成的折对象取数）。额外参数可以通过 `cross_validate()` 的 `...` 参数传给 `cv_fun()`。在该函数内部，可以使用便捷函数 `training()`、`validation()` 和 `fold_index()` 来取回折对象的各个组成部分。当 `training()` 或 `validation()` 函数接收到某个特定类的对象时，它们会以合理的方式对该对象取索引。例如，若输入对象是向量，这些辅助函数会直接对向量取索引；而若输入对象是 `data.frame` 或 `matrix`，它们会自动按行取索引。这让用户可以轻松地把数据划分为训练集与验证集。折函数必须返回一个带名字的结果 `list`，其中包含所需的各折输出。
+
+### （3）应用 `cross_validate()`
+
+定义好折之后，就可以用 `cross_validate()` 函数把 `cv_fun()` 映射到各个 `folds` 上；其内部使用的是 `lapply()` 或 `future_lapply()`（后者是前者的并行化变体）。因此，只要指定一种并行化方案（即 [`R` 的 future 并行框架](https://Cran.R-project.org/package=future) [@bengtsson2021unifying] 中的一个 `plan`），`cross_validate()` 就很容易并行化。应用 `cross_validate()` 会生成一个结果 `list`，与相应 `cv_fun()` 中所指定的自定义 `list` 相匹配。如上所述，每次调用 `cv_fun()` 本身都会返回一个结果 `list`，我们希望保存的每一类结果都有一个对应的具名槽位。`cross_validate()` 的主循环会生成一个由这些各折结果 `list` 构成的 `list`（即 `list` 的 `list`，或称"元 list"）。在内部，这个"元 list"会被整理（通过拼接），使得 `cv_fun()` 所指定的每一类结果只返回单个槽位（这同样是一个包含各折结果的 `list`）。默认情况下，`combine_results()` 辅助函数会以合理的方式把各折结果 `list` 合并起来。结果如何合并，是通过检查第一折结果的数据类型自动决定的。这一点可以通过在 `.combine_control` 参数中指定一个参数 `list` 来修改。
+
+## 交叉验证实战
+
+等得够久了。现在，让我们看看 `origami` 的实际效果！下一章我们将学习如何把交叉验证用于超级学习器算法，以及如何利用交叉验证的威力来构建算法的最优集成——这远远超出了把交叉验证应用于单个统计学习方法的范畴。
+
+### 线性回归的交叉验证
+
+首先，让我们加载相关的 `R` 包、设定随机种子（以保证可复现），并再次载入 WASH Benefits 示例数据集。为了演示，我们用 `origami` 考察交叉验证在简单线性回归上的应用，重点是用数据集中所有其他可用协变量来预测身高别体重 Z 评分（`whz`）。如前所述，我们假定数据集只包含独立同分布的单元，忽略试验设计带来的聚集结构。为便于演示，我们只使用数据的一个子集，并把分析用数据集中所有协变量有缺失的观测单元剔除。上一章我们讨论过如何处理缺失。
+
+```{r setup_ex}
+library(stringr)
+library(dplyr)
+library(tidyr)
+
+# load data set and take a peek
+washb_data <- fread(
+  paste0(
+    "https://raw.githubusercontent.com/tlverse/tlverse-data/master/",
+    "wash-benefits/washb_data.csv"
+  ),
+  stringsAsFactors = TRUE
+)
+
+# remove missing data with drop_na(), then pick just the first 500 rows
+washb_data <- washb_data %>%
+  drop_na() %>%
+  slice(1:500)
+
+# specify the outcome and covariates as character vectors
+outcome <- "whz"
+covars <- colnames(washb_data)[-which(names(washb_data) == outcome)]
+```
+
+下面看一眼数据：
+
+```{r origami_washb_example_table2, echo=FALSE}
+head(washb_data) %>%
+  kable() %>%
+  kableExtra::kable_styling(fixed_thead = TRUE) %>%
+  kableExtra::scroll_box(width = "100%", height = "300px")
+```
+
+再回顾一下预测步骤中将要用到的协变量：
+
+```{r covariates}
+covars
+```
+
+接下来，我们对这份分析用数据集拟合一个简单的主效应项线性回归模型。这里我们的目标是用所有可用的协变量数据来预测身高别体重 Z 评分（`"whz"`，我们已把它赋给变量 `outcome`）。试试看：
+
+```{r linear_mod}
+lm_mod <- lm(whz ~ ., data = washb_data)
+summary(lm_mod)
+```
+
+我们可以把线性模型对身高别体重 Z 评分的预测，与数据集中该指标的实际观测作比较，以此评估模型在该数据集上的拟合质量。这就是众所周知的标准均方误差（MSE）。我们可以像下面这样从 `lm` 模型对象中提取这一汇总量：
+
+```{r get_naive_mse}
+(err <- mean(resid(lm_mod)^2))
+```
+
+MSE 的估计值是 `r err`；由上可见，它不过是模型拟合残差平方的均值。然而，用这种方式评估学习算法的质量会带来一个重要问题——因为我们是在完整的分析用数据集上训练了线性回归模型，又在同一数据集上评估它的表现（MSE），所有数据都同时被用于模型训练和验证。遗憾的是，这个简单的 MSE 估计过于乐观。为什么？因为线性回归模型是在用于评估它的同一份数据上训练的，这就好比把课后作业里的题目原封不动搬进考试。当然，我们一般并不关心算法对已观测数据集中变异的解释有多好；我们真正关心的，是学习算法给出的解释能在多大程度上推广到这个特定样本所来自的目标总体。如果把手上所有数据都拿去训练学习算法，我们就无法诚实地评估该算法在目标总体层面上对变异的拟合（乃至解释）程度。
+
+为解决这一问题，交叉验证允许某个特定流程（例如线性回归）在数据集的训练／验证划分上实施，并评估该流程在留出（验证）集上的拟合效果。在训练阶段未曾见过的数据上评估学习算法的质量，才能对算法的泛化误差给出诚实的评价。
+
+借助 `origami`，我们可以很容易地把交叉验证纳入线性回归流程。首先，定义一个新函数，用于在数据集的某个特定划分（即某一折）上执行线性回归：
+
+```{r define_fun_cv_lm}
+cv_lm <- function(fold, data, reg_form) {
+  # get name and index of outcome variable from regression formula
+  out_var <- as.character(unlist(str_split(reg_form, " "))[1])
+  out_var_ind <- as.numeric(which(colnames(data) == out_var))
+
+  # split up data into training and validation sets
+  train_data <- training(data)
+  valid_data <- validation(data)
+
+  # fit linear model on training set and predict on validation set
+  mod <- lm(as.formula(reg_form), data = train_data)
+  preds <- predict(mod, newdata = valid_data)
+  valid_data <- as.data.frame(valid_data)
+
+  # capture results to be returned as output
+  out <- list(
+    coef = data.frame(t(coef(mod))),
+    SE = (preds - valid_data[, out_var_ind])^2
+  )
+  return(out)
+}
+```
+
+我们的 `cv_lm()` 函数相当简单：它把可用数据拆成互不相交的训练集与验证集（用 `origami` 中同名的那两个函数），在训练集上拟合线性模型，再在验证集上评估训练好的线性回归模型的质量。这就是 `origami` 所谓 `cv_fun()` 的一个简单例子——这类函数以交叉验证的方式，把某个特定例程应用到输入数据集上。
+
+定义好这样的函数之后，我们只需用 `origami` 的 `make_folds()` 函数生成一组划分，再用 `cross_validate()` 把 `cv_lm()` 函数应用到得到的 `folds` 对象上。下面，我们用 `make_folds()` 与 `cv_lm()` 复现前面"手工"算过的那个重代入误差估计。
+
+```{r cv_lm_resub}
+# re-substitution estimate
+resub <- make_folds(washb_data, fold_fun = folds_resubstitution)[[1]]
+resub_results <- cv_lm(fold = resub, data = washb_data, reg_form = "whz ~ .")
+mean(resub_results$SE, na.rm = TRUE)
+```
+
+这（几乎）与我们上面得到的误差估计一致。
+
+我们可以用 $V$ 折交叉验证更诚实地评估误差：它把数据集划分为 $V$ 个子集，在其中 $V - 1$ 个子集上拟合算法（训练），并在被排除于拟合之外的那个子集上评估（验证）。如此反复，使每个留出子集都轮流充当验证集。借助 `origami` 的 `cross_validate()`，我们可以很容易地以这种方式应用 `cv_lm()` 函数（注意该函数默认执行 $10$ 折交叉验证）：
+
+```{r cv_lm_cross_valdate}
+# cross-validated estimate
+folds <- make_folds(washb_data)
+cvlm_results <- cross_validate(
+  cv_fun = cv_lm, folds = folds, data = washb_data, reg_form = "whz ~ .",
+  use_future = FALSE
+)
+mean(cvlm_results$SE, na.rm = TRUE)
+```
+
+做完 10 折（默认值）的 $V$ 折交叉验证后，我们很快就会发现，先前（用重代入得到的）模型误差估计有点过于乐观了。线性回归模型误差的诚实估计要更大！
+
+### 随机森林的交叉验证
+
+为进一步考察 `origami`，让我们回到使用 WASH Benefits 数据集的示例分析。这里我们要写一个新的 `cv_fun()` 函数。作为例子，我们使用 Breiman 的随机森林算法 [@breiman2001random]，它由 `randomForest` 包中的 `randomForest()` 函数实现：
+
+```{r cv_fun_randomForest}
+# make sure to load the package!
+library(randomForest)
+
+cv_rf <- function(fold, data, reg_form) {
+  # get name and index of outcome variable from regression formula
+  out_var <- as.character(unlist(str_split(reg_form, " "))[1])
+  out_var_ind <- as.numeric(which(colnames(data) == out_var))
+
+  # define training and validation sets based on input object of class "folds"
+  train_data <- training(data)
+  valid_data <- validation(data)
+
+  # fit Random Forest regression on training set and predict on holdout set
+  mod <- randomForest(formula = as.formula(reg_form), data = train_data)
+  preds <- predict(mod, newdata = valid_data)
+  valid_data <- as.data.frame(valid_data)
+
+  # define output object to be returned as list (for flexibility)
+  out <- list(
+    coef = data.frame(mod$coefs),
+    SE = ((preds - valid_data[, out_var_ind])^2)
+  )
+  return(out)
+}
+```
+
+`cv_rf()` 函数对 `randomForest` 算法的训练与评估做交叉验证，它以我们先前的 `cv_lm()` 函数为模板。目前，各个 `cv_fun()` 还必须手工编写；不过在该包未来的版本中，可能会提供一个包装器，支持自动生成供 `origami` 使用的 `cv_fun`。
+
+下面，我们用 `cross_validate()` 把自定义的 `cv_rf()` 函数应用到 `make_folds()` 生成的 `folds` 对象上：
+
+```{r cv_fun_randomForest_run}
+# now, let's cross-validate...
+folds <- make_folds(washb_data)
+cvrf_results <- cross_validate(
+  cv_fun = cv_rf, folds = folds,
+  data = washb_data, reg_form = "whz ~ .",
+  use_future = FALSE
+)
+mean(cvrf_results$SE)
+```
+
+用 10 折的 $V$ 折交叉验证，我们得到了这个随机森林预测误差的诚实估计。这是一个例子，说明只要有合适的 `cv_fun()` 函数，`origami` 的 `cross_validate()` 流程就可以推广到任意估计技术。
+
+### ARIMA 的交叉验证
+
+在时间序列数据的场景中，交叉验证同样可用于预测模型的选择。这里，划分方案要与预测模型的应用方式相呼应：我们在过去的观测上（可以是全部可用观测，也可以是时间上靠近当下的一个子集）训练学习算法，再用拟合好的模型去预测接下来（同样是时间上的）若干个观测。为演示这一点，我们回到 `AirPassengers` 数据集——一个关于数千名旅客的月度航空客运时间序列。
+
+```{r load_airpass}
+data(AirPassengers)
+print(AirPassengers)
+```
+
+假设我们要在两个 ARIMA（自回归求和移动平均）配置不同的预测模型之间作选择。我们可以通过评估它们的预测表现来作出选择。首先，为时间序列数据设置合适的交叉验证方案。这里我们选用上面介绍过的滚动原点交叉验证方案。
+
+```{r folds_airpass}
+folds <- make_folds(AirPassengers,
+  fold_fun = folds_rolling_origin,
+  first_window = 36, validation_size = 24, batch = 10
+)
+
+# How many folds where generated?
+length(folds)
+
+# Examine the first 2 folds.
+folds[[1]]
+folds[[2]]
+```
+
+默认情况下，`folds_rolling_origin` 每一个训练折都会把训练集的大小增加一个时间点。若按默认设置，我们将有 85 折要训练！幸好，我们可以把 `batch` 作为选项传给 `folds_rolling_origin`，让它每轮迭代把训练集增大 10 个点（这样就不会有那么多训练折了）。由于我们想预测紧随其后的那个时间点，`gap` 参数保持默认值 0。
+
+```{r fit_airpass}
+# make sure to load the package!
+library(forecast)
+
+# function to calculate cross-validated squared error
+cv_forecasts <- function(fold, data) {
+  # Get training and validation data
+  train_data <- training(data)
+  valid_data <- validation(data)
+  valid_size <- length(valid_data)
+
+  train_ts <- ts(log10(train_data), frequency = 12)
+
+  # First arima model
+  arima_fit <- arima(train_ts, c(0, 1, 1),
+    seasonal = list(
+      order = c(0, 1, 1),
+      period = 12
+    )
+  )
+  raw_arima_pred <- predict(arima_fit, n.ahead = valid_size)
+  arima_pred <- 10^raw_arima_pred$pred
+  arima_MSE <- mean((arima_pred - valid_data)^2)
+
+  # Second arima model
+  arima_fit2 <- arima(train_ts, c(5, 1, 1),
+    seasonal = list(
+      order = c(0, 1, 1),
+      period = 12
+    )
+  )
+  raw_arima_pred2 <- predict(arima_fit2, n.ahead = valid_size)
+  arima_pred2 <- 10^raw_arima_pred2$pred
+  arima_MSE2 <- mean((arima_pred2 - valid_data)^2)
+
+  out <- list(mse = data.frame(
+    fold = fold_index(),
+    arima = arima_MSE, arima2 = arima_MSE2
+  ))
+  return(out)
+}
+
+mses <- cross_validate(
+  cv_fun = cv_forecasts, folds = folds, data = AirPassengers,
+  use_future = FALSE
+)
+mses$mse
+colMeans(mses$mse[, c("arima", "arima2")])
+```
+
+把 `cross_validate()` 与这个自定义的 `cv_forecasts()` 函数一起使用后，我们发现不含 AR（自回归）成分的那个 ARIMA 模型对这份数据集的拟合似乎更好。
+
+## 习题
+
+### 关键概念回顾
+
+1. 比较 $V$ 折交叉验证与重代入交叉验证。两者有哪些差别？又有哪些相似之处？描述一个你会选用其中一种而非另一种的场景。
+
+2. 相对于下列方案，$V$ 折交叉验证有哪些优点和缺点？
+   a. 留出交叉验证？
+   b. 留一交叉验证？
+
+3. 为什么 $V$ 折交叉验证不适合用于时间序列数据？
+
+4. 对于非平稳时间序列，你会选用滚动窗口还是滚动原点交叉验证？为什么？
+
+### 思想的实际运用
+
+1. 设 $Y$ 是一个二值变量，且 $P(Y=1 \mid W) = 0.01$，即结局很罕见。对这类结局应当使用什么样的交叉验证方案？用 `origami` 包该怎么做？
+
+2. 考虑本章讨论的 WASH Benefits 示例数据集。我们怎样才能把群组层面的信息纳入交叉验证方案？用 `origami` 包该如何实现这一策略？
+
+### 进阶话题
+
+1. 设想一个具有空间依赖结构的数据集，其依赖程度已知，使得由该依赖结构形成的分组是清楚的，且不存在溢出效应。这种情形下合适的交叉验证方案是什么？
+
+2. 接上题，如果空间依赖并不像上题假设的那样界定清晰，我们可以采用什么样的流程与交叉验证方案？
+
+3. 考虑一个预测变量数目很多、结局为二值的分类问题。你那位热心的统计学家邻居提出了如下分析方案：
+
+   a. 首先筛选预测变量，只挑出那些与（二值）结局标签强相关的协变量；
+   b. 接着，只用这一批与结局高度相关的协变量子集来训练学习算法；
+   c. 最后，用交叉验证来估计调参参数以及该学习算法的表现。
+
+   这样使用交叉验证正确吗？为什么正确，或者为什么不正确？

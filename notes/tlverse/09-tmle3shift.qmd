@@ -1,0 +1,517 @@
+---
+title: "随机化处理方案"
+subtitle: "*Stochastic Treatment Regimes* · tlverse 官方手册中译"
+bibliography: tlverse-refs.bib
+lang: zh
+---
+
+> **来源**：[*Targeted Learning in R: Causal Data Science with the `tlverse` Software Ecosystem*](https://tlverse.org/tlverse-handbook/)，作者 Mark van der Laan、Jeremy Coyle、Nima Hejazi、Ivana Malenica、Rachael Phillips、Alan Hubbard，采用 **[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)** 许可。
+> 本页为中文翻译，**非原文**；依 CC BY 4.0 保留原作者署名与许可证声明，并标明本页是经过修改（翻译）的版本。
+> 原作品按「现状」提供，原作者不附任何明示或默示的担保（见 CC BY 4.0 第 5 节免责声明）；译文中的任何疏漏由译者负责，不代表原作者观点。
+> 译自源码仓库 [tlverse/tlverse-handbook](https://github.com/tlverse/tlverse-handbook) 修订 `2931693`（2024-09-21）的 `09-tmle3shift.Rmd`。本章作者为 *Nima Hejazi*。
+> **格式适配说明**：原书用 bookdown 撰写，本站为 Quarto。带编号的公式改用 Quarto 的 `{#eq-...}` 标签，交叉引用相应改为 `@eq-...`；原书的 `.infobox`、`.definition`、`.exercise`、`.solution` 环境改用 Quarto 的 callout 呈现；指向 tlverse.org 各章的站内链接改为指向本站对应中译页。数学内容、代码与引用键均未改动。
+> 页内 R 代码块按原文逐字保留，并由本站以 R 4.4.3 重新执行；因随机种子与包版本差异，数值可能与原书略有出入。原书习题的参考解答在上游即标注为「Forthcoming」（尚未给出），本页如实保留。
+
+```{=html}
+<span class="math inline">
+\(\DeclareMathOperator{\expit}{expit}\)
+\(\DeclareMathOperator{\logit}{logit}\)
+\(\DeclareMathOperator*{\argmin}{\arg\!\min}\)
+\(\newcommand{\indep}{\perp\!\!\!\perp}\)
+\(\newcommand{\coloneqq}{\mathrel{=}}\)
+\(\newcommand{\R}{\mathbb{R}}\)
+\(\newcommand{\E}{\mathbb{E}}\)
+\(\newcommand{\M}{\mathcal{M}}\)
+\(\renewcommand{\P}{\mathbb{P}}\)
+\(\newcommand{\I}{\mathbb{I}}\)
+</span>
+```
+
+# 随机化处理方案 {#shift}
+
+*Nima Hejazi*
+
+主角是 [`tmle3shift` `R` 包](https://github.com/tlverse/tmle3shift)。
+
+::: {.callout-note title="学习目标"}
+1. 把随机化处理方案与静态、动态及最优动态处理方案区分开来。
+2. 说明真实世界的数据分析可以如何纳入对随机化处理方案因果效应的评估。
+3. 对比人群层面的（一般）随机化处理方案与（个体化的）修正处理策略。
+4. 用 `tmle3shift` `R` 包估计修正处理策略的人群层面因果效应。
+5. 依据由一组反事实移位构成的网格，设定并解读一组基于不同修正处理策略的因果效应。
+6. 用一组反事实移位网格构造边际结构模型，以随机化干预的方式度量变量重要性。
+7. 用 `tmle3shift` `R` 包实现这样的修正处理策略：只在观测数据所能支撑的范围内对个体单元作移位。
+:::
+
+## 为什么要用**随机化**干预？
+
+随机化处理方案，或称**随机化干预**（stochastic interventions），构成了一个相对简单、却极其灵活且富有表达力的框架，用来定义**现实的**因果效应。与前面讨论过的干预方案不同，随机化干预几乎可以施加于任何形式的处理变量——二值、有序、连续——从而让人能够通过这一形式体系定义出丰富的因果效应。本章侧重于考察可施加于**连续**处理变量的几类随机化干预，而静态与动态处理方案并不容易施加于这类变量。值得注意的是，由此得到的因果效应恰好具有一种呼应普通回归调整的解释。
+
+下一章我们会介绍随机化干预的另外两种用法——一种是新近提出的、适用于二值处理变量的干预 [@kennedy2019nonparametric]，另一种是在存在处理后变量（即中介变量）时对因果效应的定义。这里我们聚焦于 [`tmle3shift` R 包](https://github.com/tlverse/tmle3shift)提供的工具，它给出了"对处理变量观测值作加性移位"这类随机化干预之因果效应的靶向最小损失估计量。本章部分内容更全面、更技术化的论述见 @diaz2012population、@diaz2018stochastic、@hejazi2020efficient 与 @hejazi2021semiparametric。
+
+## 数据结构与记号
+
+让我们回到熟悉的数据单元 $O = (W, A, Y)$，其中 $W$ 表示基线协变量（例如年龄、生理性别、受教育程度），$A$ 是处理变量（例如营养补充剂的剂量），$Y$ 是所关心的结局（例如疾病状态）。这里我们考虑取连续值（即 $A \in \R$）或水平很多的有序型 $A$。对某项给定研究，我们考虑观测到 $n$ 个独立同分布的单元 $O_1, \ldots, O_n$。
+
+沿着[路线图](04-roadmap.qmd#roadmap)，设 $O \sim P_0 \in \M$，其中 $\M$ 是非参数统计模型，对数据生成分布 $P_0$ 的形式尽可能不加限制。为了把随机化干预及其对应因果效应的定义形式化，我们引入一个基于 @pearl2009causality 的结构因果模型（SCM），用来定义系统在所设想的干预之下如何变化：
+
+$$\begin{align}
+  W &= f_W(U_W) \\ \nonumber
+  A &= f_A(W, U_A) \\ \nonumber
+  Y &= f_Y(A, W, U_Y).
+\end{align}$$ {#eq-npsem-shift}
+
+这组结构方程提供了一个机制性模型，描述构成观测数据单元 $O$ 的各变量之间的关系。该 SCM 描述了变量之间的时间顺序（即 $Y$ 发生在 $A$ 之后，$A$ 又发生在 $W$ 之后）；指定了确定性函数 $\{f_W, f_A, f_Y\}$，它们基于各变量的前驱变量以及外生（未观测）变量 $\{U_W, U_A, U_Y\}$ 来生成 $\{W, A, Y\}$；并要求每个外生变量都被假定包含相应观测变量的全部未观测原因。
+
+我们可以把数据单元 $O$ 的似然作如下因子分解，从而在某个典型观测 $o$ 上显露出密度 $p_0$ 的各正交成分：
+
+$$\begin{align}
+  p_0(o) = &q_{0,Y}(y \mid A = a, W = w) \\ \nonumber
+    &g_{0,A}(a \mid W = w) \\ \nonumber
+    &q_{0,W}(w),\\ \nonumber
+\end{align}$$ {#eq-likelihood-factorization-shift}
+
+其中 $q_{0, Y}$ 是 $Y$ 在给定 $\{A, W\}$ 下相对于某支配测度的条件密度，$g_{0, A}$ 是 $A$ 在给定 $W$ 下相对于支配测度 $\mu$ 的条件密度，$q_{0, W}$ 是 $W$ 相对于支配测度 $\nu$ 的密度。为继续沿用熟悉的记号，我们记 $\overline{Q}(A, W) = \E[Y \mid A, W]$、$g(A \mid W) = g_{A}(A \mid W)$，并以 $q_W$ 表示 $W$ 的边际分布。重要的是，该 SCM 以这组方程所刻画的随机变量 $(O, U)$ 的分布来参数化 $p_0$。这反过来又隐含了一个关于"由对数据生成过程的干预所产生的反事实随机变量"其分布的模型。
+
+## 定义随机化干预的因果效应
+
+因果效应是以对 SCM @eq-npsem-shift 的假想干预之间的对照来定义的。修改 SCM 各成分的随机化干预可以从两个等价的角度来理解。一个**一般的**随机化干预，是把产生 $A$ 的方程 $f_A$、以及 $A$ 的自然条件密度 $g(A \mid W)$，替换为某个候选密度 $g_{A_{\delta}}(A \mid W)$。在没有干预的情况下，我们会把 $\mathcal{A}$（$A$ 的支撑集）中任一给定取值 $a$——也就是函数 $f_A$ 在给定 $W = w$ 处求值的结果——视为从条件密度 $g(A \mid W)$ 所定义分布中随机抽取的结果，即 $A_{\delta} \sim g_{A_{\delta}}(\cdot \mid W)$。在施加干预时，我们只需移除结构方程 $f_A$，转而从候选密度 $g_{A_{\delta}}(A \mid W)$ 所定义的分布中抽取干预后的取值 $A_{\delta}$。干预后的取值 $A_{\delta}$ 之所以说被"随机地修改"，是因为它抽自一个任意的（实践中由用户定义的）分布。注意，只要选取退化的候选分布（把全部质量放在单个取值上），就能还原出我们熟悉的静态干预情形。@stock1989nonparametric 最早考虑了估计这类随机化干预的总效应。
+
+虽然对候选的处理后密度 $g_{A_{\delta}}(A \mid W)$ 的选择几乎没有限制，但实践中它往往依据对自然（或干预前）密度 $g(A \mid W)$ 的了解来选取。当 $g_{A_{\delta}}(A \mid W)$ 是**分段光滑可逆的**（见下文）[@haneuse2013estimation] 时，干预后密度 $g_{A_{\delta}}(A \mid W)$ 与一个把观测对 $\{A, W\}$ 映射为干预后量 $A_{\delta}$ 的函数 $d(A, W; \delta)$ 之间，存在直接的对应关系。在这种情形下，由 $d(A, W; \delta)$ 定义的随机化干预被称为依赖于处理的自然取值，并被称作**修正处理策略**（modified treatment policy, MTP）[@haneuse2013estimation; @diaz2018stochastic; @hejazi2021semiparametric]。@haneuse2013estimation 与 @young2014identification 对修正处理策略与一般随机化干预之下因果效应解释的差异作了详尽讨论。
+
+::: {.callout-note title="定义（分段光滑可逆性）"}
+对每个 $w \in \mathcal{W}$，假定区间 $\mathcal{I}(w) = (l(w,), u(w))$ 可以被划分为若干子区间 $\mathcal{I}_{\delta,j}(w): j = 1, \ldots, J(w)$，使得 $d(a, w; \delta)$ 在 $\mathcal{I}_{\delta,j}(w)$ 上等于某个 $d_j(a, w; \delta)$，且 $d_j(\cdot,w; \delta)$ 有反函数 $b_j(\cdot, w; \delta)$，其导数为 $b_j'(\cdot, w; \delta)$。
+:::
+
+随机化干预会产生一个反事实随机变量 $Y_{A_{\delta}} := f_Y(A_{\delta}, W, U_Y)$，其中反事实结局 $Y_{A_{\delta}} \sim \mathcal{P}_0^{A_{\delta}}$ 来自把 $A$ 的自然取值替换为 $A_{\delta}$（无论是从 $g_{A_{\delta}}(A \mid W)$ 抽取，还是通过对 $d(A, W; \delta)$ 求值）。本章余下部分，我们将聚焦于如下形式的加性 MTP：
+
+$$
+  d(a, w; \delta) =
+  \begin{cases}
+    a + \delta & \text{if } a + \delta \leq u(w) \\
+    a & \text{if } a + \delta > u(w),
+  \end{cases}
+$$ {#eq-shift}
+
+其中 $\delta \in \mathbb{R}$ 规定了在层 $W = w$ 的语境下，观测到的 $A = a$ 应被移位的幅度，而 $l(w)$ 与 $u(w)$ 分别是层 $W = w$ 内处理 $A$ 的最小值与最大值。举例来说，设 $A$ 表示营养补充剂的（连续取值）剂量（例如维生素药片的数量），并假定 $A$ 在给定 $W = w$ 下的分布支撑于区间 $(l(w), u(w))$。也就是说，在由 $W = w$ 定义的协变量层内，某个个体服用的药片数最少为 $l(w)$，最多为 $u(w)$。这样一个随机化干预可以解释为某项诊所政策的结果：鼓励个体比他们依据基线特征 $W$ 通常会被建议的剂量（$A$）多服用 $\delta$ 片维生素（$A + \delta$）。这一类随机化干预由 @diaz2012population 引入，并在 @haneuse2013estimation、@diaz2018stochastic、@hejazi2020efficient 与 @hejazi2021semiparametric 中得到进一步讨论。按照 @diaz2012population，只要考虑随机抽取 $\P_{A_{\delta}}(g_{0, A})(A = a \mid W) = g_{0,A}(a - \delta(W) \mid W)$，这类干预就可以表示为一般随机化干预。
+
+为了评估我们所施干预的因果效应，我们把所关心的参数取为：在随机修改后的干预分布之下结局的反事实均值。这个目标因果 estimand 是 $\psi_{0, \delta} \coloneqq \E_{P_0^{A_{\delta}}}\{Y_{A_{\delta}}\}$，即反事实结局变量 $Y_{A_{\delta}}$ 的均值。@diaz2018stochastic 证明了 $\psi_{0, \delta}$ 可以由 $O$ 的分布的一个泛函来识别：
+
+$$\begin{align}
+  \psi_{0,\delta} = \int_{\mathcal{W}} \int_{\mathcal{A}} & \E_{P_0}
+   \{Y \mid A = d(a, w), W = w\} \nonumber \\ &q_{0, A}(a \mid W = w)
+   q_{0, W}(w) d\mu(a)d\nu(w).
+\end{align}$$ {#eq-identification2012}
+
+在某些识别条件之下（我们马上会逐条列出），@eq-identification2012 中的统计参数恰好等于反事实均值 $\psi_{0, \delta}$。本书并不关心因果参数的识别问题——即确立那些在一定假设下具有因果解释的观测数据统计泛函——但我们在下面回顾识别反事实均值 $\psi_{0, \delta}$ 的关键假设。由于前面引入的 SCM 产生的是独立同分布的单元 $O$，常见的识别假设——一致性（在 $A_i = d(a_i, w_i)$ 时有 $Y^{A_{\delta,i}}_i = Y_i$，$i = 1, \ldots, n$）与无干扰（对 $i = 1, \ldots, n$ 与 $j \neq i$，$Y^{A_{\delta,i}}_i$ 不依赖于 $d(a_j, w_j)$）——都成立。除此之外，我们还需要无未测混杂（观察性研究中随机化假设的类比）与正性。
+
+::: {.callout-note title="定义（无未测混杂）"}
+对 $i = 1, \ldots, n$，有 $A_i \indep Y^{A_{\delta,i}}_i \mid W_i$。这是众所周知的随机化假设在观察性研究中的类比。
+:::
+
+::: {.callout-note title="定义（处理正性）"}
+对所有 $w \in \mathcal{W}$，若 $a_i \in \mathcal{A}$ 则 $d(a_i, w_i) \in \mathcal{A}$，其中 $\mathcal{A}$ 表示 $A \mid W = w_i$（$\forall i = 1, \ldots n$）的支撑集。
+:::
+
+## 估计随机化干预的因果效应
+
+@diaz2012population 在非参数模型 $\M$ 中推导出了有效影响函数（EIF）——构造有效估计量的关键量——并发展了该量的经典估计量与有效估计量，包括代入型、逆概率加权、一步法与靶向最大似然（TML）估计量。一步法与 TML 估计量都能对所关心的目标量 $\psi_{0, \delta}$ 作半参数有效的估计与推断。如 @diaz2018stochastic 所述，$\psi_{0, \delta}$ 相对于非参数模型 $\M$ 的 EIF 为
+
+$$
+  D(P_0)(x) = H(a, w)({y - \overline{Q}(a, w)}) +
+  \overline{Q}(d(a, w), w) - \Psi(P_0),
+$$ {#eq-eif-shift}
+
+其中辅助协变量 $H(a,w)$ 可表示为
+
+$$
+  H(a,w) = \mathbb{I}(a + \delta < u(w)) \frac{g_0(a - \delta \mid w)}
+  {g_0(a \mid w)} + \mathbb{I}(a + \delta \geq u(w)),
+$$ {#eq-aux-covar-full-shift}
+
+当处理 $A$ 落在由协变量层 $W$ 界定的范围之内时（即对 $A_i \in (u(w) - \delta, u(w))$），它可以化简为
+
+$$
+  H(a,w) = \frac{g_0(a - \delta \mid w)}{g_0(a \mid w)} + 1
+$$ {#eq-aux-covar-simple-shift}
+
+有效影响函数是构造半参数有效估计量的关键要素。接下来我们聚焦于靶向最大似然（TML）估计量，@diaz2018stochastic 给出了如下配方：
+
+1. 构造 $g_0(A, W)$ 的初始估计 $g_n$ 与 $\overline{Q}_0(A, W)$ 的初始估计 $\overline{Q}_n$，理想情况下使用数据自适应的回归技术。
+2. 对每个观测 $i$，计算辅助协变量 $H(a_i,w_i)$ 的估计 $H_n(a_i, w_i)$。
+3. 构造一维 logistic 回归模型
+   $$ \text{logit}\overline{Q}_{\epsilon, n}(a, w) =
+   \text{logit}\overline{Q}_n(a, w) + \epsilon H_n(a, w),$$
+   或把 $H_n$ 作为权重纳入的类似回归模型。估计该回归模型的参数 $\epsilon$，得到 $\epsilon_n$。该回归模型的结果给出 $\overline{Q}_n^{\star}$。
+4. 计算目标参数的 TML 估计量 $\Psi_n$，它由初始估计 $\overline{Q}_{n, \epsilon_n}$ 的更新 $\overline{Q}_n^{\star}$ 所定义：
+   $$
+     \psi_n = \Psi(P_n^{\star}) = \frac{1}{n} \sum_{i = 1}^n
+     \overline{Q}_n^{\star}(d(A_i, W_i), W_i).
+   $$ {#eq-tmle}
+
+正如[前面讨论过的](07-tmle3.qmd#tmle3)，TML 估计量的构造使其具有**渐近线性**，并且通常是**双稳健**的。渐近线性意味着估计量 $\psi_n$ 与目标参数 $\psi_0$ 之间的渐近差可以用 EIF 表示，即
+
+$$
+  \sqrt{n}(\psi_n - \psi_0) = \frac{1}{\sqrt{n}}\sum_{i=1}^n D(P_0)(O_i) +
+    o_p(1).
+$$ {#eq-asymplin-shift}
+
+渐近线性与正则性一起，刻画了这样一类估计量：其渐近方差以 EIF 的渐近方差为下界。这意味着这类估计量是 EIF 估计方程的解（即把 TML 估计量 $\psi_n$ 代入 EIF 方程会得到接近零的解），而且它们的抽样方差可以用 EIF 的方差以闭式近似。后一点在计算上很方便，因为估计方差并不严格需要重抽样方法（例如自助法）。中心极限定理确立了估计量 $\psi_n$ 的渐近分布以 $\psi_0$ 为中心且为高斯分布：
+
+$$
+  \sqrt{n}(\psi_n - \psi_0) \to \text{Normal}(0, \sigma^2(D(P_0))).
+$$ {#eq-tmle-gaussian-shift}
+
+因此，方差 $\sigma^2(D(P_0))$ 的估计 $\sigma_n^2$ 可以按下式计算
+
+$$
+  \sigma_n^2 = \frac{1}{n} \sum_{i = 1}^{n} D^2(\overline{Q}_n^{\star},
+  g_n)(O_i),
+$$ {#eq-eif-var-shift}
+
+从而可以算出覆盖水平为 $(1 - \alpha)$ 的 Wald 型置信区间 $\psi_n \pm z_{(1 - \alpha/2)} \cdot \sigma_n / \sqrt{n}$。在某些条件下，基于自助法的重抽样同样可用于计算 $\sigma_n^2$ [@vdl2011targeted]。
+
+## 解读随机化干预的因果效应
+
+```{r, fig.cap="How a counterfactual outcome changes as the natural treatment distribution is shifted by a simple stochastic intervention", results = "asis", echo=FALSE, out.width = "100%"}
+knitr::include_graphics(path = "img/gif/shift_animation.gif")
+```
+
+## 评估随机化干预的因果效应
+
+首先，加载我们在这个简单数据示例中将要用到的包：
+
+```{r setup-shift}
+library(data.table)
+library(haldensify)
+library(sl3)
+library(tmle3)
+library(tmle3shift)
+```
+
+为构造 TML 估计量，我们需要估计似然的两个成分。第一个是结局回归 $\overline{Q}_n$，它就是形如 $\E[Y \mid A,W]$ 的简单回归。这样一个量的估计可以用超级学习器算法来构造。下面我们用若干参数与非参数回归技术，构造一个 `sl3` 风格的回归超级学习器的各组成部分：
+
+```{r sl3_lrnrs-Qfit-shift}
+# learners used for conditional mean of the outcome
+mean_lrnr <- Lrnr_mean$new()
+fglm_lrnr <- Lrnr_glm_fast$new()
+rf_lrnr <- Lrnr_ranger$new()
+hal_lrnr <- Lrnr_hal9001$new(max_degree = 3, n_folds = 3)
+
+# SL for the outcome regression
+sl_reg_lrnr <- Lrnr_sl$new(
+  learners = list(mean_lrnr, fglm_lrnr, rf_lrnr, hal_lrnr),
+  metalearner = Lrnr_nnls$new()
+)
+```
+
+第二个是处理机制 $g_n$ 的估计，即**广义倾向性评分**。在干预节点 $A$ 为连续的情形下，这样的量形如 $p(A \mid W)$，是一个条件密度。一般而言，条件密度估计是一个有挑战性的问题，在文献中受到了很多关注。为估计处理机制，我们必须使用专门适合条件密度估计的学习算法；这类学习器的清单可以用 `sl3_list_learners()` 从 `sl3` 中取得：
+
+```{r sl3_density_lrnrs_search-shift}
+sl3_list_learners("density")
+```
+
+接下来，我们从上面选两个学习器：`Lrnr_haldensify`，它用高度自适应 lasso 作条件密度估计，基于 @diaz2011super 给出的算法、由 @hejazi2020haldensify 实现；以及 [`sl3` 包](https://github.com/tlverse/sl3)中实现的半参数位置—尺度条件密度估计量。把这些经过修改的条件密度回归技术的估计汇合起来，就可以构造一个超级学习器（注意，由于基于 `haldensify` 学习器的做法计算量很大，我们把它排除在超级学习器之外）。
+
+```{r sl3_lrnrs-gfit-shift}
+# learners used for conditional densities for (g_n)
+haldensify_lrnr <- Lrnr_haldensify$new(
+  n_bins = c(5, 10, 20),
+  lambda_seq = exp(seq(-1, -10, length = 200))
+)
+# semiparametric density estimator with homoscedastic errors (HOSE)
+hose_hal_lrnr <- make_learner(Lrnr_density_semiparametric,
+  mean_learner = hal_lrnr
+)
+# semiparametric density estimator with heteroscedastic errors (HESE)
+hese_rf_glm_lrnr <- make_learner(Lrnr_density_semiparametric,
+  mean_learner = rf_lrnr,
+  var_learner = fglm_lrnr
+)
+
+# SL for the conditional treatment density
+sl_dens_lrnr <- Lrnr_sl$new(
+  learners = list(hose_hal_lrnr, hese_rf_glm_lrnr),
+  metalearner = Lrnr_solnp_density$new()
+)
+```
+
+最后，我们构造一个 `learner_list` 对象，供构建所关心目标参数的 TML 估计量之用：
+
+```{r learner-list-shift}
+learner_list <- list(Y = sl_reg_lrnr, A = sl_dens_lrnr)
+```
+
+上面的 `learner_list` 对象规定了我们生成的每个集成学习器，在计算构建目标参数 TMLE 所需初始估计量时所扮演的角色。具体来说，它明确表示：`Q_learner` 用于拟合结局回归，而 `g_learner` 用于估计处理机制。
+
+### 模拟数据示例
+
+```{r sim_data}
+# simulate simple data for tmle-shift sketch
+n_obs <- 400 # number of observations
+tx_mult <- 2 # multiplier for the effect of W = 1 on the treatment
+
+## baseline covariates -- simple, binary
+W <- replicate(2, rbinom(n_obs, 1, 0.5))
+
+## create treatment based on baseline W
+A <- rnorm(n_obs, mean = tx_mult * W, sd = 1)
+
+## create outcome as a linear function of A, W + white noise
+Y <- rbinom(n_obs, 1, prob = plogis(A + W))
+
+# organize data and nodes for tmle3
+data <- data.table(W, A, Y)
+setnames(data, c("W1", "W2", "A", "Y"))
+node_list <- list(
+  W = c("W1", "W2"),
+  A = "A",
+  Y = "Y"
+)
+head(data)
+```
+
+上述构成我们的观测数据结构 $O = (W, A, Y)$。为了用 `tmle3` 包引入的 `tlverse` 语法正式表达这一点，我们创建单个数据对象，并通过 SCM 指定**有向无环图**（DAG）中各节点之间的函数关系，这体现在我们设置的节点列表中。
+
+现在我们有了一个观测数据结构（`data`），以及数据集中每个变量在 DAG 中所扮演角色的说明。
+
+首先，我们只需调用 `tmle_shift`，就能为所关心参数的 TMLE 初始化一份规格说明（在 `tlverse` 术语中称为 `tmle3_Spec`）。初始化 `tmle3_Spec` 对象时我们指定参数 `shift_val = 0.5`，以表明我们关心的是在处理 $A$ 的尺度上作 $0.5$ 的移位——也就是设 $\delta = 0.5$（这个例子中该值是任意选取的）。
+
+```{r spec_init-shift}
+# initialize a tmle specification
+tmle_spec <- tmle_shift(
+  shift_val = 0.5,
+  shift_fxn = shift_additive,
+  shift_fxn_inv = shift_additive_inv
+)
+```
+
+如上所示，`tmle_shift` 规格对象（与所有 `tmle3_Spec` 对象一样）**并不**存储我们具体分析所用的数据。稍后我们会看到，把数据对象连同实例化好的 `tmle_spec` 一起传给 `tmle3` 包装函数，就会在内部构造出一个 `tmle3_Task` 对象（细节见 `tmle3` 文档）。
+
+### 随机化干预效应的靶向估计
+
+```{r fit_tmle-shift}
+tmle_fit <- tmle3(tmle_spec, data, node_list, learner_list)
+tmle_fit
+```
+
+所得 `tmle_fit` 对象的 `print` 方法会方便地显示我们计算 TML 估计量 $\psi_n$ 的结果。标准误的估计是基于估计出的 EIF 计算的。
+
+## 挑选稳定的随机化干预
+
+有时，某个特定的移位参数 $\delta$ 取值可能导致正性违反，并在估计过程中引发下游的不稳定。为遏制这类问题，我们可以依据候选取值对估计量的影响来选择 $\delta$。回忆 $\psi$ 的 TMLE 中辅助协变量的简化表达式为 $H = \frac{g(a - \delta \mid w)}{g(a \mid w)}$，其中 $g(a - \delta \mid w)$ 由所关心的随机化干预定义。我们可以通过考虑界 $C(\delta) = \frac{g(a - \delta \mid w)}{g(a \mid w)} < M$ 来设计随机化干预，以避免违反正性假设，其中 $M$ 是 $C(\delta)$ 的一个（可由用户指定的）上界。注意 $C(\delta)$ 对应于赋给"反事实处理值为 $A = a + \delta$、自然处理值为 $A = a$、协变量为 $W = w$"那个单元的逆权重。因此 $C(\delta)$ 可以视为某个观测对估计量 $\psi_n$ 影响力的一种度量。通过限制 $C(\delta)$（无论是通过选择 $M$ 还是选择 $\delta$），我们就能限制估计量的潜在不稳定性。我们可以定义一个新的移位函数 $\delta(A, W)$ 来把这一流程形式化：
+
+$$
+  \delta(a, w) =
+    \begin{cases}
+      \delta, & \delta_{\text{min}}(a,w) \leq \delta \leq
+        \delta_{\text{max}}(a,w) \\
+      \delta_{\text{max}}(a,w), & \delta \geq \delta_{\text{max}}(a,w) \\
+      \delta_{\text{min}}(a,w), & \delta \leq \delta_{\text{min}}(a,w) \\
+    \end{cases},
+$$ {#eq-delta-min-max-shift}
+
+其中
+$$\delta_{\text{max}}(a, w) = \text{argmax}_{\left\{\delta \geq 0,
+\frac{g(a - \delta \mid w)}{g(a \mid w)} \leq M \right\}} \frac{g(a - \delta
+\mid w)}{g(a \mid w)}$$
+且
+$$\delta_{\text{min}}(a, w) = \text{argmin}_{\left\{\delta \leq 0,
+\frac{g(a - \delta \mid w)}{g(a \mid w)} \leq M \right\}} \frac{g(a - \delta
+\mid w)}{g(a \mid w)}.$$
+
+上式给出了在单个观测 $(a_i, w_i)$ 层面实施移位的策略，从而让所有观测都能被移位到合适的取值，无论是 $\delta_{\text{min}}$、$\delta$ 还是 $\delta_{\text{max}}$。[`tmle3shift`](https://github.com/tlverse/tmle3shift) 包实现了 `shift_additive_bounded` 与 `shift_additive_bounded_inv` 两个函数，它们定义了该策略的一个变体：
+
+$$
+  \delta(a, w) =
+    \begin{cases}
+      \delta, & C(\delta) \leq M \\
+      0, \text{otherwise} \\
+    \end{cases},
+$$ {#eq-shift-bounded-simple}
+
+它对应这样一种干预：当干预后密度 $g(a - \delta \mid w)$ 与自然处理密度 $g(a \mid w)$ 之比 $C(\delta)$ 不超过界 $M$ 时，把处理的自然取值 $A = a$ 移位 $\delta$。当 $C(\delta)$ 超过界 $M$ 时，该随机化干预就豁免这个单元不作处理修改，让它保持自然处理取值 $A = a$。
+
+### 通过 `tmle3_Spec` 初始化 `vimshift`
+
+首先，我们只需调用 `tmle_shift`，就能为所关心参数的 TMLE 初始化一份规格说明（在 `tlverse` 术语中称为 `tmle3_Spec`）。初始化 `tmle3_Spec` 对象时我们指定参数 `shift_grid = seq(-1, 1, by = 1)`，以表明我们想在处理 $A$ 的尺度上，对移位网格 $\delta \in \{-1, 0, 1\}$ 评估反事实结局均值（注意，这个例子中移位取值是任意选定的）。
+
+```{r vim_spec_init}
+# what's the grid of shifts we wish to consider?
+delta_grid <- seq(-1, 1, 1)
+
+# initialize a tmle specification
+tmle_spec <- tmle_vimshift_delta(
+  shift_grid = delta_grid,
+  max_shifted_ratio = 2
+)
+```
+
+如上所示，`tmle_vimshift` 规格对象（与所有 `tmle3_Spec` 对象一样）**并不**存储我们具体分析所用的数据。稍后我们会看到，把数据对象连同实例化好的 `tmle_spec` 一起传给 `tmle3` 包装函数，就会在内部构造出一个 `tmle3_Task` 对象（细节见 `tmle3` 文档）。
+
+### 随机化干预效应的靶向估计
+
+我们可以借助 [`tmle3` R 包](https://tmle3.tlverse.org/)提供的机制，逐步走一遍"为网格中每个移位拟合反事实结局均值之 TML 估计量"的流程。
+
+也可以调用 `tmle3` 包装函数（一个面向用户的便捷工具），在一次函数调用中拟合这一系列 TML 估计量（网格 delta 所定义的每个参数各一个）：
+
+```{r fit_tmle_wrapper_vimshift}
+tmle_fit <- tmle3(tmle_spec, data, node_list, learner_list)
+tmle_fit
+```
+
+*说明*：所得 `tmle_fit` 对象的 `print` 方法会方便地显示我们计算 TML 估计量的结果。
+
+### 用边际结构模型作估计与推断
+
+事先选定移位参数 $\delta$ 的取值可能有难度。一个办法是指定一**网格**移位 $\delta$，用它来定义一组相关的随机化干预 [@hejazi2020efficient]。当我们考虑在若干个 $\delta$ 取值下估计反事实均值 $\psi_n$ 时，可以通过工作边际结构模型（MSM）为这些估计量建立一个概括性的汇总度量。用工作 MSM 汇总这些估计 $\psi_n$，使我们能够对沿 $\delta$ 网格所呈现的**趋势**作推断，而这可以通过对工作 MSM 斜率参数 $\beta_0$ 作一个简单假设检验来评估。考虑一个 $\delta$ 的网格 $\{\delta_1, \ldots, \delta_k\}$，对应反事实均值 $\{\psi_{\delta_1}, \ldots, \psi_{\delta_k}\}$。接着，记 $\psi(\delta) = (\psi_{\delta}: \delta)$ 为由 $\delta$ 定义的网格上的反事实均值网格，并记 $\psi_n(\delta)$ 为 $\psi(\delta)$ 的 TML 估计量。把 $\psi_n$ 随 $\delta$ 变化的情况汇总起来的 MSM 可以表示为 $m_{\beta}(\psi_{\delta}) = \beta_0 + \beta_1 \delta$。这个简单的工作模型用参数 $(\beta_0, \beta_1)$ 概括了 $\psi_{\delta}$ 的变化，其中后者是把反事实均值投影到这个简单双参数工作模型上所得直线的斜率。
+
+MSM $m_{\beta}(\delta)$ 的更一般表达式是 $\beta_0 = \text{argmin}_{\beta} \sum_{\delta}(\psi_{\delta}(P_0) - m_{\beta}(\delta))^2 h(\delta)$，即如下估计方程的解：
+$$u(\beta, (\psi_{\delta}: \delta)) = \sum_{\delta}h(\delta)
+\left(\psi_{\delta}(P_0) - m_{\beta}(\delta) \right) \frac{d}{d\beta}
+m_{\beta}(\delta) = 0.$$
+
+现在设 $\psi = (\psi(\delta): \delta)$ 是 d 维的。我们可以用各个反事实均值的 EIF 来表示 MSM 参数 $\beta_0$ 的 EIF：
+
+$$\begin{align}
+   D_{\beta}(O) = &\left(\sum_{\delta} h(\delta) \frac{d}{d\beta}
+   m_{\beta}(\delta) \frac{d}{d\beta} m_{\beta}(\delta)^t \right)^{-1}
+   \\ \nonumber
+   &\sum_{\delta} h(\delta) \frac{d}{d\beta} m_{\beta}(\delta)
+   D_{\psi_{\delta}}(O).
+\end{align}$$ {#eq-eif-msm-shift}
+
+在 @eq-eif-msm-shift 中，第一个成分的维度是 $d \times d$，第二个是 $d \times 1$。上式中我们假定工作 MSM 是线性的；不过对基于 GLM 的工作 MSM，可以套用类似的流程。
+
+上面我们直接应用 delta 方法得到了 $\beta$ 的 EIF。对这个工作 MSM 参数的推断，可由其 EIF $D_{\beta}$ 的求值得到，而后者又是用各个相应估计 $\psi_n(\delta)$ 的 EIF 表示的。$\beta_n$ 的极限分布可表示为 $$\sqrt{n}(\beta_n - \beta_0) \to N(0, \Sigma),$$ 其中 $\Sigma$ 是 $D_{\beta}(O)$ 的经验协方差矩阵。有了它，我们不仅能估计反事实均值沿 $\delta$ 网格的趋势，还能评估斜率估计是否具有统计显著性——通过形如 $(H_0: \beta_0 = 0; H_1: \beta_0 \neq 0)$ 的假设检验以及等价的 Wald 型置信区间。注意，MSM 参数 $\beta_0$ 的估计量 $\beta_n$ 由于是由各个 TML 估计量构造而来，因而是渐近线性的（事实上它本身就是一个 TML 估计量）。
+
+刚才讨论的策略，是先求出网格 $\{\delta_1, \ldots, \delta_k\}$ 中反事实均值 $\psi_{n,\delta}$ 的 TML 估计，再据此构造工作 MSM 斜率 $\beta_0$ 的估计 $\beta_n$；不过这未必是最佳策略，在考虑小样本下估计稳定性时尤其如此。在样本较小时，或许更稳妥的做法是直接针对参数 $\beta_0$ 作 TML 估计，而不是对若干个各自独立靶向的 TML 估计施用 delta 方法来构造它。
+
+为此，考虑一个针对 $\beta_0$（工作 MSM $m_{\beta}$ 的参数）的 TML 估计量，它采用形如 $\overline{Q}_{n, \epsilon}(A,W) = \overline{Q}_n(A,W) + \epsilon (H_{\beta_0}(g), H_{\beta_1}(g))$ 的靶向更新步骤（对所有 $\delta$），其中 $H_{\beta_0}(g)$ 是 $\beta_0$（截距）的辅助协变量，$H_{\beta}(g)$ 是 $\beta_1$（斜率）的辅助协变量。注意这些辅助协变量的形式取决于 EIF $D_{\beta}$。这样的 TML 估计量避免了直接估计网格中每一个 $\psi_{\delta}$，而是巧妙地把它们的辅助协变量拼接成适用于 $\beta_0$ 与 $\beta_1$ 的形式。要构造一个直接针对工作 MSM 参数的靶向最大似然估计量，我们可以使用 `tmle_vimshift_msm` Spec（而不是 `tmle_vimshift_delta` Spec）。
+
+```{r vim_targeted_msm_fit, eval=FALSE}
+# initialize a tmle specification
+tmle_msm_spec <- tmle_vimshift_msm(
+  shift_grid = delta_grid,
+  max_shifted_ratio = 2
+)
+
+# fit the TML estimator and examine the results
+tmle_msm_fit <- tmle3(tmle_msm_spec, data, node_list, learner_list)
+tmle_msm_fit
+```
+
+### WASH Benefits 数据示例
+
+为完成这次演练，我们转而用随机化干预来考察 WASH Benefits 试验的数据。首先载入数据、把所有列转换为 `numeric` 类，并快速看一眼：
+
+```{r load_washb_data_shift}
+washb_data <- fread(
+  paste0(
+    "https://raw.githubusercontent.com/tlverse/tlverse-data/master/",
+    "wash-benefits/washb_data.csv"
+  ),
+  stringsAsFactors = TRUE
+)
+washb_data <- washb_data[!is.na(momage), lapply(.SD, as.numeric)]
+head(washb_data, 3)
+```
+
+接着，我们通过 `node_list` 对象指定 NPSEM。在这个示例分析中，我们把结局取为身高别体重 Z 评分（与前几章一样），把所关心的干预取为母亲生育时的年龄，其余协变量都作为潜在混杂因素。
+
+```{r washb_data_npsem_shift}
+node_list <- list(
+  W = names(washb_data)[!(names(washb_data) %in%
+    c("whz", "momage"))],
+  A = "momage",
+  Y = "whz"
+)
+```
+
+若我们考虑母亲生育年龄发生移位之下的反事实身高别体重 Z 评分，该如何解读我们参数的估计？为简化解读，考虑母亲年龄只移位一年（即 $\delta = 1$）的情形；在这一设定下，随机化干预对应于这样一项政策：倡导潜在的母亲把生育推迟一个日历年，这或许可以通过在临床环境中部署的鼓励性设计来实施。
+
+在这个例子中，我们采用"考虑一网格随机化干预"的变量重要性策略，来评估母亲年龄下调两年（$\delta = -2$）或上调两年（$\delta = 2$）之下的身高别体重 Z 评分。为此，我们只需像前一个例子那样初始化一个 `tmle_vimshift_delta` 的 `Spec`：
+
+```{r vim_spec_init_washb_shift}
+# initialize a tmle specification for the variable importance parameter
+washb_vim_spec <- tmle_vimshift_delta(
+  shift_grid = c(-2, 2),
+  max_shifted_ratio = 2
+)
+```
+
+在运行分析之前，我们会修改先前创建的 `learner_list` 对象，使所依赖的密度估计流程只保留位置—尺度条件密度估计，因为基于高度自适应 lasso 的非参数条件密度方法 [@diaz2011super; @benkeser2016hal; @coyle2020hal9001; @hejazi2020hal9001; @hejazi2020haldensify] 目前还无法处理较大的数据集。
+
+```{r sl3_lrnrs_gfit_washb_shift}
+# we need to turn on cross-validation for the HOSE learner
+cv_hose_hal_lrnr <- Lrnr_cv$new(
+  learner = hose_hal_lrnr,
+  full_fit = TRUE
+)
+
+# modify learner list, using existing SL for Q fit
+learner_list <- list(Y = sl_reg_lrnr, A = cv_hose_hal_lrnr)
+```
+
+做好上述准备之后，我们就可以估计在母亲生育年龄的一小网格移位之下，身高别体重 Z 评分的反事实均值了。和之前一样，只需简单调用 `tmle3` 包装函数：
+
+```{r fit_tmle_wrapper_washb_shift, eval=FALSE}
+washb_tmle_fit <- tmle3(washb_vim_spec, washb_data, node_list, learner_list)
+washb_tmle_fit
+```
+
+---
+
+## 习题
+
+### 思想的实际运用
+
+::: {.callout-note title="练习"}
+把超级学习器的 `sl3` 算法库设为一个简单、可解释的库，并用这个新库估计在移位 $\delta = 0$ 之下母亲生育年龄（`momage`）的反事实均值。就观测数据而言，这个反事实均值等价于什么？
+:::
+
+::: {.callout-tip title="参考解答"}
+（上游原书标注为「Forthcoming」，尚未给出解答。）
+:::
+
+::: {.callout-note title="练习"}
+使用一网格移位参数 $\delta$ 取值（例如 $\{-1, 0, +1\}$），对上一问所选变量重复该分析，并用边际结构模型汇总这一系列移位的趋势。
+:::
+
+::: {.callout-tip title="参考解答"}
+（上游原书标注为「Forthcoming」，尚未给出解答。）
+:::
+
+::: {.callout-note title="练习"}
+用同一网格移位重复前面的分析，但改为直接针对边际结构模型的参数作靶向估计。解读结果——也就是说，边际结构模型的斜率就所选移位序列上的趋势告诉了我们什么？
+:::
+
+::: {.callout-tip title="参考解答"}
+（上游原书标注为「Forthcoming」，尚未给出解答。）
+:::
+
+### 关键概念回顾
+
+::: {.callout-note title="练习"}
+描述解读随机化干预因果效应的两种（等价的）方式。
+:::
+
+::: {.callout-tip title="参考解答"}
+（上游原书标注为「Forthcoming」，尚未给出解答。）
+:::
+
+::: {.callout-note title="练习"}
+跨若干移位 $\{\delta_1, \ldots, \delta_k\}$ 的估计所提供的信息，以及概括 $\delta$ 上趋势的边际结构模型参数，如何能用来丰富我们对研究发现的解读？
+:::
+
+::: {.callout-tip title="参考解答"}
+（上游原书标注为「Forthcoming」，尚未给出解答。）
+:::
+
+::: {.callout-note title="练习"}
+直接针对边际结构模型的参数作靶向估计，有哪些优势（如果有的话）？
+:::
+
+::: {.callout-tip title="参考解答"}
+（上游原书标注为「Forthcoming」，尚未给出解答。）
+:::

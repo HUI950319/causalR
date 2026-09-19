@@ -1,0 +1,56 @@
+---
+title: "示例数据集"
+subtitle: "*Example Datasets* · tlverse 官方手册中译"
+bibliography: tlverse-refs.bib
+lang: zh
+---
+
+> **来源**：[*Targeted Learning in R: Causal Data Science with the `tlverse` Software Ecosystem*](https://tlverse.org/tlverse-handbook/)，作者 Mark van der Laan、Jeremy Coyle、Nima Hejazi、Ivana Malenica、Rachael Phillips、Alan Hubbard，采用 **[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)** 许可。
+> 本页为中文翻译，**非原文**；依 CC BY 4.0 保留原作者署名与许可证声明，并标明本页是经过修改（翻译）的版本。
+> 原作品按「现状」提供，原作者不附任何明示或默示的担保（见 CC BY 4.0 第 5 节免责声明）；译文中的任何疏漏由译者负责，不代表原作者观点。
+> 译自源码仓库 [tlverse/tlverse-handbook](https://github.com/tlverse/tlverse-handbook) 修订 `2931693`（2024-09-21）的 `03-data.Rmd`。
+> 页内 R 代码块按原文逐字保留，并由本站以 R 4.4.3 重新执行；数据在渲染时从上游仓库实时读取，因此摘要数值应与原书一致。
+
+# 示例数据集
+
+## WASH Benefits 孟加拉国研究 {#wash}
+
+示例数据来自一项研究，考察水质、环境卫生、洗手以及营养干预对孟加拉国农村地区儿童发育的影响（WASH Benefits Bangladesh），它是一项整群随机对照试验 [@luby2018effect]。该研究在孟加拉国中部的 Gazipur、Kishoreganj、Mymensingh 和 Tangail 等县的农村招募处于妊娠头三个月或第二个三个月的孕妇，平均每个群组八名妇女。以地理上相邻的八个群组为一个区组，用随机数发生器进行区组随机化，分入六个干预组（这些组在头 6 个月每周、随后 18 个月每两周接受一次社区健康促进员的访视）以及一个规模加倍的对照组（不接受干预，也没有健康促进员访视）。六个干预组分别是：
+
+1. 氯化处理的饮用水；
+2. 改善的环境卫生设施；
+3. 用肥皂洗手；
+4. 水、环境卫生与洗手的组合；
+5. 通过咨询指导并提供脂基营养补充剂来改善营养；以及
+6. 水、环境卫生、洗手与营养的组合。
+
+在本手册中，我们关注的结局是儿童生长发育（年龄别体格指标）。备查信息：该试验已在 ClinicalTrials.gov 注册，注册号为 NCT01590095。
+
+```{r load_washb_data_intro}
+library(readr)
+# read in data via readr::read_csv
+dat <- read_csv(
+  paste0(
+    "https://raw.githubusercontent.com/tlverse/tlverse-data/master/",
+    "wash-benefits/washb_data.csv"
+  )
+)
+```
+
+出于教学目的，我们一开始把这些数据当作从一个大的目标总体中独立同分布（i.i.d.）抽取的随机样本。我们本可以把数据的聚集性（在被抽样的地理单元内部）纳入考虑，但为了讲解清楚起见，本手册回避这些细节。针对有偏样本、重复测量以及相关复杂情形，TL 方法学都有现成的改进版本可用。
+
+我们测得了 `r ncol(dat)` 个变量，其中一个被设定为我们关心的结局。这个结局 $Y$ 是身高别体重 Z 评分（`dat` 中的 `whz`）；我们关心的处理 $A$ 是随机分配的处理组（`dat` 中的 `tr`）；而调整变量集（潜在的基线混杂因素）$W$ 就由**其余所有变量**构成。于是我们观测到的数据结构是 $n$ 份 i.i.d. 的 $O_i = (W_i, A_i, Y_i)$ 副本，$i = 1, \ldots, n$。
+
+借助 [`skimr` 包](https://CRAN.R-project.org/package=skimr)，我们可以快速汇总 WASH Benefits 数据集中测量的各个变量：
+
+```{r skim_washb_data, results="asis", echo=FALSE}
+library(skimr)
+# optionally disable sparkline graphs for PDF output
+if (knitr::is_latex_output()) {
+  knitr::kable(skim_no_sparks(dat), format = "latex")
+} else {
+  skim(dat)
+}
+```
+
+上面给出了相关变量的便捷汇总，还附有描述各协变量边际特征的迷你走势图。请注意，其中的 *asset*（资产）类变量反映了研究参与者的社会经济地位。另外也请留意各处理组呈均匀分布（对照组人数为其两倍）——这当然是设计使然。

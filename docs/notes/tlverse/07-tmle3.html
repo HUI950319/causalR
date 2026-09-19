@@ -1,0 +1,2225 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hans" xml:lang="zh-Hans"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>TMLE 框架 – 因果推断读书笔记</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../notes/tlverse/06-sl3.html" rel="prev">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-4571e413af9019dfdcc70175faf53a1f.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-f4ac1763815fd7e6e4ac068bcc624570.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../../site_libs/bootstrap/bootstrap-dark-20ce10291bf0c12c4093354e53c28dd5.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-f4ac1763815fd7e6e4ac068bcc624570.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "没有结果",
+    "search-matching-documents-text": "匹配的文档",
+    "search-copy-link-title": "复制搜索链接",
+    "search-hide-matches-text": "隐藏其它匹配结果",
+    "search-more-match-text": "更多匹配结果",
+    "search-more-matches-text": "更多匹配结果",
+    "search-clear-button-title": "清除",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "取消",
+    "search-submit-button-title": "提交",
+    "search-label": "搜索"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar docked quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../notes/tlverse/00-welcome.html">Targeted Learning in R · tlverse 手册中译</a></li><li class="breadcrumb-item"><a href="../../notes/tlverse/07-tmle3.html"><span class="chapter-title">7. TMLE 框架</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="搜索" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header sidebar-header-stacked">
+      <a href="../../index.html" class="sidebar-logo-link">
+      </a>
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../../">因果推断读书笔记</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/HUI950319/causalR" title="源代码" class="quarto-navigation-tool px-1" aria-label="源代码"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="切换深色模式"><i class="bi"></i></a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="搜索"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">关于这份笔记</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">Causal Inference: What If · 原书笔记</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-logic-chain.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">前三章逻辑链</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/notation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">记号与约定</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/identifiability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">三条识别条件</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/formulas.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">公式卡</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-potential-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 1 章 · Zeus 的心脏移植</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-randomized-experiments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 2 章 · 一枚硬币，还是两枚</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-observational-studies.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 3 章 · 一枚硬币也没抛</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-effect-modification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 4 章 · 没有「治疗的因果效应」这种东西</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 5 章 · 两个处理，一起动手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-causal-diagrams.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 6 章 · 先画假设，再下结论</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-confounding.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 7 章 · 后门关上，可交换性才回来</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-selection-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 8 章 · 进了分析的人，未必还能互换</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-measurement-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 9 章 · 带星号的变量，与担不起因果的箭头</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-random-variability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 10 章 · 该不该撤稿</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w03-why-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 11 章 · 数据不会自己说话</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w03-ip-weighting-msm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w04-standardization-gformula.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 13 章 · 把模型挪到结局那一侧</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w04-g-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 14 章 · 猜一个数，直到它与处理无关</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w05-outcome-regression-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 15 章 · 最常用的方法，为什么排在最后</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w05-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 16 章 · 不要求可交换性的那条路</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w06-causal-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 17 章 · 风险比里藏着一个碰撞变量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w06-variable-selection.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 18 章 · 调整得越多，不等于偏倚越小</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w07-time-varying-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 19 章 · 先说清策略，才有效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w07-treatment-confounder-feedback.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 20 章 · 调了混杂，反而更错</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w08-g-methods-time-varying.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 21 章 · 三条路线，同一个 0</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w11-target-trial-emulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 22 章 · 先写协议，再看数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w11-causal-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 23 章 · 把中介问题改写成能做的试验</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">郑老师因果推理课程讲义</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-overview.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">课程讲义总览</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w01.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W01 · 因果推断理论与方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w02.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W02 · DAG 与回归、反事实与 G 计算</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w03.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W03 · 倾向得分方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w04.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W04 · 机器学习与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w05.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W05 · 双重稳健估计与双重机器学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w06.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W06 · TMLE 及其衍生方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w07.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W07 · 缺失数据与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w08.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W08 · 中介分析与因果中介</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w09.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W09 · 处理效应异质性分析</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">Duke STA 640 · 因果推断课程讲义中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">课程讲义总览（21 份）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/01-chapter-1-background-and-potential-outcome-framework.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 1 · Background and Potential Outcome Framework</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/02-chapter-2-1-randomized-experiments-fisher-s-and-neyman-s-mode-of-inference.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 2.1 · Randomized Experiments: Fisher’s and Neyman’s Mode of Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/03-chapter-2-2-randomized-experiments-covariate-balance-and-adjustment.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 2.2 · Randomized Experiments: Covariate Balance and Adjustment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/04-chapter-3-1-observational-studies-outcome-regression.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.1 · Observational Studies: Outcome Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/05-chapter-3-2-observational-studies-propensity-score.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.2 · Observational Studies: Propensity Score</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/06-chapter-3-3-observational-studies-stratification-and-matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.3 · Observational Studies: Stratification and Matching</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/07-chapter-3-4-propensity-score-weighting.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.4 · Propensity Score Weighting</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/08-chapter-3-5-doubly-robust-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.5 · Doubly Robust Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/09-chapter-3-6-non-binary-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.6 · Non-binary Treatments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/10-chapter-4-1-treatment-effect-heterogeneity-causal-subgroup-analysis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 4.1 · Treatment Effect Heterogeneity: Causal Subgroup Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/11-chapter-4-2-treatment-effect-heterogeneity-machine-learning-approaches.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 4.2 · Treatment Effect Heterogeneity: Machine Learning Approaches</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/12-chapter-5-sensitivity-analysis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 5 · Sensitivity Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/13-chapter-6-1-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 6.1 · Instrumental Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/14-chapter-6-2-principal-stratification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 6.2 · Principal Stratification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/15-chapter-7-regression-discontinuity-designs.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 7 · Regression Discontinuity Designs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/16-chapter-8-difference-in-differences-synthetic-control-and-beyond.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 8 · Difference-in-Differences, Synthetic Control, and Beyond</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/17-chapter-9-sequential-and-longitudinal-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 9 · Sequential and Longitudinal Treatments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/18-chapter-10-bayesian-causal-inference.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 10 · Bayesian Causal Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/19-chapter-11-causal-inference-with-survival-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 11 · Causal Inference with Survival Outcomes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/20-lab-2-propensity-score-matching-and-weighting-binary-treatment.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Lab 2 · Propensity Score Matching and Weighting: Binary Treatment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/21-lab-3-propensity-score-weighting-with-multiple-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Lab 3 · Propensity Score Weighting with Multiple Treatments</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">causatr 官方文档中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-introduction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 介绍</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-gcomp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的 G-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-ipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的逆概率加权</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-aipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的增强 IPW（双稳健估计）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的倾向评分匹配</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-snm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的结构嵌套均值模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-interventions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 中的干预类型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-natural-history-mtps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">自然历史修改处理政策（宽限期）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-triangulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">方法论三角：g-computation、IPW、AIPW、匹配和 SNM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-longitudinal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">纵向处理：ICE g-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-transportability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">可转运性和可推广性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-missing-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">处理缺失数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-diagnostics.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的诊断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-validation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">针对参考实现的验证</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果效应的方差估计</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-ipw-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IPW 密度比权重和方差理论</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false">
+ <span class="menu-text">Causal Inference in R · 原书中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/01-casual-to-causal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">从随意推断到因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/02-whole-game.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">完整实践：蚊帐与疟疾</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/03-po-counterfactuals.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">潜在结局与反事实</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/04-dags.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">用 DAG 表达因果问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/05-not-just-a-stats-problem.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果推断不只是统计问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/06-stats-models-ci.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">从问题到答案：分层与结局模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/07-prep-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">准备数据以回答因果问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/08-propensity-scores.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">倾向评分</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/09-evaluating-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">评估倾向评分模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/10-estimands.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果估计目标</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/11-outcome-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">拟合加权结局模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/12-other-exposures.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">连续型与分类暴露</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/13-g-comp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">G 计算</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/14-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">异质性处理效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/15-missingness-and-measurement.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">缺失与测量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/16-sensitivity.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">敏感性分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/17-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果中介分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/18-longitudinal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">跨时间的因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/19-time-to-event.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果生存时间模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/20-doubly-robust.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">双稳健模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/21-machine-learning.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">机器学习与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/22-iv-and-friends.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">工具变量及相关方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/23-diff-in-diff.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">双重差分</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/24-evidence.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">证据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/99-references.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">参考文献</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/appendices/A-bootstrap.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">自助法（Bootstrap）</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false">
+ <span class="menu-text">lmtp 包官方文档中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/00-welcome.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">欢迎！</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/00-instructors.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">讲师介绍</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/01-introduction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1. 引言</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/02-defining-interventions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">2. 定义干预</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/03-estimators.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">3. 估计量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/04-lmtp-package.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4a. lmtp 包</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/05-static.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4b. 静态效应与因果对比</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/06-dtr.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4c. 动态处理方案</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/07-mtp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4d. 修正处理策略</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/08-ipsi.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4e. IPSI</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/09-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4f. 生存分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/10-multivariate.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4g. 多元暴露</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/11-conclusion.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">5. 结语</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false">
+ <span class="menu-text">marginaleffects 官方文档中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/get_started.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R+Python · 快速上手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/plot.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R+Python · 绘图</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/elasticity.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R+Python · 弹性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/interrupted_time_series.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R+Python · 中断时间序列</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/equivalence.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R+Python · 等价检验</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/brms.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 贝叶斯模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/bootstrap.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 自助法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/conjoint.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 联合分析实验</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/gam.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 广义可加模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/grids.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 数据网格</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/heterogeneity.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 异质性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/hypothesis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 假设检验</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/ipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 逆概率加权</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/lme4.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 混合效应模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/logit.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · Logit 模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 匹配</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/mlogit.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 多项 Logit</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/multiple_imputation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 缺失数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/power.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 功效分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 生存分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/total_marginal_effect.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 总边际效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/uncertainty.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · 不确定性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/svalues.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">R · S 值</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/sklearn.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Python · Scikit-learn</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/numpyro.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Python · NumPyro</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false">
+ <span class="menu-text">grf 包官方教程中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/00-get-started.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">快速上手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/01-grf-guide.html" class="sidebar-item-text sidebar-link"><span class="chapter-title"><code>grf</code> 简介</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/02-rate.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">用 RATE 评估异质性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/03-categorical-inputs.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">分类协变量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/04-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">事件发生时间数据下的因果森林</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/05-rate-cv.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">异质性的交叉折验证</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/06-ate-transport.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">在新的目标人群上估计 ATE</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/07-muhats.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">估计条件均值</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/08-diagnostics.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">评估因果森林的拟合效果</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/09-llf.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">局部线性森林简介</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/10-policy-learning.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">用最优决策树做策略学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/11-maq.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Qini 曲线：自动化的成本效益分析</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true">
+ <span class="menu-text">Targeted Learning in R · tlverse 手册中译</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/00-welcome.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">欢迎</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/01-intro.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">导论</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/02-tlverse.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1-2. 关于 tlverse 与软件配置</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/03-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">3. 示例数据集</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/04-roadmap.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4. 从数据中学习：一份路线图</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/05-origami.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">5. 交叉验证</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/06-sl3.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">6. 超级学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/07-tmle3.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">7. TMLE 框架</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/08-tmle3mopttx.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">8. 动态与最优个体化处理方案</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/09-tmle3shift.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">9. 随机化处理方案</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/10-tmle3mediate.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">10. 因果中介分析</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">目录</h2>
+   
+  <ul>
+  <li><a href="#tmle3" id="toc-tmle3" class="nav-link active" data-scroll-target="#tmle3">TMLE 框架</a>
+  <ul class="collapse">
+  <li><a href="#learn-tmle" id="toc-learn-tmle" class="nav-link" data-scroll-target="#learn-tmle">学习目标</a></li>
+  <li><a href="#tmle-intro" id="toc-tmle-intro" class="nav-link" data-scroll-target="#tmle-intro">引言</a></li>
+  <li><a href="#substitution-est" id="toc-substitution-est" class="nav-link" data-scroll-target="#substitution-est">代入型估计量</a></li>
+  <li><a href="#tmle" id="toc-tmle" class="nav-link" data-scroll-target="#tmle">靶向最大似然估计</a>
+  <ul class="collapse">
+  <li><a href="#tmle-updates" id="toc-tmle-updates" class="nav-link" data-scroll-target="#tmle-updates">TMLE 更新</a></li>
+  <li><a href="#tmle-infer" id="toc-tmle-infer" class="nav-link" data-scroll-target="#tmle-infer">统计推断</a></li>
+  </ul></li>
+  <li><a href="#开箱即用示例用-tmle3-估计-ate" id="toc-开箱即用示例用-tmle3-估计-ate" class="nav-link" data-scroll-target="#开箱即用示例用-tmle3-估计-ate">开箱即用示例：用 <code>tmle3</code> 估计 ATE</a>
+  <ul class="collapse">
+  <li><a href="#载入数据" id="toc-载入数据" class="nav-link" data-scroll-target="#载入数据">载入数据</a></li>
+  <li><a href="#定义变量角色" id="toc-定义变量角色" class="nav-link" data-scroll-target="#定义变量角色">定义变量角色</a></li>
+  <li><a href="#处理缺失" id="toc-处理缺失" class="nav-link" data-scroll-target="#处理缺失">处理缺失</a></li>
+  <li><a href="#创建-spec-对象" id="toc-创建-spec-对象" class="nav-link" data-scroll-target="#创建-spec-对象">创建 “Spec” 对象</a></li>
+  <li><a href="#定义学习器" id="toc-定义学习器" class="nav-link" data-scroll-target="#定义学习器">定义学习器</a></li>
+  <li><a href="#拟合-tmle" id="toc-拟合-tmle" class="nav-link" data-scroll-target="#拟合-tmle">拟合 TMLE</a></li>
+  <li><a href="#评估估计结果" id="toc-评估估计结果" class="nav-link" data-scroll-target="#评估估计结果">评估估计结果</a></li>
+  </ul></li>
+  <li><a href="#tmle3-的组件" id="toc-tmle3-的组件" class="nav-link" data-scroll-target="#tmle3-的组件"><code>tmle3</code> 的组件</a>
+  <ul class="collapse">
+  <li><a href="#tmle3_task" id="toc-tmle3_task" class="nav-link" data-scroll-target="#tmle3_task"><code>tmle3_task</code></a></li>
+  <li><a href="#初始似然" id="toc-初始似然" class="nav-link" data-scroll-target="#初始似然">初始似然</a></li>
+  <li><a href="#靶向似然更新器" id="toc-靶向似然更新器" class="nav-link" data-scroll-target="#靶向似然更新器">靶向似然（更新器）</a></li>
+  <li><a href="#参数映射" id="toc-参数映射" class="nav-link" data-scroll-target="#参数映射">参数映射</a></li>
+  <li><a href="#把它们拼到一起" id="toc-把它们拼到一起" class="nav-link" data-scroll-target="#把它们拼到一起">把它们拼到一起</a></li>
+  </ul></li>
+  <li><a href="#拟合带多个参数的-tmle3" id="toc-拟合带多个参数的-tmle3" class="nav-link" data-scroll-target="#拟合带多个参数的-tmle3">拟合带多个参数的 <code>tmle3</code></a>
+  <ul class="collapse">
+  <li><a href="#delta-方法" id="toc-delta-方法" class="nav-link" data-scroll-target="#delta-方法">Delta 方法</a></li>
+  <li><a href="#拟合" id="toc-拟合" class="nav-link" data-scroll-target="#拟合">拟合</a></li>
+  </ul></li>
+  <li><a href="#习题" id="toc-习题" class="nav-link" data-scroll-target="#习题">习题</a>
+  <ul class="collapse">
+  <li><a href="#tmle3-ex1" id="toc-tmle3-ex1" class="nav-link" data-scroll-target="#tmle3-ex1">用 <code>tmle3</code> 估计 ATE</a></li>
+  </ul></li>
+  <li><a href="#小结" id="toc-小结" class="nav-link" data-scroll-target="#小结">小结</a></li>
+  </ul></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/tlverse/07-tmle3.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../notes/tlverse/00-welcome.html">Targeted Learning in R · tlverse 手册中译</a></li><li class="breadcrumb-item"><a href="../../notes/tlverse/07-tmle3.html"><span class="chapter-title">7. TMLE 框架</span></a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-title">TMLE 框架</span></h1>
+<p class="subtitle lead"><em>The TMLE Framework</em> · tlverse 官方手册中译</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<blockquote class="blockquote">
+<p><strong>来源</strong>：<a href="https://tlverse.org/tlverse-handbook/"><em>Targeted Learning in R: Causal Data Science with the <code>tlverse</code> Software Ecosystem</em></a>，作者 Mark van der Laan、Jeremy Coyle、Nima Hejazi、Ivana Malenica、Rachael Phillips、Alan Hubbard，采用 <strong><a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a></strong> 许可。 本页为中文翻译，<strong>非原文</strong>；依 CC BY 4.0 保留原作者署名与许可证声明，并标明本页是经过修改（翻译）的版本。 原作品按「现状」提供，原作者不附任何明示或默示的担保（见 CC BY 4.0 第 5 节免责声明）；译文中的任何疏漏由译者负责，不代表原作者观点。 译自源码仓库 <a href="https://github.com/tlverse/tlverse-handbook">tlverse/tlverse-handbook</a> 修订 <code>2931693</code>（2024-09-21）的 <code>07-tmle3.Rmd</code>。本章作者为 <em>Jeremy Coyle</em>。 页内 R 代码块按原文逐字保留，并由本站以 R 4.4.3 重新执行；示意图为原书静态图片，按原样引用。</p>
+</blockquote>
+<span class="math inline">
+\(\DeclareMathOperator{\expit}{expit}\)
+\(\DeclareMathOperator{\logit}{logit}\)
+\(\DeclareMathOperator*{\argmin}{\arg\!\min}\)
+\(\newcommand{\indep}{\perp\!\!\!\perp}\)
+\(\newcommand{\R}{\mathbb{R}}\)
+\(\newcommand{\E}{\mathbb{E}}\)
+\(\newcommand{\M}{\mathcal{M}}\)
+\(\newcommand{\I}{\mathbb{I}}\)
+</span>
+<section id="tmle3" class="level1">
+<h1>TMLE 框架</h1>
+<p><em>Jeremy Coyle</em></p>
+<p>基于 <a href="https://github.com/tlverse/tmle3"><code>tmle3</code> <code>R</code> 包</a>。</p>
+<section id="learn-tmle" class="level2">
+<h2 class="anchored" data-anchor-id="learn-tmle">学习目标</h2>
+<p>读完本章之后，你将能够：</p>
+<ol type="1">
+<li>理解我们为什么用 TMLE 做效应估计。</li>
+<li>用 <code>tmle3</code> 估计平均处理效应（ATE）。</li>
+<li>理解如何使用 <code>tmle3</code> 的 “Spec” 对象。</li>
+<li>针对一组自定义的目标参数拟合 <code>tmle3</code>。</li>
+<li>用 delta 方法估计目标参数的变换。</li>
+</ol>
+</section>
+<section id="tmle-intro" class="level2">
+<h2 class="anchored" data-anchor-id="tmle-intro">引言</h2>
+<p>在上一章关于 <code>sl3</code> 的内容中，我们学会了如何从数据估计诸如 <span class="math inline">\(\mathbb{E}[Y \mid X]\)</span> 这样的回归函数。这是从数据中学习的重要第一步，但我们怎样才能用这个预测模型去估计统计效应与因果效应呢？</p>
+<p>回到<a href="../../notes/tlverse/04-roadmap.html#roadmap">靶向学习的路线图</a>，假设我们想估计处理变量 <span class="math inline">\(A\)</span> 对结局 <span class="math inline">\(Y\)</span> 的效应。如前所述，刻画该效应的一个可能参数是平均处理效应（ATE），定义为 <span class="math inline">\(\psi_0 = \mathbb{E}_W[\mathbb{E}[Y \mid A=1,W] - \mathbb{E}[Y \mid A=0,W]]\)</span>，可解释为在协变量 <span class="math inline">\(W\)</span> 的分布上取平均后，处理 <span class="math inline">\(A=1\)</span> 与 <span class="math inline">\(A=0\)</span> 之下结局均值之差。我们将用下面这份示例数据，演示这一参数的几种可能估计量，并由此引出使用 TMLE（靶向最大似然估计；靶向最小损失估计）框架的动机：</p>
+<p><img src="img/png/schematic_1_truedgd.png" class="img-fluid" width="750"></p>
+<p>右侧的小刻度分别标出了 <span class="math inline">\(A=1\)</span> 与 <span class="math inline">\(A=0\)</span> 之下（对 <span class="math inline">\(W\)</span> 取平均后的）结局均值，二者之差正是我们想估计的量。</p>
+<p>尽管我们希望在本章中讲清应用 TMLE 的动机，但有兴趣深究的读者请参阅两本靶向学习专著及相关著作，以获取完整的技术细节。</p>
+</section>
+<section id="substitution-est" class="level2">
+<h2 class="anchored" data-anchor-id="substitution-est">代入型估计量</h2>
+<p>我们可以用 <code>sl3</code> 拟合一个超级学习器或其他回归模型，来估计结局回归函数 <span class="math inline">\(\mathbb{E}_0[Y \mid A,W]\)</span>——我们常把它记作 <span class="math inline">\(\overline{Q}_0(A,W)\)</span>，其估计记作 <span class="math inline">\(\overline{Q}_n(A,W)\)</span>。要构造 ATE 的估计 <span class="math inline">\(\psi_n\)</span>，我们只需把在两种干预对照下求值的 <span class="math inline">\(\overline{Q}_n(A,W)\)</span> 估计”代入”相应的 ATE “代入”公式：<span class="math inline">\(\psi_n = \frac{1}{n}\sum(\overline{Q}_n(1,W)-\overline{Q}_n(0,W))\)</span>。这类估计量被称为<strong>代入型</strong>（plug-in／substitution）估计量，因为只要把相关回归函数 <span class="math inline">\(\overline{Q}_0(A,W)\)</span> 本身换成它们的估计 <span class="math inline">\(\overline{Q}_n(A,W)\)</span>，就可以得到参数 <span class="math inline">\(\psi_0\)</span> 的准确估计 <span class="math inline">\(\psi_n\)</span>。</p>
+<p>把 <code>sl3</code> 用于估计我们例子中的结局回归，可以看到集成机器学习的预测对数据拟合得相当好：</p>
+<p><img src="img/png/schematic_2b_sllik.png" class="img-fluid" width="750"></p>
+<p>实线表示 <code>sl3</code> 对回归函数的估计，虚线则表示 <code>tmle3</code> 的更新（<a href="#tmle-updates">见下文</a>）。</p>
+<p>代入型估计量虽然直观，但若不加思索地把超级学习器对 <span class="math inline">\(\overline{Q}_0(A,W)\)</span> 的估计用于这一做法，会有若干局限。首先，超级学习器选择学习器权重时，是为了最小化整条回归函数上的风险，而不是”靶向”我们想估计的那个 ATE 参数，这会导致估计有偏。也就是说，<code>sl3</code> 力求在左侧那整条回归曲线上做得好，而不是聚焦于右侧那两个小刻度。不仅如此，这一做法的抽样分布不是渐近线性的，因而无法作推断。</p>
+<p>在为示例数据生成的估计中，可以看到这些局限：</p>
+<p><img src="img/png/schematic_3_effects.png" class="img-fluid" width="750"></p>
+<p>可以看到，超级学习器对真实参数值（由竖虚线标出）的估计比 GLM 更准确。然而它仍不如 TMLE 准确，而且无法作有效推断。相比之下，TMLE 既得到偏倚更小的估计量，又能作有效推断。</p>
+</section>
+<section id="tmle" class="level2">
+<h2 class="anchored" data-anchor-id="tmle">靶向最大似然估计</h2>
+<p>TMLE 以初始估计 <span class="math inline">\(\overline{Q}_n(A,W)\)</span> 以及倾向性评分的估计 <span class="math inline">\(g_n(A \mid W) = \mathbb{P}(A = 1 \mid W)\)</span> 为输入，产生一个针对所关心参数作了”靶向”的更新估计 <span class="math inline">\(\overline{Q}^{\star}_n(A,W)\)</span>。TMLE 保留了代入型估计量的好处（它本身就是一个代入型估计量），同时对原本可能不稳定的估计作了增补以<strong>校正偏倚</strong>，并由此得到一个<strong>渐近线性</strong>（因而服从正态分布）的估计量，从而支持通过渐近相合的 Wald 型置信区间作推断。</p>
+<section id="tmle-updates" class="level3">
+<h3 class="anchored" data-anchor-id="tmle-updates">TMLE 更新</h3>
+<p>TMLE 有不同类型（有时同一组目标参数还有多种 TMLE）——下面给出针对 ATE 的 TML 估计算法示例。<span class="math inline">\(\overline{Q}^{\star}_n(A,W)\)</span> 是 TMLE 增补后的估计：<span class="math inline">\(f(\overline{Q}^{\star}_n(A,W)) = f(\overline{Q}_n(A,W)) + \epsilon \cdot H_n(A,W)\)</span>，其中 <span class="math inline">\(f(\cdot)\)</span> 是合适的连接函数（例如 <span class="math inline">\(\text{logit}(x) = \log(x / (1 - x))\)</span>），而”聪明协变量”（clever covariate）<span class="math inline">\(H_n(A,W)\)</span> 的系数 <span class="math inline">\(\epsilon\)</span> 会被估计为 <span class="math inline">\(\epsilon_n\)</span>。协变量 <span class="math inline">\(H_n(A,W)\)</span> 的形式因目标参数而异；在 ATE 这一情形下，它是 <span class="math inline">\(H_n(A,W) = \frac{A}{g_n(A \mid W)} - \frac{1-A}{1-g_n(A, W)}\)</span>，其中 <span class="math inline">\(g_n(A,W) = \mathbb{P}(A=1 \mid W)\)</span> 是估计的倾向性评分。因此该估计量既依赖于（由 <code>sl3</code> 给出的）结局回归的初始拟合 <span class="math inline">\(\overline{Q}_n\)</span>，也依赖于倾向性评分的初始拟合 <span class="math inline">\(g_n\)</span>。</p>
+<p><code>tlverse</code> 中采用了若干稳健性增补，包括引入额外一层交叉验证以避免过拟合偏倚（即 CV-TMLE），以及更一致地同时估计多个参数的做法（例如生存曲线上的各个点）。</p>
+</section>
+<section id="tmle-infer" class="level3">
+<h3 class="anchored" data-anchor-id="tmle-infer">统计推断</h3>
+<p>由于 TMLE 给出的是<strong>渐近线性</strong>估计量，作统计推断非常方便。每个 TML 估计量都有一个对应的<strong>（有效）影响函数</strong>（常简称 “EIF”），它刻画了该估计量的渐近分布。利用估计出的 EIF，只需把初始估计 <span class="math inline">\(\overline{Q}_n\)</span> 与 <span class="math inline">\(g_n\)</span> 代入 EIF 的表达式，再计算样本标准误，就能构造 Wald 型推断（渐近正确的置信区间）。</p>
+<p>下面几节介绍在 <code>tlverse</code> 中设定与估计 TMLE 的简易做法与更细致的做法。在设计 <code>tmle3</code> 时，我们力求尽可能贴近地复刻 TMLE 这一非常通用的估计框架，因此与 TMLE 相关的每个理论对象，都由一个相应的软件对象／方法来编码。首先我们展示 <code>tmle3</code> 在 WASH Benefits 例子上的简易应用，然后再更详细地描述底层的各个对象。</p>
+</section>
+</section>
+<section id="开箱即用示例用-tmle3-估计-ate" class="level2">
+<h2 class="anchored" data-anchor-id="开箱即用示例用-tmle3-估计-ate">开箱即用示例：用 <code>tmle3</code> 估计 ATE</h2>
+<p>我们用前面介绍过的 WASH Benefits 数据，演示 TMLE 最基本的用法——估计一个平均处理效应。</p>
+<section id="载入数据" class="level3">
+<h3 class="anchored" data-anchor-id="载入数据">载入数据</h3>
+<p>我们使用与前几章相同的 WASH Benefits 数据：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(data.table)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>
+Attaching package: 'dplyr'</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following objects are masked from 'package:data.table':
+
+    between, first, last</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following objects are masked from 'package:stats':
+
+    filter, lag</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following objects are masked from 'package:base':
+
+    intersect, setdiff, setequal, union</code></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tmle3)</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(sl3)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>washb_data <span class="ot">&lt;-</span> <span class="fu">fread</span>(</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">paste0</span>(</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">"https://raw.githubusercontent.com/tlverse/tlverse-data/master/"</span>,</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">"wash-benefits/washb_data.csv"</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>  ),</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">stringsAsFactors =</span> <span class="cn">TRUE</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="定义变量角色" class="level3">
+<h3 class="anchored" data-anchor-id="定义变量角色">定义变量角色</h3>
+<p>我们采用常见的 <span class="math inline">\(W\)</span>（协变量）、<span class="math inline">\(A\)</span>（处理／干预）、<span class="math inline">\(Y\)</span>（结局）数据结构。<code>tmle3</code> 需要知道数据集中哪些变量对应这些角色，我们用一个字符向量的列表来告诉它。我们把它称作”节点列表”（Node List），因为它对应有向无环图（DAG）中的节点——DAG 是一种展示变量间因果关系的方式。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>node_list <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">W =</span> <span class="fu">c</span>(</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">"month"</span>, <span class="st">"aged"</span>, <span class="st">"sex"</span>, <span class="st">"momage"</span>, <span class="st">"momedu"</span>,</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">"momheight"</span>, <span class="st">"hfiacat"</span>, <span class="st">"Nlt18"</span>, <span class="st">"Ncomp"</span>, <span class="st">"watmin"</span>,</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">"elec"</span>, <span class="st">"floor"</span>, <span class="st">"walls"</span>, <span class="st">"roof"</span>, <span class="st">"asset_wardrobe"</span>,</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">"asset_table"</span>, <span class="st">"asset_chair"</span>, <span class="st">"asset_khat"</span>,</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">"asset_chouki"</span>, <span class="st">"asset_tv"</span>, <span class="st">"asset_refrig"</span>,</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    <span class="st">"asset_bike"</span>, <span class="st">"asset_moto"</span>, <span class="st">"asset_sewmach"</span>,</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>    <span class="st">"asset_mobile"</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>  ),</span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">A =</span> <span class="st">"tr"</span>,</span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">Y =</span> <span class="st">"whz"</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="处理缺失" class="level3">
+<h3 class="anchored" data-anchor-id="处理缺失">处理缺失</h3>
+<p>目前 <code>tmle3</code> 对缺失的处理相当简单：</p>
+<ul>
+<li>缺失的协变量按中位数（连续）或众数（离散）插补，并生成额外的协变量来指示是否作过插补，做法与 <a href="../../notes/tlverse/06-sl3.html#sl3"><code>sl3</code> 一章</a>中所述相同。</li>
+<li>缺失的处理变量会被剔除——这类观测被丢弃。</li>
+<li>缺失的结局通过自动计算<strong>删失概率倒数权重</strong>（IPCW）并把它纳入估计量来高效处理；这也被称为 IPCW-TMLE，可以看作一种消除缺失的联合干预，与经典逆概率加权估计量所用的做法类似。</li>
+</ul>
+<p>这些步骤由 <code>tmle3</code> 的 <code>process_missing</code> 函数实现：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>processed <span class="ot">&lt;-</span> <span class="fu">process_missing</span>(washb_data, node_list)</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>washb_data <span class="ot">&lt;-</span> processed<span class="sc">$</span>data</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>node_list <span class="ot">&lt;-</span> processed<span class="sc">$</span>node_list</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="创建-spec-对象" class="level3">
+<h3 class="anchored" data-anchor-id="创建-spec-对象">创建 “Spec” 对象</h3>
+<p><code>tmle3</code> 很通用，允许以模块化方式设定 TMLE 流程中的大多数组件。不过多数用户并不想手工设定所有这些组件。因此，<code>tmle3</code> 实现了 <code>tmle3_Spec</code> 对象，把一组组件打包成一份<strong>规格说明</strong>（“Spec”），只需再补充极少量细节就能跑起来拟合一个 TMLE。</p>
+<p>我们先从使用其中一个 spec 开始，再一步步深入 <code>tmle3</code> 的内部。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>ate_spec <span class="ot">&lt;-</span> <span class="fu">tmle_ATE</span>(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">treatment_level =</span> <span class="st">"Nutrition + WSH"</span>,</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">control_level =</span> <span class="st">"Control"</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="定义学习器" class="level3">
+<h3 class="anchored" data-anchor-id="定义学习器">定义学习器</h3>
+<p>目前，用户还必须定义的另一样东西，就是用来估计似然中相关因子（Q 与 g）的 <code>sl3</code> 学习器。</p>
+<p>它的形式是一个 <code>sl3</code> 学习器列表，每个要用 <code>sl3</code> 估计的似然因子对应一个：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co"># choose base learners</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>lrnr_mean <span class="ot">&lt;-</span> <span class="fu">make_learner</span>(Lrnr_mean)</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>lrnr_rf <span class="ot">&lt;-</span> <span class="fu">make_learner</span>(Lrnr_ranger)</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co"># define metalearners appropriate to data types</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>ls_metalearner <span class="ot">&lt;-</span> <span class="fu">make_learner</span>(Lrnr_nnls)</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>mn_metalearner <span class="ot">&lt;-</span> <span class="fu">make_learner</span>(</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>  Lrnr_solnp, metalearner_linear_multinomial,</span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>  loss_loglik_multinomial</span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>sl_Y <span class="ot">&lt;-</span> Lrnr_sl<span class="sc">$</span><span class="fu">new</span>(</span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">learners =</span> <span class="fu">list</span>(lrnr_mean, lrnr_rf),</span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">metalearner =</span> ls_metalearner</span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>sl_A <span class="ot">&lt;-</span> Lrnr_sl<span class="sc">$</span><span class="fu">new</span>(</span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>  <span class="at">learners =</span> <span class="fu">list</span>(lrnr_mean, lrnr_rf),</span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">metalearner =</span> mn_metalearner</span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a>learner_list <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">A =</span> sl_A, <span class="at">Y =</span> sl_Y)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>这里我们用的是上一章定义的超级学习器。将来我们打算提供合理的默认学习器。</p>
+</section>
+<section id="拟合-tmle" class="level3">
+<h3 class="anchored" data-anchor-id="拟合-tmle">拟合 TMLE</h3>
+<p>现在我们已具备用 <code>tmle3</code> 拟合 TMLE 所需的一切：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>tmle_fit <span class="ot">&lt;-</span> <span class="fu">tmle3</span>(ate_spec, washb_data, node_list, learner_list)</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(tmle_fit)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>A tmle3_Fit that took 1 step(s)
+     type                                    param     init_est   tmle_est
+   &lt;char&gt;                                   &lt;char&gt;        &lt;num&gt;      &lt;num&gt;
+1:    ATE ATE[Y_{A=Nutrition + WSH}-Y_{A=Control}] -0.005938094 0.01321346
+           se       lower     upper psi_transformed lower_transformed
+        &lt;num&gt;       &lt;num&gt;     &lt;num&gt;           &lt;num&gt;             &lt;num&gt;
+1: 0.05034791 -0.08546663 0.1118936      0.01321346       -0.08546663
+   upper_transformed
+               &lt;num&gt;
+1:         0.1118936</code></pre>
+</div>
+</div>
+</section>
+<section id="评估估计结果" class="level3">
+<h3 class="anchored" data-anchor-id="评估估计结果">评估估计结果</h3>
+<p>打印拟合对象就能看到汇总结果。此外，我们也可以通过索引从摘要中提取结果：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>estimates <span class="ot">&lt;-</span> tmle_fit<span class="sc">$</span>summary<span class="sc">$</span>psi_transformed</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(estimates)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 0.01321346</code></pre>
+</div>
+</div>
+</section>
+</section>
+<section id="tmle3-的组件" class="level2">
+<h2 class="anchored" data-anchor-id="tmle3-的组件"><code>tmle3</code> 的组件</h2>
+<p>既然我们已经成功用一个 spec 得到了 TML 估计，那就来看看引擎盖下的各个组件。spec 有若干函数，用来生成定义和拟合一个 TMLE 所必需的对象。</p>
+<section id="tmle3_task" class="level3">
+<h3 class="anchored" data-anchor-id="tmle3_task"><code>tmle3_task</code></h3>
+<p>首先是 <code>tmle3_Task</code>，它类似于 <code>sl3_Task</code>，包含我们要拟合 TMLE 的数据，以及由上面定义的 <code>node_list</code> 生成的 NPSEM——后者描述各变量及其相互关系。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>tmle_task <span class="ot">&lt;-</span> ate_spec<span class="sc">$</span><span class="fu">make_tmle_task</span>(washb_data, node_list)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>tmle_task<span class="sc">$</span>npsem</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>$W
+tmle3_Node: W
+    Variables: month, aged, sex, momedu, hfiacat, Nlt18, Ncomp, watmin, elec, floor, walls, roof, asset_wardrobe, asset_table, asset_chair, asset_khat, asset_chouki, asset_tv, asset_refrig, asset_bike, asset_moto, asset_sewmach, asset_mobile, momage, momheight, delta_momage, delta_momheight
+    Parents: 
+
+$A
+tmle3_Node: A
+    Variables: tr
+    Parents: W
+
+$Y
+tmle3_Node: Y
+    Variables: whz
+    Parents: A, W</code></pre>
+</div>
+</div>
+</section>
+<section id="初始似然" class="level3">
+<h3 class="anchored" data-anchor-id="初始似然">初始似然</h3>
+<p>接下来是一个表示似然的对象，它按上面描述的 NPSEM 作了因子分解：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>initial_likelihood <span class="ot">&lt;-</span> ate_spec<span class="sc">$</span><span class="fu">make_initial_likelihood</span>(</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>  tmle_task,</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>  learner_list</span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(initial_likelihood)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>W: Lf_emp
+A: LF_fit
+Y: LF_fit</code></pre>
+</div>
+</div>
+<p>似然的这些组成部分标明了各因子是如何估计的：<span class="math inline">\(W\)</span> 的边际分布用 NP-MLE 估计，<span class="math inline">\(A\)</span> 与 <span class="math inline">\(Y\)</span> 的条件分布用（由上面 <code>learner_list</code> 定义的）<code>sl3</code> 拟合来估计。</p>
+<p>我们可以把它与 <code>tmle_task</code> 对象配合，取得每个观测的似然估计：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>initial_likelihood<span class="sc">$</span><span class="fu">get_likelihoods</span>(tmle_task)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>                 W         A          Y
+             &lt;num&gt;     &lt;num&gt;      &lt;num&gt;
+   1: 0.0002129925 0.3359464 -0.3359038
+   2: 0.0002129925 0.3629072 -0.8680437
+   3: 0.0002129925 0.3302245 -0.8162639
+   4: 0.0002129925 0.3414138 -0.9019030
+   5: 0.0002129925 0.3314567 -0.5616767
+  ---                                  
+4691: 0.0002129925 0.2347419 -0.5535425
+4692: 0.0002129925 0.2118675 -0.1995304
+4693: 0.0002129925 0.2142428 -0.7893287
+4694: 0.0002129925 0.2590327 -0.9174161
+4695: 0.0002129925 0.1879972 -1.1040952</code></pre>
+</div>
+</div>
+</section>
+<section id="靶向似然更新器" class="level3">
+<h3 class="anchored" data-anchor-id="靶向似然更新器">靶向似然（更新器）</h3>
+<p>我们还需要定义一个”靶向似然”（Targeted Likelihood）对象。这是一类特殊的似然，可以用 <code>tmle3_Update</code> 对象来更新。该对象定义了更新策略（例如子模型、损失函数、是否用 CV-TMLE）。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>targeted_likelihood <span class="ot">&lt;-</span> Targeted_Likelihood<span class="sc">$</span><span class="fu">new</span>(initial_likelihood)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>构造靶向似然时，可以指定不同的更新选项。各选项的细节见 <code>tmle3_Update</code> 的文档。例如，可以像下面这样关闭 CV-TMLE（它是 <code>tmle3</code> 的默认设置）：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>targeted_likelihood_no_cv <span class="ot">&lt;-</span></span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>  Targeted_Likelihood<span class="sc">$</span><span class="fu">new</span>(initial_likelihood,</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">updater =</span> <span class="fu">list</span>(<span class="at">cvtmle =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="参数映射" class="level3">
+<h3 class="anchored" data-anchor-id="参数映射">参数映射</h3>
+<p>最后，我们需要定义所关心的参数。这里 spec 定义了单个参数，即 ATE。下一节我们会看到如何添加更多参数。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>tmle_params <span class="ot">&lt;-</span> ate_spec<span class="sc">$</span><span class="fu">make_params</span>(tmle_task, targeted_likelihood)</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(tmle_params)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[[1]]
+Param_ATE: ATE[Y_{A=Nutrition + WSH}-Y_{A=Control}]</code></pre>
+</div>
+</div>
+</section>
+<section id="把它们拼到一起" class="level3">
+<h3 class="anchored" data-anchor-id="把它们拼到一起">把它们拼到一起</h3>
+<p>用 spec 手工生成了这些组件之后，我们现在可以手工拟合一个 <code>tmle3</code>：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>tmle_fit_manual <span class="ot">&lt;-</span> <span class="fu">fit_tmle3</span>(</span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>  tmle_task, targeted_likelihood, tmle_params,</span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>  targeted_likelihood<span class="sc">$</span>updater</span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(tmle_fit_manual)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>A tmle3_Fit that took 1 step(s)
+     type                                    param     init_est   tmle_est
+   &lt;char&gt;                                   &lt;char&gt;        &lt;num&gt;      &lt;num&gt;
+1:    ATE ATE[Y_{A=Nutrition + WSH}-Y_{A=Control}] -0.008351299 0.02236178
+           se       lower     upper psi_transformed lower_transformed
+        &lt;num&gt;       &lt;num&gt;     &lt;num&gt;           &lt;num&gt;             &lt;num&gt;
+1: 0.05031417 -0.07625219 0.1209757      0.02236178       -0.07625219
+   upper_transformed
+               &lt;num&gt;
+1:         0.1209757</code></pre>
+</div>
+</div>
+<p>结果与上面用 <code>tmle3</code> 函数拟合是等价的。</p>
+</section>
+</section>
+<section id="拟合带多个参数的-tmle3" class="level2">
+<h2 class="anchored" data-anchor-id="拟合带多个参数的-tmle3">拟合带多个参数的 <code>tmle3</code></h2>
+<p>上面我们拟合了只有一个参数的 <code>tmle3</code>。<code>tmle3</code> 也支持同时拟合多个参数。为演示这一点，我们使用 <code>tmle_TSM_all</code> 这个 spec：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>tsm_spec <span class="ot">&lt;-</span> <span class="fu">tmle_TSM_all</span>()</span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>targeted_likelihood <span class="ot">&lt;-</span> Targeted_Likelihood<span class="sc">$</span><span class="fu">new</span>(initial_likelihood)</span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>all_tsm_params <span class="ot">&lt;-</span> tsm_spec<span class="sc">$</span><span class="fu">make_params</span>(tmle_task, targeted_likelihood)</span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(all_tsm_params)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[[1]]
+Param_TSM: E[Y_{A=Control}]
+
+[[2]]
+Param_TSM: E[Y_{A=Handwashing}]
+
+[[3]]
+Param_TSM: E[Y_{A=Nutrition}]
+
+[[4]]
+Param_TSM: E[Y_{A=Nutrition + WSH}]
+
+[[5]]
+Param_TSM: E[Y_{A=Sanitation}]
+
+[[6]]
+Param_TSM: E[Y_{A=WSH}]
+
+[[7]]
+Param_TSM: E[Y_{A=Water}]</code></pre>
+</div>
+</div>
+<p>这个 spec 为暴露变量的每个水平生成一个处理特异均值（Treatment Specific Mean, TSM）。注意，我们必须先生成一个新的靶向似然，因为旧的那个已经针对 ATE 作过靶向。不过，我们可以复用上面拟合好的初始似然，从而省去一次超级学习器步骤。</p>
+<section id="delta-方法" class="level3">
+<h3 class="anchored" data-anchor-id="delta-方法">Delta 方法</h3>
+<p>我们还可以基于其他参数的 Delta 方法变换来定义参数。例如，我们可以用 delta 方法和上面两个 TSM 参数来估计 ATE：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>ate_param <span class="ot">&lt;-</span> <span class="fu">define_param</span>(</span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>  Param_delta, targeted_likelihood,</span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>  delta_param_ATE,</span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(all_tsm_params[[<span class="dv">1</span>]], all_tsm_params[[<span class="dv">4</span>]])</span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(ate_param)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Param_delta: E[Y_{A=Nutrition + WSH}] - E[Y_{A=Control}]</code></pre>
+</div>
+</div>
+<p>同样的做法可用于估计相对危险度、人群归因危险度等其他派生参数。</p>
+</section>
+<section id="拟合" class="level3">
+<h3 class="anchored" data-anchor-id="拟合">拟合</h3>
+<p>现在我们可以同时为所有 TSM 参数以及上面定义的 ATE 参数拟合 TMLE：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>all_params <span class="ot">&lt;-</span> <span class="fu">c</span>(all_tsm_params, ate_param)</span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>tmle_fit_multiparam <span class="ot">&lt;-</span> <span class="fu">fit_tmle3</span>(</span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>  tmle_task, targeted_likelihood, all_params,</span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a>  targeted_likelihood<span class="sc">$</span>updater</span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(tmle_fit_multiparam)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>A tmle3_Fit that took 1 step(s)
+     type                                       param     init_est    tmle_est
+   &lt;char&gt;                                      &lt;char&gt;        &lt;num&gt;       &lt;num&gt;
+1:    TSM                            E[Y_{A=Control}] -0.593985832 -0.62585978
+2:    TSM                        E[Y_{A=Handwashing}] -0.615742565 -0.65588346
+3:    TSM                          E[Y_{A=Nutrition}] -0.609011426 -0.61206960
+4:    TSM                    E[Y_{A=Nutrition + WSH}] -0.602337130 -0.60374453
+5:    TSM                         E[Y_{A=Sanitation}] -0.585263151 -0.58342047
+6:    TSM                                E[Y_{A=WSH}] -0.518311115 -0.45666522
+7:    TSM                              E[Y_{A=Water}] -0.565650729 -0.53396333
+8:    ATE E[Y_{A=Nutrition + WSH}] - E[Y_{A=Control}] -0.008351299  0.02211525
+           se       lower      upper psi_transformed lower_transformed
+        &lt;num&gt;       &lt;num&gt;      &lt;num&gt;           &lt;num&gt;             &lt;num&gt;
+1: 0.02986817 -0.68440032 -0.5673192     -0.62585978       -0.68440032
+2: 0.04158268 -0.73738401 -0.5743829     -0.65588346       -0.73738401
+3: 0.04202370 -0.69443455 -0.5297047     -0.61206960       -0.69443455
+4: 0.04071068 -0.68353599 -0.5239531     -0.60374453       -0.68353599
+5: 0.04194720 -0.66563547 -0.5012055     -0.58342047       -0.66563547
+6: 0.04508391 -0.54502807 -0.3683024     -0.45666522       -0.54502807
+7: 0.03902808 -0.61045697 -0.4574697     -0.53396333       -0.61045697
+8: 0.05031418 -0.07649873  0.1207292      0.02211525       -0.07649873
+   upper_transformed
+               &lt;num&gt;
+1:        -0.5673192
+2:        -0.5743829
+3:        -0.5297047
+4:        -0.5239531
+5:        -0.5012055
+6:        -0.3683024
+7:        -0.4574697
+8:         0.1207292</code></pre>
+</div>
+</div>
+</section>
+</section>
+<section id="习题" class="level2">
+<h2 class="anchored" data-anchor-id="习题">习题</h2>
+<section id="tmle3-ex1" class="level3">
+<h3 class="anchored" data-anchor-id="tmle3-ex1">用 <code>tmle3</code> 估计 ATE</h3>
+<p>按下面的步骤，用来自协作围产期项目（Collaborative Perinatal Project, CPP）的数据估计一个平均处理效应；该数据可从 <code>sl3</code> 包中取得。为简化这个例子，我们定义一个二值干预变量 <code>parity01</code>——表示在当前这个孩子之前是否已有一个或多个孩子；以及一个二值结局 <code>haz01</code>——表示身高别年龄是否高于平均水平。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="co"># load the data set</span></span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a><span class="fu">data</span>(cpp)</span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>cpp <span class="ot">&lt;-</span> cpp <span class="sc">%&gt;%</span></span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">as_tibble</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(haz)) <span class="sc">%&gt;%</span></span>
+<span id="cb34-6"><a href="#cb34-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb34-7"><a href="#cb34-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">parity01 =</span> <span class="fu">as.numeric</span>(parity <span class="sc">&gt;</span> <span class="dv">0</span>),</span>
+<span id="cb34-8"><a href="#cb34-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">haz01 =</span> <span class="fu">as.numeric</span>(haz <span class="sc">&gt;</span> <span class="dv">0</span>)</span>
+<span id="cb34-9"><a href="#cb34-9" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<ol type="1">
+<li>通过创建一个节点列表来定义变量角色 <span class="math inline">\((W,A,Y)\)</span>。在 <span class="math inline">\(W\)</span> 中纳入以下基线协变量：<code>apgar1</code>、<code>apgar5</code>、<code>gagebrth</code>、<code>mage</code>、<code>meducyrs</code>、<code>sexn</code>。<span class="math inline">\(A\)</span> 与 <span class="math inline">\(Y\)</span> 已在上面给出。数据中的缺失（具体是节点列表中所指定那些列的缺失）需要处理；可以像上面 <code>washb_data</code> 的例子那样，用 <code>process_missing</code> 函数来完成。</li>
+<li>为 ATE 定义一个 <code>tmle3_Spec</code> 对象，即 <code>tmle_ATE()</code>。</li>
+<li>使用上面定义的同一批基学习库，为估计 <span class="math inline">\(\overline{Q}_0 = \mathbb{E}_0(Y \mid A, W)\)</span> 与 <span class="math inline">\(g_0 = \mathbb{P}(A = 1 \mid W)\)</span> 指定 <code>sl3</code> 基学习器。</li>
+<li>像下面这样定义元学习器。</li>
+</ol>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a>metalearner <span class="ot">&lt;-</span> <span class="fu">make_learner</span>(</span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>  Lrnr_solnp,</span>
+<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">loss_function =</span> loss_loglik_binomial,</span>
+<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">learner_function =</span> metalearner_logistic_binomial</span>
+<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<ol start="5" type="1">
+<li>分别定义一个用于估计 <span class="math inline">\(\overline{Q}_0\)</span> 的超级学习器和一个用于估计 <span class="math inline">\(g_0\)</span> 的超级学习器。两者都使用上面的元学习器。</li>
+<li>把上一步定义的两个超级学习器放进一个列表，命名为 <code>learner_list</code>。列表的名字应当是 <code>A</code>（定义估计 <span class="math inline">\(g_0\)</span> 的超级学习器）和 <code>Y</code>（定义估计 <span class="math inline">\(\overline{Q}_0\)</span> 的超级学习器）。</li>
+<li>用 <code>tmle3</code> 函数拟合 TMLE，需要指定：(1) 第 2 步定义的 <code>tmle3_Spec</code>；(2) 数据；(3) 第 1 步指定的节点列表；以及 (4) 第 6 步定义的、用于估计 <span class="math inline">\(g_0\)</span> 与 <span class="math inline">\(\overline{Q}_0\)</span> 的超级学习器列表。<em>注意</em>：和之前一样，你需要显式地复制一份数据（以规避 <code>data.table</code> 的优化），例如 <code>cpp2 &lt;- data.table::copy(cpp)</code>，之后都使用 <code>cpp2</code> 这份数据。</li>
+</ol>
+</section>
+</section>
+<section id="小结" class="level2">
+<h2 class="anchored" data-anchor-id="小结">小结</h2>
+<p><code>tmle3</code> 是一个用于生成 TML 估计的通用框架。使用它最简单的方式，是用一个预定义的 spec，这样你只需填上数据、变量角色和 <code>sl3</code> 学习器这几个空。不过，深入引擎盖之下，用户可以设定范围广泛的各种 TMLE。在接下来的几节中，我们会看到这一框架如何被用来估计最优处理、随机移位干预等进阶参数。</p>
+
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "已复制");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "已复制");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/hui950319\.github\.io\/causalR\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../notes/tlverse/06-sl3.html" class="pagination-link" aria-label="6. 超级学习">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">6. 超级学习</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/tlverse/07-tmle3.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></div></div></footer></body></html>
