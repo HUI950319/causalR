@@ -1,0 +1,931 @@
+---
+title: "假设检验"
+subtitle: "*Hypothesis Tests* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Hypothesis Tests*](https://marginaleffects.com/bonus/hypothesis.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/hypothesis.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+> 原文中指向原书章节的交叉引用已改写为指向 marginaleffects.com 的链接（那些章节不在本次翻译范围内）。
+
+
+本教程是假设检验核心章节的补充：[原书《假设检验》一章](https://marginaleffects.com/chapters/hypothesis.html)。它给出了更多进阶示例。
+
+```{r, include = FALSE}
+options(width = 1000)
+## this vignette is in .Rbuildignore because lme4 is not available on old CRAN
+## test machines.
+
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  fig.width = 9,
+  fig.asp = .4,
+  out.width = "100%",
+  warning = FALSE,
+  message = FALSE,
+  comment = "#>"
+)
+options(marginaleffects_print_style = "tinytable")
+options("tinytable_theme_placement_latex_float" = "H")
+```
+```{css, echo=FALSE}
+.table {
+  font-size: .8em;
+}
+.table td, .table th {
+  white-space: nowrap;
+}
+```
+
+
+`marginaleffects` 包可以对任何受支持模型类别的系数进行线性或非线性假设检验，也可以对该包其他函数生成的量进行假设检验，例如 `predictions()`、`comparisons()` 或 `slopes()`。
+
+假设检验有两个主要入口：
+
+1. `marginaleffects` 函数：使用 `hypothesis` 参数。
+2. 其他 `R` 对象和模型：使用 `hypotheses()` 函数。
+
+`hypothesis` 参数和 `hypotheses()` 函数都接受多种输入类型，这让假设检验的设定非常灵活：
+
+1. 数值：原假设的取值。
+2. 公式：（非）线性假设检验的方程。
+3. 函数：对任意变换或聚合结果进行检验。
+4. 矩阵：对比矩阵和向量。
+
+本教程将展示如何用这几种策略，对模型系数或 `marginaleffects` 包估计的量进行假设检验。读完之后，你将能够自定义假设检验和对比，来评估如下陈述：
+
+* 系数 $\beta_1$ 和 $\beta_2$ 相等。
+* $Y$ 关于 $X_1$ 的斜率，等于关于 $X_2$ 的斜率。
+* 当 $W=0$ 时 $X$ 的平均处理效应，等于当 $W=1$ 时 $X$ 的平均处理效应。
+* 预测值的一个非线性函数等于 100。
+* 对照组的边际均值，等于其他 3 个处理组边际均值的平均值。
+* 跨层级对比：在多项模型中，$X$ 对第 1 个结局水平的效应，等于 $X$ 对第 2 个结局水平的效应。
+
+## 数值（原假设）
+
+修改假设检验最简单的方式是改变原假设。默认情况下，`marginaleffects` 包中的所有函数都假设原假设为 0。可以通过 `hypothesis` 参数来修改这一点。
+
+### 系数
+
+考虑一个简单的逻辑回归模型：
+
+```{r}
+library(marginaleffects)
+mod <- glm(am ~ hp + drat, data = mtcars, family = binomial)
+```
+
+默认情况下，`summary()` 函数会报告原假设设为 0 时的假设检验结果：
+
+```{r}
+summary(mod)
+```
+
+使用 `hypotheses()`，我们可以轻松改变原假设：
+
+```{r}
+hypotheses(mod, hypothesis = 6)
+```
+
+### 预测值
+
+在预测值的语境下，改变原假设的取值尤其重要，因为 0 这个基准值未必有意义。例如，这里我们为一个假想单位计算结局的预测值，该单位的所有自变量都固定为其样本均值：
+
+```{r}
+predictions(mod, newdata = "mean", type = "response")
+```
+
+上面报告的 Z 统计量和 p 值都假设原假设等于零。我们可以用 `hypothesis` 参数改变原假设：
+
+
+```{r}
+predictions(mod, newdata = "mean", hypothesis = .5, type = "response")
+```
+
+在上面的例子中，`mod` 是一个逻辑回归模型，我们显式指定了 `type="response"`。如果不这样做，默认的 `type` 会是 `invlink(link)`，也就是说预测会先在链接尺度上进行，再转换回响应尺度。在这种情况下，`hypothesis` 应该在链接尺度上定义。
+
+请注意，下面这些命令报告的 p 值和上面的不同，但彼此相等。
+
+```{r}
+predictions(mod, newdata = "mean", hypothesis = 0, type = "invlink(link)")
+predictions(mod, newdata = "mean", hypothesis = 0, type = "link")
+```
+
+### 比较和斜率
+
+在计算风险比等不同的关注量时，把原假设设为 1 而不是 0 可能更合理：
+
+```{r}
+avg_comparisons(
+    mod,
+    variables = "hp",
+    comparison = "ratio",
+    hypothesis = 1) |>
+    print(digits = 5)
+```
+
+
+## 方程
+
+`hypotheses()` 函数模拟了成熟的 `car::deltaMethod` 和 `car::linearHypothesis` 函数所采用的基于方程的语法。不过，`marginaleffects` 支持更多模型、依赖更少，还提供了一些便利功能，例如用于计算稳健标准误的 `vcov` 参数。
+
+本节展示的语法形式是一个字符串方程，例如：`"am = 2 * vs"`
+
+
+### 系数
+
+我们先估计一个简单的模型：
+
+```{r}
+library(marginaleffects)
+mod <- lm(mpg ~ hp + wt + factor(cyl), data = mtcars)
+```
+
+当 `hypotheses()` 的 `FUN` 和 `hypothesis` 参数都等于 `NULL`（默认值）时，该函数会返回一个包含原始估计值的 data.frame：
+
+```{r}
+hypotheses(mod)
+```
+
+检验系数之间是否相等：
+
+```{r}
+hypotheses(mod, "hp = wt")
+```
+
+系数的非线性函数
+
+```{r}
+hypotheses(mod, "exp(hp + wt) = 0.1")
+```
+
+`vcov` 参数的行为方式与其他所有 `marginaleffects` 函数中的一致，让我们可以轻松计算稳健标准误：
+
+```{r}
+hypotheses(mod, "hp = wt", vcov = "HC3")
+```
+
+我们可以用 `b1`、`b2`、`...` 这样的简写来标识每个参数在 `FUN` 输出中的位置。例如，`b2=b3` 等价于 `hp=wt`，因为调用 `hypotheses(mod)` 时，这两个项名分别出现在第 2 行和第 3 行。
+
+```{r}
+hypotheses(mod, "b2 = b3")
+```
+
+```{r}
+hypotheses(mod, hypothesis = "b* / b3 = 1")
+```
+
+含特殊字符的项名必须用反引号括起来：
+
+```{r}
+hypotheses(mod, "`factor(cyl)6` = `factor(cyl)8`")
+```
+
+### 预测值
+
+现在考虑调整后预测值的情形：
+
+```{r}
+mod <- lm(mpg ~ am + vs, data = mtcars)
+
+p <- predictions(
+    mod,
+    newdata = datagrid(am = 0:1, vs = 0:1))
+p
+```
+
+由于 `predictions` 函数的输出中没有 `term` 列，我们必须用 `b1`、`b2` 等参数标识符来确定要比较哪些估计值：
+
+```{r}
+hypotheses(p, hypothesis = "b1 = b2")
+```
+
+或者直接这样：
+
+```{r}
+predictions(
+    mod,
+    hypothesis = "b1 = b2",
+    newdata = datagrid(am = 0:1, vs = 0:1))
+
+p$estimate[1] - p$estimate[2]
+```
+还有*很多*其他可能性：
+
+```{r}
+predictions(
+    mod,
+    hypothesis = "b1 + b2 = 30",
+    newdata = datagrid(am = 0:1, vs = 0:1))
+
+p$estimate[1] + p$estimate[2] - 30
+
+predictions(
+    mod,
+    hypothesis = "(b2 - b1) / (b3 - b2) = 0",
+    newdata = datagrid(am = 0:1, vs = 0:1))
+```
+
+### 比较和斜率
+
+`avg_comparisons()` 函数可以帮我们回答这样的问题：平均而言，当某个自变量改变一定量时，期望结局会如何变化？来看这个例子：
+
+```{r}
+mod <- lm(mpg ~ am + vs, data = mtcars)
+
+cmp <- avg_comparisons(mod)
+cmp
+```
+
+这告诉我们，平均而言，`am` 从 0 变为 1 会使预测结局变化约 `r round(cmp$estimate[1], 1)`，而 `vs` 从 0 变为 1 会使预测结局变化约 `r round(cmp$estimate[2], 1)`。
+
+这两个估计值之间的差异在统计上显著吗？换句话说，`am` 的效应是否等于 `vs` 的效应？为了回答这个问题，我们使用 `hypothesis` 参数：
+
+```{r}
+avg_comparisons(mod, hypothesis = "am = vs")
+```
+
+`hypothesis` 字符串可以包含任何合法的 `R` 表达式，所以我们可以做一些无厘头的非线性检验：
+
+```{r}
+avg_comparisons(mod, hypothesis = "exp(am) - 2 * vs = -400")
+```
+
+请注意，p 值和置信区间是用 Delta 方法计算的，因此基于这样一个假设：`hypotheses` 表达式近似服从正态分布。对于（非常）非线性的参数函数，这个假设并不现实，我们会得到错误率不对的 p 值，以及覆盖概率不对的置信区间。对于这类假设检验，最好用自助法来计算置信区间（详见 [`inferences`](https://marginaleffects.com/man/r/inferences.html)）：
+
+Delta 方法给出的置信区间是对称的，等于估计值 ± 1.96 倍标准误；而自助法给出的置信区间（或许）更可靠，但高度偏斜。
+
+```{r}
+#| cache: true
+set.seed(1234)
+
+avg_comparisons(mod, hypothesis = "exp(am) - 2 * vs = -400") |>
+  inferences(method = "boot")
+```
+
+同样的方法也可以用来比较斜率：
+
+```{r}
+mod <- lm(mpg ~ qsec * hp, data = mtcars)
+
+avg_slopes(mod, hypothesis = "10 * hp - qsec = 0")
+```
+
+
+## 公式
+
+从 `marginaleffects` 0.20.1.5 版本开始，`hypothesis` 参数也接受公式，用来指定针对输出中每一行或每个子集进行检验的假设。来看这组平均预测值：
+
+```{r}
+dat <- within(mtcars, {
+    gear = factor(gear)
+    cyl = factor(cyl)
+})
+dat <- sort_by(dat, ~ gear + cyl + am)
+mod <- lm(mpg ~ am * wt * factor(cyl), data = dat)
+
+avg_predictions(mod, by = "gear")
+```
+
+我们可以进行「sequential」「reference」或「meandev」比较，可以是差值（默认）也可以是比值：
+
+```{r}
+avg_predictions(mod, 
+    hypothesis = ~ sequential,
+    by = "gear")
+
+avg_predictions(mod, 
+    hypothesis = ~ meandev,
+    by = "gear")
+
+avg_predictions(mod, 
+    hypothesis = ratio ~ sequential,
+    by = "gear")
+```
+
+
+我们也可以按子组检验假设。例如，在这个例子中，我们想在 `am` 的每个子集中，把每个估计值与参照类别（第一个估计值）进行比较：
+
+```{r}
+avg_predictions(mod, 
+    by = c("am", "gear")
+)
+
+avg_predictions(mod, 
+    hypothesis = ~ sequential | am,
+    by = c("am", "gear")
+)
+```
+
+公式中的分组部分，在对对比进行检验时特别有用：
+
+```{r}
+avg_comparisons(mod, 
+    variables = "cyl",
+    by = "am")
+
+avg_comparisons(mod, 
+    variables = "cyl",
+    by = "am", 
+    hypothesis = ~ sequential | contrast)
+
+avg_comparisons(mod, 
+    variables = "cyl",
+    by = "am", 
+    hypothesis = ~ sequential | am)
+```
+
+
+我们也可以在公式右侧使用 `I()` 传入自定义表达式，对估计值向量进行处理。例如，如果我们想要 `cyl = c(6, 8)` 的平均斜率，可以把它写成 `mean(x[2:3])`（`x` 代表估计值向量）：
+
+```{r}
+avg_slopes(mod,
+    variables = "wt",
+    by = "cyl",
+    hypothesis = ~ I(mean(x[2:3])))
+```
+
+（注意我们对 `dat` 排过序，所以我们*知道* `cyl` 的每个水平分别对应哪个估计值）：
+
+这些表达式可以返回多个带名称的估计值。通常更方便的做法是把它们封装成一个函数，再在 `I()` 表达式中调用。例如，我们可以把 `cyl = 8` 时 `wt` 的估计效应，与 `cyl = c(4, 6)` 时的平均估计效应进行比较。我们希望同时得到差值和比值。
+
+```{r}
+less_vs_8 <- function(x) {
+  c("{8} - {4, 6}" = x[3] - mean(x[1:2]),
+    "{8} / {4, 6}" = x[3] / mean(x[1:2]))
+}
+
+avg_slopes(mod,
+    variables = "wt",
+    by = "cyl",
+    hypothesis = ~ I(less_vs_8(x)))
+```
+
+这里我们把这些表达式和分组部分结合起来：
+
+```{r}
+avg_slopes(mod,
+    variables = "wt",
+    by = c("cyl", "am"),
+    hypothesis = ~ I(less_vs_8(x)) | am)
+```
+
+在分类结局模型中，这也是比较不同结局水平估计值的有力工具：
+
+```{r}
+library("MASS")
+
+mod <- polr(gear ~ cyl + hp, dat)
+
+avg_comparisons(mod, variables = "cyl")
+```
+
+在每个结局水平内，「8 对 4」的对比是否等于「6 对 4」的对比？
+
+```{r}
+avg_comparisons(mod, 
+    variables = "cyl",
+    hypothesis = ~ sequential | group)
+```
+
+结局水平 3 的「8 对 4」对比，是否等于结局水平 4 的「8 对 4」对比？
+
+```{r}
+avg_comparisons(mod, 
+    variables = "cyl",
+    hypothesis = ~ sequential | contrast)
+```
+
+这里我们同样可以在 `I()` 表达式中使用自定义函数。例如，把估计值当作每个水平的相对「权重」，我们可以据此条件性地估计平均秩：
+
+```{r}
+mean_rank <- function(x) {
+  weighted.mean(c(3, 4, 5), w = x)
+}
+ranks <- avg_predictions(mod,
+           variables = "cyl",
+           hypothesis = ~ I(mean_rank(x)) | cyl)
+ranks
+```
+
+之后还可以用 `hypotheses()` 函数对这些结果做进一步比较：
+
+```{r}
+hypotheses(ranks, ratio ~ pairwise)
+```
+
+
+## 函数
+
+假设检验也可以使用任意的 `R` 函数来进行。这让用户可以对复杂的聚合或变换结果做假设检验。为此，我们定义一个自定义函数，它接受一个拟合模型或 `marginaleffects` 对象，并返回一个至少包含两列的数据框：`term`（或 `hypothesis`）和 `estimate`。
+
+
+### 预测值
+
+当给 `hypothesis` 参数传入一个函数时，该函数必须接受一个参数 `x`，它是一个包含 `rowid` 和 `estimate` 列的数据框（还可以有 `newdata` 中其他元素对应的可选列）。该函数必须返回一个包含 `term`（或 `hypothesis`）和 `estimate` 列的数据框。
+
+在这个例子中，我们检验平均预测值是否与 2 不同：
+
+
+```{r}
+dat <- transform(mtcars, gear = factor(gear), cyl = factor(cyl))
+
+mod <- lm(wt ~ mpg * hp * cyl, data = dat)
+
+hyp <- function(x) {
+    data.frame(
+        hypothesis = "Avg(Ŷ) = 2",
+        estimate = mean(x$estimate) - 2
+    )
+}
+predictions(mod, hypothesis = hyp)
+```
+
+在这个有序 logit 模型中，`predictions()` 函数为每个观测值的每个结局水平各返回一行：
+
+```{r}
+#| messages: false
+library(MASS)
+library(dplyr)
+
+mod <- polr(gear ~ cyl + hp, dat)
+
+avg_predictions(mod)
+```
+
+我们可以在 `hypothesis` 参数中使用一个函数来合并这些行，展示分组 3-4 与 5 的平均预测值：
+
+```{r}
+fun <- function(x) {
+    out <- x |> 
+        mutate(term = ifelse(group %in% 3:4, "3 & 4", "5")) |>
+        summarize(estimate = mean(estimate), .by = term)
+    return(out)
+}
+avg_predictions(mod, hypothesis = fun)
+```
+
+我们还可以这样比较这两个类别：
+
+```{r}
+fun <- function(x) {
+    out <- x |> 
+        mutate(term = ifelse(group %in% 3:4, "3 & 4", "5")) |>
+        summarize(estimate = mean(estimate), .by = term) |>
+        summarize(estimate = diff(estimate), term = "5 - (3 & 4)")
+    return(out)
+}
+avg_predictions(mod, hypothesis = fun)
+```
+
+
+### 比较与斜率
+
+在同一个有序 logit 模型中，我们可以估计 `hp` 增加 1 个单位对结局每个水平的预期概率产生的平均效应：
+
+```{r}
+avg_comparisons(mod, variables = "hp")
+```
+
+比较不同结局水平的估计值：
+
+```{r}
+fun <- function(x) {
+    x |> 
+    mutate(estimate = (estimate - lag(estimate)),
+           group = sprintf("%s - %s", group, lag(group))) |>
+    filter(!is.na(estimate))
+}
+avg_comparisons(mod, variables = "hp", hypothesis = fun)
+```
+
+现在假设我们想比较 `hp` 的效应在结局的不同水平之间有何差异，但这一次我们要*在 `cyl` 的各水平内*进行计算：
+
+```{r}
+avg_comparisons(mod, variables = "hp", by = "cyl")
+```
+
+```{r}
+fun <- function(x) {
+    x |> 
+    mutate(estimate = (estimate - lag(estimate)),
+           group = sprintf("%s - %s", group, lag(group)), 
+           .by = "cyl") |>
+    filter(!is.na(estimate))
+}
+avg_comparisons(mod, variables = "hp", by = "cyl", hypothesis = fun)
+```
+
+````{comment}
+### `specify_hypothesis()`
+
+Supplying a function to the `hypothesis` argument is a powerful strategy, but it can sometimes be a bit tedious, because there is a lot of "boilerplate" code to write. `specify_hypothesis()` is an experimental function which handles a lot of the annoying work automatically for us: label creation, group-wise estimates, etc.
+
+To begin, we estimate a simple model and make predictions on a grid wih 6 rows:
+
+```{r}
+dat <- transform(mtcars, gear = factor(gear))
+mod <- lm(hp ~ mpg * am * factor(cyl), data = dat)
+
+nd <- datagrid(am = 0:1, cyl = sort(unique(dat$cyl)), model = mod)
+
+predictions(mod, newdata = nd)
+```
+
+By default, `specify_hypothesis()` computes a `reference` hypothesis, that is, the difference between each row and the first row in the output (`rowid[1]`):
+
+```{r}
+hyp <- specify_hypothesis()
+predictions(mod, newdata = nd, hypothesis = hyp)
+```
+
+Alternatively, we can specify a `"sequential"` hypothesis to compare each row to its previous one:
+
+
+```{r}
+hyp <- specify_hypothesis(hypothesis = ~sequential)
+predictions(mod, newdata = nd, hypothesis = hyp)
+```
+
+A more powerful customization option is to supply one's own comparison function, along with a function to create labels. Compare each row to the global mean:
+
+```{r}
+hyp <- specify_hypothesis(
+    hypothesis = \(x) x - mean(x),
+    label = \(x) sprintf("%s - ȳ", x),
+    label_columns = "rowid"
+)
+predictions(mod, newdata = nd, hypothesis = hyp)
+```
+
+The ratio of each row to the first:
+
+```{r}
+hyp <- specify_hypothesis(
+    hypothesis =  \(x) x / x[1],
+    label = \(x) sprintf("(%s) / (%s)", x, x[1])
+)
+predictions(mod, newdata = nd, hypothesis = hyp)
+```
+
+We can use the `by` argument to specify subgroups in which to apply the function. For example, we may want to compute the ratio of each row to the reference (first) row of each subgroup of `am`. Notice that the denomiator `rowid` changes depending on the `am` subgroup:
+
+```{r}
+hyp <- specify_hypothesis(
+    by = "am",
+    hypothesis =  \(x) x / x[1],
+    label = \(x) sprintf("(%s) / (%s)", x, x[1])
+)
+predictions(mod, newdata = nd, hypothesis = hyp)
+```
+
+####  `term`, `contrast`, and `group`
+
+By default, `specify_hypothesis()` will always apply comparison functions within subgroups of the `term`, `contrast`, and `group` columns. For example:
+
+```{r}
+library(MASS)
+dat <- transform(mtcars, gear = factor(gear), cyl = factor(cyl))
+mod <- polr(gear ~ cyl + hp, dat, Hess = TRUE)
+
+avg_predictions(mod, by = "am")
+
+hyp <- specify_hypothesis()
+avg_predictions(mod, by = "am", hypothesis = hyp)
+```
+
+To avoid applying the function within `group` and compare group levels to one another, we can specify `by="rowid"`:
+
+```{r}
+avg_predictions(mod)
+
+hyp <- specify_hypothesis(
+    by = "rowid",
+    hypothesis = ~sequential,
+    label_columns = "group"
+)
+avg_predictions(mod, hypothesis = hyp)
+```
+
+````
+
+
+### 拟合模型
+
+`hypothesis` 参数可以用来计算模型参数的任意函数的标准误。用户提供的这个函数必须接受一个模型对象作为输入，并返回一个包含 `term` 和 `estimate` 两列的 data.frame。
+
+这里，我们检验 `hp` 和 `mpg` 系数之和是否等于 2：
+
+```{r}
+mod <- glm(am ~ hp + mpg, data = mtcars, family = binomial)
+
+fun <- function(x) {
+    b <- coef(x)
+    out <- data.frame(
+        term = "hp + mpg = 2",
+        estimate = b["hp"] + b["mpg"] - 2,
+        row.names = NULL
+    )
+    return(out)
+}
+
+hypotheses(mod, hypothesis = fun)
+```
+
+检验两个预测值之间是否相等：
+
+```{r}
+fun <- function(x) {
+    p <- predict(x, newdata = mtcars)
+    out <- data.frame(term = "pred[2] = pred[3]", estimate = p[2] - p[3])
+    return(out)
+}
+hypotheses(mod, hypothesis = fun)
+```
+
+我们还可以使用更复杂的聚合方式。在这个有序逻辑回归模型中，我们对每辆车的挡位数建模。如果用 `predictions()` 函数计算拟合值，就会为每辆车在响应变量的每个水平上各得到一个预测概率：
+
+```{r}
+#| messages: false
+library(MASS)
+library(dplyr)
+
+dat <- transform(mtcars, 
+    gear = factor(gear),
+    cyl = factor(cyl))
+mod <- polr(gear ~ cyl + hp, dat)
+
+predictions(mod)
+```
+
+结局共有三个水平：3、4 和 5。设想对数据集中的每辆车，我们想通过对预测概率求和，把结局的类别合并为两类（“3 & 4”和“5”）。然后，我们想对 `cyl` 的每个水平求这些预测概率的平均值。为此，我们定义一个自定义函数，并把它传给 `hypotheses()` 函数的 `hypothesis` 参数：
+
+```{r}
+fun <- function(x) {
+    predictions(x, vcov = FALSE) |>
+        # label the new categories of outcome levels
+        mutate(group = ifelse(group %in% c("3", "4"), "3 & 4", "5")) |>
+        # sum of probabilities at the individual level
+        summarize(estimate = sum(estimate), .by = c("rowid", "cyl", "group")) |>
+        # average probabilities for each value of `cyl`
+        summarize(estimate = mean(estimate), .by = c("cyl", "group")) |>
+        # the `FUN` argument requires a `term` column
+        rename(term = cyl)
+}
+
+hypotheses(mod, hypothesis = fun)
+```
+
+注意，这种做法对贝叶斯模型或自助法都不适用。不过，对于这些模型，只需调用 `get_draws()`，直接对后验分布的抽样进行操作，就能轻松完成同样的聚合。关于 `get_draws()` 函数的用法，请参阅贝叶斯分析教程中的示例。
+
+
+
+## 向量与矩阵
+
+`predictions()` 函数可以估计边际均值。该函数的 `hypothesis` 参数提供了一种强大的机制，可以通过线性组合的方式估计边际均值之间的自定义对比。
+
+### 简单对比
+
+考虑一个简单的例子：
+
+```{r}
+library(marginaleffects)
+library(emmeans)
+library(nnet)
+
+dat <- mtcars
+dat$carb <- factor(dat$carb)
+dat$cyl <- factor(dat$cyl)
+dat$am <- as.logical(dat$am)
+dat <- sort_by(dat, ~carb)
+
+mod <- lm(mpg ~ carb + cyl, dat)
+
+mm <- predictions(mod,
+    by = "carb",
+    newdata = "balanced")
+mm
+```
+
+`carb==1` 和 `carb==2` 的边际均值之间的对比是：
+
+```{r}
+21.66232 - 21.34058 
+```
+
+或者
+
+```{r}
+21.66232 + -(21.34058)
+```
+
+或者
+
+```{r}
+sum(c(21.66232, 21.34058) * c(1, -1))
+```
+
+或者 
+
+```{r}
+c(21.66232, 21.34058) %*% c(1, -1)
+```
+
+最后两条命令把我们关心的对比表示成边际均值的[线性组合](https://en.wikipedia.org/wiki/Linear_combination)。
+
+
+在 `predictions()` 函数中，我们可以提供一个 `hypothesis` 参数来计算边际均值的线性组合。这个参数必须是一个数值向量，长度与输出结果的行数相同。例如，前面的输出有六行，我们想比较的两个边际均值分别位于前两个位置：
+
+```{r}
+lc <- c(1, -1, 0, 0, 0, 0)
+predictions(mod,
+    by = "carb",
+    newdata = "balanced",
+    hypothesis = lc)
+```
+
+### 复杂对比
+
+当然，我们也可以估计更复杂的对比：
+
+```{r}
+lc <- c(0, -2, 1, 1, -1, 1)
+predictions(mod,
+    by = "carb",
+    newdata = "balanced",
+    hypothesis = lc)
+```
+
+`emmeans` 也能得到类似的结果：
+
+```{r}
+library(emmeans)
+em <- emmeans(mod, "carb")
+lc <- data.frame(custom_contrast = c(0, -2, 1, 1, -1, 1))
+contrast(em, method = lc)
+```
+
+### 多重对比
+
+用户还可以给 `hypotheses` 提供一个数值矩阵，同时计算多个线性组合。这个矩阵的行数必须与 `predictions()` 的输出行数相同，矩阵的每一列代表一组不同线性组合的权重。矩阵的列名会成为输出结果中的标签。例如：
+
+```{r}
+lc <- matrix(c(
+    -2, 1, 1, 0, -1, 1,
+    1, -1, 0, 0, 0, 0
+    ), ncol = 2)
+colnames(lc) <- c("Contrast A", "Contrast B")
+lc
+
+predictions(mod,
+    by = "carb",
+    newdata = "balanced",
+    hypothesis = lc)
+```
+
+
+## 任意量
+
+只要用户能提供一个方差-协方差矩阵，`marginaleffects` 也可以为数据框中的任意量计算不确定性估计。（感谢 Kyle F Butts 提供了这个很棒的功能和示例！）
+
+假设你运行了一次蒙特卡洛模拟，想对每次模拟返回的多个量做假设检验。这些量在每次抽样内部是相关的：
+
+```{r} 
+## simulated means and medians
+draw <- function(i) { 
+  x <- rnorm(n = 10000, mean = 0, sd = 1)
+  out <- data.frame(median = median(x), mean =  mean(x))
+  return(out)
+}
+sims <- do.call("rbind", lapply(1:25, draw))
+
+## average mean and average median 
+coeftable <- data.frame(
+  term = c("median", "mean"),
+  estimate = c(mean(sims$median), mean(sims$mean))
+)
+
+## variance-covariance
+vcov <- cov(sims)
+
+## is the median equal to the mean?
+hypotheses(
+  coeftable,
+  vcov = vcov,
+  hypothesis = "median = mean"
+)
+```
+
+
+## 联合假设检验
+
+`hypotheses()` 函数也可以联合检验多个假设。例如，考虑下面这个模型：
+
+```{r}
+model <- lm(mpg ~ as.factor(cyl) * hp, data = mtcars)
+coef(model)
+```
+
+我们可能想检验原假设：两个系数联合（同时）等于零。
+
+```{r}
+hypotheses(model, joint = c("as.factor(cyl)6:hp", "as.factor(cyl)8:hp"))
+```
+
+`joint` 参数允许用户使用字符向量、整数索引或 Perl 兼容的正则表达式灵活指定要检验的参数。我们也可以使用 `hypothesis` 参数为每个参数单独指定原假设。
+
+当然，`hypotheses` 函数也适用于 `marginaleffects` 对象。
+
+```{r}
+## ## joint hypotheses: regular expression
+hypotheses(model, joint = "cyl")
+
+## joint hypotheses: integer indices
+hypotheses(model, joint = 2:3)
+
+## joint hypotheses: different null hypotheses
+hypotheses(model, joint = 2:3, hypothesis = 1)
+hypotheses(model, joint = 2:3, hypothesis = 1:2)
+
+## joint hypotheses: marginaleffects object
+cmp <- avg_comparisons(model)
+hypotheses(cmp, joint = "cyl")
+```
+
+我们也可以组合多次调用 `hypotheses`，对系数的线性组合执行联合检验：
+
+```{r}
+## fit model
+mod <- lm(mpg ~ factor(carb), mtcars)
+
+## hypothesis matrix for linear combinations
+H <- matrix(0, nrow = length(coef(mod)), ncol = 2)
+H[2:3, 1] <- H[4:6, 2] <- 1
+
+## test individual linear combinations
+hyp <- hypotheses(mod, hypothesis = H)
+hyp
+
+## test joint hypotheses
+##hypotheses(hyp, joint = TRUE, hypothesis = c(-10, -20))
+```
+
+## 多个系数的相等性
+
+我们可以分两步检验多个系数是否彼此相等。首先，使用 `hypothesis` 参数检验每个系数与第一个系数是否相等。然后，使用带 `joint` 参数的 `hypotheses()` 函数。
+
+```{r}
+fit <- lm(mpg ~ factor(carb) - 1, data = mtcars)
+
+hypotheses(fit, ~reference)
+
+hypotheses(fit, ~reference) |> hypotheses(joint = TRUE)
+```
+
+
+## 更多内容
+
+### 双重差分（Difference-in-Differences）
+
+现在我们说明如何使用上文描述的机制，在对比之间做两两比较，这是一类通常与“双重差分”（Difference-in-Differences）研究设计相关联的分析。
+
+首先，我们模拟具有两个处理组、前后两期的数据：
+
+```{r, message = FALSE}
+library(data.table)
+
+N <- 1000
+did <- data.table(
+    id = 1:N,
+    pre = rnorm(N),
+    trt = sample(0:1, N, replace = TRUE))
+did$post <- did$pre + did$trt * 0.3 + rnorm(N)
+did <- melt(
+    did,
+    value.name = "y",
+    variable.name = "time",
+    id.vars = c("id", "trt"))
+head(did)
+```
+
+然后，我们估计一个线性模型，其中包含时间指示变量与处理指示变量之间的多重交互项。我们还计算每个处理水平在均值处的对比：
+
+```{r}
+did_model <- lm(y ~ time * trt, data = did)
+
+comparisons(
+    did_model,
+    newdata = datagrid(trt = 0:1),
+    variables = "time")
+```
+
+最后，我们计算对比之间的两两差异。这就是双重差分（Diff-in-Diff）估计值：
+
+```{r}
+comparisons(
+    did_model,
+    variables = "time",
+    newdata = datagrid(trt = 0:1),
+    hypothesis = ~pairwise)
+```
