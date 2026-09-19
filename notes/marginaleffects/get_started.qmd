@@ -1,0 +1,598 @@
+---
+title: "快速上手"
+subtitle: "*Quick start* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Quick start*](https://marginaleffects.com/bonus/get_started.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/get_started.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 本页的 R 代码块由本站在渲染时真实执行；Python 代码块未在本站执行（本机 Quarto 未配置 Jupyter，reticulate 也未配置 Python），仅作静态展示，页面中不含由这些 Python 代码生成的输出。
+
+
+```{css, echo=FALSE}
+.table {
+  font-size: .8em;
+}
+.table td, .table th {
+  white-space: nowrap;
+}
+```
+
+```{r, include = FALSE}
+options(width = 10000)
+okabeito <- c('#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7', '#999999', '#000000')
+options(ggplot2.discrete.colour = okabeito)
+options(ggplot2.discrete.fill = okabeito)
+url <- "https://raw.githubusercontent.com/vincentarelbundock/marginaleffects/main/website/data/raw/supported_models.csv"
+dat <- read.csv(url)
+n_support <- nrow(dat)
+
+options(marginaleffects_print_style = "tinytable")
+options("tinytable_theme_placement_latex_float" = "H")
+```
+
+本页介绍如何用 `R` 和 `Python` 的 `marginaleffects` 包来解读统计结果。我们提出的工作流建立在 5 个概念支柱之上：
+
+1. _量：_ 所关心的量是什么？我们想估计的是一个预测值，还是预测值的某个函数（平均、差、比、导数等）？
+2. _预测变量：_ 我们关心哪些自变量取值？我们想为数据集中的各个单元给出估计，还是为假想的或有代表性的个体给出估计？
+3. _聚合：_ 我们要报告网格中每一个观测的估计值，还是一个总体汇总？
+4. _不确定性：_ 我们如何量化估计值的不确定性？
+5. _检验：_ 我们要做哪些（非）线性假设检验或等价检验？
+
+## 安装
+
+开始之前，我们先安装 `marginaleffects` 包，它同时提供 `R` 版和 `Python` 版：
+
+::: {.panel-tabset group="language"}
+### R
+
+从 CRAN 安装：
+
+```{r}
+#| eval: false
+install.packages("marginaleffects")
+```
+
+### Python
+
+从 PyPI 安装：
+
+```{bash}
+#| eval: false
+pip install marginaleffects
+```
+:::
+
+或者，你也可以从 GitHub 安装 `R` 版的开发版：
+
+```r
+library(remotes)
+install_github("vincentarelbundock/marginaleffects/r")
+```
+
+::: {layout-ncol=2}
+![Lion saying "R"](fig/R.png){width=60%}
+![Python with a crystal ball](fig/Crystal.png){width=40%}
+:::
+
+## 量
+
+`marginaleffects` 包让 `R` 用户能够计算和绘制三类主要的所关心的量：（1）预测值，（2）比较，（3）斜率。此外，本包还提供了一个便捷函数来计算第四类所关心的量——「边际均值」，它是平均预测值的一种特例。`marginaleffects` 还可以对所有这些量的个体层面（或「条件」）估计做平均（或称「边际化」），并对它们进行假设检验。
+
+[_预测值_：](https://marginaleffects.com/chapters/predictions.html)
+
+> 拟合好的模型在指定尺度上、针对预测变量某一组取值（例如它们的观测值、均值或因子水平）所预测出的结局。亦称拟合值、调整预测值。`predictions()`、`avg_predictions()`、`plot_predictions()`。
+
+[_比较_：](https://marginaleffects.com/chapters/comparisons.html)
+
+> 比较模型在不同自变量取值下做出的预测（例如大学毕业生与其他人）：对比、差、相对风险、优势等。`comparisons()`、`avg_comparisons()`、`plot_comparisons()`。
+
+[_斜率_：](https://marginaleffects.com/chapters/slopes.html) 
+
+> 回归方程对所关心自变量的偏导数。亦称边际效应、趋势。`slopes()`、`avg_slopes()`、`plot_slopes()`。
+
+[假设检验与等价检验：](https://marginaleffects.com/chapters/hypothesis.html)
+
+> 假设检验和等价检验既可以针对模型系数的线性或非线性函数进行，也可以针对 `marginaleffects` 包所计算的任何量（预测值、斜率、比较、边际均值等）进行。不确定性估计可以通过 Delta 方法（用或不用稳健标准误）、自助法或模拟来获得。
+
+预测值、比较和斜率本质上都是个体层面（或「条件」）的量。除了最简单的线性情形之外，估计值通常会随模型中所有自变量的取值而变化。因此数据集中的每一个观测都对应着它自己的预测值、比较和斜率估计。下面我们会看到，把个体层面的估计边际化（或「求平均」），从而报告「平均预测值」「平均比较」或「平均斜率」，往往是很有用的。
+
+上面这些定义中有一处含糊之处：「边际」（marginal）这个词以两种不同、甚至*相反*的方式出现：
+
+1. 在「边际效应」中，我们指的是自变量发生一个微小（边际）变化对结局的效应。这是一个斜率，或者说导数。
+2. 在「边际均值」中，我们指的是在预测网格的各行上做边际化的过程。这是一个平均，或者说积分。
+
+在本网站和本包中，我们把「边际效应」这个说法专门保留给「斜率」或「偏导数」之意。
+
+`marginaleffects` 包提供了用于估计、平均、绘图和汇总上述所有估计目标的函数。`marginaleffects` 产生的对象是「tidy」的：它们生成「长」格式的简单数据框。这些对象还「符合标准」，可以与 `summary()`、`head()`、`tidy()`、`glance()` 等标准函数无缝配合，也可以与 [`modelsummary` 等外部包](https://vincentarelbundock.github.io/modelsummary/)或 `ggplot2` 一起使用。
+
+现在我们运用 `marginaleffects` 的函数来计算上面描述的每一类所关心的量。首先，我们拟合一个带乘性交互的线性回归模型：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+library(marginaleffects)
+
+mod <- lm(mpg ~ hp * wt * am, data = mtcars)
+```
+### Python
+```python
+import polars as pl
+import numpy as np
+import statsmodels.formula.api as smf
+from marginaleffects import *
+
+mtcars = pl.read_csv("https://vincentarelbundock.github.io/Rdatasets/csv/datasets/mtcars.csv")
+
+mod = smf.ols("mpg ~ hp * wt * am", data = mtcars).fit()
+```
+:::
+
+然后，我们调用 `predictions()` 函数。如上所述，预测值是个体层面的估计，因此每个观测对应一个具体的预测值。默认情况下，`predictions()` 函数会为拟合原模型所用数据集中的每个观测各做一个预测。由于 `mtcars` 有 32 行，`predictions()` 的结果也有 32 行：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+pre <- predictions(mod)
+
+nrow(mtcars)
+
+nrow(pre)
+
+pre
+```
+### Python
+
+```python
+pre = predictions(mod)
+
+mtcars.shape
+
+pre.shape
+
+print(pre)
+```
+:::
+
+接下来，我们用 `comparisons()` 函数计算：当每一个预测变量各增加 1 个单位时（每次只变动一个预测变量，其余保持不变），预测结局的差值。同样地，比较也是个体层面的量。由于模型中有 3 个预测变量、数据有 32 行，我们得到 96 个比较：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+cmp <- comparisons(mod)
+
+nrow(cmp)
+
+cmp
+```
+### Python
+```python
+cmp = comparisons(mod)
+
+cmp.shape
+
+print(cmp)
+```
+:::
+
+`comparisons()` 函数支持自定义的查询。例如，当 `hp` 变量从 100 增加到 120 时，预测结局会发生什么变化？
+
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+comparisons(mod, variables = list(hp = c(120, 100)))
+```
+### Python
+```python
+cmp = comparisons(mod, variables = {"hp": [120, 100]})
+print(cmp)
+```
+:::
+
+当 `hp` 变量在其均值附近增加 1 个标准差时，预测结局会发生什么变化？
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+comparisons(mod, variables = list(hp = "sd"))
+```
+### Python
+```python
+cmp = comparisons(mod, variables = {"hp": "sd"})
+print(cmp)
+```
+:::
+
+`comparisons()` 函数还允许用户通过 `comparison` 参数指定预测值的任意函数。例如，马力增加 50 个单位之后，预测的每加仑英里数之比平均是多少？
+
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+comparisons(
+  mod,
+  variables = list(hp = 50),
+  comparison = "ratioavg")
+```
+### Python
+```python
+cmp = comparisons(
+  mod,
+  variables = {"hp": 50},
+  comparison = "ratioavg")
+print(cmp)
+```
+:::
+
+详细解释和更多选项参见[「比较」教程。](https://marginaleffects.com/chapters/comparisons.html)
+
+`slopes()` 函数让我们能够计算结局方程对每一个预测变量的偏导数。同样地，我们得到一个 96 行的数据框：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+mfx <- slopes(mod)
+
+nrow(mfx)
+
+mfx
+```
+### Python
+```python
+mfx = slopes(mod)
+
+mfx.shape
+
+print(mfx)
+```
+:::
+
+## 预测变量
+
+预测值、比较和斜率通常都是「条件」量，取决于模型中所有预测变量的取值。默认情况下，`marginaleffects` 的函数会针对数据的经验分布（也就是原始数据集的每一行）来估计所关心的量。不过，用户也可以用 `newdata` 参数指定自己想考察的预测变量取值。
+
+`newdata` 接受数据框、快捷字符串，或者对 `datagrid()` 函数的调用。例如，要计算一辆所有预测变量都等于样本均值或中位数的假想汽车的预测结局，我们可以这样做：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+predictions(mod, newdata = "mean")
+
+predictions(mod, newdata = "median")
+```
+
+### Python
+```python
+p = predictions(mod, newdata = "mean")
+print(p)
+
+p = predictions(mod, newdata = "median")
+print(p)
+```
+:::
+
+[`datagrid` 函数为我们提供了一种强大的方式来定义预测变量网格。](https://marginaleffects.com/man/r/datagrid.html)所有未在 `datagrid()` 中显式提到的变量，都会被固定在它们的均值或众数上：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+predictions(
+  mod,
+  newdata = datagrid(
+    am = c(0, 1),
+    wt = range))
+```
+### Python
+```python
+p = predictions(
+  mod,
+  newdata = datagrid(
+    am = [0, 1],
+    wt = [mtcars["wt"].min(), mtcars["wt"].max()]))
+print(p)
+```
+:::
+
+同样的机制在 `comparisons()` 和 `slopes()` 中也可以使用。要在 `am` 分别等于 0 和 1、其他预测变量保持在各自均值上时，估计 `mpg` 对 `wt` 的偏导数：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+slopes(
+  mod,
+  variables = "wt",
+  newdata = datagrid(am = 0:1))
+```
+### Python
+```python
+s = slopes(
+  mod,
+  variables = "wt",
+  newdata = datagrid(mod, am = [0, 1]))
+print(s)
+```
+:::
+
+我们还可以用三个强大的绘图函数，画出预测值、比较或斜率如何随预测变量的不同取值而变化：
+
+* [`plot_predictions`](https://marginaleffects.com/man/r/plot_predictions.html)：条件调整预测值
+* [`plot_comparisons`](https://marginaleffects.com/man/r/plot_comparisons.html)：条件比较
+* [`plot_slopes`](https://marginaleffects.com/man/r/plot_slopes.html)：条件边际效应
+
+例如，下面这幅图展示了我们的模型在 `wt` 和 `am` 变量不同取值下所预测的结局：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+plot_predictions(mod, condition = list("hp", "wt" = "threenum", "am"))
+```
+### Python
+```python
+cond = {
+  "hp": None,
+  "wt": [mtcars["wt"].mean() - mtcars["wt"].std(),
+         mtcars["wt"].mean(),
+         mtcars["wt"].mean() + mtcars["wt"].std()],
+  "am": None
+}
+plot_predictions(mod, condition = cond)
+```
+:::
+
+下面这幅图展示了 `mpg` 对 `am` 的导数如何随 `wt` 和 `hp` 变化：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+plot_slopes(mod, variables = "am", condition = list("hp", "wt" = "minmax"))
+```
+### Python
+```python
+plot_slopes(mod,
+  variables = "am",
+  condition = {"hp": None, "wt": [mtcars["wt"].min(), mtcars["wt"].max()]}
+)
+```
+:::
+
+
+## 聚合
+
+由于预测值、比较和斜率都是条件量，它们用起来可能有点笨重。很多时候，报告一个数字的汇总、而不是每个观测一个估计值，会更有用。有些方法学者建议：与其呈现「条件」估计，不如报告「边际」估计，也就是个体层面估计的平均。
+
+（这里把「边际」用作「求平均」之意，不要与「边际效应」一词混淆——后者在计量经济学传统中对应的是偏导数，也就是一个「微小／边际」变化的效应。）
+
+要把个体层面的估计边际化（求平均），我们可以使用 `by` 参数，或者使用便捷函数之一：`avg_predictions()`、`avg_comparisons()` 或 `avg_slopes()`。例如，下面这两条命令给出的结果是一样的：`mtcars` 数据集中的平均预测结局：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+avg_predictions(mod)
+```
+### Python
+```python
+p = avg_predictions(mod)
+print(p)
+```
+:::
+
+这等价于按如下方式手动计算：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+mean(predict(mod))
+```
+### Python
+```python
+np.mean(mod.predict())
+```
+:::
+
+`marginaleffects` 的主要函数都包含一个 `by` 参数，可以让我们在数据的子组内进行边际化。例如，
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+avg_comparisons(mod, by = "am")
+```
+### Python
+```python
+cmp = avg_comparisons(mod, by = "am")
+print(cmp)
+```
+:::
+
+边际均值（Marginal Means）是预测值的一种特殊情形，它是在分类预测变量的均衡网格上边际化（即求平均）得到的。为了说明这一点，我们来估计一个包含分类预测变量的新模型：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+dat <- mtcars
+dat$am <- as.logical(dat$am)
+dat$cyl <- as.factor(dat$cyl)
+mod_cat <- lm(mpg ~ am + cyl + hp, data = dat)
+```
+### Python
+```python
+dat = pl.read_csv("https://vincentarelbundock.github.io/Rdatasets/csv/datasets/mtcars.csv") \
+  .with_columns(pl.col("am").cast(pl.Boolean),
+                pl.col("cyl").cast(pl.Utf8))
+mod_cat = smf.ols('mpg ~ am + cyl + hp', data=dat.to_pandas()).fit()
+```
+:::
+
+我们可以使用前面介绍过的函数手动计算边际均值：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+avg_predictions(
+  mod_cat,
+  newdata = "balanced",
+  by = "am")
+```
+### Python
+```{python, eval = FALSE}
+predictions(
+  mod_cat,
+  newdata = datagrid(grid_type = "balanced"),
+  by = "am")
+print(p)
+```
+:::
+
+
+## 不确定性
+
+`marginaleffects` 包会为它计算的所有量——预测值、比较、斜率等——报告不确定性估计。默认情况下，标准误是使用[Delta 方法](https://en.wikipedia.org/wiki/Delta_method)和经典标准误来计算的。这些标准误计算速度快，并且在某些（但非全部）情况下具有令人满意的性质。`marginaleffects` 支持多种替代方案，包括 Huber-White 异方差稳健、聚类稳健、自助法以及基于模拟的不确定性估计。
+
+[标准误教程](https://marginaleffects.com/chapters/uncertainty.html)提供了更多细节。现在，展示两个例子就足够了。首先，我们使用 `vcov` 参数来报告“HC3”（异方差一致）标准误。
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+avg_predictions(mod, by = "am", vcov = "HC3")
+```
+### Python
+暂不支持。
+:::
+
+其次，我们使用 `inferences()` 函数，通过 500 次重抽样来计算自助法区间：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+avg_predictions(mod, by = "am") |>
+  inferences(method = "boot", R = 500)
+```
+### Python
+暂不支持。
+:::
+
+
+## 检验
+
+`hypotheses()` 函数和 `hypothesis` 参数可以用来对模型系数，或者对上文介绍的函数所计算出的任何量，进行线性和非线性假设检验。
+
+考虑下面这个模型：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+mod <- lm(mpg ~ qsec * drat, data = mtcars)
+coef(mod)
+```
+### Python
+```python
+mod = smf.ols('mpg ~ qsec * drat', data=mtcars).fit()
+print(mod.params)
+```
+:::
+
+我们能否拒绝这样的原假设：`drat` 系数的大小是 `qsec` 系数的 2 倍？
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+hypotheses(mod, "drat = 2 * qsec")
+```
+### Python
+```python
+h = hypotheses(mod, "drat = 2 * qsec")
+print(h)
+```
+:::
+
+我们可以提出同样的问题，但改用 `b1`、`b2`、`b3` 等索引按位置引用参数：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+hypotheses(mod, "b3 = 2 * b2")
+```
+### Python
+```python
+h = hypotheses(mod, "b2 = 2 * b1")
+print(h)
+```
+:::
+
+`marginaleffects` 中的主要函数都有一个 `hypothesis` 参数，这意味着我们可以进行复杂的模型检验。例如，考虑两个斜率估计值：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+slopes(
+  mod,
+  variables = "drat",
+  newdata = datagrid(qsec = range))
+```
+### Python
+```python
+s = slopes(
+  mod,
+  variables = "drat",
+  newdata = datagrid(qsec = [mtcars["qsec"].min(), mtcars["qsec"].max()]))
+print(s)
+```
+:::
+
+这两个斜率彼此之间是否有显著差异？要检验这一点，我们可以使用 `hypothesis` 参数：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+slopes(
+  mod,
+  hypothesis = "b1 = b2",
+  variables = "drat",
+  newdata = datagrid(qsec = range))
+```
+### Python
+```python
+s = slopes(
+  mod,
+  hypothesis = "b0 = b1",
+  variables = "drat",
+  newdata = datagrid(qsec = [mtcars["qsec"].min(), mtcars["qsec"].max()]))
+print(s)
+```
+:::
+
+另外，我们也可以用词项名称来引用取值（当名称是唯一的时候）：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+avg_slopes(mod)
+
+avg_slopes(mod, hypothesis = "drat = qsec")
+```
+### Python
+```python
+s = avg_slopes(mod)
+print(s)
+
+s = avg_slopes(mod, hypothesis = "drat = qsec")
+print(s)
+```
+:::
+
+现在，假设出于理论（或实质性，或临床）方面的原因，我们只关心大于 2 的斜率。这时我们可以使用 `equivalence` 参数来进行等价检验：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+avg_slopes(mod, equivalence = c(-2, 2))
+```
+### Python
+```python
+s = avg_slopes(mod, equivalence = [-2., 2.])
+print(s)
+```
+:::
+
+关于背景、细节，以及如何在更复杂的情形下进行假设检验，请参阅[假设检验与自定义对比教程](https://marginaleffects.com/chapters/hypothesis.html)。
