@@ -1,0 +1,311 @@
+---
+title: "功效分析"
+subtitle: "*Power Analysis* · marginaleffects 官方文档中译"
+bibliography: marginaleffects-refs.bib
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Power Analysis*](https://marginaleffects.com/bonus/power.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/power.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE)
+options(width = 200)
+library(future)
+library(DeclareDesign)
+plan(multisession)
+diagnose_design = function(...) {
+  DeclareDesign::diagnose_design(..., sims = 500, bootstrap_sims = 0)
+}
+```
+
+功效分析是良好研究设计的基础。它帮助我们判断：如果某个效应真实存在，我们的研究是否有可能检测到它；同时也指导我们就样本量和研究设计做出决策。
+
+本文演示在用 `marginaleffects` 估计所关心的量这一背景下如何做功效分析。我们会看到，把注意力放在有实质意义的估计目标上——比如用 `avg_comparisons(model, variables = "treatment")` 计算的平均处理效应——并不会让功效分析变得过分复杂。我们完全可以用标准的基于模拟的方法来有效完成它。
+
+[`DeclareDesign` 是一个极其强大的包](https://declaredesign.org/)，可用于做模拟，并评估研究设计的各种性质，比如功效、偏倚和 RMSE。虽然这个包提供了令人印象深刻的灵活性，但本教程只用到它最基础的功能，以便清晰地介绍如何通过模拟来做功效分析。
+
+在正式开始之前，我们先加载几个 `R` 包。
+
+```{r}
+#| warning: false
+#| message: false
+library(MASS)
+library(fabricatr)
+library(DeclareDesign)
+library(marginaleffects)
+```
+
+## 什么是功效分析？
+
+统计功效是指某个统计检验正确拒绝一个错误原假设的概率。换句话说，它是当效应真实存在时我们能够检测到它的概率。功效取决于四个关键因素：
+
+1. 效应量：真实效应有多大
+2. 样本量：我们收集了多少观测  
+3. 显著性水平（α）：我们拒绝原假设的阈值（通常取 0.05）
+4. 测量误差／噪声：数据中存在多大的变异
+
+最小关心效应（MEI）是指我们认为在实践上有意义的最小效应量。这是一个实质性的决定，应当在收集数据之前、基于理论、既有研究或政策相关性来确定。
+
+## 功效分析的组成部分
+
+一次基于模拟的功效分析包含四个核心组成部分：
+
+1. 数据生成过程（DGP）：我们如何在不同假设下模拟出贴近现实的数据
+2. 估计目标：我们想要估计的真实量（例如平均处理效应）  
+3. 估计量：我们用来估计该估计目标的统计程序（例如回归、均值差）
+4. 模拟：反复把估计量应用到由 DGP 随机生成的数据上，以评估功效、偏倚、覆盖率等统计性质
+
+## 示例：两臂随机对照试验
+
+现在我们用一个简单的随机对照试验来说明功效分析的这四个组成部分。
+
+##### 1. 数据生成过程（DGP）
+
+我们考虑的第一个数据生成过程是一个极其简单的随机实验，其中有二值处理 $D$、结局 $Y$ 和噪声 $\varepsilon$。
+
+$$
+Y = \beta_0 + \beta_1 D + \varepsilon
+$$ {#eq-two-arm}
+
+为了模拟出符合 @eq-two-arm 的数据，我们调用 `declare_model()` 函数。`declare_model()` 是对 [`fabricatr` 包](https://declaredesign.org/r/fabricatr/)中 `fabricate()` 函数的便捷封装。它让研究者能够模拟出非常复杂的数据集，包括层次结构、古怪的抽样策略，以及复杂的处理分配方案（例如区组和／或聚类）。在我们这个例子中，DGP 非常简单，下面的代码基本上不言自明。
+
+```{r}
+sample_size = 100
+treatment_effect = 0.2
+noise_sd = 1
+
+dgp = declare_model(
+  N = sample_size,
+
+  # standard normal noise
+  e = rnorm(N, mean = 0, sd = noise_sd),
+
+  # random dummy treatment with equal probability of treatment and control
+  D = rbinom(N, size = 1, prob = 0.5),
+
+  # intercept
+  b0 = 0,
+
+  # outcome equation
+  Y = b0 + treatment_effect * D + e
+)
+```
+
+::: {.callout-tip}
+我们的最终目标，是研究当样本量和处理效应发生变化时，该研究设计的统计功效会如何变化。在 `DeclareDesign` 中，我们打算变动的参数——比如 `sample_size` 和 `treatment_effect` 这两个变量——必须在 `declare_model()` 调用*之前*、且在其*之外*定义。示例见上面的代码块。
+:::
+
+
+`declare_model()` 就是我们所说的「函数工厂」：它是一个返回另一个函数的函数。事实上，我们在上面创建的 `dgp` 对象可以被反复调用，从同一个 DGP 中模拟出新的数据集。
+
+某次模拟中的三行数据：
+
+```{r}
+d = dgp()
+head(d, 3)
+```
+
+另一次模拟中另外三行数据：
+
+```{r}
+d = dgp()
+head(d, 3)
+```
+
+##### 2. 估计目标
+
+我们的估计目标是平均处理效应 $\beta_1$。在上面的代码中，我们设定了 `treatment_effect = 0.2`，因此估计目标的真值就是 0.2。这既是我们想要估计的真实量，也是我们之后会变动的参数，用来理解统计功效如何随效应量变化。
+
+##### 3. 估计量  
+
+现在，我们定义一个 `fit()` 函数作为我们的估计量：
+
+* 输入： 
+  - 名为 `data` 的数据框
+* 输出： 
+  - 一个 1 行的数据框，包含必需列和可选列。
+    - 必需：`term`、`estimate`
+    - 可选：`std.error`、`conf.low`、`conf.high`、`p.value`、`cost` 等等
+
+下面定义的 `fit()` 函数接受一个数据框，拟合一个线性回归模型，并把结果作为 1 行数据框返回。
+
+```{r}
+fit = function(data) {
+  model = lm(Y ~ D, data = data)
+  out = data.frame(
+    "term" = "OLS",
+    "estimate" = coef(model)["D"]
+  )
+  return(out)
+}
+
+# simulate
+d = dgp()
+
+# estimate
+fit(d)
+```
+
+除了手工从 `lm()` 模型中提取估计值，我们还可以使用 `marginaleffects` 包的 `avg_comparisons()` 函数。在这个简单模型中，`avg_comparisons()` 给出的估计值与 OLS 估计出的系数完全相同。而在带交互项或非线性成分的更复杂模型中，`avg_comparisons()` 会是估计平均处理效应（ATE）的一种便捷方式，而且能按 `DeclareDesign` 所要求的「tidy」格式返回结果。
+
+```{r}
+fit = function(data) {
+  library(marginaleffects)
+  model = lm(Y ~ D, data = data)
+  out = avg_comparisons(model, variables = "D")
+  return(out)
+}
+
+fit(d)
+```
+
+现在，我们用 `DeclareDesign` 创建一个代表完整「研究设计」的 `R` 对象。这个对象是通过用 `+` 运算符把对不同 `DeclareDesign` 函数的调用「相加」或「串联」起来而创建的。具体来说，我们会调用三个函数：
+
+
+1. `declare_model()`
+    - 数据生成过程
+2. `declare_inquiry()`
+    - 所关心的量的真值
+3. `declare_estimator()`
+    - 估计程序
+
+##### 4. 模拟
+
+最后，一旦定义好研究设计，我们就可以调用 `diagnose_design()` 函数来评估它的性质。该函数会运行模拟、估计处理效应，并计算功效、偏倚等指标。模拟过程会反复从我们的 DGP 生成随机数据、应用我们的估计量，并在多次迭代中汇总结果。
+
+把所有部分合到一起：
+
+```{r}
+library(DeclareDesign)
+library(marginaleffects)
+
+sample_size = 100
+treatment_effect = 0.2
+noise_sd = 1
+
+dgp = declare_model(
+  N = sample_size,
+  e = rnorm(N, mean = 0, sd = noise_sd),
+  D = rbinom(N, size = 1, prob = 0.5),
+  Y = treatment_effect * D + e
+)
+
+estimator = declare_estimator(handler = 
+  function(data) {
+    library(marginaleffects)
+    model = lm(Y ~ D, data = data)
+    out = avg_comparisons(model, variables = "D")
+    return(out)
+  }
+)
+
+truth = declare_inquiry(ATE = treatment_effect)
+
+design = dgp + estimator + truth
+
+d = diagnose_design(design)
+d
+```
+
+这些模拟结果表明，我们的估计量给出的处理效应估计是无偏的。然而统计功效非常低，大约为 `{r} round(d$diagnosands_df$power * 100)`），也就是说，在效应真实存在的情况下，我们大概只有这么大的比例能够检测到它。
+
+## 功效与样本量、效应量的关系
+
+要提高统计功效，我们可以增大样本量、增大处理效应量，或者降低噪声（也就是改进测量等等）。`redesign()` 函数让我们能够系统地变动这些参数，并比较不同情形下得到的功效。
+
+```{r}
+design_list = redesign(design,
+  sample_size = c(100, 500),
+  treatment_effect = c(0.2, 0.5)
+)
+
+diagnose_design(design_list)
+```
+
+不出所料，更大的效应量和更大的样本量都会提高统计功效。当样本量为 500、效应量为 0.5 时，功效接近 100%。
+
+我们还可以变动噪声水平，看看测量精度如何影响功效：
+
+```{r}
+noise_design_list = redesign(design,
+  noise_sd = c(0.5, 1, 2)
+)
+
+diagnose_design(noise_design_list)
+```
+
+更低的噪声（更好的测量精度）会大幅提高功效，而更高的噪声则会降低功效。这说明了为什么在更好的测量工具上投入，可能与收集更多数据同样有价值。
+
+## 比较估计量：调整与未调整
+
+控制预测变量可以提高估计的精度，得到更小的标准误。因此即便是在随机实验中，控制协变量／预测变量也可能是有价值的。我们遵循 @Lin2013 的做法，估计一个让处理与所有协变量交互的模型。这次功效分析将比较经过回归调整的估计量与未调整估计量的统计性质。
+
+我们考虑的数据生成过程遵循下面这个方程：
+
+$$
+Y = \beta_0 + \beta_1 D + \beta_2 X_1 + \beta_3 X_3 + \varepsilon,
+$$
+
+其中 $Y$ 是结局，$D$ 是随机化的二值处理，$X_1$ 和 $X_2$ 是从多元正态分布中抽取的协变量，$\varepsilon$ 是标准正态噪声项。
+
+```{r}
+sample_size = 100
+treatment_effect = 0.2
+noise_sd = 1
+
+dgp = declare_model(
+  N = sample_size,
+  e = rnorm(N, mean = 0, sd = noise_sd),
+  D = rbinom(N, size = 1, prob = 0.5),
+
+  # random normal covariates
+  fabricatr::draw_multivariate(c(X1, X2) ~ MASS::mvrnorm(
+    n = N,
+    mu = c(0, 0),
+    Sigma = matrix(c(1, 0.5, 0.5, 1), 2, 2)
+  )),
+
+  Y = 1 + treatment_effect * D + 1 * X1 + 1 * X2 + e
+)
+```
+
+```{r}
+fit = function(data) {
+  library(marginaleffects)
+  # Linear model with regression adjustement for covariates
+  adjusted =  lm(Y ~ D * (X1 + X2), data = data)
+  adjusted = avg_comparisons(adjusted, variables = "D", vcov = "HC3")
+
+  # Linear model with a single binary predictor
+  unadjusted =  lm(Y ~ D, data = data)
+  unadjusted = avg_comparisons(unadjusted, variables = "D", vcov = "HC3")
+
+  # Combine the results
+  out = rbind(adjusted, unadjusted)
+
+  # Label the results
+  out$term = c("Adjusted", "Unadjusted")
+  return(out)
+}
+```
+
+我们可以把这个模型直接拟合到 `dgp()` 的输出上：
+
+```{r}
+dgp() |> fit()
+```
+
+然后像前面那样诊断这个研究设计：
+
+```{r}
+truth = declare_inquiry(ATE = treatment_effect)
+estimators = declare_estimator(handler = fit)
+design = dgp + truth + estimators
+diagnose_design(design)
+```
+
+两个估计量都是无偏的，但经过回归调整的估计量通过降低处理效应估计的标准误，获得了更高的功效。这说明即便样本量相同，纳入相关协变量也能提高统计功效。
