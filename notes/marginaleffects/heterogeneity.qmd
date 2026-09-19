@@ -1,0 +1,84 @@
+---
+title: "异质性"
+subtitle: "*Heterogeneity* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Heterogeneity*](https://marginaleffects.com/bonus/heterogeneity.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/heterogeneity.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+
+
+本教程简要说明如何使用递归分割来探索处理效应的异质性。这个示例的灵感来自 [Scholbeck et al. 2022](https://arxiv.org/abs/2201.08837)。
+
+正如其他教程中所指出的，`marginaleffects` 包估计的大多数量都是“条件性”的，也就是说，它们会随模型中所有预测变量的取值而变化。例如，考虑一个对华盛顿特区每小时自行车租赁量建模的泊松回归：
+
+```{r}
+#| include: false
+library(marginaleffects)
+library(partykit)
+```
+
+```{r}
+library(marginaleffects)
+library(partykit)
+data(bikes, package = "fmeffects")
+
+mod <- glm(
+    count ~ season * weekday + weather * temp,
+    data = bikes, family = quasipoisson)
+```
+
+我们可以使用 `comparisons()` 函数来估计当温度升高 5 摄氏度时，结局预测值会如何变化：
+
+
+```{r}
+#| warnings: false
+cmp <- comparisons(mod, variables = list(temp = 5))
+cmp
+```
+
+上面打印的输出包含 727 行：对应原始 `bikes` 数据集中的每一行各一行。实际上，由于增加 5 个单位的“效应”取决于协变量的取值，不同的观测单位通常会对应不同的对比。
+
+在这种情况下，一种常见的策略是计算平均差异，如 [G-Computation 教程：](https://marginaleffects.com/chapters/gcomputation.html)
+
+
+```{r}
+avg_comparisons(mod, variables = list(temp = 5))
+```
+
+另一种思路是，我们可能更希望探索效应大小在数据不同子集中的异质性。实现这一点的一种便捷方法是使用 `partykit` 包中的 `ctree` 函数。该函数使我们能够运用递归分割（条件推断树）来找到估计值相对同质的子空间，并给出有用的图形和文字摘要。
+
+假设我们特别关注温度对自行车租赁量的效应如何随星期几和季节发生变化：
+
+```{r}
+tree <- ctree(
+    estimate ~ weekday + season,
+    data = cmp,
+    control = ctree_control(maxdepth = 2)
+)
+```
+
+现在我们可以使用 `plot()` 函数，按星期几和季节绘制温度升高 5 摄氏度对自行车租赁量的效应估计值的分布：
+
+```{r}
+plot(tree)
+```
+
+要获得每个子空间的条件平均估计值，我们首先使用 `predict()` 函数，将数据集中的每个观测值放入其对应的“桶”或“节点”。然后，我们使用 `by` 参数来指示 `comparisons()` 为树中的每个节点计算平均估计值：
+
+
+```{r}
+dat <- transform(bikes, nodeid = predict(tree, type = "node"))
+comparisons(mod,
+    variables = list(temp = 5),
+    newdata = dat,
+    by = "nodeid")
+```
+
+这四个 `nodeid` 取值对应于这棵树中的终端节点：
+
+```{r}
+print(tree)
+```
