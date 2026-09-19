@@ -1,0 +1,251 @@
+---
+title: "缺失数据"
+subtitle: "*Missing Data* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Missing Data*](https://marginaleffects.com/bonus/multiple_imputation.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/multiple_imputation.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+
+
+```{r, include = FALSE}
+options(width = 1000)
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  fig.width = 9,
+  fig.asp = .4,
+  out.width = "100%",
+  warning = FALSE,
+  message = FALSE,
+  comment = "#>"
+)
+```
+
+`marginaleffects` 包提供了一些便捷函数，用于计算和展示来自 `mice` 和 `Amelia` 包的多重插补模型的预测值、对比和边际效应。整个流程遵循 Rubin 规则（Rubin, 1987, p. 76），步骤如下：
+
+1. 插补出 $M$ 份数据集。
+2. 在这 $M$ 份插补数据集上分别拟合模型。
+3. 在这 $M$ 份数据集上分别计算边际效应。
+4. 汇总（pool）结果。
+
+为了突出整个流程，我们以一个简单的线性回归模型为例，不过同样的流程应该适用于任何通过公式接口和 `data` 参数拟合的模型类型。
+
+`marginaleffects` 直接支持 `mice` 和 `Amelia` 这两个插补包，也支持任何能返回插补数据框列表的其他包。下面用 `iris` 数据集来演示：我们先随机制造一些缺失观测，然后用几个不同的包来插补缺失值。
+
+```{r}
+library(marginaleffects)
+set.seed(1024)
+
+dat <- iris
+dat$Sepal.Length[sample(seq_len(nrow(iris)), 40)] <- NA
+dat$Sepal.Width[sample(seq_len(nrow(iris)), 40)] <- NA
+dat$Species[sample(seq_len(nrow(iris)), 40)] <- NA
+```
+
+## `mice`
+
+首先，我们用 `mice` 包对数据集做插补：
+
+```{r}
+library(mice)
+
+dat_mice <- mice(dat, m = 20, printFlag = FALSE, .Random.seed = 1024)
+```
+
+然后，我们用标准的 `mice` 语法生成一个包含所有模型的 `mira` 类对象：
+
+```{r}
+mod_mice <- with(dat_mice, lm(Petal.Width ~ Sepal.Length * Sepal.Width + Species))
+```
+
+最后，把这个 `mira` 对象喂给某个 `marginaleffects` 函数：
+
+```{r}
+mfx_mice <- avg_slopes(mod_mice, by = "Species")
+mfx_mice
+```
+
+## `Amelia`
+
+用 `Amelia` 时，流程基本相同。首先用 `Amelia` 插补：
+
+```{r, include = FALSE}
+## no startup messages
+library(Amelia)
+```
+```{r, message = FALSE, warning = FALSE}
+library(Amelia)
+
+dat_amelia <- amelia(dat, m = 20, noms = "Species", p2s = 0)
+```
+
+然后，我们用 `Amelia` 的语法生成一个包含所有模型的 `amest` 类对象：
+
+```{r}
+mod_amelia <- with(dat_amelia, lm(Petal.Width ~ Sepal.Length * Sepal.Width + Species))
+```
+
+最后，把这个 `amest` 对象喂给某个 `marginaleffects` 函数：
+
+```{r}
+mfx_amelia <- avg_slopes(mod_amelia, by = "Species")
+mfx_amelia
+```
+
+## 其他插补包：`missRanger`，或插补数据框的列表。
+
+有好几个 `R` 包可以插补缺失数据。事实上，[`Missing Data CRAN View`](https://cran.r-project.org/web/views/MissingData.html) 至少列出了十几个可选方案。由于各个包的用户接口差异很大，`marginaleffects` 支持一套统一的流程，稍作调整就可以配合所有插补包使用：
+
+1. 用外部包生成一个插补数据框的列表。
+2. 用 `miceadds` 包的 `datalist2mids()` 函数，把这个插补数据框列表转换成 `mids` 对象。
+3. 用 `with()` 函数拟合模型、生成 `mira` 对象，就像上面 `mice` 和 `Amelia` 两节演示的那样。
+4. 把 `mira` 对象传给某个 `marginaleffects` 函数。
+   
+下面以插补包 `missRanger` 为例，它会生成一个插补数据集的列表：
+
+```{r, include = FALSE}
+## no startup messages
+library(miceadds)
+library(missRanger)
+```
+
+```{r, message = FALSE, warning = FALSE}
+library(miceadds)
+library(missRanger)
+
+## convert lists of imputed datasets to `mids` objects
+dat_missRanger <- replicate(20, missRanger(dat, verbose = 0), simplify = FALSE)
+mids_missRanger <- datlist2mids(dat_missRanger)
+
+## fit models
+mod_missRanger <- with(mids_missRanger, lm(Petal.Width ~ Sepal.Length * Sepal.Width + Species))
+
+## `missRanger` slopes
+mfx_missRanger <- avg_slopes(mod_missRanger, by = "Species")
+mfx_missRanger
+```
+
+## 比较不同插补软件的结果
+
+我们可以用 `modelsummary` 包，把成列删除（listwise deletion）的结果与使用不同插补软件得到的结果作比较：
+
+```{r}
+library(modelsummary)
+
+## listwise deletion slopes
+mod_lwd <- lm(Petal.Width ~ Sepal.Length * Sepal.Width + Species, data = dat)
+mfx_lwd <- avg_slopes(mod_lwd, by = "Species")
+
+## regression table
+models <- list(
+    "LWD" = mfx_lwd,
+    "mice" = mfx_mice,
+    "Amelia" = mfx_amelia,
+    "missRanger" = mfx_missRanger)
+modelsummary(models, shape = term : contrast + Species ~ model)
+```
+
+## `mice::pool()`
+
+在某些情况下，「手工」完成插补、拟合和后处理，最后用 `mice::pool` 函数把结果合并起来，可能会更有用。在下面这类情形中，这种做法效果不错：
+
+```{r}
+library(marginaleffects)
+library(mice)
+set.seed(1024)
+dat <- iris
+dat$Sepal.Length[sample(seq_len(nrow(iris)), 40)] <- NA
+dat$Sepal.Width[sample(seq_len(nrow(iris)), 40)] <- NA
+dat$Species[sample(seq_len(nrow(iris)), 40)] <- NA
+
+# impute
+imp <- mice(dat, m = 20, printFlag = FALSE)
+imp <- lapply(seq_along(imp), function(i) complete(imp, i))
+
+# fit
+fit <- lapply(imp[1:20], function(d) {
+              lm(Sepal.Length ~ Petal.Width + Petal.Length, d)
+})
+
+# post processing
+mfx <- lapply(fit, avg_slopes)
+
+# Rubin's rules
+mice::pool(mfx)
+```
+
+关于 `mice::pool()` 有一个比较微妙的地方：它要求被合并的数据框中必须存在 `term` 列，而且这一列必须能*唯一*标识每一行。但在某些情况下，`marginaleffects` 函数的输出并不包含 `term` 列，这会导致使用 `mice::pool()` 时报错。
+
+例如，
+
+```{r}
+mfx <- avg_slopes(fit[[1]], hypothesis = ~pairwise)
+mfx
+
+colnames(mfx)
+```
+
+我们可以用标准的 `R` 访问符，手工给 `marginaleffects` 的输出加上一列 `term`，以绕开这个问题。
+
+```{r}
+mfx <- lapply(fit, \(f) {
+    out <- avg_slopes(f, hypothesis = ~pairwise)
+    # add the missing `term` column
+    out$term <- out$hypothesis
+    return(out)
+})
+
+mice::pool(mfx)
+```
+
+
+````{comment}
+
+
+## Passing new data arguments: `newdata`, `wts`, `by`, etc.
+
+Sometimes we want to pass arguments changing or specifying the data on which we will do our analysis using `marginaleffects`. This can be for reasons such as wanting to specify the values or weights at which we evaluate e.g. `avg_slopes()`, or due to the underlying models not robustly preserving all the original data columns (such as `fixest` objects not saving their data in the fit object making it potentially challenging to retrieve, and even if retrievable it will not include the weights used during fitting as a column as `wts` expects when given a string).
+
+If we are not using multiple imputation, or if we want to just pass a single dataset to the several fitted models after multiple imputation, we can pass a single dataset to the `newdata` argument. However, if we wish to supply each model in our list resulting after multiple imputation with a different dataset on which to calculate results, we cannot use `newdata`. Instead, in this case it can be useful to revert to a more manual (but still very easy) approach. Here is an example calculating `avg_slopes` using a different set of weights for each model.
+
+```{r}
+set.seed(1024)
+library(mice)
+library(fixest)
+library(marginaleffects)
+
+dat <- mtcars
+
+## insert missing values
+dat$hp[sample(seq_len(nrow(mtcars)), 10)] <- NA
+dat$mpg[sample(seq_len(nrow(mtcars)), 10)] <- NA
+dat$gear[sample(seq_len(nrow(mtcars)), 10)] <- NA
+
+## multiple imputation
+dat <- mice(dat, m = 5, method = "sample", printFlag = FALSE)
+dat <- complete(dat, action = "all")
+
+## fit models
+mod <- lapply(dat, \(x) 
+    glm(am ~ mpg * cyl + hp,
+        weight = ~gear,
+        family = binomial,
+        data = x))
+
+## slopes without weights
+lapply(seq_along(mod), \(i) 
+    avg_slopes(mod[[i]], newdata = dat[[i]])) |>
+    mice::pool()
+
+
+## slopes with weights
+lapply(seq_along(mod), \(i) 
+    avg_slopes(mod[[i]], newdata = dat[[i]], wts = "gear")) |>
+    mice::pool()
+```
+
+
+
+````
