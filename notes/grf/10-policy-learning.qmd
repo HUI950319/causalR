@@ -1,0 +1,88 @@
+---
+title: "用最优决策树做策略学习"
+subtitle: "*Policy learning via optimal decision trees* · grf 官方教程中译"
+lang: zh
+---
+
+> **来源**：R 包 [grf](https://github.com/grf-labs/grf) 官方教程 [`policy_learning.Rmd`](https://github.com/grf-labs/grf/blob/master/r-package/grf/vignettes/policy_learning.Rmd)（[原文渲染版](https://grf-labs.github.io/grf/articles/policy_learning.html)），作者 Julie Tibshirani、Susan Athey、Erik Sverdrup、Stefan Wager 等，采用 **GPL-3** 许可。
+> 本页为中文翻译，**非原文**；按 GPL-3 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 译自 grf 2.6.1（源码修订 `5bee99b`）。
+> 页内代码与图表由本站以 R 4.4.3 + grf 2.6.1 **重新执行**生成，因随机种子与包版本差异，数值可能与原站略有出入。
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+set.seed(123)
+```
+
+```{r setup}
+library(grf)
+library(policytree)
+```
+
+用 GRF 可以非参数地估计一个 CATE 函数 $\hat \tau(\cdot)$，再把它当作处理分配策略，比如对预测值 $\hat \tau(X_i)$ 为正的个体施加处理。我们用符号 $\pi$ 表示这个策略：它以描述个体特征的协变量（covariates）$X_i$ 为输入，输出一个处理决策，其中 $0$ 表示不处理，$1$ 表示处理，即
+
+$$
+\pi(\cdot) \mapsto \{0, 1\}
+$$
+
+如果我们用估计出的 CATE 来分配处理，$\pi$ 可以简单地写成 $\pi(X_i) = 1(\hat \tau(X_i) > 0)$。关于 *Qini 曲线* 的那篇 vignette 给出了一些例子，说明可以在留出的测试集上构造哪些指标来评估这个策略，以及如何纳入预算约束。
+
+在某些场景下，用这种方式分配处理并不合适。比如考虑一个提供职业培训的福利项目。如果政策制定者希望有透明的资格标准，那么依据一个复杂的黑箱 CATE 函数来决定谁能参加这个项目就不合适。同样，如果潜在受益者得知自己被拒之门外，仅仅是因为某个黑箱算法预测他们获益不够多，这也会带来问题。在这类场景下，我们关心的是*可解释的*策略。也就是说，我们想要一条简单的规则：它看个体的特征 $X_i$，然后给出处理决策。例如“Alice 被分配了处理，因为她不到 25 岁，而且住在弱势社区”。浅层决策树所蕴含的策略，就是这样一种可解释策略的例子。
+
+## 基于树的处理分配规则
+
+要从实验数据或观测数据中学到一个策略 $\pi$，我们需要一个高效的打分规则，以及一个搜索树的算法。用“双稳健”打分加上优化经验福利的决策树，这套做法实现在 [policytree](https://github.com/grf-labs/policytree) 包里。要学到一棵*好的*浅层决策树，关键是在每一层都把分叉决策学对。常见的决策树学习方法基于贪心准则（比如“CART”），不一定能学到全局最优的分叉决策；`policytree` 包采用的树学习方法计算量更大，但能找到全局最优的决策树。[^algo]
+
+下面这个简短的例子演示如何用因果森林得到的双稳健得分来学一棵深度为 2 的树。函数 `policy_tree` 和 `double_robust_scores` 属于 `policytree` 包。
+
+```{r}
+# Fit a causal forest.
+n <- 15000
+p <- 5
+X <- round(matrix(rnorm(n * p), n, p), 2)
+W <- rbinom(n, 1, 1 / (1 + exp(X[, 3])))
+tau <- 1 / (1 + exp((X[, 1] + X[, 2]) / 2)) - 0.5
+Y <- X[, 3] + W * tau + rnorm(n)
+c.forest <- causal_forest(X, Y, W)
+
+# Compute doubly robust scores.
+# (In observational settings it is usually a good idea to plot the estimated propensity
+# scores (`hist(c.forest$W.hat)`) to ensure we have sufficient overlap)
+dr.scores <- double_robust_scores(c.forest)
+head(dr.scores)
+
+# Fit a depth-2 tree on the doubly robust scores.
+tree <- policy_tree(X, dr.scores, depth = 2)
+
+# Print and plot the tree - action 1 corresponds to control, and 2 treated.
+print(tree)
+plot(tree)
+```
+
+下图中的 45 度线把效应为负的个体（线上方）和效应为正的个体（线下方）分开。
+
+```{r}
+# Predict the treatment assignment {1, 2} for each sample.
+predicted <- predict(tree, X)
+plot(X[, 1], X[, 2], col = predicted)
+legend("topright", c("control", "treat"), col = c(1, 2), pch = 19)
+abline(0, -1, lty = 2)
+```
+
+另外，`predict` 也可以返回每个样本落入的叶节点，我们可以据此为每个组计算统计量，比如平均处理效应（注意，为避免过拟合，这类统计量应当在与学习策略所用数据分开的留出测试集上计算，这样它也就成了对已拟合策略做训练/测试评估的一种实用做法）。
+
+```{r}
+node.id <- predict(tree, X, type = "node.id")
+
+# The value of all arms (along with SEs) by each leaf node.
+values <- aggregate(dr.scores, by = list(leaf.node = node.id),
+                    FUN = function(x) c(mean = mean(x), se = sd(x) / sqrt(length(x))))
+print(values, digits = 2)
+```
+
+更多统计细节，请参见 [Causal Inference: A Statistical Learning Approach](https://web.stanford.edu/~swager/causal_inf_book.pdf) 中 *Policy Learning* 一章。
+
+[^algo]: 树搜索算法的说明见[这篇论文](https://joss.theoj.org/papers/10.21105/joss.02232.pdf)。
