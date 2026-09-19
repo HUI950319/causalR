@@ -1,0 +1,211 @@
+---
+title: "在新的目标人群上估计 ATE"
+subtitle: "*Estimating ATEs on a new target population* · grf 官方教程中译"
+lang: zh
+---
+
+> **来源**：R 包 [grf](https://github.com/grf-labs/grf) 官方教程 [`ate_transport.Rmd`](https://github.com/grf-labs/grf/blob/master/r-package/grf/vignettes/ate_transport.Rmd)（[原文渲染版](https://grf-labs.github.io/grf/articles/ate_transport.html)），作者 Julie Tibshirani、Susan Athey、Erik Sverdrup、Stefan Wager 等，采用 **GPL-3** 许可。
+> 本页为中文翻译，**非原文**；按 GPL-3 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 译自 grf 2.6.1（源码修订 `5bee99b`）。
+> 页内代码与图表由本站以 R 4.4.3 + grf 2.6.1 **重新执行**生成，因随机种子与包版本差异，数值可能与原站略有出入。
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+set.seed(123)
+library(ggplot2)
+```
+
+```{r setup}
+library(grf)
+```
+
+本文简要介绍如何用 GRF 在由若干协变量 $X_{test}$ 定义的新目标人群上估计平均处理效应（ATE）。第一部分简要介绍问题设定和一个双稳健估计量，第二部分给出用 GRF 实现该估计量的代码示例。
+
+## 迁移问题概览
+已有先前试验的估计结果，要在一个新的目标人群上做推断，这类问题统称为迁移问题（transport problem），相关文献很多。本文采用 Dahabreh et al. (2020) 提出的设定和双稳健估计量。
+
+### 问题设定
+设一个人群，个体编号为 $i = 1 ... n$。对其中的子集 $RCT$，我们能拿到一项随机/观察性试验或研究的结果：有 $n_{RCT}$ 条观测，包含基线协变量 $X_i$、二值处理指示 $W_i=\{0, 1\}$ 和结局 $Y_i$。对剩下的子集 $obs$，我们只观测到 $n_{obs}$ 条基线协变量 $X_i$（$n_{RCT} + n_{obs}=n$）。我们说第一个子集参与了试验，即 $S_i = 1$，第二个子集没有参与，即 $S_i = 0$。我们关心的是未参与者（即“目标”人群）中的平均处理效应，也就是：
+
+$$E[Y(1) - Y(0) | S = 0],$$
+
+其中 $Y(1), Y(0)$ 是对应两种处理状态的潜在结果。
+
+一般来说，这个均值并不等于试验参与者中的 ATE $E[Y(1) - Y(0) | S = 1]$，因为处理效应修饰因子的分布在试验参与者和未参与者之间可能不同。
+
+下表说明了这个设定：
+
+| Population        	| Unit                	| S 	| X                     	| Y             	| W             	|
+|-------------------	|---------------------	|---	|-----------------------	|---------------	|---------------	|
+| 试验人群          	| 1                   	| 1 	| $X_1$                 	| $Y_1$         	| $W_1$         	|
+| 试验人群          	| ...                 	| 1 	|                       	|               	|               	|
+| 试验人群          	| $n_{RCT}$           	| 1 	| $X_{n_{RCT}}$         	| $Y_{n_{RCT}}$ 	| $W_{n_{RCT}}$ 	|
+| 目标人群          	| $n_{RCT}$ + 1       	| 0 	| $X_{n_{RCT}+1}$       	| ?             	| ?             	|
+| 目标人群          	| ...                 	| 0 	|                       	| ?             	| ?             	|
+| 目标人群          	| $n_{RCT} + n_{obs}$ 	| 0 	| $X_{n_{RCT}+n_{obs}}$ 	| ?             	| ?             	|
+
+### 假设
+在已有 $E[Y(1) - Y(0) | S = 1]$ 估计的前提下估计 $E[Y(1) - Y(0) | S = 0]$，除了观察性/随机试验中因果推断的标准识别假设外，还需要两个假设：
+
+1. _均值意义上关于 S 的条件可交换性_。给定基线协变量后，潜在结果的均值与是否参与试验独立：$E[Y(W) | X = x, S = 1] = E[Y(W) | X = x, S = 0]$。
+
+2. _试验参与的正性_。在保证可交换性所需的协变量条件下，参与试验的概率为正：$P[S = 1 | X = x] > 0$。
+
+条件 1 称为 _迁移条件_，它很重要，但无法检验。条件 2 实质上是说，目标人群中的所有协变量取值模式都应当出现在目标人群中，其合理性可以通过检查 $P[S = 1 | X = x] > 0$ 的估计值来判断。
+
+### 估计量
+先给出一些定义。$\hat \tau^{(-i)}(X_i)$ 是条件平均处理效应 $E[Y_i(1) - Y_i(0) | X_i = x]$ 的估计。$\hat p^{(-i)}(X_i)$ 是条件试验纳入概率 $P[S = 1 | X_i = x]$ 的估计。$\hat e^{(-i)}(X_i)$ 是处理倾向 $E[W_i | X_i = x]$ 的估计，$\mu^{(-i)}(X_i, W_i)$ 是条件结局 $E[Y_i | W_i = w, X_i = x]$ 的估计。上标 (-1) 表示交叉拟合，即个体 $i$ 的估计不用个体 $i$ 自身的数据得到。$n_{RCT}$ 是参与试验的个体数，$n_{obs}$ 是目标人群中的个体数。
+
+目标人群上 ATE 的双稳健估计为：
+
+\begin{equation}
+\begin{split}
+& \hat \tau_{target} =
+  \frac{1}{n_{obs}}
+  \sum_{i \in obs} \hat \tau^{(-i)}(X_i) + \\ &
+
+  \frac{1}{n_{obs}}
+  \sum_{i \in RCT}
+  \left(\frac{1 - \hat p^{(-i)}(X_i)}{\hat p^{(-i)}(X_i)}\right)
+  \left(\frac{W_i - \hat e^{(-i)}(X_i)}{\hat e^{(-i)}(X_i)(1-\hat e^{(-i)}(X_i))}\right)
+  \left(Y_i - \hat \mu^{(-i)}(X_i, W_i) \right).
+\end{split}
+\end{equation}
+
+这就是 Dahabreh et al. (2020) 中的公式 (4)，写成对比（contrast）形式。这个估计量需要的所有量都很容易用 GRF 得到。它与试验参与者中传统双稳健 ATE 估计量的主要区别，是多了迁移概率 $\hat p^{(-i)}(X_i)$，它以逆优势（inverse odds）项的形式出现。$\mu^{(-i)}(X_i, W_i)$ 可以由因果森林的拟合结果构造，细节见[这篇 vignette](https://grf-labs.github.io/grf/articles/muhats.html)。标准误的估计也可以用同样的构造。一般来说，双稳健估计量对冗余参数（nuisance）成分满足 oracle 性质，也就是说我们可以用插入式（plug-in）估计代替真值，仍保留一定的一阶等价性，并直接计算该表达式的方差（本例中它化简为两个独立项之和）。
+
+## 算法
+下面的函数实现了这个估计量，它接受一个用二值处理训练的普通因果森林（或因果生存森林）作为参数。
+
+***输入***：
+
+  1. `forest`：训练好的因果森林。
+  2. `X.test`：要在其上计算 ATE 的协变量矩阵 $X$。
+  3. `p.hat`：可选，试验参与个体的试验纳入概率 $P[S = 1 | X = x]$ 的估计。若不提供，则用回归森林估计。
+
+***输出***：测试集上 ATE 的双稳健估计，以及标准误。
+
+```{r}
+average_treatment_effect_test <- function(forest, X.test, p.hat = NULL) {
+  Y.hat <- forest$Y.hat
+  Y.orig <- forest$Y.orig
+  W.hat <- forest$W.hat
+  W.orig <- forest$W.orig
+  n.rct <- length(Y.orig)
+  n.obs <- nrow(X.test)
+
+  if (is.null(p.hat)) {
+    S.forest <- regression_forest(X = rbind(forest$X.orig, X.test),
+                                  Y = c(rep(1, n.rct), rep(0, n.obs)),
+                                  num.trees = 500)
+    p.hat <- predict(S.forest)$predictions[1:n.rct]
+  }
+
+  tau.hat.test <- predict(forest, X.test)$predictions
+  tau.hat.train <- predict(forest)$predictions
+  debiasing.weights <- (1 - p.hat) / p.hat * (W.orig - W.hat) / (W.hat * (1 - W.hat))
+  Y.residual <- Y.orig - (Y.hat + tau.hat.train * (W.orig - W.hat))
+
+  tau.hat <- mean(tau.hat.test) + sum(debiasing.weights * Y.residual) / n.obs
+  sigma2.hat <- var(tau.hat.test) / n.obs + sum(Y.residual^2 * (debiasing.weights / n.obs)^2)
+
+  c(estimate = tau.hat, std.err = sqrt(sigma2.hat))
+}
+```
+注意这个估计量要除以迁移概率 $\hat p^{(-i)}(X_i)$，该概率太小就会有问题。一般建议画出这些估计值的直方图，看看是否存在正性问题。
+
+## 一个例子
+本节模拟一个简单的例子：处理效应修饰因子（$X_1$）的分布在随机试验和目标人群中不同（也就是说，试验纳入概率依赖于一个效应修饰因子）。把模拟的潜在结果画出来，两个分布是这样的：
+
+```{r, echo = FALSE}
+n <- 1e5
+p <- 5
+X.population <- matrix(rnorm(n * p), n, p)
+S.hat <- 1 / (1 + exp(-X.population[, 1] / 2))
+S <- rbinom(n, 1, S.hat)
+n.rct <- sum(S)
+
+X.test <- X.population[S == 0, ]
+X <- X.population[S == 1, ]
+W <- rbinom(n.rct, 1, 0.5)
+tau <- X[, 1] + 1
+tau.test <- X.test[, 1] + 1
+Y <- X[, 2] + tau * W + rnorm(n.rct)
+
+dens.y0 = with(density(tau), data.frame(x, y))
+dens.y1 = with(density(tau.test), data.frame(x, y))
+df = rbind(dens.y0, dens.y1)
+df$distribution=c(
+  rep("Y(1) - Y(0) | RCT", nrow(dens.y0)), rep("Y(1) - Y(0) | target", nrow(dens.y1))
+)
+ggplot(df, aes(x = x, y = y, ymin = 0, ymax = y, fill = distribution)) +
+  geom_line() +
+  geom_vline(xintercept = mean(tau), col = "red", lty = 2) +
+  geom_vline(xintercept = mean(tau.test), col = "blue", lty = 2) +
+  geom_ribbon(alpha = 0.5) +
+  xlab("") +
+  ylab("density") +
+  theme_classic()
+```
+
+蓝色分布是我们想要计算 ATE 的目标人群，红色分布是我们手头的 RCT，虚线表示均值。下面我们按这个设定模拟一次抽样，估计目标人群的 ATE 并计算 95% 置信区间，同时与只在测试集上对预测值取平均的“朴素”做法作比较。
+
+```{r}
+n <- 2000
+p <- 5
+X.population <- matrix(rnorm(n * p), n, p)
+trial.inclusion.prob <- 1 / (1 + exp(-X.population[, 1] / 2))
+S <- rbinom(n, 1, trial.inclusion.prob)
+
+X.test <- X.population[S == 0, ]
+
+X <- X.population[S == 1, ]
+W <- rbinom(nrow(X), 1, 0.5)
+tau <- X[, 1] + 1
+Y <- X[, 2] + tau * W + rnorm(nrow(X))
+
+forest <- causal_forest(X, Y, W, W.hat = 0.5)
+ate.test <- average_treatment_effect_test(forest, X.test)
+estimate <- ate.test[1]
+std.err <- ate.test[2]
+
+sprintf("Estimate: %1.2f", estimate)
+sprintf("95%% CI: (%1.2f, %1.2f)", estimate - 1.96 * std.err, estimate + 1.96 * std.err)
+sprintf("Naive estimate: %1.2f", mean(predict(forest, X.test)$predictions))
+sprintf("True mean: %1.2f", mean(X.test[, 1] + 1))
+```
+
+## 参考文献
+Dahabreh, Issa J., Sarah E. Robertson, Jon A. Steingrimsson, Elizabeth A. Stuart, and Miguel A. Hernan. Extending inferences from a randomized trial to a new target population. Statistics in Medicine 39(14), 2020. ([paper](https://onlinelibrary.wiley.com/doi/10.1002/sim.8426), [arxiv](https://arxiv.org/abs/1805.00550))
+
+## 附录：估计 E[Y | X.test]
+如果只想得到条件均值 $E[Y | X_{test}]$ 的估计，这也可以作为上面迁移流程的一个特例推导出来。不过还有更简单的办法：只用一个带虚拟处理指示的普通因果森林。记原始训练数据为 $(X_{train}, Y_{train})$，新的测试数据为 $X_{test}$。按下面的方式用虚拟的处理变量和结局变量 $(X, Y, W)$ 扩充数据：$(X_{train}, Y_{train}, 1)$ 和 $(X_{test}, 0, 0)$。在扩充后的数据上拟合因果森林，得到的对照组平均处理效应（ATC）就是 $E[Y | X_{test}]$ 的估计：因为我们把潜在结果“定义”为 $Y(1) = Y$ 和 $Y(0) = 0$，所以 $E[Y(1) - Y(0) | X_{test}] = E[Y | X_{test}]$。
+
+```{r}
+n <- 2000
+p <- 5
+X <- matrix(rnorm(n * p), n, p)
+S.hat <- 1 / (1 + exp(-X[, 1] / 2))
+S <- rbinom(n, 1, S.hat)
+Y <- 1 + X[, 1] + X[, 2] + rnorm(n)
+
+X.train <- X[S == 1, ]
+Y.train <- Y[S == 1]
+X.test <- X[S == 0, ]
+
+X.aug <- rbind(X.train, X.test)
+Y.aug <- c(Y.train, rep(0, nrow(X.test)))
+W.aug <- c(rep(1, nrow(X.train)), rep(0, nrow(X.test)))
+cf <- causal_forest(X.aug, Y.aug, W.aug, num.trees = 500)
+
+ate <- average_treatment_effect(cf, target.sample = "control")
+estimate <- ate[1]
+std.err <- ate[2]
+
+sprintf("Estimate: %1.2f", estimate)
+sprintf("95%% CI: (%1.2f, %1.2f)", estimate - 1.96 * std.err, estimate + 1.96 * std.err)
+sprintf("True mean: %1.2f",  mean(Y[S == 0]))
+```
