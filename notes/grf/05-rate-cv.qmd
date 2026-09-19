@@ -1,0 +1,443 @@
+---
+title: "异质性的交叉折验证"
+subtitle: "*Cross-fold validation of heterogeneity* · grf 官方教程中译"
+lang: zh
+---
+
+> **来源**：R 包 [grf](https://github.com/grf-labs/grf) 官方教程 [`rate_cv.Rmd`](https://github.com/grf-labs/grf/blob/master/r-package/grf/vignettes/rate_cv.Rmd)（[原文渲染版](https://grf-labs.github.io/grf/articles/rate_cv.html)），作者 Julie Tibshirani、Susan Athey、Erik Sverdrup、Stefan Wager 等，采用 **GPL-3** 许可。
+> 本页为中文翻译，**非原文**；按 GPL-3 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 译自 grf 2.6.1（源码修订 `5bee99b`）。
+> 页内代码与图表由本站以 R 4.4.3 + grf 2.6.1 **重新执行**生成，因随机种子与包版本差异，数值可能与原站略有出入。
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+set.seed(123)
+```
+
+```{r setup}
+library(grf)
+```
+本文简要介绍在不依赖单次训练/评估划分的前提下评估 CATE 估计量的策略，核心工具是*秩加权平均处理效应*（*Rank-Weighted Average Treatment Effects*，*RATE*）。我们演示如何在带二值处理分配的观测数据或实验数据上，用因果森林通过 RATE 检测异质性，并给出两种方案：*序贯折估计*流程，以及基于*袋外估计*的单边检验启发式做法。
+
+## RATE 指标的交叉折估计
+正如[这篇 vignette](https://grf-labs.github.io/grf/articles/rate.html)所述，RATE 指标可以用来检验处理效应异质性是否存在。常见做法是：先用训练集得到条件平均处理效应（conditional average treatment effect，CATE）的估计，再在留出的测试集上用 RATE 评估这些估计。具体来说，在*训练*集上我们可以得到某个估计的 CATE 函数 $\hat \tau(\cdot)$，然后在*测试*集上得到 RATE 的估计，再据此构造检验，判断是否检测到异质性：
+
+$H_0$：RATE $=0$（$\hat \tau(\cdot)$ 没有检测到异质性）
+
+$H_A$：RATE $\neq 0$。
+
+RATE 指标满足中心极限定理，因此可以用一个简单的 $t$ 检验来检验该假设：
+
+$$
+t = \frac{\widehat{RATE}}{\sqrt{Var(\widehat{RATE})}}.
+$$
+
+取置信水平 $\alpha$ 为 5%，如果 $p$ 值 $2\Phi(-|t|)$ 小于 5%，就拒绝 $H_0$。
+
+这种做法的缺点是：我们只用了一部分数据来训练 CATE 估计量。在样本量小、异质性又难以检测的场景下，这很不方便。一个看起来不错的替代方案是交叉折估计：把数据分成 $K$ 折，轮流决定哪一部分用于训练 CATE 估计量，哪一部分用于估计 RATE。
+下图展示了 $K=5$ 折的情形：在蓝色样本上拟合 CATE 估计量，在红色样本上评估 RATE。
+
+```{r, echo=FALSE}
+plot(NULL, xlim = c(1, 6), ylim = c(1, 7), xaxt = 'n', yaxt = 'n',
+     xlab = "Fold ID",
+     ylab = "Estimation step",
+     main = "5-fold estimation"
+     )
+
+lines(c(1, 6), c(5,5), lwd = 4, col = "blue")
+lines(c(1, 2), c(5,5), lwd = 4, col = "red")
+text(1.5, 5.25, offset = 0, "1", col = "red")
+text(2.5, 5.25, offset = 0, "2", col = "blue")
+text(3.5, 5.25, offset = 0, "3", col = "blue")
+text(4.5, 5.25, offset = 0, "4", col = "blue")
+text(5.5, 5.25, offset = 0, "5", col = "blue")
+
+lines(c(1, 6), c(4,4), lwd = 4, col = "blue")
+lines(c(2, 3), c(4,4), lwd = 4, col = "red")
+text(1.5, 4.25, offset = 0, "1", col = "blue")
+text(2.5, 4.25, offset = 0, "2", col = "red")
+text(3.5, 4.25, offset = 0, "3", col = "blue")
+text(4.5, 4.25, offset = 0, "4", col = "blue")
+text(5.5, 4.25, offset = 0, "5", col = "blue")
+
+lines(c(1, 6), c(3,3), lwd = 4, col = "blue")
+lines(c(3, 4), c(3,3), lwd = 4, col = "red")
+text(1.5, 3.25, offset = 0, "1", col = "blue")
+text(2.5, 3.25, offset = 0, "2", col = "blue")
+text(3.5, 3.25, offset = 0, "3", col = "red")
+text(4.5, 3.25, offset = 0, "4", col = "blue")
+text(5.5, 3.25, offset = 0, "5", col = "blue")
+
+lines(c(1, 6), c(2,2), lwd = 4, col = "blue")
+lines(c(4, 5), c(2,2), lwd = 4, col = "red")
+text(1.5, 2.25, offset = 0, "1", col = "blue")
+text(2.5, 2.25, offset = 0, "2", col = "blue")
+text(3.5, 2.25, offset = 0, "3", col = "blue")
+text(4.5, 2.25, offset = 0, "4", col = "red")
+text(5.5, 2.25, offset = 0, "5", col = "blue")
+
+lines(c(1, 6), c(1,1), lwd = 4, col = "blue")
+lines(c(5, 6), c(1,1), lwd = 4, col = "red")
+text(1.5, 1.25, offset = 0, "1", col = "blue")
+text(2.5, 1.25, offset = 0, "2", col = "blue")
+text(3.5, 1.25, offset = 0, "3", col = "blue")
+text(4.5, 1.25, offset = 0, "4", col = "blue")
+text(5.5, 1.25, offset = 0, "5", col = "red")
+
+text(3, 6.5, "Train", col = "blue")
+text(4, 6.5, "Test", col = "red")
+```
+
+这个策略会给出 5 个 RATE 估计和 5 个 $t$ 值，我们希望把它们汇总起来能提高检测异质性的能力（功效）。单独来看，每个 $t$ 值都是一个有效的检验。汇总它们的**问题**在于，它们**并不独立**：重叠的折划分方式会引入相关性。
+
+用一个简单的模拟实验就能看到这一点。下面定义一个简单的函数：把数据分成 5 折，在每一折上得到一个 RATE 估计和 $t$ 值，然后汇总这些检验统计量算出 $p$ 值。
+
+```{r}
+# Estimate RATE on K random folds to get K t-statistics, then return a p-value
+# for H0 using the sum of these t-values.
+rate_cv_naive = function(X, Y, W, num.folds = 5) {
+  fold.id = sample(rep(1:num.folds, length = nrow(X)))
+  samples.by.fold = split(seq_along(fold.id), fold.id)
+
+  t.statistics = c()
+
+  # Form AIPW scores for estimating RATE
+  nuisance.forest = causal_forest(X, Y, W)
+  DR.scores = get_scores(nuisance.forest)
+
+  for (k in 1:num.folds) {
+    train = unlist(samples.by.fold[-k])
+    test = samples.by.fold[[k]]
+
+    cate.forest = causal_forest(X[train, ], Y[train], W[train])
+
+    cate.hat.test = predict(cate.forest, X[test, ])$predictions
+
+    rate.fold = rank_average_treatment_effect.fit(DR.scores[test], cate.hat.test)
+    t.statistics = c(t.statistics, rate.fold$estimate / rate.fold$std.err)
+  }
+
+  p.value.naive = 2 * pnorm(-abs(sum(t.statistics) / sqrt(num.folds)))
+
+  p.value.naive
+}
+```
+接下来，我们模拟没有处理效应异质性的合成数据，在 5% 置信水平下对这个朴素流程的拒绝概率做蒙特卡洛估计：
+
+```{r, eval=FALSE}
+res = t(replicate(500, {
+  n = 1500
+  p = 5
+  X = matrix(rnorm(n * p), n, p)
+  W = rbinom(n, 1, 0.5)
+  Y = pmin(X[, 3], 0) + rnorm(n)
+
+  pval.naive = rate_cv_naive(X, Y, W)
+
+  c(
+    reject = pval.naive <= 0.05
+  )
+}))
+paste("Rejection rate:", mean(res) * 100, "%")
+#> [1] "Rejection rate: 16.8 %"
+```
+在 5% 的水平下，拒绝率高于 5% 的检验都是无效的检验。
+
+## 序贯交叉折估计
+不过，有一个简单的算法改动可以弥补朴素交叉折验证的缺陷。这个方法我们称为**序贯**交叉折估计：它只按顺序使用训练折，从而打断各折之间 RATE 指标的相关性。如下图所示，这个策略会给出 $K - 1$ 个单独的 $t$ 值。
+
+```{r, echo=FALSE}
+plot(NULL, xlim = c(1, 6), ylim = c(1, 6), xaxt = 'n', yaxt = 'n',
+     xlab = "Fold ID",
+     ylab = "Estimation step",
+     main = "Sequential 5-fold estimation"
+)
+
+lines(c(1, 2), c(4,4), lwd = 4, col = "blue")
+lines(c(2, 3), c(4,4), lwd = 4, col = "red")
+text(1.5, 4.25, offset = 0, "1", col = "blue")
+text(2.5, 4.25, offset = 0, "2", col = "red")
+
+lines(c(1, 3), c(3,3), lwd = 4, col = "blue")
+lines(c(3, 4), c(3,3), lwd = 4, col = "red")
+text(1.5, 3.25, offset = 0, "1", col = "blue")
+text(2.5, 3.25, offset = 0, "2", col = "blue")
+text(3.5, 3.25, offset = 0, "3", col = "red")
+
+lines(c(1, 4), c(2,2), lwd = 4, col = "blue")
+lines(c(4, 5), c(2,2), lwd = 4, col = "red")
+text(1.5, 2.25, offset = 0, "1", col = "blue")
+text(2.5, 2.25, offset = 0, "2", col = "blue")
+text(3.5, 2.25, offset = 0, "3", col = "blue")
+text(4.5, 2.25, offset = 0, "4", col = "red")
+
+lines(c(1, 5), c(1,1), lwd = 4, col = "blue")
+lines(c(5, 6), c(1,1), lwd = 4, col = "red")
+text(1.5, 1.25, offset = 0, "1", col = "blue")
+text(2.5, 1.25, offset = 0, "2", col = "blue")
+text(3.5, 1.25, offset = 0, "3", col = "blue")
+text(4.5, 1.25, offset = 0, "4", col = "blue")
+text(5.5, 1.25, offset = 0, "5", col = "red")
+
+text(3, 5.5, "Train", col = "blue")
+text(4, 5.5, "Test", col = "red")
+```
+
+这样的构造会让我们的 $t$ 值满足鞅性质，从而可以有效地汇总（Luedtke & van der Laan (2016) 和 Wager (2024)）。步骤如下：
+
+1. 把数据随机分成大小相同的 $k=1,\ldots,K$ 折。
+
+2. 对每一折 $k=2,\ldots,K$：
+
+    用第 $1,\ldots,k-1$ 折的$\color{blue}{\text{训练}}$数据得到一个估计的 CATE 函数。
+
+    用第 $k$ 折的$\color{red}{\text{测试}}$数据构造 RATE 估计，并计算一个 $t$ 统计量。
+
+3. 把这 $K-1$ 个不同的 $t$ 统计量汇总起来，作为最终的检验统计量。
+
+下面这个简单的函数实现了该流程。
+```{r}
+# Estimate RATE on K-1 random sequential folds to get K-1 t-statistics, then return a p-value
+# for H0 using the sum of these t-values
+rate_sequential = function(X, Y, W, num.folds = 5) {
+  fold.id = sample(rep(1:num.folds, length = nrow(X)))
+  samples.by.fold = split(seq_along(fold.id), fold.id)
+
+  t.statistics = c()
+
+  # Form AIPW scores for estimating RATE
+  nuisance.forest = causal_forest(X, Y, W)
+  DR.scores = get_scores(nuisance.forest)
+
+  for (k in 2:num.folds) {
+    train = unlist(samples.by.fold[1:(k - 1)])
+    test = samples.by.fold[[k]]
+
+    cate.forest = causal_forest(X[train, ], Y[train], W[train])
+
+    cate.hat.test = predict(cate.forest, X[test, ])$predictions
+
+    rate.fold = rank_average_treatment_effect.fit(DR.scores[test], cate.hat.test)
+    t.statistics = c(t.statistics, rate.fold$estimate / rate.fold$std.err)
+  }
+
+  p.value = 2 * pnorm(-abs(sum(t.statistics) / sqrt(num.folds - 1)))
+
+  p.value
+}
+```
+
+在没有异质性的数据上重复这项检查，可以看到这个构造给出了正确的拒绝率（在蒙特卡洛重复的误差容忍范围内）：
+```{r, eval=FALSE}
+res = t(replicate(500, {
+  n = 1500
+  p = 5
+  X = matrix(rnorm(n * p), n, p)
+  W = rbinom(n, 1, 0.5)
+  Y = pmin(X[, 3], 0) + rnorm(n)
+
+  pval.sequential = rate_sequential(X, Y, W)
+
+  c(
+    reject.sequential = pval.sequential <= 0.05
+  )
+}))
+paste("Rejection rate:", mean(res) * 100, "%")
+#> [1] "Rejection rate: 5.4 %"
+```
+
+现在我们有了一个用到多折数据、而且有效的处理效应异质性检验。下面在一个模拟例子上试一试，看它在检测处理效应异质性时表现如何。作为对照的基线是样本分裂，RATE 论文已经证明它是有效的，但因为只用了一部分数据做验证，功效可能偏低。
+
+下面我们生成合成的观测数据（Nie & Wager (2021) 中的 Setup A），其中处理效应异质性很难检测。注意，在这种情况下，我们希望检验能拒绝无异质性的 $H_0$。
+
+```{r, eval=FALSE}
+res = t(replicate(500, {
+  # Simulate synthetic data with "weak" treatment heterogeneity
+  n = 2500
+  p = 5
+  data = generate_causal_data(n, p, sigma.tau = 0.15, sigma.noise = 1, dgp = "nw1")
+  X = data$X
+  Y = data$Y
+  W = data$W
+
+  pval.sequential = rate_sequential(X, Y, W)
+
+  # Compare with a single train/test split
+  train = sample(n, n / 2)
+  test = -train
+  cf.train = causal_forest(X[train,], Y[train], W[train])
+  cf.test = causal_forest(X[test,], Y[test], W[test])
+  rate = rank_average_treatment_effect(cf.test, predict(cf.train, X[test, ])$predictions)
+  tstat.split = rate$estimate / rate$std.err
+  pval.split = 2 * pnorm(-abs(tstat.split))
+
+  c(
+    reject.sequential = pval.sequential <= 0.05,
+    reject.split = pval.split <= 0.05
+  )
+}))
+colMeans(res) * 100
+#> reject.sequential    reject.split
+#> 56.6                 47.0
+```
+
+令人放心的是，在这个例子里，交叉折估计相比基线提高了检测处理效应异质性的功效。
+
+## 启发式做法：袋外估计配合单边检验
+用同一份数据既估计 CATE 又评估异质性是否存在，根本困难在于过拟合：我们受限于一个事实——不能简单地用同一份数据集既做估计又做评估。前面看到，朴素的交叉折估计没能克服这个困难，原因是折与折之间存在相关性（这会让估计向下偏）。挽救这种朴素汇总方式的一个*启发式*办法是使用**单边** $p$ 值。如果我们愿意事先锁定一个单边检验，例如 RATE $>0$，这会是一个有用的策略。
+
+不过，随机森林还有一种比简单交叉折估计在计算上更高效的替代方案。留一估计在森林里的原生版本就是*袋外*（out-of-bag，OOB）估计。对于给定的个体 $i$，袋外估计由随机森林中所有生长在不含第 $i$ 个个体的子样本上的树给出。当我们想用全部数据来拟合并评估异质性时，把 OOB 估计的 RATE 与单边检验配合使用，是一个有用的启发式做法。
+
+下面的例子在 5% 水平下比较 RATE $\neq 0$ 的双边检验和 RATE $>0$ 的单边检验。
+
+```{r, eval=FALSE}
+res = t(replicate(500, {
+  n = 1500
+  p = 5
+  X = matrix(rnorm(n * p), n, p)
+  W = rbinom(n, 1, 0.5)
+  Y = pmin(X[, 3], 0) + rnorm(n)
+
+  c.forest = causal_forest(X, Y, W)
+  tau.hat.oob = predict(c.forest)$predictions
+  rate.oob = rank_average_treatment_effect(c.forest, tau.hat.oob)
+
+  t.stat.oob = rate.oob$estimate / rate.oob$std.err
+  # Compute a two-sided p-value Pr(>|t|)
+  p.val = 2 * pnorm(-abs(t.stat.oob))
+  # Compute a one-sided p-value Pr(>t)
+  p.val.onesided = pnorm(t.stat.oob, lower.tail = FALSE)
+
+  c(
+    reject.oob = p.val <= 0.05,
+    reject.oob.onesided = p.val.onesided <= 0.05
+  )
+}))
+colMeans(res) * 100
+#> reject.oob reject.oob.onesided
+#> 30.4                 4.0
+```
+
+可以看到，单边检验在零效应下给出了正确的拒绝率。
+
+重复上面那个简单的功效实验，可以看到我们得到的功效和序贯汇总基本相同。
+```{r, eval=FALSE}
+res = t(replicate(500, {
+  # Simulate synthetic data with "weak" treatment heterogeneity
+  n = 2500
+  p = 5
+  data = generate_causal_data(n, p, sigma.tau = 0.15, sigma.noise = 1, dgp = "nw1")
+  X = data$X
+  Y = data$Y
+  W = data$W
+
+  c.forest = causal_forest(X, Y, W)
+  tau.hat.oob = predict(c.forest)$predictions
+  rate.oob = rank_average_treatment_effect(c.forest, tau.hat.oob)
+  t.stat.oob = rate.oob$estimate / rate.oob$std.err
+  # Compute a one-sided p-value Pr(>t)
+  p.val.onesided = pnorm(t.stat.oob, lower.tail = FALSE)
+
+  c(
+    reject.oob.onesided = p.val.onesided <= 0.05
+  )
+}))
+mean(res) * 100
+#> [1] 54.0
+```
+
+## 参考文献
+Chernozhukov, Victor, Mert Demirer, Esther Duflo, and Ivan Fernandez-Val. Generic machine learning inference on heterogeneous treatment effects in randomized experiments, with an application to immunization in India. _Econometrica, forthcoming_.
+
+Luedtke, Alexander R., and Mark J. van der Laan. Statistical inference for the mean outcome under a possibly non-unique optimal treatment strategy. _Annals of Statistics 44(2), 2016_.
+
+Nie, Xinkun, and Stefan Wager. Quasi-oracle estimation of heterogeneous treatment effects. _Biometrika 108(2), 2021_.
+
+Wager, Stefan. Sequential Validation of Treatment Heterogeneity. _arXiv preprint arXiv:2405.05534_ ([arxiv](https://arxiv.org/abs/2405.05534))
+
+## 附录：p 值的中位数聚合
+要挽救 `rate_cv_naive`，一种可行的办法是保留传统的 $K$ 折构造，只改变各折 $t$ 统计量的聚合方式。这正是 Chernozhukov 等人（2024）采用的策略。如果不基于聚合后的 $t$ 统计量计算 $p$ 值，而是对每个 $t$ 统计量各自的 $p$ 值取中位数，就能得到一个有效的检验。
+
+```{r}
+# This function does the same thing as `rate_naive`, except it returns
+# the median p-value.
+rate_cv_median = function(X, Y, W, num.folds = 5) {
+  fold.id = sample(rep(1:num.folds, length = nrow(X)))
+  samples.by.fold = split(seq_along(fold.id), fold.id)
+
+  t.statistics = c()
+
+  nuisance.forest = causal_forest(X, Y, W)
+  DR.scores = get_scores(nuisance.forest)
+
+  for (k in 1:num.folds) {
+    train = unlist(samples.by.fold[-k])
+    test = samples.by.fold[[k]]
+
+    cate.forest = causal_forest(X[train, ], Y[train], W[train])
+
+    cate.hat.test = predict(cate.forest, X[test, ])$predictions
+
+    rate.fold = rank_average_treatment_effect.fit(DR.scores[test], cate.hat.test)
+    t.statistics = c(t.statistics, rate.fold$estimate / rate.fold$std.err)
+  }
+
+  p.value.median = median(2 * pnorm(-abs(t.statistics)))
+
+  p.value.median
+}
+```
+
+这种构造在 5% 的置信水平下给出的拒绝率是有效的，但相当保守：
+```{r, eval=FALSE}
+res = t(replicate(500, {
+  n = 1500
+  p = 5
+  X = matrix(rnorm(n * p), n, p)
+  W = rbinom(n, 1, 0.5)
+  Y = pmin(X[, 3], 0) + rnorm(n)
+
+  rate.cv.median = rate_cv_median(X, Y, W)
+
+  c(
+    reject.median = rate.cv.median <= 0.05
+  )
+}))
+paste("Rejection rate:", mean(res) * 100, "%")
+#> [1] "Rejection rate: 0.2 %"
+```
+
+如果重复上面的功效模拟，可惜这个算法的功效并不比样本分裂更高。这种做法的一个缺点是：如果所有 $t$ 统计量都为正、但各自都不显著，`rate_sequential` 能把这一点考虑进去，而 `rate_cv_median` 不能。
+```{r, eval=FALSE}
+res = t(replicate(500, {
+  # Simulate synthetic data with "weak" treatment heterogeneity
+  n = 2500
+  p = 5
+  data = generate_causal_data(n, p, sigma.tau = 0.15, sigma.noise = 1, dgp = "nw1")
+  X = data$X
+  Y = data$Y
+  W = data$W
+
+  pval.median = rate_cv_median(X, Y, W)
+
+  # Compare with sample splitting
+  train = sample(n, n / 2)
+  test = -train
+  cf.train = causal_forest(X[train,], Y[train], W[train])
+  cf.test = causal_forest(X[test,], Y[test], W[test])
+  rate = rank_average_treatment_effect(cf.test, predict(cf.train, X[test, ])$predictions)
+  tstat.split = rate$estimate / rate$std.err
+  pval.split = 2 * pnorm(-abs(tstat.split))
+
+  c(
+    reject.median = pval.median <= 0.05,
+    reject.split = pval.split <= 0.05
+  )
+}))
+colMeans(res) * 100
+#> reject.median  reject.split
+#> 14.6          47.8
+```
