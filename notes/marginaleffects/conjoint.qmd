@@ -1,0 +1,197 @@
+---
+title: "联合分析实验"
+subtitle: "*Conjoint Experiments* · marginaleffects 官方文档中译"
+bibliography: marginaleffects-refs.bib
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Conjoint Experiments*](https://marginaleffects.com/bonus/conjoint.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/conjoint.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+> 原文中指向原书章节的交叉引用已改写为指向 marginaleffects.com 的链接（那些章节不在本次翻译范围内）。
+
+
+强制选择联合分析实验是一种研究方法，广泛应用于市场营销、政治学等领域，用来了解人们如何在由多个“属性”共同刻画的“选项”之间做出选择。调查会向受访者呈现一系列选择任务，要求他们在不同的产品、服务或情境之间做出选择。每个选项由一组属性（例如价格、质量、品牌、功能）来描述，这些属性的取值水平会在呈现给受访者的选项之间随机变化。
+
+设想有这样一项实验：研究者要求受访者“扮演移民官员的角色，从一对移民中选出他们会批准入境的一位”[@HaiHopYam2014]。研究者展示一张两栏表格，分别代表带有随机属性的不同移民选项。例如：
+
+```{r}
+#| include: false
+options(width=300)
+```
+
+
+```{r}
+#| echo: false
+#| tbl-cap: A forced-choice task in a conjoint experiment.
+library(tinytable)
+tmp <- data.frame(
+  "Attributes" = c("Language Skills", "Job"),
+  `Profile 1` = c("Fluent in English", "Construction worker"),
+  `Profile 2` = c("Broken English", "Nurse"),
+  check.names = FALSE
+)
+tt(tmp)
+```
+
+受访者的“任务”就是在两个选项中选择一个。随后，研究者会展示一项新任务，其中的选项具有不同的随机属性，受访者再次做出选择。通过分析参与者的选择，研究者可以估计不同属性在决策过程中的相对重要性。
+
+为了演示，我们使用 @HaiHopYam2014 发表于 *Political Analysis* 期刊的文章所附带的数据。在这项实验中，每位受访者 $i$ 会收到若干任务 $k$，并在每个任务中从两个选项 $j$ 中选择一个，这些选项由属性 $l$ 刻画。为简单起见，我们只使用数据的一个子集：每位受访者 5 个任务，每个任务 2 个选项，每个选项 2 个属性。
+
+数据采用“长”格式组织，每一行对应一种受访者-任务-选项组合。因变量是 `choice`，这是一个二元变量，表示该行对应的选项是否在当次任务中被选中。预测变量是 `language`（语言能力）和 `job`（职业类型）。
+
+由于每位受访者有 5 个任务，每个任务有两个选项，因此数据集中每位受访者对应 10 行数据。
+
+```{r}
+library(marginaleffects)
+dat <- get_dataset("immigration")
+dat[dat$respondent == 4, ]
+```
+
+为了分析这个数据集，我们估计一个以 `choice` 为结局、并让所有预测变量相互交互的线性回归模型：
+
+```{r}
+mod <- lm(choice ~ job * language, data = dat)
+```
+
+## 边际均值
+
+解读联合分析实验结果的一种常见策略是计算边际均值。正如 @LeeHobTil2020 所述，“边际均值描述的是具有某个特征水平的选项所获得的偏好程度，同时忽略所有其他特征。”
+
+要计算边际均值，我们分两个步骤进行：
+
+1. 在预测变量的平衡网格中为每一行计算预测值（即拟合值）（参见 [原书《概念框架》一章](https://marginaleffects.com/chapters/framework.html)）。
+2. 针对感兴趣的变量，对这些预测值进行边际化（即取平均）。
+
+使用 `avg_predictions()` 函数可以轻松完成这一操作。注意，我们使用 `vcov` 参数来报告以受访者为聚类单位的聚类稳健标准误。
+
+```{r}
+avg_predictions(mod, 
+  newdata = "balanced",
+  by = "language", 
+  vcov = ~respondent)
+```
+
+这些结果表明，在忽略（或对其取平均）`job` 属性的情况下，英语“流利”的受访选项比其他 `language` 取值的选项更常被选中。
+
+为了检验候选人英语流利时与需要借助译员时相比，平均入选概率是否更高，我们使用 `hypothesis` 参数。
+
+```{r}
+avg_predictions(mod, 
+  hypothesis = "b1 = b4",
+  newdata = "balanced",
+  by = "language", 
+  vcov = ~respondent)
+```
+```{r}
+#| echo: false
+cmp <- avg_predictions(mod, 
+  newdata = "balanced",
+  by = "language", 
+  vcov = ~respondent,
+  hypothesis = "b1 = b4")$estimate
+```
+
+这表明这两个类别的估计值之间存在相当大的差异（`{r} sprintf("%.1f", cmp)` 个百分点），且这一差异在统计上是显著的。
+
+## 平均边际成分效应
+
+平均边际成分效应（AMCE）由 @HaiHopYam2014 定义并分析。粗略而言，它可以被看作是在保持选项其他属性不变的情况下，改变某一属性对选择的平均影响。要计算 AMCE，我们使用 `avg_comparisons()` 函数，这个函数我们已经在[原书《反事实比较》一章](https://marginaleffects.com/chapters/comparisons.html)和[原书《G 计算》一章](https://marginaleffects.com/chapters/gcomputation.html)中探讨过。
+
+```{r}
+avg_comparisons(mod, vcov = ~respondent, newdata = "balanced")
+```
+
+```{r}
+#| include: false
+#| echo: false
+#| eval: false
+library(cjoint)
+amce_results <- amce(
+  choice ~ language * job,
+  data = dat,
+  cluster = TRUE,
+  respondent.id = "respondent")
+summary(amce_results)$amce
+```
+
+## 平均特征选择概率
+
+@Abr2024 为强制选择联合分析实验提出了另一种估计目标：平均特征选择概率（AFCP）。AMCE 与 AFCP 之间的主要差异在于二者处理属性比较的方式。
+
+AMCE 同时纳入并平均了直接和间接的属性比较。例如，“流利”与“蹩脚英语”相比对选择产生的估计效应，不仅取决于这两个具体特征本身，还取决于它们与“借助译员”或“尝试但未成功”相比的结果。因此，@Abr2024 认为 AMCE 纳入了无关属性的信息，并施加了很强的传递性假设。在某些情况下，即便在直接比较中，受访者平均而言更不愿意选择具有感兴趣特征的选项而非基准选项，AMCE 仍可能显示出正的效应。对比之下，AFCP 只关注属性之间的直接比较，能在不受无关属性影响的情况下，更准确地反映受访者的直接偏好。
+
+要估计 AFCP，我们首先需要创建两个新列：`language.alt` 和 `job.alt`。这两列记录的是每个任务中，与该选项配对的另一选项的属性。我们使用 `by()` 将数据框按 `respondent` 和 `task` 的每种组合拆分为子组。由于每个任务有两个选项，因此每个子组有两行。接着，我们使用 `rev()` 创建具有相反属性的新变量。
+
+```{r}
+dat <- by(dat, ~ respondent + task, \(x) transform(x,
+  language.alt = rev(language),
+  job.alt = rev(job)
+))
+dat <- do.call(rbind, dat)
+```
+
+在受访者 4 的第一个任务中，第一个选项是“护士”，与之配对的选项是“育儿看护”。因此，“护士”在第一行中作为 `job` 出现，在第二行中作为 `job.alt` 出现。
+
+```{r}
+subset(dat, respondent == 4 & task == 1)
+```
+
+为了估计 AFCP，我们再次拟合一个线性回归模型，这一次模型的设定更加灵活：具体来说，该模型允许第一个选项中语言能力的效应，取决于第二个选项中语言能力的取值。同样，其他属性对入选概率的影响，也可以随比较选项的属性而变化。为此，我们让 `language` 与 `language.alt` 交互，并让 `job` 与 `job.alt` 交互。
+
+```{r}
+mod <- lm(choice ~ language * language.alt + job * job.alt, data = dat)
+```
+
+正如前文所述，且如 @Abr2024 中详细说明的那样，AFCP 是一个特定于选择对的量。这意味着，我们需要在每一对感兴趣的属性组合内，对各协变量取值上的预测值（拟合值）进行平均。
+
+现在，我们通过按语言属性的唯一属性对（即 `language` 与 `alternative` 的组合）对预测值取平均，来计算 AFCP。由于我们并不关心两个选项语言能力相同的比较对，因此我们使用 `subset()` 函数，并结合 `newdata` 参数来选取合适的网格。
+
+```{r}
+avg_predictions(mod, 
+  by = c("language", "language.alt"), 
+  newdata = subset(language.alt == "fluent"),
+  vcov = ~respondent)
+```
+
+```{r}
+#| warning: false
+#| message: false
+#| echo: false
+#| eval: false
+library(afcp)
+library(cjoint)
+amce_results <- amce(
+  choice ~ language * job,
+  data = dat,
+  cluster = TRUE,
+  respondent.id = "respondent")
+afcp_results <- afcp(
+  amce_results,
+  respondent.id = "respondent",
+  task.id = "task",
+  profile.id = "profile",
+  attribute = "language")
+afcp_results$afcp
+```
+
+`marginaleffects` 的一个强大功能是，它的所有函数都包含 `hypothesis` 参数，可用于对估计值的任意函数进行假设检验。这让我们可以回答诸如下述问题：“借助译员”相对“流利”的 AFCP，与“蹩脚英语”相对“流利”的 AFCP 是否不同？
+
+```{r}
+avg_predictions(mod, 
+  by = c("language", "language.alt"), 
+  hypothesis = "b4 - b2 = 0",
+  newdata = subset(language.alt == "fluent"),
+  vcov = ~respondent)
+```
+```{r}
+#| echo: false
+p <- avg_predictions(mod, 
+  by = c("language", "language.alt"), 
+  hypothesis = "b4 - b2 = 0",
+  newdata = subset(language.alt == "fluent"),
+  vcov = ~respondent)
+```
+
+这些结果表明，“译员”与“流利”之间的入选概率差异，小于“蹩脚英语”与“流利”之间的入选概率差异：估计差距为 `{r} round(p$estimate, 3)`，$z$ 统计量为 `{r} round(p$statistic, 2)`。
