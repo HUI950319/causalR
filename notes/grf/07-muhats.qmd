@@ -1,0 +1,89 @@
+---
+title: "估计条件均值"
+subtitle: "*Estimating conditional means* · grf 官方教程中译"
+lang: zh
+---
+
+> **来源**：R 包 [grf](https://github.com/grf-labs/grf) 官方教程 [`muhats.Rmd`](https://github.com/grf-labs/grf/blob/master/r-package/grf/vignettes/muhats.Rmd)（[原文渲染版](https://grf-labs.github.io/grf/articles/muhats.html)），作者 Julie Tibshirani、Susan Athey、Erik Sverdrup、Stefan Wager 等，采用 **GPL-3** 许可。
+> 本页为中文翻译，**非原文**；按 GPL-3 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 译自 grf 2.6.1（源码修订 `5bee99b`）。
+> 页内代码与图表由本站以 R 4.4.3 + grf 2.6.1 **重新执行**生成，因随机种子与包版本差异，数值可能与原站略有出入。
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+set.seed(123)
+```
+
+```{r setup}
+library(grf)
+```
+
+## 条件均值与平均处理效应估计
+
+grf 基于双稳健（doubly robust）修正来计算平均处理效应，由此得到一个增广逆倾向加权（augmented inverse-propensity weighted）的平均处理效应。对于二值处理的因果森林，其精确表达式是（Athey 和 Wager 2019 的式 (8)）：
+
+$\hat \Gamma_i = \hat \tau^{(-i)}(X_i) + \frac{W_i - \hat e^{(-i)}(X_i)}{\hat e^{(-i)}(X_i)[1 - \hat e^{(-i)}(X_i)]} [Y_i - \hat \mu^{(-i)}(X_i, W_i)]$
+
+其中：
+
+1. $\hat \tau^{(-i)}(X_i)$ 是处理效应估计（由 grf 的 `predict` 方法返回）。用潜在结果（potential outcome）记号表示，它按定义等于 $E[Y_i(1) - Y_i(0) | X_i] = \mu(X_i, 0) - \mu(X_i, 1)$。
+
+2. $W_i$ 是个体 $i$ 的二值处理指示变量。
+
+3. $\hat e^{(-i)}(X_i)$ 是个体 $i$ 的倾向评分（默认用一个针对处理分配拟合的回归森林来估计）。
+
+4. $Y_i$ 是个体 $i$ 实际观测到的结果。
+
+5. $\hat \mu^{(-i)}(X_i, W_i) = \hat m^{(-i)}(X_i) + [W_i - \hat e^{(-i)}(X_i)] \hat \tau^{(-i)}(X_i)$ 是个体 $i$ 实际条件均值的估计，其中 $m(X_i) = E[Y | X_i]$（默认用回归森林估计，并对处理做边缘化）。
+
+上标 $-i$ 表示交叉拟合（cross-fitting），即计算该估计时把第 $i$ 个观测排除在外。对袋外森林估计来说，这一点由构造方式自动成立。
+
+要看清最后这个表达式是怎么来的，注意我们有：
+
+6. $m(X_i)$
+
+   $= E[Y | X_i]$
+
+   $= E[Y_i(0) | X_i] + E[W_i [Y_i(1) - Y_i(0)] | X_i]$
+
+   $= \mu(X_i, 0) + e(X_i) \tau(X_i)$
+
+最后一行成立是因为无混杂性（unconfoundedness）：在给定协变量集合 $X_i$ 的条件下，潜在结果与处理相互独立。
+
+于是可以得到反事实响应面的如下表达式：
+
+7. $\mu(X_i, 0) = m(X_i) - e(X_i) \tau(X_i)$
+
+8. $\mu(X_i, 1) = \tau(X_i) + \mu(X_i, 0) = m(X_i) + [1 - e(X_i)] \tau(X_i)$
+
+这些量都由内置的 ATE 函数计算。下面的代码片段演示如何手动得到条件均值 $E[Y | X_i, W_i]$ 的估计：
+
+```{r}
+n <- 250
+p <- 5
+X <- matrix(rnorm(n * p), n, p)
+W <- rbinom(n, 1, 0.5)
+Y <- pmax(X[, 1], 0) * W + X[, 2] + pmin(X[, 3], 0) + rnorm(n)
+
+# These are estimates of m(X) = E[Y | X]
+forest.Y <- regression_forest(X, Y)
+Y.hat <- predict(forest.Y)$predictions
+
+# These are estimates of the propensity score E[W | X]
+forest.W <- regression_forest(X, W)
+W.hat <- predict(forest.W)$predictions
+
+c.forest <- causal_forest(X, Y, W, Y.hat, W.hat)
+tau.hat <- predict(c.forest)$predictions
+
+# E[Y | X, W = 0]
+mu.hat.0 <- Y.hat - W.hat * tau.hat
+# E[Y | X, W = 1]
+mu.hat.1 <- Y.hat + (1 - W.hat) * tau.hat
+```
+
+## 参考文献
+Athey, Susan and Stefan Wager. Estimating Treatment Effects with Causal Forests: An Application. _Observational Studies_, 5, 2019. ([arxiv](https://arxiv.org/abs/1902.07409))
