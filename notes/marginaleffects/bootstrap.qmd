@@ -1,0 +1,146 @@
+---
+title: "自助法"
+subtitle: "*Bootstrap* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Bootstrap*](https://marginaleffects.com/bonus/bootstrap.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/bootstrap.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+
+
+本教程演示如何在 `marginaleffects` 包中使用自助法进行推断。
+
+## 并行化
+
+自助法是量化估计值不确定性的一种极为强大且灵活的方法，但遗憾的是，它的计算成本可能相当高。在某些情况下，并行化可以显著加快这一过程。当自助法样本量（`R`）较大（≥ 1000）、模型拟合的计算成本较高，且你拥有多个可用的 CPU 核心时，并行化的效果最为明显。
+
+`marginaleffects` 底层使用 `future` 框架来实现并行处理。这需要调用 `plan()` 函数，并设置以下几个全局选项：
+
+- `marginaleffects_parallel_inferences`：设为 `TRUE` 以启用并行处理
+- `marginaleffects_parallel_packages`：用于拟合模型的软件包名称组成的字符向量。
+
+```{r}
+library(future)
+library(splines)
+library(marginaleffects)
+options(marginaleffects_parallel_inferences = TRUE)
+options(marginaleffects_parallel_packages = c("marginaleffects", "splines"))
+plan(multisession)
+```
+
+```{r}
+#| include: false
+options(width = 200)
+```
+
+
+
+## 简单示例
+
+由 `marginaleffects` 生成的所有对象都可以传入 `inferences()` 函数，用来计算自助法置信区间。例如，对 `iris` 数据集拟合一个简单模型并计算平均比较。
+
+```{r}
+mod <- lm(Sepal.Length ~ Sepal.Width + Species, data = iris)
+avg_comparisons(mod)
+```
+
+上面报告的默认置信区间是用 Delta 方法计算的。我们可以将命令通过管道传入 `inferences()`，从而得到基于自助法的估计值：
+
+```{r}
+avg_comparisons(mod) |> inferences(method = "rsample")
+```
+
+这也适用于 `marginaleffects` 包中的其他函数：
+
+```{r}
+avg_predictions(mod, by = "Species") |> inferences(method = "rsample")
+
+hypotheses(mod, hypothesis = ratio ~ sequential) |> inferences(method = "rsample")
+```
+
+`inferences()` 函数支持多种自助法，并提供了一些参数来控制该过程的某些环节，包括用于确定重抽样次数的 `R`。其余（未在文档中说明的）参数会被传递给底层的自助法函数，例如 `rsample::bootstraps()`。这样一来，用户就可以提供诸如 `strata` 或 `pool` 之类的参数。详情参见 `?rsample::bootstraps`。
+
+## 自定义估计流程
+
+有时候，分析师需要使用自助法，为超出标准边际效应工作流程的更复杂估计流程计算不确定性。例如，可能需要分三步进行：
+
+1. 对处理拟合一个逻辑回归模型，以估计倾向得分。
+2. 使用估计出的倾向得分作为权重，对结局拟合一个线性模型。
+3. 使用 `avg_comparisons()` 函数，通过 G 计算和权重来计算平均处理效应。
+
+自助法能让我们将估计各阶段的不确定性都纳入考虑。这在其他许多场景中也很有用，例如复杂的调查设计，或是分析师希望对整个机器学习流程进行自助法处理的应用场景。
+
+要实现自定义估计流程，我们需要在 `inferences()` 函数中定义一个 `estimator` 参数。`estimator()` 必须
+
+1. 接受一个数据框作为输入
+2. 返回一个类别为 `hypotheses`、`predictions`、`slopes` 或 `comparisons` 的对象  
+
+### 示例：使用倾向得分加权的自助法
+
+```{r}
+library(marginaleffects)
+
+lalonde <- get_dataset("lalonde")
+
+# Define custom estimator function
+# input: data frame
+# output: marginaleffects object
+estimator <- function(data) {
+    # Step 1: Estimate propensity scores
+    fit1 <- glm(treat ~ age + educ + race, family = binomial, data = data)
+    ps <- predict(fit1, type = "response") 
+    
+    # Step 2: Fit weighted outcome model
+    m <- lm(re78 ~ treat * (re75 + age + educ + race),
+        data = data, weight = ps
+    )
+    
+    # Step 3: Compute average treatment effect by G-computation
+    avg_comparisons(m, variables = "treat", wts = ps, vcov = FALSE)
+}
+
+# Test the estimator on the full dataset
+estimator(lalonde)
+
+# Bootstrap the entire procedure
+cmp <- inferences(lalonde, method = "rsample", estimator = estimator)
+```
+
+这种方法的好处在于，它把自助法的具体实现细节抽象了出来。我们不需要直接与 `rsample` 或 `boot` 包打交道，也不需要对抽样结果进行后处理或重新整形以得到所需格式。实际上，输出结果是一个标准的 `marginaleffects` 对象，可以使用所有标准工具进行操作，并且自带一个美观的打印输出方法：
+
+```{r}
+cmp
+```
+
+它还能让我们借助 `marginaleffects` 包中的 `get_draws()` 辅助函数，以多种便捷格式提取抽样结果，从而轻松查看自助法的分布情况。
+
+```{r}
+d <- get_draws(cmp)$draw
+hist(d, 
+     main = "Bootstrap Distribution of Average Treatment Effect",
+     xlab = "")
+```
+
+### 带参数的估计量函数
+
+`estimator` 参数只接受单个函数，我们无法向该函数传递额外的参数。不过，我们可以使用函数工厂来创建一个可以接受额外参数的自定义估计量。
+
+
+```{r}
+#| warning: false
+estimator_factory <- function(outcome = "Sepal.Width", predictor = "Sepal.Length") {
+  estimator_function <- function(data) {
+    f <- as.formula(sprintf("%s ~ %s * factor(Species)", outcome, predictor))
+    mod <- lm(f, data = data)
+    avg_slopes(mod, variables = predictor, by = "Species")
+  }
+}
+
+fun <- estimator_factory(outcome = "Petal.Width", predictor = "Sepal.Length")
+inferences(iris, estimator = fun, method = "rsample", R = 100)
+
+fun <- estimator_factory(outcome = "Petal.Width", predictor = "Petal.Length")
+inferences(iris, estimator = fun, method = "rsample", R = 100)
+```
