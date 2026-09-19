@@ -1,0 +1,416 @@
+---
+title: "生存分析"
+subtitle: "*Survival Analysis* · marginaleffects 官方文档中译"
+execute:
+  cache: false
+bibliography: marginaleffects-refs.bib
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Survival Analysis*](https://marginaleffects.com/bonus/survival.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/survival.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+
+
+生存分析关注的是一个或多个变量对「事件发生时间」型结局的（因果）效应，例如直到死亡的时间，或直到某种疾病发生的时间。在实践中，生存分析的主要难题之一是：事件发生时间型结局常常是右删失的，也就是说，对某些个体我们只知道所关心的事件在某个时间点之前尚未发生。直接处理右删失的最常用一类模型是 Cox 比例风险模型 [@Cox1972]。这类模型虽然非常有用，却不是边际模型。它们只给出风险比（HR），而那是条件量。因此，它们本身并不能直接估计实践中真正相关的因果估计目标 [@Hernan2010]。这使得此类模型给出的参数估计在实际场景中相当难以解读，而这个问题也是绝大多数其他事件发生时间型模型共有的。
+
+为了解读生存模型的结果，有作者建议报告边际估计目标，比如反事实生存概率之间的差或比 [@Klein2007; @Royston2013; @Uno2014]。这些反事实概率还可以以「调整生存曲线」的形式在图上展示出来，从而让结果更易于呈现 [@Denz2023]。计算这些量的一种常用且统计上高效的方法是使用 g 计算 [@Robins1986]。
+
+`marginaleffects` 包非常适合完成这些任务。它让用户能够计算种类繁多、直观且有意义的所关心的量，并把它们相互比较。该包还让用户能够方便地指定复杂的假设检验，用以研究交互作用或效应修饰。
+
+关键在于，用来解读生存模型的语法和思路，与 `marginaleffects` 所支持的 100 多种模型类型完全一致。读过（免费的）*Model to Meaning* 的用户会感到非常熟悉。
+
+本教程演示如何用 `marginaleffects` 在事件发生时间型模型的基础上，估计生存分析中的各种边际因果估计目标。我们的目标主要是对本包的能力做一个非技术性的概览。关于所示材料更技术化、更详细的解释，我们建议查阅生存分析的标准教材。
+
+## 示例数据与模型
+
+我们来看一个生存分析文献中的经典真实数据例子：`survival` R 包中的 `rotterdam` 数据集 [@RoystonAltman2013]。`rotterdam` 数据集取自鹿特丹肿瘤库，包含 2982 名乳腺癌患者的信息。它涵盖了与患者人口学特征、临床特征和生存结局相关的变量。在生存分析中，该数据集被用来研究各预测变量与生存时间之间的关系。
+
+就本教程而言，我们要分析的是激素治疗对直到死亡的时间的因果效应。在 `rotterdam` 数据集中，激素治疗是一个名为 `hormon` 的二值变量，`0` 表示未接受治疗，`1` 表示患者确实接受了治疗。直到死亡的时间按经典的事件发生时间变量方式编码为两列：`dtime` 和 `death`。其中 `dtime` 是直到死亡或右删失的天数，`death` 是事件状态指示变量，`0` 表示患者在 `dtime` 时仍然存活，`1` 表示患者在 `dtime` 时死亡。该研究并未对 `hormon` 治疗做随机化，这意味着我们必须像处理观察性数据时那样对混杂进行调整。
+
+数据集的前 6 行如下：
+
+```{r}
+#| include: false
+options(marginaleffects_print_type = FALSE)
+options(marginaleffects_print_column_names = FALSE)
+options(width = 300)
+``` 
+```{r}
+#| warning: false
+#| message: false
+library(marginaleffects)
+
+# model-fitting packages
+library(survival)
+library(splines)
+
+# plotting packages and theme
+library(tinyplot)
+tinytheme("ipsum")
+
+# parallel processing for bootstrap confidence intervals
+library(future.apply)
+plan(multisession)
+options(marginaleffects_parallel_inferences = TRUE)
+options(marginaleffects_parallel_packages = c("survival", "splines"))
+
+head(rotterdam)
+```
+
+在分析这份数据时，我们先拟合一个标准的 Cox 比例风险模型，以直到死亡或右删失的时间作为响应变量，以激素治疗作为自变量。此外，我们还纳入 `grade` 作为自变量，它是反映肿瘤分化程度的有序变量；以及手术时的 `age`，一个表示年龄（岁）的连续变量。为了考虑 `age` 与直到死亡的时间之间可能存在的非线性关系，我们用自由度为 2 的自然样条对该变量建模，如下所示：
+
+```{r}
+model <- coxph(
+    Surv(dtime, death) ~ hormon + grade + ns(age, df = 2),
+    data = rotterdam
+)
+
+summary(model)
+```
+
+拟合出的模型估计激素治疗的风险比约为 1.34。在给定 `age` 和 `grade` 的条件下，按比例风险模型，这相当于瞬时死亡风险高出大约 34%。我们将在下文进一步考察这一点。
+
+::: {.callout-warning}
+本笔记中报告的不确定性估计是通过非参数自助法得到的，使用的是 `vcov="rsample"` 参数。这一点很重要，因为 `marginaleffects` 的默认标准误可能严重偏于反保守。关于这一话题的重要说明，参见下文「不确定性」一节。
+:::
+
+## 反事实预测值
+
+我们先做 [G 计算](https://marginaleffects.com/chapters/gcomputation.html)，为 `hormon` 的两个可能取值分别计算并绘制随时间变化的[平均反事实预测值](https://marginaleffects.com/chapters/predictions.html)。过程如下：
+
+1. 对我们想要考察的每一组 `hormon` 与 `dtime` 组合，把整个数据集复制一份。
+2. 为这个网格中的每一行计算预测生存概率。
+3. 对每一组 `hormon` 与 `dtime` 组合，取预测生存概率的平均。
+
+用来实现这些步骤的函数是 `avg_predictions()`。我们设定 `type="survival"`，以便在生存概率尺度上得到平均反事实预测值。对 Cox 模型而言，`type="risk"` 返回的是相对风险得分 $\exp(x^\top\hat\beta)$，而不是死亡概率；截至 `dtime` 的死亡概率是 $1-S(\texttt{dtime})$。
+
+`by` 参数表示我们希望在 `hormon` 与 `dtime` 的每一个唯一组合上对生存概率做边际化。
+
+`vcov` 参数被设为 `"rsample"`，以便用 `rsample` 包计算百分位自助法置信区间。下文中的区间及相应推断都是逐点的，它们并不提供对整条曲线的同时覆盖。
+
+由于我们要计算的是反事实预测值，我们还需要通过调用 `datagrid()` 函数来定义 `newdata` 参数。和通常一样，这个参数控制在预测变量的哪些取值上做预测。由于 `dtime` 的取值很多，把整个数据集完整复制会非常耗内存、也非常耗计算量。因此，我们使用一个从第 0 天到第 4000 天预测时界之间等距取 25 个点的网格（第 4000 天时仍有 414 名患者处于风险集中），并把它传给 `avg_predictions()`。
+
+```{r}
+#| warning: false
+#| message: false
+nd <- datagrid(
+    hormon = 0:1,
+    dtime = seq(0, 4000, length.out = 25),
+    grid_type = "counterfactual",
+    model = model
+)
+
+p <- avg_predictions(model,
+    type = "survival",
+    by = c("dtime", "hormon"),
+    vcov = "rsample",
+    newdata = nd
+)
+
+tail(p)
+```
+
+`Estimate` 列给出的是 `hormon = 0` 和 `hormon = 1` 在 `dtime` 处估计出的平均「反事实」生存概率。它们可以这样解读：
+
+> 如果总体中每一个个体都接受了、或都没有接受激素治疗，那么平均而言，我们预期能存活到 `dtime` 的个体所占的比例。
+
+看看 `dtime` 取最大值时的这部分估计值：
+
+```{r}
+last <- p[p$dtime == max(p$dtime),]
+last
+```
+
+第一行表明，如果我们*没有*对数据集中任何个体施加干预，我们的模型预期到 `dtime`=`r last$dtime[1]` 时仍有大约 `r sprintf("%.0f%%", last$estimate[1] * 100)` 的个体存活。相比之下，第二行表明，如果我们对数据集中每一个个体都施加了干预，我们的模型预期到 `dtime`=`r last$dtime[1]` 时只剩下大约 `r sprintf("%.0f%%", last$estimate[2] * 100)` 的个体存活。
+
+::: {.callout-warning}
+只有在模型设定正确、并且下面四条基本的因果识别假定成立时，对估计出的平均生存概率作上述反事实解读才成立：
+
+1. 正性 
+2. 反事实一致性 
+3. 无干扰 
+4. 条件可交换性 
+
+这些假定在 @Hernan2020 以及许多其他关于因果推断方法的书籍和文章中都有详细描述。
+:::
+
+### 绘图
+
+由于 `avg_predictions()` 的输出是一个数据框，我们可以直接用它来绘制结果，无论是用 `ggplot2`、base `R`，还是任何其他绘图包。这里我们用 `tinyplot` 包来展示调整生存曲线：
+
+```{r}
+#| warning: false
+#| message: false
+with(p, {
+    tinyplot(
+        x = dtime,
+        y = estimate,
+        ymin = conf.low,
+        ymax = conf.high,
+        by = hormon,
+        type = "ribbon",
+        ylab = "Adjusted Survival Probability"
+    )
+})
+```
+
+得到的图展示了 `hormon` 两种处理方案下、经 `age` 和 `grade` 调整后的生存曲线。与单一的风险比不同，它显示出调整后的生存如何随时间演变。组间比较应当基于直接的对比，而不是看两条独立区间是否重叠。
+
+### 假设检验
+
+为了在选定的若干时间点上比较两个 `hormon` 组的生存概率，我们直接估计它们的差 [@Klein2007]。换句话说，我们可能想检验能否拒绝下面这个原假设：
+
+> 在时间 $t$ 上，`hormon=1` 组与 `hormon=0` 组患者估计生存概率之差等于零。
+
+这类原假设用 `avg_predictions()` 函数很容易检验。在下面的代码中，我们指定了一个新的网格，其中 `dtime` 取三个不同的值：1000、2500 和 4000。然后我们用 `hypothesis` 参数[便捷的公式语法](https://marginaleffects.com/chapters/hypothesis.html)，为每个 `dtime` 计算估计生存概率之差。
+
+```{r}
+nd <- datagrid(
+    hormon = 0:1,
+    dtime = c(1000, 2500, 4000),
+    grid_type = "counterfactual",
+    model = model
+)
+p <- avg_predictions(model,
+    hypothesis = difference ~ reference | dtime,
+    type = "survival",
+    by = c("dtime", "hormon"),
+    vcov = "rsample",
+    newdata = nd
+)
+p
+```
+
+注意这里的语法与估计调整生存曲线时所用的语法基本相同，唯一的区别是我们在 `datagrid()` 调用中只关注三个时间点，并且额外指定了 `hypothesis` 参数。
+
+输出中的 `Estimate` 列现在给出的是 $t\in\{1000,2500,4000\}$ 处反事实生存概率之间的估计差值。在每个选定的时间点上，该差值都为负，且其逐点置信区间不包含零，这为「生存概率不相等」提供了逐点证据。
+
+另一种做法是改用两个生存概率之*比*。为此，我们只需改动 `hypothesis` 公式的左端。
+
+```{r}
+p <- avg_predictions(model,
+  hypothesis = ratio ~ reference | dtime,
+  type = "survival",
+  by = c("dtime", "hormon"),
+  vcov = "rsample",
+  newdata = nd
+)
+p
+```
+
+这里 `Estimate` 给出的是 $t$ 处两个生存概率之比，而不是差值，同样带有相应的 95% 逐点置信区间。每个区间都不包含 1，这为「在各选定时间点生存概率不相等」提供了逐点证据。
+
+正如[假设检验那一章](https://marginaleffects.com/chapters/hypothesis.html)中提到的，用户可以定义复杂得多的假设或等价检验，用来比较子组、考察交互作用或处理效应异质性。
+
+### 交互作用与异质性处理效应
+
+在现实世界中，我们常常遇到异质性处理效应，也就是说某个变量对结局的因果效应在不同个体群体中未必相同。例如，我们可能想评估激素治疗的效应是否随 `grade` 的取值而变化。评估这类异质性的经典做法，是在 Cox 模型公式中允许乘性交互：
+
+```{r}
+model <- coxph(
+  Surv(dtime, death) ~ hormon * factor(grade) + ns(age, df=2), 
+  data=rotterdam
+)
+
+summary(model)
+```
+
+这种做法本身并没有什么问题，但仅凭 Cox 模型的结果并不容易解读。在这种情况下，`hormon` 的 HR 不再指激素治疗总体上的 HR，而只是 *`grade` = 2 组中* `hormon` 的 HR，这可能令人困惑。此外，这些 HR 只反映条件效应，而非边际效应。改用 g 计算，我们可以按 `grade` 可视化 `hormon` 的调整生存曲线，并做进一步的假设检验。
+
+尽管模型和估计目标都变了，估计反事实生存概率所需的语法基本保持不变。我们唯一需要做的改动，是把 `grade` 加到 `datagrid()` 调用和 `by` 参数中。为了让输出更易理解，我们只关注三个时间点：$t\in\{1000, 2500, 4000\}$。
+
+```{r}
+nd <- datagrid(
+    hormon = unique,
+    grade = unique,
+    dtime = c(1000, 2500, 4000),
+    grid_type = "counterfactual",
+    model = model
+)
+p <- avg_predictions(model,
+    type = "survival",
+    by = c("dtime", "hormon", "grade"),
+    vcov = "rsample",
+    newdata = nd
+)
+p
+```
+
+输出现在包含十二行，对应 `dtime`、`hormon` 和 `grade` 的每一种组合。例如，第一行显示：在每位患者都取 `hormon=0` 且 `grade = 2` 的反事实世界中，$t=1000$ 处估计的平均生存概率为 `r sprintf("%.0f%%", p$estimate[1] * 100)`。
+
+现在设想我们想检验一个复杂的假设，比如：
+
+> 两类特定个体之间，期望的（反事实）生存概率之差是多少？
+
+a. 第 1 行：`hormon=0` 且 `grade=2` 且 `dtime=1000`
+b. 第 11 行：`hormon=1` 且 `grade=2` 且 `dtime=4000`
+
+我们可以先手工计算出估计的差值：
+
+```{r}
+p[c(11, 1),]
+
+diff(p$estimate[c(11, 1)])
+```
+
+或者，我们也可以在前面的调用中加上 `hypothesis` 参数，这样能得到同样的点估计，并额外给出置信区间。
+
+```{r}
+#| warning: false
+#| message: false
+avg_predictions(model,
+    hypothesis = "b1 - b11 = 0",
+    type = "survival",
+    by = c("dtime", "hormon", "grade"),
+    vcov = "rsample",
+    newdata = nd
+)
+```
+
+````{comment}
+::: {.callout-note}
+If we were instead interested in the **effect modification** of the effect of `hormon` by `grade`, we could use almost the same code. We would only have to remove the `grade` specification from the `datagrid()` call (see @Van2009 for an explanation of the distinction).
+:::
+````
+
+当然，我们也可以为不同子组绘制反事实预测值。这里我们考虑 25 个等距的时间点，以及 `hormon` 与 `grade` 的 4 种组合。
+
+```{r}
+#| warning: false
+#| message: false
+nd <- datagrid(
+    hormon = unique,
+    grade = unique,
+    dtime = seq(0, 4000, length.out = 25),
+    grid_type = "counterfactual",
+    model = model
+)
+p <- predictions(model,
+    type = "survival",
+    by = c("dtime", "hormon", "grade"),
+    vcov = "rsample",
+    newdata = nd
+)
+
+with(p, {
+    tinyplot(
+        estimate ~ dtime | hormon + grade,
+        ymin = conf.low,
+        ymax = conf.high,
+        type = "ribbon",
+        ylab = "Adjusted Survival Probability"
+    )
+})
+```
+
+这次我们得到的不再是每个 `hormon` 组一条调整生存曲线，而是总共四条调整生存曲线。这些曲线显示 `grade = 3` 的分离程度比 `grade = 2` 更大，但处理对比是否真的随 grade 变化，应当像下面那样直接评估。
+
+## 反事实比较
+
+到目前为止，我们关注的是预测变量不同组合下的平均反事实预测值（在生存尺度上）。`marginaleffects` 包还允许我们采取一种更明确的「干预式」思路，聚焦于处理效应的估计。事实上，[反事实比较那一章](https://marginaleffects.com/chapters/comparisons.html)解释了如何用 `comparisons()` 和 `avg_comparisons()` 函数来回答一系列关键问题。
+
+首先我们要问：在时间 $t=4000$ 处，`hormon` 对我们样本中人群生存概率的估计平均处理效应是多少。
+
+```{r}
+nd <- datagrid(
+    dtime = 4000,
+    grid_type = "counterfactual",
+    model = model
+)
+cmp <- avg_comparisons(model,
+    variables = "hormon",
+    type = "survival",
+    vcov = "rsample",
+    newdata = nd
+)
+cmp
+```
+
+平均而言，从 `hormon = 0` 变为 `hormon = 1`，与 $t=4000$ 处期望生存概率变化 `r round(cmp$estimate[1] * 100)` 个百分点相关联。
+
+我们也可以用 `comparison` 参数，把同样的结果表示为生存概率之比。
+
+```{r}
+avg_comparisons(model,
+    comparison = "ratio",
+    variables = "hormon",
+    type = "survival",
+    vcov = "rsample",
+    newdata = nd
+)
+```
+
+### 异质性处理效应
+
+现在我们要问：`hormon` 的估计效应在不同 `grade` 组之间是否有差异。为此，我们加上 `by` 参数。
+
+```{r}
+cmp <- avg_comparisons(model,
+    variables = "hormon",
+    type = "survival",
+    by = "grade",
+    vcov = "rsample",
+    newdata = nd
+)
+cmp
+```
+
+对 `grade = 2` 的个体来说，从 `hormon = 0` 变为 `hormon = 1`，与 $t=4000$ 处期望生存概率变化 `r round(cmp$estimate[1] * 100)` 个百分点相关联。对 `grade = 3` 的个体来说，相应的变化是 `r round(cmp$estimate[2] * 100)` 个百分点。
+
+乍看之下，这两个估计值似乎不同。它们真的不同吗？为了正式检验这一点，我们在前面的调用中加上 `hypothesis` 参数。
+
+```{r}
+cmp <- avg_comparisons(model,
+    hypothesis = difference ~ reference,
+    variables = "hormon",
+    type = "survival",
+    by = "grade",
+    vcov = "rsample",
+    newdata = nd
+)
+cmp
+```
+
+各 grade 特定的生存概率对比之差，其逐点置信区间包含零。在 $t=4000$ 处，这说明没有足够证据表明与 `hormon` 相关联的生存概率之差会随 grade 变化。
+
+正如[本包文档](https://marginaleffects.com/chapters/hypothesis.html)别处所解释的，`hypothesis` 参数接受非常灵活的输入类型。例如，我们可以按行号来标识估计值，并指定像 `hypothesis = "b1 - b2 = 0"` 或 `hypothesis = "b1 / b2 = 1"` 这样的假设检验。此外，我们还可以提供自定义函数或公式，来检验关于异质性的更为复杂的假设。
+
+## 不确定性
+
+在结束之前，有必要简要讨论一下：在这里所考虑的这类模型中，估计边际估计值的不确定性会遇到什么挑战。Cox 比例风险模型把协变量的相对效应与一个未指定形式的基线风险分离开来：
+
+$$
+h(t\mid x)=h_{0}(t)\,\exp\{x^{\top}\beta\},
+$$
+
+其中 $h_{0}(t)$ 是基线风险，$\beta$ 是回归系数向量。
+
+在比例风险模型和通常的独立删失假定下，回归系数 $\beta$ 可以通过最大化偏似然来估计。在每个事件时间点上，这个似然会把发生事件的个体的协变量与仍处于风险集中的个体的协变量作比较，从而把 $h_{0}(t)$ 从用于估计 $\beta$ 的似然中消去。
+
+绝对预测则需要额外一步。在估计出 $\beta$ 之后，我们还要估计累积基线风险 $H_{0}(t)$，通常使用 Breslow 估计量。由于 $\hat H_{0}(t)$ 依赖于 $\hat\beta$，也依赖于同一批事件和风险集数据，这两个估计在统计上是相互依赖的。因此，线性预测值和相对风险类的量只依赖于 $\hat\beta$，而累积风险、生存概率这类绝对量则同时依赖于 $\hat\beta$ 和 $\hat H_{0}(t)$。
+
+例如，线性预测值尺度上的预测为
+
+$$
+\hat\eta = x^{\top}\hat\beta,
+\qquad
+\widehat{\text{Var}}(\hat\eta)=x^{\top}\widehat{\text{Var}}(\hat\beta)\,x,
+$$
+
+这个预测的方差只需由系数的估计方差——协方差矩阵就能得到。相比之下，生存预测和累积风险预测的不确定性还必须考虑对 $H_{0}(t)$ 的估计，以及它对 $\hat\beta$ 的依赖。
+
+`marginaleffects` 使用多元 Delta 方法，把不确定性从 $\hat\beta$ 传播到任意用户定义的函数 $g(\hat\beta)$。对 Cox 模型而言，目前的实现并没有传播 $\hat H_{0}(t)$ 中的全部不确定性。这会使绝对生存预测或累积风险预测的置信区间偏窄，有时偏窄得相当明显。而对于对比量，这种影响可能小得多，因为共享的基线风险不确定性可能会相互抵消。
+
+一个简单的补救办法是非参数自助法：对个体（或聚类）做有放回重抽样，在每个重抽样副本上重新拟合 Cox 模型，并重新计算目标函数。由于每个副本都会重新估计 $\beta$ *和* $H_{0}(t)$，由此得到的经验分布无需解析推导就能捕捉二者的联合变异性。这种方法虽然计算量更大，但通常能恢复名义覆盖率，而且通过 `vcov = "rsample"` 参数或 `inferences()` 函数，可以与 `marginaleffects` 无缝配合使用。
+
+## 结论
+
+本教程表明，`marginaleffects` 可以用来轻松计算非常有用的边际估计目标，从而极大地方便对生存模型的解读。对已经熟悉 `marginaleffects` 包的用户来说尤其容易，因为生存分析所需的语法与非生存模型所用的语法完全相同。此外，本包所提供的、用于检验涉及交互作用和效应修饰的复杂假设的能力，据我们所知在别处尚无实现。
+
+不过要注意，尽管 g 计算是估计这里所描述的因果估计目标最常用、最高效的方法之一，它并不是唯一的方法，也未必总是最佳选择 [@Denz2023]。由于它完全依赖于一个事件发生时间型模型，得到的估计对模型设定错误非常敏感。其他方法，比如增广的处理逆概率加权 [@Wang2018] 或目标最大似然估计 [@Cai2020]，还会额外为处理分配过程建立模型，并具有双重稳健性——也就是说，只要两个模型中有一个设定正确，就能得到无偏估计。此外，我们建议用户始终记住：任何方法所产生的估计，其因果解读都只有在因果可识别性假定成立时才有效，而这些假定在实践中并不总是成立。
+
+## 致谢
+
+`marginaleffects` 的作者衷心感谢 Robin Denz 撰写了本教程的第一版。
