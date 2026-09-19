@@ -1,0 +1,103 @@
+---
+title: "Scikit-learn"
+subtitle: "*Scikit-learn* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Scikit-learn*](https://marginaleffects.com/bonus/sklearn.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/sklearn.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 本页的 R 代码块由本站在渲染时真实执行；Python 代码块未在本站执行（本机 Quarto 未配置 Jupyter，reticulate 也未配置 Python），仅作静态展示，页面中不含由这些 Python 代码生成的输出。
+
+
+本案例研究演示如何把 `marginaleffects` 包与 Scikit-learn 配合使用，来拟合机器学习模型。
+
+这里展示的做法有几个主要好处。我们会看到，`marginaleffects` 可以用来提升不透明的机器学习算法的可解释性。`marginaleffects` 还为拟合 Scikit-learn 模型提供了公式 API。这可以简化分析流程，省去手工从数据框构建 `X` 和 `y` 矩阵的麻烦。
+
+第一个代码块导入分析所需的库和函数。
+
+```python
+from marginaleffects import *
+from statsmodels.formula.api import ols
+import polars as pl
+import polars.selectors as cs
+from sklearn.pipeline import make_pipeline
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder, FunctionTransformer
+from sklearn.linear_model import LinearRegression
+from sklearn.compose import make_column_transformer
+from xgboost import XGBRegressor
+```
+
+下一个代码块用 `fit_sklearn()` 函数拟合一个线性回归模型。我们用简单的公式接口、通过 `~` 符号来指定因变量和自变量。^[在背后，公式是用 [Formulaic 包](https://matthewwardrop.github.io/formulaic/latest/)解析的。] 分类预测变量 `branch` 被包在 `C()` 里，这样 Formulaic 会先把它编码为一组示性变量，再把设计矩阵交给 Scikit-learn。`bonus/sklearn_basic.py` 中有一个只包含导入、数据加载和这个例子的独立脚本，便于快速试验。
+
+我们拟合的模型类型由 `engine` 参数决定。这里我们调用 Scikit-learn 的 `LinearRegression()`。对 `engine` 的关键要求是：它必须是一个带 `fit()` 方法、且该方法接受 `y` 和 `X` 作为输入的对象。
+
+接着用 `avg_predictions()` 函数按 `branch` 变量计算平均预测值。
+
+```python
+military = get_dataset("military")
+military = military.with_columns(pl.col('branch').cast(pl.Categorical))
+
+mod_sk = fit_sklearn(
+    "rank ~ officer + hisp + C(branch)",
+    data=military,
+    engine=LinearRegression(),
+)
+```
+
+最后，我们可以把得到的对象喂给任意一个 `marginaleffects` 函数。例如，下面这段代码计算各军种的平均预测军衔。
+
+```python
+avg_predictions(mod_sk, by="branch")
+```
+
+下面的代码块展示了如何用 `statsmodels` 来拟合线性回归模型并计算平均预测值，得到等价的结果。
+
+```python
+mod_sm = ols(
+    "rank ~ officer + hisp + branch",
+    data=military.to_pandas()).fit()
+avg_predictions(mod_sm, by="branch")
+```
+
+现在我们改用 XGBoost，在测试集上做预测和反事实比较。这次不用公式接口，而是定义一个 Scikit-learn 管道，并定义一个自定义的选择器函数。
+
+首先，我们加载一份关于 AirBnB 出租房源的数据集，并把它划分为训练集和测试集。
+
+```python
+airbnb = get_dataset("airbnb")
+# Convert all non-numeric columns to categorical
+catvar = airbnb.select(~cs.numeric()).columns
+airbnb = airbnb.with_columns([pl.col(c).cast(pl.Categorical) for c in catvar])
+
+train, test = train_test_split(airbnb)
+```
+
+分类变量需要做独热编码，也就是把它们转换成适合机器学习算法处理的格式。我们创建一个 Scikit-learn 管道，它是一串数据处理步骤，并以模型拟合步骤收尾。
+
+```python
+catvar = airbnb.select(~cs.numeric()).columns
+preprocessor = make_column_transformer(
+    (OneHotEncoder(), catvar),
+    remainder=FunctionTransformer(lambda x: x.to_numpy()),
+)
+pipeline = make_pipeline(preprocessor, XGBRegressor())
+```
+
+Scikit-learn 管道期望数据以 `y` 和 `X` 两个矩阵的形式传入，而 `marginaleffects` 处理的是数据框。因此我们需要一个函数，接受一个数据框并返回两个矩阵。这个函数会在内部被用来拟合模型，以及对新数据做预测。
+
+```python
+def selector(data):
+    y = data.select(cs.by_name("price", require_all=False))
+    X = data.select(~cs.by_name("price", require_all=False))
+    return y, X
+
+mod = fit_sklearn(selector, data=train, engine=pipeline)
+
+avg_predictions(mod, newdata=test, by="unit_type")
+```
+
+```python
+avg_comparisons(mod, variables={"bedrooms": 2}, newdata=test)
+```
