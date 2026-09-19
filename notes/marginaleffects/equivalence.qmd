@@ -1,0 +1,288 @@
+---
+title: "等价检验"
+subtitle: "*Equivalence Tests* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · *Equivalence Tests*
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/equivalence.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 该文件存在于上游仓库，但未列入 marginaleffects.com 已发布的章节目录。
+> 本页的 R 代码块由本站在渲染时真实执行；Python 代码块未在本站执行（本机 Quarto 未配置 Jupyter，reticulate 也未配置 Python），仅作静态展示，页面中不含由这些 Python 代码生成的输出。
+> 本页有 3 个 R 代码块未在本站执行：本机 marginaleffects 0.32.0 不接受字符串形式的 hypothesis = "pairwise"。代码按原样展示，页面中不含它们的输出。
+
+
+```{r, include = FALSE}
+options(width = 1000)
+## this vignette is in .Rbuildignore because lme4 is not available on old CRAN
+## test machines.
+
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  fig.width = 9,
+  fig.asp = .4,
+  out.width = "100%",
+  warning = FALSE,
+  message = FALSE,
+  comment = "#>"
+)
+```
+
+
+在许多情况下，分析者并不太关心是否拒绝原假设，而更关心某个估计值相对于给定阈值或区间是"劣效"、"优效"还是"等价"。例如，医学研究者可能想确定某种新处理的估计效应是否大于既往处理的效应，或者是否大于某个"临床显著性"阈值。另外，研究者也可能想支持这样一种主张：某个估计参数与原假设"等价"或"没有实质性差异"。
+
+要回答这些问题，我们可以使用非劣效检验、非优效检验，或诸如双单侧检验（TOST）这样的等价检验。这篇文章提供了关于 TOST 的入门介绍和教程：
+
+> Lakens D, Scheel AM, Isager PM. Equivalence Testing for Psychological Research: A Tutorial. Advances in Methods and Practices in Psychological Science. 2018;1(2):259-269. doi:10.1177/2515245918770963
+
+`marginaleffects` 包的 `hypotheses()` 函数包含一个 `equivalence` 参数，让用户可以对该包生成的任意量、以及模型参数的任意函数应用这些检验。为了说明这一点，我们先估计一个简单的线性回归模型：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+library(marginaleffects)
+mod <- lm(mpg ~ hp + factor(gear), data = mtcars)
+```
+### Python
+```python
+import polars as pl
+import statsmodels.formula.api as smf
+from marginaleffects import *
+
+mtcars = pl.read_csv("https://vincentarelbundock.github.io/Rdatasets/csv/datasets/mtcars.csv")
+mtcars = mtcars.cast({"gear" : pl.Utf8, "hp" : pl.Float64})
+
+mod = smf.ols("mpg ~ hp + gear", data = mtcars.to_pandas()).fit()
+```
+:::
+
+本节接下来的部分将讨论 `marginaleffects` 估计的几种量。
+
+## 预测值
+
+考虑单个预测值，此时所有预测变量都固定在其中位数或众数：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+p <- predictions(mod, newdata = "median")
+p
+```
+### Python
+```python
+p = predictions(mod, newdata = "median")
+print(p)
+```
+:::
+```{r, include = FALSE}
+options(width = 120)
+hyp <- hypotheses(p, equivalence = c(17, 18))
+```
+
+现在我们为预测值指定一个介于 17 和 18 之间的等价区间（或"区域"）：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+hypotheses(p, equivalence = c(17, 18))
+```
+### Python
+```python
+# Not implemented yet
+```
+:::
+
+这些结果让我们可以得出三个结论：
+
+1. 非劣效检验的 p 值为 `r sprintf("%.4f", hyp$p.value.noninf)`。这表明我们*可以*拒绝参数低于 17 的原假设。
+1. 非优效检验的 p 值为 `r sprintf("%.4f", hyp$p.value.nonsup)`。这表明我们*不能*拒绝参数（`r sprintf("%.4f", hyp$estimate)`）高于 18 的原假设。
+1. 等价检验的 p 值为 `r sprintf("%.4f", hyp$p.value.equiv)`。这表明我们*不能*拒绝参数落在等价区间之外这一假设。
+
+## 模型系数
+
+`hypotheses` 函数也允许用户对模型系数、以及模型系数的任意函数进行等价检验、非劣效检验和非优效检验。
+
+模型中影响 `r names(coef(mod))[4]` 的系数估计值为：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+coef(mod)[4]
+```
+### Python
+```python
+mod.params['gear[T.5]']
+```
+:::
+
+我们可以通过以下方式检验这个参数是否可能落在 [5,7] 区间内：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+hypotheses(mod, equivalence = c(5, 7))[4, ]
+```
+### Python
+```python
+h = pl.DataFrame(hypotheses(mod, equivalence = [5., 7.]))[2,:]
+print(h)
+```
+:::
+```{r, include = FALSE}
+hyp <- hypotheses(mod, equivalence = c(5, 7))[4, "p.value.equiv"]
+```
+
+p 值为 `r sprintf("%.4f", hyp)`，因此我们不能拒绝 `r names(coef(mod))[4]` 参数落在 [5,7] 区间之外这一假设。
+
+## 斜率
+
+同样的语法可以用来对 `marginaleffects` 包生成的所有量进行检验。举例来说，假设出于实质性或理论上的原因，介于 -0.1 和 0.1 之间的平均斜率并不值得关注。我们可以进行一次等价检验来验证是否如此：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+avg_slopes(mod, variables = "hp", equivalence = c(-.1, .1))
+```
+### Python
+```python
+s = pl.DataFrame(avg_slopes(mod, variables = "hp", equivalence = [-.1, .1]))
+print(s)
+```
+:::
+```{r, include = FALSE}
+hyp <- avg_slopes(mod, variables = "hp", equivalence = c(-.1, .1))$p.value.equiv
+```
+
+p 值为 `r sprintf("%.4f", hyp)`，这表明我们可以拒绝该参数落在我们用此区间定义的"实质性等价"区域之外这一假设。
+
+## 比较（对比）之间的差异
+
+考虑一个含乘法交互项的模型：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+int <- lm(mpg ~ hp * factor(gear), data = mtcars)
+```
+### Python
+```python
+inter = smf.ols("mpg ~ hp * gear", data = mtcars.to_pandas()).fit()
+```
+:::
+
+`hp` 变化 1 个单位所对应的平均对比，会因 `gear` 的取值而有所不同：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+avg_comparisons(int, variables = "hp", by = "gear")
+```
+### Python
+```python
+print(avg_comparisons(inter, variables = "hp", by = "gear"))
+```
+:::
+
+这些对比彼此之间是否存在差异？我们来看看它们两两之间的差异：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+#| eval: false
+avg_comparisons(int, variables = "hp", by = "gear",
+    hypothesis = "pairwise")
+```
+### Python
+```python
+print(avg_comparisons(inter, variables = "hp", by = "gear",
+    hypothesis = "pairwise"))
+```
+:::
+
+如果这些两两比较的结果落在 [-.1, .1] 区间内，我们就认为它们"等价于零"：
+
+::: {.panel-tabset group="language"}
+### R
+```{r}
+#| eval: false
+avg_comparisons(int, variables = "hp", by = "gear",
+    hypothesis = "pairwise",
+    equivalence = c(-.1, .1))
+```
+### Python
+```python
+c = pl.DataFrame(
+    avg_comparisons(inter, variables = "hp", by = "gear",
+        hypothesis = "pairwise",
+        equivalence = [-.1, .1])
+    )
+print(c)
+```
+:::
+
+`p (Equiv)` 列显示，当 `gear` 为 3 和 `gear` 为 5 时，两者平均对比之间的差异可以说与指定区间等价。不过，我们有充分理由认为，另外两个两两比较的结果可能落在该区间之外。
+
+## 边际均值与 `emmeans`
+
+这个例子展示了 `emmeans` 包与 `predictions()` 函数所生成结果之间的等价性：
+
+```{r}
+#| eval: false
+library(emmeans)
+
+mod <- lm(log(conc) ~ source + factor(percent), data = pigs)
+
+## {emmeans}
+emmeans(mod, specs = "source") |>
+    pairs() |>
+    test(df = Inf,
+         null = 0,
+         delta = log(1.25),
+         side = "equivalence",
+         adjust = "none")
+
+## {marginaleffects}
+predictions(
+    mod,
+    newdata = "balanced",
+    by = "source",
+    hypothesis = "pairwise",
+    equivalence = c(-log(1.25), log(1.25))
+)
+```
+
+
+## t 检验
+
+现在我们说明，在简单 t 检验的情形下，`hypotheses()` 产生的结果与 `equivalence` 包产生的结果完全相同：
+
+```{r}
+library(equivalence)
+
+set.seed(1024)
+
+## simulate data data
+N <- 20
+dat <- data.frame(
+    y = rnorm(N),
+    x = sample(c(rep(0, N / 2), rep(1, N / 2)), N))
+
+## fit model
+mod <- lm(y ~ x, data = dat)
+
+## test with the {equivalence} package
+e <- tost(
+    x = dat$y[dat$x == 0],
+    y = dat$y[dat$x == 1],
+    epsilon = 10)
+e
+
+## test with {marginaleffects} package
+h <- hypotheses(mod, equivalence = c(-10, 10), df = e$parameter)[2, ]
+h
+
+# identical p values
+h$p.value.equiv |> as.vector()
+
+e$tost.p.value |> as.vector()
+```
