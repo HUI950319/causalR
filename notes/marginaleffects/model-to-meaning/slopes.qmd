@@ -1,0 +1,1046 @@
+---
+title: "7 斜率"
+subtitle: "*从模型到意义* - 中文翻译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，*Model to Meaning: How to Interpret Statistical Models in R and Python* - [第 7 章 斜率](https://marginaleffects.com/chapters/slopes.html)。
+> **来源说明**：截至 2026-09-19，修订版 870f15a0 的公开仓库不包含本章完整的 .qmd 源文件。本页面翻译自同日下载的公开 HTML 快照。因此，R/Python 代码和图形均以静态形式展示；本网站未重新执行上游代码。
+> 网站文本 (C) 2025 Vincent Arel-Bundock，保留所有权利；marginaleffects 软件代码依据 GPL-3 许可。
+> 本页面是中文翻译，并非原文；翻译和发布依据本站 Notes 页面所使用的授权声明进行。
+
+A slope measures how the predicted value of the outcome \\Y\\ responds to changes in a focal predictor \\X\\, when we hold other covariates at fixed values. It is often the main quantity of interest in an empirical analysis, when a researcher wants to estimate an effect or the strength of association between two variables. Slopes belong to the same toolbox as the counterfactual comparisons explored in <a href="comparisons.html" class="quarto-xref">Chapter 6</a>. Both quantities help us answer a counterfactual query: What would happen to a predicted outcome if one of the predictors were slightly different?
+
+
+
+理解斜率的一个难点在于，它在形式上是用微积分语言定义的。本章不深入理论，而是侧重直觉，略去大部分技术细节，并通过图形示例让抽象概念更加具体。不过，不熟悉多变量微积分基础的读者，可能希望直接跳到本书下一部分的案例研究。
+
+
+
+除了技术障碍之外，妨碍我们理解斜率的另一个因素是，用来描述斜率的术语极不一致。在经济学或政治科学等领域，斜率被称为“边际效应”，其中“边际”指焦点预测变量发生无穷小变化时产生的效应。在其他学科中，斜率可能被称为“趋势”“速度”或“部分效应”。有些分析者甚至在讨论回归模型的原始参数时也使用“斜率”一词。
+
+
+
+在本书中，我们交替使用“斜率”和“边际效应”这两个表达，指的是：
+
+
+
+> *回归方程关于关注预测变量的偏导数。*
+
+
+
+考虑一个包含结果变量 \\Y\\ 和预测变量 \\X\\ 的简单线性模型。
+
+
+
+\\ Y = \beta_0 + \beta_1 X +\varepsilon \\ \tag{7.1}\\
+
+
+
+要找出 \\Y\\ 关于 \\X\\ 的斜率，我们求其偏导数。
+
+
+
+\\ \frac{\partial Y}{\partial X} = \beta_1 \tag{7.2}\\
+
+
+
+因此，<a href="#eq-slopes_simple_linear" class="quarto-xref">方程 7.1</a> 关于 \\X\\ 的斜率等于 \\\beta_1\\，也就是方程中唯一的系数。这一等式解释了为什么有些分析者将回归系数称为斜率，也为我们提供了理解其含义的线索。
+
+
+
+在简单线性模型中，在其他建模协变量保持不变的情况下，\\X\\ 增加一个单位与 \\\beta_1\\ 单位的 \\Y\\ 变化相关。类似地，我们通常可以将斜率 \\\frac{\partial Y}{\partial X}\\ 理解为 \\X\\ 变化一个单位对 \\Y\\ 预测值产生的效应。这种解释可作为初步理解，但也有一些注意事项。
+
+
+
+首先，由于斜率被定义为导数，即依据 \\X\\ 的无穷小变化定义，因此只能针对连续数值型预测变量构造斜率。关注分类预测变量变化效应的分析者，应转而使用反事实比较。[^1]
+
+
+
+其次，偏导数衡量的是预测变量空间中特定点处 \\Y\\’s 切线的斜率。因此，将斜率解释为 \\X\\ 变化一个单位的效应，必须理解为一种近似：它只对预测变量的小邻域内、\\X\\ 的小幅变化有效。当回归函数是非线性的，或 \\X\\ 的尺度较小时，这种近似可能并不理想。
+
+
+
+最后，以上讨论意味着斜率是条件量，也就是说，斜率通常取决于 \\X\\ 的值，也取决于模型中其他所有预测变量的值。数据集或网格中的每一行都有自己的斜率。在这一点上，斜率类似于<a href="predictions.html" class="quarto-xref">第 5 章</a>和<a href="comparisons.html" class="quarto-xref">第 6 章</a>中的预测与反事实比较。
+
+
+
+本章其余部分将沿用此前的方式，回答概念框架中的五个问题：(1) 量，(2) 预测变量，(3) 聚合，(4) 不确定性，以及 (5) 检验。
+
+
+
+<div id="quantity" class="section level2" number="7.1">
+
+
+
+## 7.1 量
+
+
+
+在其他协变量保持不变的情况下，斜率刻画预测变量与结果变量之间关联的强度和方向。为了直观理解这在实践中的含义，可以考虑几个图形示例。在本节中，我们将看到，沿 x 轴从左向右移动时，曲线的斜率能告诉我们曲线如何变化，也就是曲线是在上升、下降还是保持平坦。这些信息有助于理解回归模型中关注变量之间的关系。
+
+
+
+<div id="slopes-of-simple-functions" class="section level3" number="7.1.1">
+
+
+
+### 7.1.1 简单函数的斜率
+
+
+
+<a href="#fig-slopes_3functions" class="quarto-xref">图 7.1</a>的上排展示了 \\X\\ 的三个函数，下排描绘了每个函数的导数。通过考察任意给定点处的导数值，我们可以准确判断相应函数在哪些位置上升、下降或保持平坦。
+
+
+
+<figure class="quarto-float quarto-float-fig figure">
+
+<img src="slopes_files/figure-html/fig-slopes_3functions-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" style="width:100.0%" />
+
+<figcaption>图 7.1：三个函数及其导数。</figcaption>
+
+</figure>
+
+
+
+First, consider the top left panel of <a href="#fig-slopes_3functions" class="quarto-xref">Figure 7.1</a>, which displays the function \\Y=-1+0.5X\\, a straight line with a positive slope. As we move from left to right, the line steadily rises. The effect of \\X\\ is constant across the full range of \\X\\ values. For every one-unit increase in \\X\\, \\Y\\ increases by 0.5 units. Since the slope does not change, the derivative of this function is constant (bottom left panel): \\\frac{\partial Y}{\partial X} = 0.5.\\ This means that the association between \\X\\ and \\Y\\ is always positive, and that the strength of association between \\X\\ and \\Y\\ is of constant magnitude, regardless of the baseline value of \\X\\.
+
+
+
+Now, consider the top middle panel of <a href="#fig-slopes_3functions" class="quarto-xref">Figure 7.1</a>, which displays the function \\Y = X^2\\, a symmetric parabola that opens upward. As we move from left to right, the function initially decreases, until it reaches its minimum at \\X=0\\. In the left part of the plot, the relationship between \\X\\ and \\Y\\ is negative: an increase in \\X\\ is associated to a decrease in \\Y\\. When \\X\\ reaches 0, the curve becomes flat: the slope of its tangent line is zero. This means that an infinitesimal change in \\X\\ would have (essentially) no effect on \\Y\\. As \\X\\ continues to increase beyond zero, the function starts increasing, with a positive slope. The derivative of this function captures this behavior. When \\X\<0\\, the derivative is \\\frac{\partial Y}{\partial X}=2X\<0\\, which indicates that the relationship between \\X\\ and \\Y\\ is negative. When \\X=0\\, the derivative is \\2X=0\\, which means that the association between \\X\\ and \\Y\\ is null. When the \\X\>0\\, the derivative is positive, which implies that an increase in \\X\\ is associated with an increase in \\Y\\. In short, the sign and strength of the relationship between \\X\\ and \\Y\\ are heterogeneous; they depend on the baseline value of \\X\\. This will be an important insight to keep in mind for the case study in <a href="interactions.html" class="quarto-xref">Chapter 10</a>, where we explore the use of interactions and polynomials to study heterogeneity and non-linearity.
+
+
+
+The third function in <a href="#fig-slopes_3functions" class="quarto-xref">Figure 7.1</a>, \\Y = \cos(X)\\, oscillates between positive and negative values, forming a wave-like curve. Focusing on the first section of this curve, we see that \\\cos(X)\\ decreases as we move from left to right, reaches a minimum at \\-\pi\\, and then increases until \\X=0\\. The derivative plotted in the bottom right panel captures this trajectory well. Indeed, whenever \\-\sin(X)\\ is negative, we see that \\\cos(X)\\ points downward. When \\-\sin(X)=0\\, the \\\cos(X)\\ curve is flat and reaches a minimum or a maximum. When \\-\sin(X)\>0\\, the \\\cos(X)\\ function points upward.
+
+
+
+These three examples show that the derivative of a function precisely characterizes both the strength and the direction of association between a predictor and an outcome. It tells us, at any given point in the predictor space, if increasing \\X\\ should result in a decrease or an increase in \\Y\\.
+
+
+
+</div>
+
+
+
+<div id="slope-of-a-logistic-function" class="section level3" number="7.1.2">
+
+
+
+### 7.1.2 Slope of a logistic function
+
+
+
+Let us now consider a more realistic example, similar to the curves we are likely to fit in an applied regression context.
+
+
+
+\\ Pr(Y=1) = g\left (\beta_1 + \beta_2 X \right), \tag{7.3}\\
+
+
+
+where \\g\\ is the logistic function, \\\beta_1\\ is an intercept, \\\beta_2\\ a regression coefficient, and \\X\\ is a numeric predictor. Imagine that the true parameters are \\\beta_1=-1\\ and \\\beta_2=0.5\\. We can simulate a dataset with a million observations that follow this data generating process.
+
+
+
+``` downlit
+
+library(marginaleffects)
+
+library(patchwork)
+
+set.seed(48103)
+
+N = 1e6
+
+X = rnorm(N, sd = 2)
+
+p = plogis(-1 + 0.5 * X)
+
+Y = rbinom(N, 1, p)
+
+dat = data.frame(Y, X)
+
+```
+
+
+
+Now, we fit a logistic regression model with the [`glm()`](https://rdrr.io/r/stats/glm.html) function and print the coefficient estimates.
+
+
+
+``` downlit
+
+mod = glm(Y ~ X, data = dat, family = binomial)
+
+b = coef(mod)
+
+b
+
+```
+
+
+
+    (Intercept)           X 
+
+     -0.9981282   0.4993960 
+
+
+
+The estimated coefficients are very close to the true values we encoded in the data-generating process.
+
+
+
+To visualize the outcome function and its derivative, we use the [`plot_predictions()`](https://rdrr.io/pkg/marginaleffects/man/plot_predictions.html) and [`plot_slopes()`](https://rdrr.io/pkg/marginaleffects/man/plot_slopes.html) functions. The latter is very similar to the [`plot_comparisons()`](https://rdrr.io/pkg/marginaleffects/man/plot_comparisons.html) function introduced in <a href="comparisons.html#sec-comparisons_visualization" class="quarto-xref">Section 6.6</a>. The `variables` argument identifies the focal predictor with respect to which we are computing the slope, and the `condition` argument specifies which variable should be displayed on the x-axis. To display plots on top of one another, we use the `/` operator supplied by the `patchwork` package.
+
+
+
+``` downlit
+
+p_function = plot_predictions(mod, condition = "X")
+
+p_derivative = plot_slopes(mod, variables = "X", condition = "X")
+
+p_function / p_derivative
+
+```
+
+
+
+<figure class="quarto-float quarto-float-fig figure">
+
+<img src="slopes_files/figure-html/fig-slopes_logit-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" style="width:70.0%" />
+
+<figcaption>Figure 7.2: Logistic function and its derivative.</figcaption>
+
+</figure>
+
+
+
+The key insight from <a href="#fig-slopes_logit" class="quarto-xref">Figure 7.2</a> is that the slope of the logistic function is far from constant. Increasing \\X\\, moving from left to right on the graph, has a different effect on the estimated probability that \\Y=1\\, depending on our position on the horizontal axis. When the initial value of \\X\\ is small (left side of the figure), an increase in \\X\\ results in a small change in \\Pr(Y=1)\\: the prediction curve is relatively flat and the derivative is close to zero. At intermediate values of \\X\\ (middle of the figure), a change in \\X\\ results in a large increase in \\Pr(Y=1)\\: the outcome prediction curve is steep, and its derivative is positive and large. When the initial value of \\X\\ is large (right side of the figure), a change in \\X\\ does not change \\Pr(Y=1)\\ much: the outcome curve is flat and the derivative small again. In sum, the slope characterizes the strength of association between \\X\\ and \\Y\\ for different baseline values of the predictors.
+
+
+
+To estimate the slope, we can proceed analytically, using the chain rule of differentiation. Taking the derivative of <a href="#eq-slopes_logit_equation" class="quarto-xref">Equation 7.3</a> with respect to \\X\\ gives us
+
+
+
+\\ \frac{\partial Pr(Y=1)}{\partial X} = \beta_2 \cdot g'(\beta_1 + \beta_2 X), \tag{7.4}\\
+
+
+
+where \\g'\\ is the logistic density function, or the derivative of \\g\\.[^2] To obtain an estimate of the slope, we simply plug-in our coefficient estimates into <a href="#eq-slopes_logit_dydx" class="quarto-xref">Equation 7.4</a>. Importantly, whenever we evaluate a slope, we must explicitly state the baseline values of the predictors of interest. The slope of \\Y\\ with respect to \\X\\ will be different when \\X\\ takes on different values. For example, the estimated \\\frac{\partial Pr(Y=1)}{\partial X}\\ for \\X\in \\-5, 0, 10\\\\ are
+
+
+
+``` downlit
+
+data.frame(
+
+  "dY/dX|X=-5" = b[2] * dlogis(b[1] + b[2] * -5),
+
+  "dY/dX|X=0" = b[2] * dlogis(b[1] + b[2] * 0),
+
+  "dY/dX|X=10" = b[2] * dlogis(b[1] + b[2] * 10)
+
+)
+
+```
+
+
+
+     dY/dX|X=-5  dY/dX|X=0  dY/dX|X=10
+
+      0.0142749 0.09827211 0.008856198
+
+
+
+Alternatively, we could compute the same estimates with the [`slopes()`](https://rdrr.io/pkg/marginaleffects/man/slopes.html) function from `marginaleffects`. [`slopes()`](https://rdrr.io/pkg/marginaleffects/man/slopes.html) is very similar to the [`comparisons()`](https://rdrr.io/pkg/marginaleffects/man/comparisons.html) function introduced in <a href="comparisons.html" class="quarto-xref">Chapter 6</a>. The `variables` argument specifies the focal predictor, and `newdata` specifies the values of the other predictors at which we want to evaluate the slope.
+
+
+
+``` downlit
+
+slopes(mod, 
+
+  variables = "X",
+
+  newdata = datagrid(X = c(-5, 0, 10)))
+
+```
+
+
+
+| X   | Estimate | Std. Error | z     | Pr(\>\|z\|) | 2.5 %   | 97.5 %  |
+
+|-----|----------|------------|-------|-------------|---------|---------|
+
+| -5  | 0.01427  | 7.24e-05   | 197.0 | \<0.001     | 0.01413 | 0.01442 |
+
+| 0   | 0.09827  | 2.61e-04   | 376.6 | \<0.001     | 0.09776 | 0.09878 |
+
+| 10  | 0.00886  | 8.98e-05   | 98.6  | \<0.001     | 0.00868 | 0.00903 |
+
+
+
+The numeric estimates obtained for this contrived example are extremely similar to those we computed analytically, which is expected. In the rest of this chapter, we will explore how to use [`slopes()`](https://rdrr.io/pkg/marginaleffects/man/slopes.html) and its siblings [`avg_slopes()`](https://rdrr.io/pkg/marginaleffects/man/slopes.html) and [`plot_slopes()`](https://rdrr.io/pkg/marginaleffects/man/plot_slopes.html), to estimate and visualize a variety of slope-related quantities of interest.
+
+
+
+For illustration, we will look at a variation on a model considered in previous chapters, using data from Thornton (<a href="https://marginaleffects.com/chapters/bibliography.html#ref-Tho2008" role="doc-biblioref">2008</a>). As before, the dependent variable is a dummy variable called `outcome`, equal to 1 if a study participant sought to learn their HIV status at a test center, and 0 otherwise. Since we are studying partial derivatives, the focal predictor must be a continuous numeric variable. Here, we choose `distance`, a measure the distance between the participant’s residence and the test center. Our model also includes `incentive`, a binary variable which we treat as a control.
+
+
+
+The model we specify includes multiplicative interactions between `incentive`, `distance`, and its square. These interactions give the model a bit more flexibility to detect non-linear patterns in the data, but their real purpose is pedagogical: they show that the post-estimation workflow introduced in previous chapters can be applied in straightforward fashion to more complex models. Once again, we will ignore individual parameter estimates, and focus on quantities of interest with more intuitive substantive meanings.
+
+
+
+``` downlit
+
+dat = get_dataset("thornton")
+
+mod = glm(outcome ~ incentive * distance * I(distance^2),
+
+  data = dat, family = binomial)
+
+summary(mod)
+
+```
+
+
+
+
+
+    Coefficients:
+
+                                     Estimate Std. Error z value Pr(>|z|)
+
+    (Intercept)                       0.42793    0.38264   1.118   0.2634
+
+    incentive                         1.79455    0.47386   3.787   <0.001
+
+    distance                         -1.48974    0.63658  -2.340   0.0193
+
+    I(distance^2)                     0.56304    0.29767   1.891   0.0586
+
+    incentive:distance                0.49785    0.76074   0.654   0.5128
+
+    incentive:I(distance^2)          -0.25193    0.34657  -0.727   0.4673
+
+    distance:I(distance^2)           -0.06694    0.03981  -1.682   0.0926
+
+    incentive:distance:I(distance^2)  0.03426    0.04544   0.754   0.4509
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+<div id="sec-slopes_predictors" class="section level2" number="7.2">
+
+
+
+## 7.2 Predictors
+
+
+
+Slopes can help us answer questions such as:
+
+
+
+> *How does the predicted outcome \\\hat{Y}\\ change when the focal variable \\X\\ increases by a small amount and the adjustment variables \\Z_1, Z_2, \ldots, Z_n\\ are held at specific values?*
+
+
+
+Answering questions like this requires us to select both the focal variable and the values of the adjustment variables where we want to evaluate the slope.
+
+
+
+<div id="focal-variable" class="section level3" number="7.2.1">
+
+
+
+### 7.2.1 Focal variable
+
+
+
+The focal variable is the predictor of interest. It is the variable whose association with (or effect on) \\Y\\ we wish to estimate. The focal variable is the predictor in the denominator of the partial derivative notation \\\frac{\partial Y}{\partial X}\\.
+
+
+
+The [`slopes()`](https://rdrr.io/pkg/marginaleffects/man/slopes.html) function accepts a `variables` argument, which serves to specify a focal predictor. For example, the following code estimates the partial derivative of the outcome equation encoded in the `mod` object, with respect to the `distance` focal predictor.
+
+
+
+``` downlit
+
+slopes(mod, variables = "distance")
+
+```
+
+
+
+</div>
+
+
+
+<div id="adjustment-variables" class="section level3" number="7.2.2">
+
+
+
+### 7.2.2 Adjustment variables
+
+
+
+Slopes are conditional quantities, in the sense that they typically depend on the values of all the variables on the right-hand side of a regression equation. Thus, every predictor profile—or combination of predictor values—will be associated with its own slope. Every row in a grid will have its own slope. <a href="framework.html#sec-framework_grid" class="quarto-xref">Section 3.2</a> described different grids of predictor values, that is, different combinations of unit characteristics that could be of interest.
+
+
+
+One common type of grid is the “interesting” or “user-specified” grid, which collects combinations of predictor values that hold particular scientific or domain-specific interest. For example, imagine that we are specifically interested in measuring the association between `distance` and `outcome` for an individual who is part of the treatment group (`incentive` is 1) and who lives at a distance of 1 from the test center. We can use the [`datagrid()`](https://rdrr.io/pkg/marginaleffects/man/datagrid.html) helper function to specify a grid of interesting predictor values, and then pass that grid to the `newdata` argument of the [`slopes()`](https://rdrr.io/pkg/marginaleffects/man/slopes.html) function. The function will then return a “slope at user-specified values” or “marginal effect at interesting values.”
+
+
+
+``` downlit
+
+library(marginaleffects)
+
+slopes(mod,
+
+  variables = "distance",
+
+  newdata = datagrid(incentive = 1, distance = 1))
+
+```
+
+
+
+| incentive | distance | Estimate | Std. Error | z    | Pr(\>\|z\|) | 2.5 %  | 97.5 %  |
+
+|-----------|----------|----------|------------|------|-------------|--------|---------|
+
+| 1         | 1        | -0.0694  | 0.021      | -3.3 | \<0.001     | -0.111 | -0.0282 |
+
+
+
+Our model suggests that for an individual with baseline characteristics `incentive=1` and `distance=1`, a one-unit increase in `distance` is associated with a decrease of about 6.9 percentage points in the probability that a study participant will seek to learn their HIV status. This interpretation is authorized by the fact that the printed estimate corresponds to the slope of the tangent of the outcome curve at the specified point in the predictor space. But it is important to remember that this interpretation is a linear approximation, only valid for small changes in the focal predictor.
+
+
+
+Instead of manually specifying the baseline values of all predictors, we can set `newdata="mean"` to compute a “marginal effect at the mean” or a “marginal effect at representative values.” This is the slope of the regression equation with respect to the focal predictor, for an individual whose characteristics are exactly average (or modal) on all predictors.
+
+
+
+``` downlit
+
+slopes(mod, variables = "distance", newdata = "mean")
+
+```
+
+
+
+| Estimate | Std. Error | z     | Pr(\>\|z\|) | 2.5 %   | 97.5 %  |
+
+|----------|------------|-------|-------------|---------|---------|
+
+| -0.024   | 0.0135     | -1.77 | 0.0763      | -0.0505 | 0.00254 |
+
+
+
+As noted in previous chapters, computing estimates at the mean is computationally efficient, but it may not be particularly informative when the perfectly average individual is not realistic or substantively interesting. The choice of reporting a slope at the mean may seem innocuous, but it is not. In fact, our slope at the mean is quite different from the slope that we computed above for specified values of the covariates: -0.024 vs. -0.069, or about a third of the size. This emphasizes the crucial importance of grid definition.
+
+
+
+Finally, instead of computing slopes for just a few profiles, we can get them for every observation in the original sample. These “unit-level marginal effects” or “partial effects” are the default output of the [`slopes()`](https://rdrr.io/pkg/marginaleffects/man/slopes.html) function.
+
+
+
+``` downlit
+
+slopes(mod, variables = "distance")
+
+```
+
+
+
+| Estimate | Std. Error | z | Pr(\>\|z\|) | 2.5 % | 97.5 % |
+
+|----|----|----|----|----|----|
+
+| -0.23004 | 0.0915 | -2.5137 | 0.01195 | -0.4094 | -0.0507 |
+
+| -0.16236 | 0.0598 | -2.7141 | 0.00665 | -0.2796 | -0.0451 |
+
+| 0.00663 | 0.0290 | 0.2281 | 0.81956 | -0.0503 | 0.0635 |
+
+| 0.00895 | 0.0326 | 0.2743 | 0.78382 | -0.0550 | 0.0729 |
+
+| -0.06896 | 0.0278 | -2.4823 | 0.01305 | -0.1234 | -0.0145 |
+
+| 2815 rows omitted | 2815 rows omitted | 2815 rows omitted | 2815 rows omitted | 2815 rows omitted | 2815 rows omitted |
+
+| -0.05763 | 0.0165 | -3.4844 | \< 0.001 | -0.0900 | -0.0252 |
+
+| -0.07078 | 0.0216 | -3.2796 | 0.00104 | -0.1131 | -0.0285 |
+
+| -0.05771 | 0.0166 | -3.4854 | \< 0.001 | -0.0902 | -0.0253 |
+
+| -0.04587 | 0.0132 | -3.4651 | \< 0.001 | -0.0718 | -0.0199 |
+
+| -0.00147 | 0.0160 | -0.0922 | 0.92651 | -0.0328 | 0.0298 |
+
+
+
+</div>
+
+
+
+</div>
+
+
+
+<div id="sec-slopes_aggregation" class="section level2" number="7.3">
+
+
+
+## 7.3 Aggregation
+
+
+
+A dataset with one marginal effect estimate per unit of observation is a bit unwieldy and difficult to interpret. Instead of presenting a large set of estimates, many analysts prefer to report the “average marginal effect” (or “average slope”), that is, the average of all the unit-level estimates. The average slope can be obtained in two steps, by computing unit-level estimates and then their average. However, it is more convenient to call the [`avg_slopes()`](https://rdrr.io/pkg/marginaleffects/man/slopes.html) function.
+
+
+
+``` downlit
+
+avg_slopes(mod, variables = "distance")
+
+```
+
+
+
+| Estimate | Std. Error | z     | Pr(\>\|z\|) | 2.5 %   | 97.5 %  |
+
+|----------|------------|-------|-------------|---------|---------|
+
+| -0.0516  | 0.00919    | -5.61 | \<0.001     | -0.0696 | -0.0335 |
+
+
+
+Note that there is a nuanced distinction to be drawn between the “marginal effect at the mean” shown in the previous section, and the “average marginal effect” presented here. The former is calculated based on a single individual whose characteristics are exactly average or modal in every dimension. The latter is calculated by taking the average of slopes for all the observed data points in the dataset used to fit a model. These two options will not always be equivalent; they can yield numerically and substantively different results. In general, the marginal effect at the mean might be useful when there are computational constraints. The average marginal effect will be useful when the dataset adequately represents the distribution of predictors in the population, in which case marginalizing across the distribution can give us a good one-number summary.
+
+
+
+Sometimes, the average slope ignores important patterns in the data. For instance, we can imagine that `distance` has a different effect on `outcome` for individuals who receive a monetary `incentive` and for those who do not. To explore this kind of heterogeneity in the association between independent and dependent variables, we can use the `by` argument. This will compute “conditional average marginal effects”, or average slopes by subgroup.
+
+
+
+The following results, for instance, show the average slope (strength of association) between `distance` and the probability that a study participant will travel to the clinic to learn their test result.
+
+
+
+``` downlit
+
+avg_slopes(mod, variables = "distance", by = "incentive")
+
+```
+
+
+
+| incentive | Estimate | Std. Error | z     | Pr(\>\|z\|) | 2.5 %   | 97.5 %  |
+
+|-----------|----------|------------|-------|-------------|---------|---------|
+
+| 0         | -0.0818  | 0.02464    | -3.32 | \<0.001     | -0.1301 | -0.0335 |
+
+| 1         | -0.0430  | 0.00952    | -4.52 | \<0.001     | -0.0617 | -0.0244 |
+
+
+
+Indeed, it seems that distance discourages travel to the clinic for individuals in both groups, but that the strength of the negative association between `distance` and `outcome` is stronger when `incentive=0`. In <a href="#sec-slopes_test" class="quarto-xref">Section 7.5</a>, we will formally test if the difference between these estimates is statistically significant.
+
+
+
+</div>
+
+
+
+<div id="sec-slopes_uncertainty" class="section level2" number="7.4">
+
+
+
+## 7.4 Uncertainty
+
+
+
+As with all other quantities estimated thus far, we can compute estimates of uncertainty around slopes using various strategies: Classical or robust standard errors, bootstrapping, simulation-based inference, etc. To do this, we use the `vcov` and `conf_level` arguments, or the [`inferences()`](https://rdrr.io/pkg/marginaleffects/man/inferences.html) function. Here are two simple examples: the first command clusters standard errors by village, while the second applies a non-parametric bootstrap.
+
+
+
+``` downlit
+
+avg_slopes(mod, variables = "distance", vcov = ~village)
+
+```
+
+
+
+| Estimate | Std. Error | z     | Pr(\>\|z\|) | 2.5 %   | 97.5 %  |
+
+|----------|------------|-------|-------------|---------|---------|
+
+| -0.0516  | 0.0112     | -4.61 | \<0.001     | -0.0734 | -0.0297 |
+
+
+
+``` downlit
+
+avg_slopes(mod, variables = "distance") |> inferences(method = "boot")
+
+```
+
+
+
+| Estimate | 2.5 %   | 97.5 %  |
+
+|----------|---------|---------|
+
+| -0.0516  | -0.0676 | -0.0339 |
+
+
+
+The estimates are the same, but the confidence intervals differ, depending on the uncertainty quantification strategy.
+
+
+
+</div>
+
+
+
+<div id="sec-slopes_test" class="section level2" number="7.5">
+
+
+
+## 7.5 Test
+
+
+
+<a href="hypothesis.html" class="quarto-xref">Chapter 4</a> explained how to conduct complex null hypothesis tests on any quantity estimated by the `marginaleffects` package. The approach introduced in that chapter is applicable to slopes, as it was to model coefficients, predictions, and counterfactual comparisons.
+
+
+
+Recall the example from <a href="#sec-slopes_aggregation" class="quarto-xref">Section 7.3</a>, where we computed the average slopes of `outcome` with respect to `distance`, for each `incentive` subgroup.
+
+
+
+``` downlit
+
+avg_slopes(mod,
+
+  variables = "distance",
+
+  by = "incentive")
+
+```
+
+
+
+| incentive | Estimate | Std. Error | z     | Pr(\>\|z\|) | 2.5 %   | 97.5 %  |
+
+|-----------|----------|------------|-------|-------------|---------|---------|
+
+| 0         | -0.0818  | 0.02464    | -3.32 | \<0.001     | -0.1301 | -0.0335 |
+
+| 1         | -0.0430  | 0.00952    | -4.52 | \<0.001     | -0.0617 | -0.0244 |
+
+
+
+At first glance, these two estimates appear different. It seems that distance is more discouraging to people who do not receive an incentive. One might thus infer that money can mitigate the barrier posed by distance.
+
+
+
+To ensure that this observation is not simply the product of sampling variation, we must formally check if the two estimates in the table are statistically distinguishable. To do this, we execute the same command as before, but add a `hypothesis` argument with an equation-like string. That equation specifies our null hypothesis: there is no difference between the first estimate (`b1`) and the second (`b2`).
+
+
+
+``` downlit
+
+avg_slopes(mod,
+
+  variables = "distance",
+
+  by = "incentive",
+
+  hypothesis = "b1 - b2 = 0")
+
+```
+
+
+
+| Hypothesis | Estimate | Std. Error | z     | Pr(\>\|z\|) | 2.5 %   | 97.5 % |
+
+|------------|----------|------------|-------|-------------|---------|--------|
+
+| b1-b2=0    | -0.0388  | 0.0264     | -1.47 | 0.142       | -0.0905 | 0.013  |
+
+
+
+The difference between our two estimates is about -0.039, which suggests that the slope is flatter in the group with incentive. In other words, the association between `distance` and `outcome` is weaker when `incentive=1` than when `incentive=0`. However, this difference is not statistically significant (\\p\\=0.142). Therefore, we cannot reject the null hypothesis of homogeneity in the effect of distance on the predicted probability that participants will seek their test results.
+
+
+
+</div>
+
+
+
+<div id="sec-slopes_visualization" class="section level2" number="7.6">
+
+
+
+## 7.6 Visualization
+
+
+
+When interpreting the results obtained by fitting a model, it is important to keep in mind the distinction between predictions and slopes. Predictions give us the level of an expected outcome, for given values of the predictors. Slopes capture how the expected outcome changes in response to a change in a focal variable, while holding adjustment variables constant. <a href="#fig-slopes_vs_predictions" class="quarto-xref">Figure 7.3</a> illustrates these concepts in two panels.
+
+
+
+The top panel shows model-based predictions for the `outcome` variable at different values of `distance`, while holding other predictors at their mean or mode. As we move from left to right along the x-axis, as `distance` from the test center increases, the predicted probability of `outcome=1` declines, flattens, and then declines again.
+
+
+
+This pattern is mirrored in the bottom panel of <a href="#fig-slopes_vs_predictions" class="quarto-xref">Figure 7.3</a>, which shows the slope of predicted `outcome` with respect to `distance`, holding adjustment variables at their mean or mode. For most values of `distance`, the slope is negative, which means that `distance` has a negative effect on the predicted probability that `outcome` equals 1. When `distance` is around 3 or 4, the association between `distance` and `outcome` is flat or null. At that point, small increases in `distance` no longer have much of an effect on predicted `outcome`. When the slope is below zero (dotted line), the prediction curve in the top panel goes down. When the slope is at zero, the prediction curve is flat.
+
+
+
+To draw the two plots in <a href="#fig-slopes_vs_predictions" class="quarto-xref">Figure 7.3</a>, we call the [`plot_predictions()`](https://rdrr.io/pkg/marginaleffects/man/plot_predictions.html) and [`plot_slopes()`](https://rdrr.io/pkg/marginaleffects/man/plot_slopes.html) functions, and combine the outputs in a single figure using the `/` operator from the `patchwork` package.
+
+
+
+``` downlit
+
+library(ggplot2)
+
+library(patchwork)
+
+
+
+p1 = plot_predictions(mod, condition = "distance") +
+
+    labs(y = "Predicted Pr(Outcome=1)")
+
+
+
+p2 = plot_slopes(mod, variables = "distance", condition = "distance") +
+
+    geom_hline(yintercept = 0, linetype = "dotted") +
+
+    labs(y = "dY/dX")
+
+
+
+p1 / p2
+
+```
+
+
+
+<figure class="quarto-float quarto-float-fig figure">
+
+<img src="slopes_files/figure-html/fig-slopes_vs_predictions-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" style="width:70.0%" />
+
+<figcaption>Figure 7.3: Model-based predictions (top) and slopes (bottom).</figcaption>
+
+</figure>
+
+
+
+[`plot_slopes()`](https://rdrr.io/pkg/marginaleffects/man/plot_slopes.html) can display several slopes based on multiple conditions. For example, we can show how the association between `distance` and `outcome` varies based on `incentive` and `distance`.
+
+
+
+``` downlit
+
+plot_slopes(mod,
+
+  variables = "distance",
+
+  condition = c("distance", "incentive"))
+
+```
+
+
+
+<figure class="figure">
+
+<p><img src="slopes_files/figure-html/unnamed-chunk-20-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" style="width:70.0%" /></p>
+
+</figure>
+
+
+
+We can also compute *marginal* slopes, that is, the average of individual-level slopes by subgroup. To do this, we use the `by` argument. The next plot shows the same results we explored in <a href="#sec-slopes_test" class="quarto-xref">Section 7.5</a>. The negative association between `distance` and `outcome` seems weaker when `incentive=1` than when `incentive=0`, but the confidence intervals are wide, so we cannot reject the null hypothesis that the two average slopes are equal.
+
+
+
+``` downlit
+
+plot_slopes(mod,
+
+  variables = "distance",
+
+  by = "incentive")
+
+```
+
+
+
+<figure class="figure">
+
+<p><img src="slopes_files/figure-html/unnamed-chunk-21-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" style="width:70.0%" /></p>
+
+</figure>
+
+
+
+</div>
+
+
+
+<div id="summary" class="section level2" number="7.7">
+
+
+
+## 7.7 Summary
+
+
+
+This chapter defined a “slope” as the partial derivative of the regression equation with respect to a predictor of interest. It is a measure of association between two variables, or of the effect of one variable on another, holding other predictors constant.
+
+
+
+The [`slopes()`](https://rdrr.io/pkg/marginaleffects/man/slopes.html) function from the `marginaleffects` package computes slopes for a wide range of models. [`avg_slopes()`](https://rdrr.io/pkg/marginaleffects/man/slopes.html) aggregates slopes across units or groups. [`plot_slopes()`](https://rdrr.io/pkg/marginaleffects/man/plot_slopes.html) displays slopes visually.
+
+
+
+<figure class="quarto-float quarto-float-tbl figure">
+
+<table id="tinytable_f3305f6yf5vhcxs5q6g9" class="tinytable" data-quarto-disable-processing="true" style="table-layout: fixed; width: 100%; margin-left: auto; margin-right: auto;">
+
+<thead>
+
+<tr>
+
+<th data-col="1" data-row="0" scope="col">Argument</th>
+
+<th data-col="2" data-row="0" scope="col"></th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td data-col="1" data-row="1"><code>model</code></td>
+
+<td data-col="2" data-row="1">Fitted model used to make counterfactual slopes.</td>
+
+</tr>
+
+<tr>
+
+<td data-col="1" data-row="2"><code>variables</code></td>
+
+<td data-col="2" data-row="2">Focal predictor whose association with or effect on the outcome we are interested in.</td>
+
+</tr>
+
+<tr>
+
+<td data-col="1" data-row="3"><code>newdata</code></td>
+
+<td data-col="2" data-row="3">Grid of predictor values.</td>
+
+</tr>
+
+<tr>
+
+<td data-col="1" data-row="4"><code>slope</code></td>
+
+<td data-col="2" data-row="4">Choice between derivative or (semi-)elasticity.</td>
+
+</tr>
+
+<tr>
+
+<td data-col="1" data-row="5"><code>vcov</code></td>
+
+<td data-col="2" data-row="5">Standard errors: Classical, robust, clustered, etc.</td>
+
+</tr>
+
+<tr>
+
+<td data-col="1" data-row="6"><code>conf_level</code></td>
+
+<td data-col="2" data-row="6">Size of the confidence intervals.</td>
+
+</tr>
+
+<tr>
+
+<td data-col="1" data-row="7"><code>type</code></td>
+
+<td data-col="2" data-row="7">Type of predictions to compare: response, link, etc.</td>
+
+</tr>
+
+<tr>
+
+<td data-col="1" data-row="8"><code>by</code></td>
+
+<td data-col="2" data-row="8">Grouping variable for average predictions.</td>
+
+</tr>
+
+<tr>
+
+<td data-col="1" data-row="9"><code>wts</code></td>
+
+<td data-col="2" data-row="9">Weights used to compute average slopes.</td>
+
+</tr>
+
+<tr>
+
+<td data-col="1" data-row="10"><code>hypothesis</code></td>
+
+<td data-col="2" data-row="10">Compare different slopes to one another, conduct linear or non-linear hypothesis tests, or specify null hypotheses.</td>
+
+</tr>
+
+<tr>
+
+<td data-col="1" data-row="11"><code>equivalence</code></td>
+
+<td data-col="2" data-row="11">Equivalence tests</td>
+
+</tr>
+
+<tr>
+
+<td data-col="1" data-row="12"><code>df</code></td>
+
+<td data-col="2" data-row="12">Degrees of freedom for hypothesis tests.</td>
+
+</tr>
+
+<tr>
+
+<td data-col="1" data-row="13"><code>numderiv</code></td>
+
+<td data-col="2" data-row="13">Algorithm used to compute numerical derivatives.</td>
+
+</tr>
+
+<tr>
+
+<td data-col="1" data-row="14"><code>...</code></td>
+
+<td data-col="2" data-row="14">Additional arguments are passed to the <a href="https://rdrr.io/r/stats/predict.html"><code>predict()</code></a> method supplied by the modeling package.</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<figcaption>Table 7.1: Main arguments of the <a href="https://rdrr.io/pkg/marginaleffects/man/slopes.html"><code>slopes()</code></a>, <a href="https://rdrr.io/pkg/marginaleffects/man/slopes.html"><code>avg_slopes()</code></a>, and <a href="https://rdrr.io/pkg/marginaleffects/man/plot_slopes.html"><code>plot_slopes()</code></a> functions.</figcaption>
+
+</figure>
+
+
+
+To clearly define slopes and attendant tests, analysts must make five decisions.
+
+
+
+First, the *Quantity*.
+
+
+
+- A slope is always computed with respect to a focal predictor, whose effect on (or association with) the outcome we wish to estimate. In `marginaleffects` functions, the focal variable is specified using the `variables` argument.
+
+- A slope can roughly be interpreted as the effect of a one-unit change in the focal predictor on the predicted outcome. However, this interpretation is a linear approximation, valid only in a small neighborhood of the predictors.
+
+
+
+Second, the *Predictors*.
+
+
+
+- Slopes are conditional quantities, meaning that they will typically vary based on the values of all predictors in a model. Every row of a dataset has its own slope.
+
+- Analysts can compute slopes for different combinations of predictor values—or grids: empirical, interesting, representative, balanced, or counterfactual.
+
+- The predictor grid is defined by the `newdata` argument and the [`datagrid()`](https://rdrr.io/pkg/marginaleffects/man/datagrid.html) function.
+
+
+
+Third, the *Aggregation*.
+
+
+
+- To simplify the presentation of results, analysts can report average slopes. Different aggregation schemes are available:
+
+  - Unit-level slopes (no aggregation)
+
+  - Average slopes
+
+  - Average slopes by subgroup
+
+  - Weighted average of slopes
+
+- Slopes can be aggregated using the [`avg_slopes()`](https://rdrr.io/pkg/marginaleffects/man/slopes.html) function and the `by` argument.
+
+
+
+Fourth, the *Uncertainty*.
+
+
+
+- In `marginaleffects`, the `vcov` argument allows analysts to report classical, robust, or clustered standard errors for slopes.
+
+- The [`inferences()`](https://rdrr.io/pkg/marginaleffects/man/inferences.html) function can compute uncertainty intervals via bootstrapping or simulation-based inference.
+
+
+
+Fifth, the *Test*.
+
+
+
+- A null hypothesis test evaluates whether a slope (or a function of slopes) is significantly different from a null value. For example, we may use a null hypothesis test to check if treatment effects are equal in subgroups of the sample. Null hypothesis tests are conducted using the `hypothesis` argument.
+
+- An equivalence test evaluates whether a slope (or a function of slopes) is similar to a reference value. Equivalence tests are conducted using the `equivalence` argument.
+
+
+
+Thornton, Rebecca L. 2008. “The Demand for, and Impact of, Learning HIV Status.” *American Economic Review* 98 (5): 1829–63.
+
+
+
+</div>
+
+
+
+[^1]: Note that the [`slopes()`](https://rdrr.io/pkg/marginaleffects/man/slopes.html) function from the `marginaleffects` package automatically reverts to counterfactual comparisons if some of the predictors are categorical.
+
+
+
+[^2]: The logistic density is a relatively complex function, but thankfully it is implemented in `R` via the [`dlogis()`](https://rdrr.io/r/stats/Logistic.html) function.

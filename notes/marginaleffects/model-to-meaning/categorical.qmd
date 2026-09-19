@@ -1,0 +1,481 @@
+---
+title: "11 分类和有序结果变量"
+subtitle: "*从模型到意义* - 中文翻译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，《从模型到意义：如何在 R 和 Python 中解释统计模型》——[第 11 章 分类和有序结果](https://marginaleffects.com/chapters/categorical.html)。
+> **来源说明**：截至 2026-09-19，修订版本 870f15a0 的公开代码仓库不包含本章的完整 .qmd 源文件。本页面根据同日下载的公开 HTML 快照翻译而成。因此，R/Python 代码和图形均以静态形式展示；上游代码未在本站重新执行。
+> 网站文本 (C) 2025 Vincent Arel-Bundock，保留所有权利；marginaleffects 软件代码采用 GPL-3 许可证。
+> 本页面为中文翻译，并非原文；其翻译和发布依据本 Notes 网站所使用的授权声明进行。
+
+本章展示了如何利用第一部分和第二部分介绍的框架与工具，为通过拟合分类结果或有序结果模型获得的估计值赋予意义。
+
+
+
+当回归模型的结果变量是离散的，并且包含有限个类别时，我们称其为分类结果。分类结果在数据分析中非常常见，例如，当人们希望对交通方式的选择（如汽车、公交车、自行车、步行）进行建模时。处理这类数据的一种常见方法是拟合多项逻辑回归模型。
+
+
+
+当回归模型的结果变量是离散的、包含有限个类别，并且具有自然顺序时，我们称其为有序结果。有序结果在数据分析中也非常常见，例如，当人们希望对满意度水平（非常不满意、不满意、中立、满意、非常满意）进行建模时。一种常见方法是拟合有序 probit 模型，其中结果变量的每个类别 \\j\\ 的概率建模为（<a href="https://marginaleffects.com/chapters/bibliography.html#ref-CamTri2005" role="doc-biblioref">Cameron and Trivedi 2005</a>）
+
+
+
+\\P(Y = j) = F(\theta_j - \mathbf{X}\beta) - F(\theta\_{j-1} - \mathbf{X}\beta)\\
+
+
+
+其中，\\mathbf{X}\\ 表示预测变量向量，\\beta\\ 表示系数向量，\\theta_j\\ 和 \\theta\_{j-1}\\ 表示界定类别 \\j\\ 与 \\j-1\\ 之间边界的阈值参数，\\F\\ 表示标准正态累积分布函数。
+
+
+
+多项逻辑回归或有序 probit 等模型的显著特征是：它们会针对结果变量的每个水平估计不同的参数。这使分析者能够针对因变量的每个水平估计不同的感兴趣量——预测、反事实比较和斜率。本章重点讨论有序 probit 情形，但同一工作流程也适用于范围更广的模型类别，包括其他多项式和有序方法。
+
+
+
+我们考虑由杂志 *Psychology Today* 于 1969 年收集、并由 Fair（<a href="https://marginaleffects.com/chapters/bibliography.html#ref-Fai1978" role="doc-biblioref">1978</a>）分析的婚外情数据集。这些数据包含 601 份美国已婚人士的调查回答，涉及人口统计、婚姻和个人特征：性别、年龄、结婚年限、子女、宗教虔诚度、教育程度、职业以及对婚姻幸福度的自我评价。
+
+
+
+我们分析中的结果变量是 `affairs`，该变量记录过去一年中自我报告的婚外性行为频率：0、1、2、3、4-10 或 \>10。下面的代码加载数据并绘制结果变量的分布。
+
+
+
+``` downlit
+
+library(MASS)
+
+library(ggplot2)
+
+library(marginaleffects)
+
+dat = get_dataset("affairs")
+
+barplot(table(dat$affairs), ylab = "N", xlab = "Affairs")
+
+```
+
+
+
+<figure class="quarto-float quarto-float-fig figure">
+
+<img src="categorical_files/figure-html/fig-categorical_barplot-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" style="width:70.0%" />
+
+<figcaption>图 11.1：调查前 12 个月内自我报告的婚外情次数分布（Fair，1978）。</figcaption>
+
+</figure>
+
+
+
+为了研究婚外情次数的决定因素，我们指定一个有序 probit 回归模型，其中包含三个预测变量：表示调查对象是否有子女的二元变量、结婚至今的年数，以及性别二元指标。拟合模型时，我们使用 [`polr()`](https://rdrr.io/pkg/MASS/man/polr.html) 函数，该函数位于 `MASS` 包中。
+
+
+
+``` downlit
+
+mod = polr(
+
+  affairs ~ children + yearsmarried + gender,
+
+  method = "probit", data = dat, Hess = TRUE)
+
+summary(mod)
+
+```
+
+
+
+
+
+
+    Coefficients:
+
+                    Value Std. Error t value
+
+    childrenyes   0.17290     0.1506  1.1477
+
+    yearsmarried  0.03457     0.0116  2.9793
+
+    genderwoman  -0.08851     0.1075 -0.8234
+
+
+
+    Intercepts:
+
+             Value   Std. Error t value
+
+    0|1       1.0553  0.1336     7.8970
+
+    1|2       1.2524  0.1357     9.2300
+
+    2|3       1.3647  0.1372     9.9471
+
+    3|4-10    1.5057  0.1394    10.8010
+
+    4-10|>10  1.9363  0.1495    12.9536
+
+
+
+该模型中的系数可以看作衡量潜在变量随预测变量变化而发生的变化。不幸的是，围绕这一潜在变量建立直觉较为困难，参数估计值也没有直接明了的解释。我们不再聚焦于这些估计值，而是像本书前文所做的那样，将原始参数转换为更直观的感兴趣量：预测、反事实比较和斜率。
+
+
+
+<div id="predictions" class="section level2" number="11.1">
+
+
+
+## 11.1 预测
+
+
+
+后估计工作流程的第一步是计算平均预测。在分类结果模型中，预测以概率尺度表示。重要的是，该模型允许我们针对结果变量的每个水平分别进行一次预测。
+
+
+
+假设我们特别关注这样一个量：一名有子女、已婚 10 年的女性预期会有多少次婚外情。为计算这一量，我们使用 [`datagrid()`](https://rdrr.io/pkg/marginaleffects/man/datagrid.html) 函数构建网格，并调用 [`predictions()`](https://rdrr.io/pkg/marginaleffects/man/predictions.html) 函数。[^1]
+
+
+
+``` downlit
+
+p = predictions(mod, newdata = datagrid(
+
+  children = "yes",
+
+  yearsmarried = 10,
+
+  gender = "woman"))
+
+p
+
+```
+
+
+
+| 组 | 估计值 | 标准误 | z     | Pr(\>\|z\|) | 2.5 %  | 97.5 % |
+
+|-------|----------|------------|-------|-------------|--------|--------|
+
+| 0     | 0.7341   | 0.02755    | 26.65 | \<0.001     | 0.6801 | 0.7881 |
+
+| 1     | 0.0605   | 0.01041    | 5.81  | \<0.001     | 0.0401 | 0.0809 |
+
+| 2     | 0.0304   | 0.00746    | 4.08  | \<0.001     | 0.0158 | 0.0451 |
+
+| 3     | 0.0339   | 0.00795    | 4.27  | \<0.001     | 0.0184 | 0.0495 |
+
+| 4-10  | 0.0750   | 0.01262    | 5.94  | \<0.001     | 0.0503 | 0.0998 |
+
+| \>10  | 0.0660   | 0.01310    | 5.04  | \<0.001     | 0.0403 | 0.0917 |
+
+
+
+该拟合模型预测，这名女性没有婚外情的概率为 73%，有一次婚外情的概率为 6%。
+
+
+
+我们也可以不再报告个体案例的预测概率，而是为数据集中的所有个体计算预测概率，然后取其平均值。与前面各章一样，调用 [`avg_predictions()`](https://rdrr.io/pkg/marginaleffects/man/predictions.html) 会返回边际预测。
+
+
+
+``` downlit
+
+p = avg_predictions(mod)
+
+p
+
+```
+
+
+
+| 组 | 估计值 | 标准误 | z     | Pr(\>\|z\|) | 2.5 %  | 97.5 % |
+
+|-------|----------|------------|-------|-------------|--------|--------|
+
+| 0     | 0.7497   | 0.01739    | 43.12 | \<0.001     | 0.7157 | 0.7838 |
+
+| 1     | 0.0567   | 0.00944    | 6.01  | \<0.001     | 0.0382 | 0.0752 |
+
+| 2     | 0.0285   | 0.00680    | 4.19  | \<0.001     | 0.0152 | 0.0418 |
+
+| 3     | 0.0317   | 0.00715    | 4.44  | \<0.001     | 0.0177 | 0.0457 |
+
+| 4-10  | 0.0702   | 0.01039    | 6.76  | \<0.001     | 0.0498 | 0.0906 |
+
+| \>10  | 0.0631   | 0.00986    | 6.40  | \<0.001     | 0.0438 | 0.0824 |
+
+
+
+由于我们使用的是分类结果模型，[`avg_predictions()`](https://rdrr.io/pkg/marginaleffects/man/predictions.html) 函数会自动针对每个结果变量水平返回一个平均预测概率。各组的标识符位于输出数据框的 `group` 列中。
+
+
+
+``` downlit
+
+colnames(p)
+
+```
+
+
+
+    [1] "group"     "estimate"  "std.error" "statistic" "p.value"   "s.value"  
+
+    [7] "conf.low"  "conf.high" "df"       
+
+
+
+``` downlit
+
+p$group
+
+```
+
+
+
+    [1] 0    1    2    3    4-10 >10 
+
+    Levels: 0 1 2 3 4-10 >10
+
+
+
+不出所料，根据<a href="#fig-categorical_barplot" class="quarto-xref">图 11.1</a>，`affairs=0` 的预期概率（75%）远高于其他任何结果变量水平。相比之下，调查对象一年内婚外情次数超过 10 次的平均预测概率为 6%。
+
+
+
+正如我们在<a href="predictions.html" class="quarto-xref">第 5 章</a>所看到的，计算不同亚组的平均预测很容易。例如，如果我们想知道有子女和没有子女的调查对象处于每个结果变量水平的预期概率，可以调用以下代码。
+
+
+
+``` downlit
+
+p = avg_predictions(mod, by = "children")
+
+head(p, 2)
+
+```
+
+
+
+| 组 | children | 估计值 | 标准误 | z    | Pr(\>\|z\|) | 2.5 % | 97.5 % |
+
+|-------|----------|----------|------------|------|-------------|-------|--------|
+
+| 0     | no       | 0.839    | 0.0275     | 30.5 | \<0.001     | 0.785 | 0.893  |
+
+| 0     | yes      | 0.714    | 0.0214     | 33.5 | \<0.001     | 0.672 | 0.756  |
+
+
+
+平均而言，没有子女的调查对象有零次婚外情的预测概率为 84%。相比之下，有子女的调查对象的平均预测概率为 71%。
+
+
+
+我们也可以使用类似的调用绘制这些数值，利用 `by` 参数对结果变量 `group` 与 `children` 预测变量各种组合下的预测进行边际化。
+
+
+
+``` downlit
+
+plot_predictions(mod, by = c("group", "children")) +
+
+  labs(x = "Number of affairs", y = "Average predicted probability")
+
+```
+
+
+
+<figure class="quarto-float quarto-float-fig figure">
+
+<img src="categorical_files/figure-html/fig-categorical_plot_predictions-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" style="width:70.0%" />
+
+<figcaption>图 11.2：有子女和没有子女的子群体在每个结果变量水平上的平均预测概率。</figcaption>
+
+</figure>
+
+
+
+<a href="#fig-categorical_plot_predictions" class="quarto-xref">图 11.2</a> 再次显示，最可能出现的调查回答绝大多数是零。此外，该图表明，有子女和没有子女的人之间的平均预测概率差异非常小。下一节采用明确的反事实方法后，这一印象将得到证实。
+
+
+
+在某些情况下，将不同的结果变量水平类别合并起来可能很有用。例如，分析者可能希望知道调查对象报告至少一次婚外情的概率。为此，我们必须计算 `group` 值大于 0 的所有预测概率之和。
+
+
+
+一种有效的策略是定义一个自定义函数，然后将其作为 `hypothesis` 参数传入 [`avg_predictions()`](https://rdrr.io/pkg/marginaleffects/man/predictions.html)。如该函数手册所述，[^2]自定义假设函数必须接受调用不带 `hypothesis` 参数的函数时得到的同一个数据框，即包含 `group`、`term` 和 `estimate` 列的数据框。随后，自定义函数可以处理该输入，并返回包含 `term` 和 `estimate` 列的新数据框。
+
+
+
+例如，下面定义的自定义函数接受一个数据框 `x`，按组别类别合并预测概率，并返回一个包含新估计值的数据框。
+
+
+
+``` downlit
+
+hyp = function(x) {
+
+  x$term = ifelse(x$group == "0", "0", ">0")
+
+  aggregate(estimate ~ term + children, FUN = sum, data = x)
+
+}
+
+p = avg_predictions(mod, by = "children", hypothesis = hyp)
+
+p
+
+```
+
+
+
+| 术语 | children | 估计值 | 标准误 | z     | Pr(\>\|z\|) | 2.5 %  | 97.5 % |
+
+|------|----------|------------|-------|-------------|--------|--------|
+
+| \>0  | no       | 0.161    | 0.0275     | 5.87  | \<0.001     | 0.107 | 0.215  |
+
+| 0    | no       | 0.839    | 0.0275     | 30.53 | \<0.001     | 0.785 | 0.893  |
+
+| \>0  | yes      | 0.286    | 0.0214     | 13.38 | \<0.001     | 0.244 | 0.328  |
+
+| 0    | yes      | 0.714    | 0.0214     | 33.45 | \<0.001     | 0.672 | 0.756  |
+
+
+
+平均而言，没有子女的调查对象报告至少一次婚外情的预测概率为 16%。
+
+
+
+上面的自定义函数使用 [`aggregate()`](https://rdrr.io/r/stats/aggregate.html) 函数按亚组求和；该函数自 20 世纪以来就已存在于基础 `R` 中。使用 `tidyverse` 惯用写法也可以得到相同结果。
+
+
+
+``` downlit
+
+library(tidyverse)
+
+hyp = function(x) {
+
+  x %>% 
+
+    mutate(term = if_else(group == "0", "0", ">0")) %>%
+
+    summarize(estimate = sum(estimate), .by = c("term", "children"))
+
+}
+
+avg_predictions(mod, by = "children", hypothesis = hyp)
+
+```
+
+
+
+</div>
+
+
+
+<div id="counterfactual-comparisons" class="section level2" number="11.2">
+
+
+
+## 11.2 反事实比较
+
+
+
+在查看预测之后，采用明确的反事实视角来量化预测变量与结果变量之间关联的强度是合理的。我们的首要目标是回答这样一个问题：如果我们增加结婚年数，同时保持其他预测变量不变，报告的婚外情次数会发生什么变化？
+
+
+
+为回答这一问题，我们使用 [`avg_comparisons()`](https://rdrr.io/pkg/marginaleffects/man/comparisons.html) 函数，并通过 `variables` 参数定义焦点预测变量的变化。[^3]
+
+
+
+``` downlit
+
+avg_comparisons(mod, variables = list(yearsmarried = 5))
+
+```
+
+
+
+| 组 | 估计值 | 标准误 | z     | Pr(\>\|z\|) | 2.5 %     | 97.5 %   |
+
+|-------|----------|------------|-------|-------------|-----------|----------|
+
+| 0     | -0.05617 | 0.01940    | -2.89 | 0.00379     | -0.094199 | -0.01814 |
+
+| 1     | 0.00687  | 0.00236    | 2.91  | 0.00363     | 0.002241  | 0.01150  |
+
+| 2     | 0.00427  | 0.00168    | 2.54  | 0.01094     | 0.000981  | 0.00756  |
+
+| 3     | 0.00551  | 0.00215    | 2.56  | 0.01040     | 0.001296  | 0.00973  |
+
+| 4-10  | 0.01590  | 0.00580    | 2.74  | 0.00607     | 0.004543  | 0.02726  |
+
+| \>10  | 0.02362  | 0.00923    | 2.56  | 0.01053     | 0.005521  | 0.04171  |
+
+
+
+``` downlit
+
+cmp = avg_comparisons(mod, variables = list(yearsmarried = 5))
+
+```
+
+
+
+平均而言，将 `yearsmarried` 变量增加 5 会使 `affairs` 等于零的预测概率降低 5.6 个百分点。平均而言，将 `yearsmarried` 增加 5 会使 `affairs` 大于 10 的预测概率提高 2.4 个百分点。这些反事实比较对应的 \p\ 值较小，因此我们可以拒绝 `yearsmarried` 对预测的 `affairs` 次数没有影响这一原假设。
+
+
+
+相比之下，如果我们估计 `gender` 的反事实效应，会发现预测概率的差异很小，并且在统计上不显著。我们不能拒绝 `gender` 对 `affairs` 没有影响这一原假设。
+
+
+
+``` downlit
+
+avg_comparisons(mod, variables = "gender")
+
+```
+
+
+
+| 组 | 估计值 | 标准误 | z      | Pr(\>\|z\|) | 2.5 %    | 97.5 %  |
+
+|-------|----------|------------|--------|-------------|----------|---------|
+
+| 0     | 0.02736  | 0.03324    | 0.823  | 0.411       | -0.03779 | 0.09251 |
+
+| 1     | -0.00373 | 0.00458    | -0.815 | 0.415       | -0.01271 | 0.00524 |
+
+| 2     | -0.00225 | 0.00278    | -0.808 | 0.419       | -0.00769 | 0.00320 |
+
+| 3     | -0.00284 | 0.00350    | -0.811 | 0.417       | -0.00970 | 0.00402 |
+
+| 4-10  | -0.00786 | 0.00959    | -0.819 | 0.413       | -0.02666 | 0.01095 |
+
+| \>10  | -0.01068 | 0.01305    | -0.818 | 0.413       | -0.03626 | 0.01491 |
+
+
+
+总之，本章展示了如何有效利用分类和有序结果模型（如有序 probit）来解释复杂数据。通过将原始参数估计值转换为预测和反事实比较等直观量，分析者可以获得关于数据的有意义洞见。这种方法不仅提高了模型结果的可解释性，也有助于向更广泛的受众清晰传达研究发现。
+
+
+
+Cameron, A Colin, and Pravin K Trivedi. 2005. *Microeconometrics: Methods and Applications*. Cambridge university press. Fair, Ray C. 1978. “A Theory of Extramarital Affairs.” *Journal of Political Economy* 86: 45–61.
+
+
+
+</div>
+
+
+
+[^1]: <a href="predictions.html" class="quarto-xref">第 5 章</a>
+
+
+
+[^2]: 在 `R` 中，可以输入 [`?avg_predictions`](https://rdrr.io/pkg/marginaleffects/man/predictions.html) 访问函数手册。在 `Python` 中，可以输入 [`help(avg_predictions)`](https://rdrr.io/pkg/marginaleffects/man/predictions.html) 访问该手册。该手册也发布于 <https://marginaleffects.com>
+
+
+
+[^3]: <a href="comparisons.html#sec-comparisons_focal" class="quarto-xref">第 6.2.1 节</a>
