@@ -1,0 +1,80 @@
+---
+title: "数据网格"
+subtitle: "*Data grids* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Data grids*](https://marginaleffects.com/bonus/grids.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/grids.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+> 原文中指向原书章节的交叉引用已改写为指向 marginaleffects.com 的链接（那些章节不在本次翻译范围内）。
+
+
+本文介绍 `datagrid()` 的一些高级用法。在深入学习之前，读者应先熟悉 [原书《概念框架》一章](https://marginaleffects.com/chapters/framework.html) 中的内容。
+
+## `by` 参数
+
+有时我们希望在组*内部*将变量固定为常数值。`datagrid()` 中的 `by` 参数使我们能够创建网格，让某些变量在子组内固定为特定值。
+
+例如，我们可能想在某个连续变量的均值处比较预测值。在这个例子中，`Sepal.Width` 列在网格的每一行都被固定为*全局*均值：
+
+```{r}
+library(marginaleffects)
+mod <- lm(Petal.Width ~ Sepal.Width + Species, data = iris)
+
+predictions(mod,
+  newdata = datagrid(Species = unique, Sepal.Width = mean)
+)
+```
+
+现在，我们在每个 `Species` 组内把 `Sepal.Width` 固定为其均值。这样一来，我们就可以在控制每组典型萼片宽度的同时，比较不同物种的效应：
+
+```{r}
+predictions(mod,
+  newdata = datagrid(Species = unique, Sepal.Width = mean, by = "Species")
+)
+
+aggregate(Sepal.Width ~ Species, data = iris, FUN = mean)
+```
+
+## 使用 `grid_type = "dataframe"` 对大型网格进行抽样
+
+当涉及许多分类变量时，平衡网格可能会变得过大而难以处理。例如，若有 5 个变量，每个变量各有 26 种可能取值，完整析因网格将有 26^5 = 11,881,376 行。
+
+`grid_type = "dataframe"` 参数与自定义 `FUN` 结合使用，可以让我们从完整析因空间中均匀抽样。得到的网格会“逼近”真实的析因网格，但占用空间小得多。
+
+```{r}
+# Simulate data with 5 categorical variables
+set.seed(48103)
+n <- 10000
+dat <- data.frame(
+  x1 = sample(letters, n, replace = TRUE),
+  x2 = sample(letters, n, replace = TRUE), 
+  x3 = sample(letters, n, replace = TRUE),
+  x4 = sample(letters, n, replace = TRUE),
+  x5 = sample(letters, n, replace = TRUE),
+  y = rnorm(n)
+)
+
+# Fit model
+mod <- lm(y ~ x1 + x2 + x3 + x4 + x5, data = dat)
+
+# Sample 5 values uniformly from each variable's unique entries
+sample_unique <- \(x, n) sample(unique(x), n, replace = TRUE)
+grid_sampled <- datagrid(
+  model = mod,
+  grid_type = "dataframe",
+  FUN = \(x) sample_unique(x, 5)
+)
+
+grid_sampled
+```
+
+现在，我们可以在这个小得多的抽样网格上计算预测值：
+
+```{r}
+predictions(mod, newdata = grid_sampled)
+```
+
+请注意，`grid_type="dataframe"` 参数会告诉 `datagrid()` 对每个变量分别应用 `FUN`，然后用 `cbind()` 将抽样得到的值纵向堆叠起来，从而构建网格。这与 `balanced` 或 `counterfactual` 等其他网格不同，后者是通过 `expand.grid()` 对给定的值取笛卡尔积得到的。
