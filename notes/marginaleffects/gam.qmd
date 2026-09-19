@@ -1,0 +1,117 @@
+---
+title: "广义可加模型"
+subtitle: "*GAM* · marginaleffects 官方文档中译"
+bibliography: marginaleffects-refs.bib
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*GAM*](https://marginaleffects.com/bonus/gam.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/gam.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+
+
+广义加性模型（Generalized Additive Models，GAM）是一类灵活的统计模型，它通过允许预测变量与响应变量之间存在非线性关系，扩展了传统的线性回归。GAM 不假设变量之间呈直线关系，而是使用被称为样条（splines）的平滑函数，来捕捉数据中的复杂模式。
+
+这种灵活性使得 GAM 特别适合用来为现实世界中的现象建模，因为这些现象之间的关系可能是曲线型的、季节性的，或以其他方式呈非线性。例如，气温与能耗之间的关系通常呈 U 形，线性回归很难很好地捕捉这种关系。
+
+虽然 GAM 功能强大且灵活，但由于其中涉及复杂的样条基函数，估计得到的参数往往难以直接解释。幸运的是，`marginaleffects` 包提供了一些工具，可以像处理更简单的模型一样，通过直观的工作流程——预测值、反事实比较和斜率——来理解和可视化 GAM 的结果。
+
+
+```{r, include = FALSE}
+## this vignette is in .Rbuildignore because lme4 is not available on old CRAN
+## test machines.
+
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  fig.width = 9,
+  fig.asp = .4,
+  out.width = "100%",
+  warning = FALSE,
+  message = FALSE,
+  comment = "#>"
+)
+
+library(ggplot2)
+
+theme_clean <- function() {
+  theme_minimal() +
+    theme(panel.grid.minor = element_blank(),
+          strip.text = element_text(size = rel(1), hjust = 0),
+          strip.background = element_blank(),
+          legend.position = "bottom")
+}
+ggplot2::theme_set(theme_clean())
+```
+
+## 估计
+
+我们将使用 `mgcv` 包和随 `itsadug` 包分发的 `simdat` 数据集来估计一个 GAM 模型：
+
+```{r}
+library(marginaleffects)
+library(itsadug)
+library(mgcv)
+
+simdat$Subject <- as.factor(simdat$Subject)
+
+dim(simdat)
+head(simdat)
+```
+
+拟合一个包含随机效应和分组时间平滑项的模型：
+
+```{r}
+model <- bam(Y ~ Group + s(Time, by = Group) + s(Subject, bs = "re"),
+             data = simdat)
+
+summary(model)
+```
+
+## 预测值
+
+为拟合模型所用数据集中每一种观测到的回归变量组合，计算调整后的预测值。这样得到的数据集行数与原始数据相同，但新增了包含预测值和不确定性估计的列：
+
+```{r}
+pred <- predictions(model)
+dim(pred)
+head(pred)
+```
+
+我们可以使用 `plot_predictions()` 函数，轻松绘制回归变量取不同值时的调整后预测值：
+
+```{r}
+plot_predictions(model, condition = "Time")
+```
+
+## 斜率
+
+边际效应就是预测方程的斜率，属于观测层面的量。`slopes()` 函数会生成一个行数与原始数据相同的数据集，但新增了斜率和不确定性估计的列：
+
+```{r}
+mfx <- slopes(model, variables = "Time")
+head(mfx)
+```
+
+我们可以使用 `plot_slopes()` 函数，绘制回归变量取不同值时的边际效应。
+下面这张图展示的是预测方程的斜率，即上一张图在 `Time` 变量每一个取值处的斜率。
+
+```{r}
+plot_slopes(model, variables = "Time", condition = "Time")
+```
+
+这张图中的边际效应可以理解为：在 `Time` 的不同基线取值上，`Time` 小幅增加所对应的 `Y` 的变化量。
+
+## 排除项
+
+`mgcv` 包的 `predict()` 方法允许用户使用 `exclude` 参数来"排除"某些平滑项。你可以把同样的参数传给 `marginaleffects` 包中的任何函数：
+
+```{r}
+predictions(model, newdata = "mean", exclude = "s(Subject)")
+```
+
+详情请参阅 `?mgcv:::predict.bam` 中的文档说明。
+
+## 警告
+
+对于包含样条的模型，计算聚合量（也就是平均效应或边际效应）未必总是合适的。相关技术参考见 @Woo2017，相关讨论见[这篇 Cross Validated 帖子](https://stats.stackexchange.com/questions/654784/how-to-decide-which-spline-to-use-when-conducting-g-computation-after-weighting/654791#654791)。
