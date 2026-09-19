@@ -1,0 +1,176 @@
+---
+title: "NumPyro"
+subtitle: "*NumPyro* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · *NumPyro*
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/numpyro.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 该文件存在于上游仓库，但未列入 marginaleffects.com 已发布的章节目录。
+> 页面中的代码块由本站在渲染时真实执行。
+
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  eval = FALSE,
+  collapse = TRUE,
+  fig.width = 6,
+  fig.asp = .4,
+  warning = FALSE,
+  message = FALSE,
+  comment = "#>"
+)
+```
+
+Python 编程语言提供了多个强大的（贝叶斯）统计分析库，例如 [`NumPyro`]() 和 [`PyMC`。](https://www.pymc.io/welcome.html) 本教程展示如何充分发挥 `marginaleffects` 的威力，来分析和解读用 `NumPyro` 这个 Python 库通过马尔可夫链蒙特卡洛估计出的模型结果。
+
+## 拟合 `NumPyro` 模型
+
+首先，我们加载 `reticulate` 包，它让我们可以在 `R` 会话中与 Python 解释器交互。然后，我们编写一个 `NumPyro` 模型，并用 `source_python()` 函数把它载入内存。Python 代码中值得注意的重要函数有：
+
+* `load_df()` 下载肺纤维化数据。
+* `model()` 定义 `NumPyro` 模型。
+* `fit_mcmc_model()` 用马尔可夫链蒙特卡洛拟合模型。
+* `predict_mcmc()`：接受一个数据框，返回一个矩阵，其中是调整预测值（拟合值）后验分布的抽样。
+
+```{r, results = "hide", message=FALSE}
+library(reticulate)
+library(marginaleffects)
+
+model <- '
+## Model code adapted from the NumPyro documtation under Apache License:
+## https://num.pyro.ai/en/latest/tutorials/bayesian_hierarchical_linear_regression.html
+
+import pandas as pd
+import numpy as np
+import numpyro
+from numpyro.infer import SVI, Predictive, MCMC,NUTS, autoguide, TraceMeanField_ELBO
+import numpyro.distributions as dist
+from numpyro.infer.initialization import init_to_median, init_to_uniform,init_to_sample
+from jax import random
+from sklearn.preprocessing import LabelEncoder
+import pickle
+
+def load_df():
+    train = pd.read_csv("https://raw.githubusercontent.com/vincentarelbundock/modelarchive/main/data-raw/osic_pulmonary_fibrosis.csv")
+    return train
+
+
+def model(data, predict = False):
+    FVC_obs = data["FVC"].values  if predict == False else None
+    patient_encoder = LabelEncoder()
+    Age_obs = data["Age"].values
+    patient_code = patient_encoder.fit_transform(data["Patient"].values)
+    μ_α = numpyro.sample("μ_α", dist.Normal(0.0, 500.0))
+    σ_α = numpyro.sample("σ_α", dist.HalfNormal(100.0))
+
+    age = numpyro.sample("age", dist.Normal(0.0, 500.0))
+
+    n_patients = len(np.unique(patient_code))
+
+    with numpyro.plate("plate_i", n_patients):
+        α = numpyro.sample("α", dist.Normal(μ_α, σ_α))
+
+    σ = numpyro.sample("σ", dist.HalfNormal(100.0))
+    FVC_est = α[patient_code] + age * Age_obs
+
+    with numpyro.plate("data", len(patient_code)):
+        numpyro.sample("obs", dist.Normal(FVC_est, σ), obs=FVC_obs)
+
+
+def fit_mcmc_model(train_df, samples = 1000):
+    numpyro.set_host_device_count(4)
+    rng_key = random.PRNGKey(0)
+    mcmc = MCMC(
+        NUTS(model),
+        num_samples=samples,
+        num_warmup=1000,
+        progress_bar=True,
+        num_chains = 4
+        )
+    
+    mcmc.run(rng_key, train_df)
+
+    get_draws = mcmc.get_samples()
+
+    with open("mcmc_get_draws.pickle", "wb") as handle:
+        pickle.dump(get_draws, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+def predict_mcmc(data):
+
+    with open("mcmc_get_draws.pickle", "rb") as handle:
+        get_draws = pickle.load(handle)
+
+    predictive = Predictive(model = model,posterior_samples=get_draws)
+    samples = predictive(random.PRNGKey(1), data, predict = True)
+    y_pred = samples["obs"]
+    # transpose so that each column is a draw and each row is an observation
+    y_pred = np.transpose(np.array(y_pred))
+
+    return y_pred 
+'
+
+## save python script to temp file
+tmp <- tempfile()
+cat(model, file = tmp)
+
+## load functions
+source_python(tmp)
+
+## download data
+df <- load_df()
+
+## fit model
+fit_mcmc_model(df)
+```
+
+## 在 `marginaleffects` 中分析结果
+
+`marginaleffects` 包中的每个函数都要求用户提供一个 `model` 对象供其操作。当我们在 `R` 之外估计模型时，并没有这样一个模型对象。因此我们先创建一个「假的」模型对象：一个空数据框，并把它的类定义为 "custom"。然后，我们设置一个全局选项，告诉 `marginaleffects` 这个 "custom" 类是受支持的。
+
+```{r}
+mod <- data.frame()
+class(mod) <- "custom"
+
+options("marginaleffects_model_classes" = "custom")
+```
+
+接下来，我们为这个新的自定义类定义一个 `get_predict` 方法。该方法必须接受三个参数：`model`、`newdata` 和 `...`。`get_predict` 方法必须返回一个数据框，其行数与 `newdata` 相同，包含两列（`rowid` 和 `estimate`），并带有一个名为 `get_draws` 的属性，其中存放一个后验抽样矩阵，行数同样与 `newdata` 相同。
+
+下面这个方法用 `reticulate` 调用我们在上面 Python 脚本中定义的 `predict_mcmc()` 函数。`predict_mcmc()` 函数接受一个数据框，并返回一个行数相同的矩阵。
+
+```{r}
+get_predict.custom <- function(model, newdata, ...) {
+    pred <- predict_mcmc(newdata)
+    out <- data.frame(
+        rowid = seq_len(nrow(newdata)),
+        predicted = apply(pred, 1, stats::median)
+    )
+    attr(out, "get_draws") <- pred
+    return(out)
+}
+```
+
+现在我们就可以用 `marginaleffects` 包中的大多数函数来分析结果了。由于我们用的是一个「假的」模型对象，`marginaleffects` 无法从模型对象中取回原始数据，因此我们每次都需要提供 `newdata` 参数：
+
+```{r, warning = FALSE}
+## predictions on the original dataset
+predictions(mod, newdata = df) |> head()
+
+## predictions for user-defined predictor values
+predictions(mod, newdata = datagrid(newdata = df, Age = c(60, 70)))
+
+predictions(mod, newdata = datagrid(newdata = df, Age = range))
+
+## average predictions by group
+predictions(mod, newdata = df, by = "Sex")
+
+## contrasts (average)
+avg_comparisons(mod, variables = "Age", newdata = df)
+
+avg_comparisons(mod, variables = list("Age" = "sd"), newdata = df)
+
+## slope (elasticity)
+avg_slopes(mod, variables = "Age", slope = "eyex", newdata = df)
+```
