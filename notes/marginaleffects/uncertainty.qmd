@@ -1,0 +1,243 @@
+---
+title: "不确定性"
+subtitle: "*Uncertainty* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Uncertainty*](https://marginaleffects.com/bonus/uncertainty.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/uncertainty.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+> 原文中指向原书章节的交叉引用已改写为指向 marginaleffects.com 的链接（那些章节不在本次翻译范围内）。
+> 本页有 1 个 R 代码块未在本站执行：本机 marginaleffects 0.32.0 无法为 lmerMod 提取 satterthwaite 自由度。代码按原样展示，页面中不含它们的输出。
+
+
+本教程是对假设检验核心章节 [原书《不确定性》一章](https://marginaleffects.com/chapters/uncertainty.html) 的补充，其中给出了一些更进阶的例子。
+
+```{r, include = FALSE}
+options(width = 1000)
+## this vignette is in .Rbuildignore because lme4 is not available on old CRAN
+## test machines.
+
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  fig.width = 9,
+  fig.asp = .4,
+  out.width = "100%",
+  warning = FALSE,
+  message = FALSE,
+  comment = "#>"
+)
+```
+
+## 混合效应模型：Satterthwaite 与 Kenward-Roger 校正
+
+对线性混合效应模型，我们可以像前几章那样应用 Satterthwaite 和 Kenward-Roger 校正：
+
+```{r, message = FALSE}
+library(marginaleffects)
+library(patchwork)
+library(lme4)
+
+dat <- mtcars
+dat$cyl <- factor(dat$cyl)
+dat$am <- as.logical(dat$am)
+mod <- lmer(mpg ~ hp + am + (1 | cyl), data = dat)
+```
+
+使用经典标准误和 z 统计量、在均值处计算的边际效应：
+
+```{r}
+slopes(mod, newdata = "mean")
+```
+
+使用 Kenward-Roger 调整后的方差-协方差矩阵和自由度、在均值处计算的边际效应：
+
+```{r}
+slopes(mod,
+    newdata = "mean",
+    vcov = "kenward-roger")
+```
+
+同样的选项可以用在本包的任意核心函数中，例如：
+
+```{r}
+#| eval: false
+plot_predictions(mod, condition = "hp", vcov = "satterthwaite")
+```
+
+## 数值导数：对步长的敏感性
+
+```{r}
+dat <- get_dataset("penguins", "palmerpenguins")
+dat$large_penguin <- ifelse(dat$body_mass_g > median(dat$body_mass_g, na.rm = TRUE), 1, 0)
+mod <- glm(large_penguin ~ bill_length_mm * flipper_length_mm + species, data = dat, family = binomial)
+```
+
+`marginaleffects` 在两种场合使用数值导数：
+
+1. 估计 `slopes()` 函数报告的偏导数。
+   - 中心有限差分
+   - $\frac{f(x + \varepsilon_1 / 2) - f(x - \varepsilon_1 / 2)}{\varepsilon_1}$，其中我们对所关心的预测变量求导，而 $f$ 是 `predict()` 函数。
+2. 用 Delta 方法估计标准误。
+   - 前向有限差分
+   - $\frac{g(\hat{\beta}) - g(\hat{\beta} + \varepsilon_2)}{\varepsilon_2}$，其中我们对模型的系数求导，而 $g$ 是某个返回所关心的量（斜率、对比、预测值等）的 `marginaleffects` 函数。
+     
+注意这两种场合所用的步长可以不同。如果变量和系数的量纲差别很大，那么为 $\varepsilon_1$ 和 $\varepsilon_2$ 取不同的值可能是合理的。
+
+默认情况下，$\varepsilon_1$ 被设为求导所针对变量取值范围的 `1e-4` 倍。默认情况下，$\varepsilon_2$ 被设为 `1e-8` 与「最小绝对系数估计值的 `1e-4` 倍」二者中的较大值。（这些取法都是任意的，但我发现在实践中，更小的值可能产生不稳定的结果。）
+
+$\varepsilon_1$ 可以通过 `slopes()` 函数的 `eps` 参数来控制。$\varepsilon_2$ 则可以通过设置一个全局选项来控制，该选项告诉 `marginaleffects` 用 `numDeriv` 包而不是它自己的内部函数来计算雅可比矩阵。这样可以更好地控制步长，同时还能用上其他求导方法，比如 Richardson 方法。要使用 `numDeriv`，我们先定义一个参数列表，它会被转发给 `numDeriv::jacobian`：
+
+```{r}
+avg_slopes(mod, variables = "bill_length_mm")
+
+options(marginaleffects_numDeriv = list(method = "Richardson"))
+avg_slopes(mod, variables = "bill_length_mm")
+
+options(marginaleffects_numDeriv = list(method = "simple", method.args = list(eps = 1e-3)))
+avg_slopes(mod, variables = "bill_length_mm")
+
+options(marginaleffects_numDeriv = list(method = "simple", method.args = list(eps = 1e-5)))
+avg_slopes(mod, variables = "bill_length_mm")
+
+options(marginaleffects_numDeriv = list(method = "simple", method.args = list(eps = 1e-7)))
+avg_slopes(mod, variables = "bill_length_mm")
+```
+
+注意，使用不同的步长时，标准误可能有相当大的变化。分析者应当养成好习惯，考察自己的结果对这一设置的敏感性。
+
+现在，我们用原生 `R` 代码来完整演示标准误的计算过程。首先，我们选定两个步长：
+
+```{r}
+eps1 <- 1e-5 # slope
+eps2 <- 1e-7 # delta method
+
+s <- slopes(mod, newdata = head(dat, 3), variables = "bill_length_mm", eps = eps1)
+print(s[, 1:5], digits = 6)
+```
+
+按下面这些步骤，我们可以手工得到同样的估计值：
+
+```{r}
+linkinv <- mod$family$linkinv
+
+## increment the variable of interest by h
+dat_hi <- transform(dat, bill_length_mm = bill_length_mm + eps1)
+
+## model matrices: first 3 rows
+mm_lo <- insight::get_modelmatrix(mod, data = dat)[1:3,]
+mm_hi <- insight::get_modelmatrix(mod, data = dat_hi)[1:3,]
+
+## predictions
+p_lo <- linkinv(mm_lo %*% coef(mod))
+p_hi <- linkinv(mm_hi %*% coef(mod))
+
+## slopes
+(p_hi - p_lo) / eps1
+```
+
+要得到标准误，我们需要构造一个雅可比矩阵，其中每一列存放向量值斜率函数对各个系数的导数。仍以同一个例子为例：
+
+```{r}
+b_lo <- b_hi <- coef(mod)
+b_hi[1] <- b_hi[1] + eps2
+
+dydx_lo <- (linkinv(mm_hi %*% b_lo) - linkinv(mm_lo %*% b_lo)) / eps1
+dydx_hi <- (linkinv(mm_hi %*% b_hi) - linkinv(mm_lo %*% b_hi)) / eps1
+(dydx_hi - dydx_lo) / eps2
+```
+
+这给出了 $J$ 的第一列，而完整的矩阵可以从 `marginaleffects` 对象的属性中取回：
+
+```{r}
+J <- components(s, "jacobian")
+J
+```
+
+要构造完整的矩阵，我们只需依次遍历各个系数，逐个对其做增量即可。最后，标准误由下式得到：
+
+```{r}
+sqrt(diag(J %*% vcov(mod) %*% t(J)))
+```
+
+这与我们最初得到的标准误一致：
+
+```{r}
+print(s[, 1:5], digits = 7)
+```
+
+恢复默认设置：
+
+```{r}
+options(marginaleffects_numDeriv = NULL)
+```
+
+注意，对这个模型，我们的默认结果与 `margins` 生成的结果非常接近——但并不完全相同。正如预期的那样，对这个模型，`margins` 的结果同样对 `eps` 的取值非常敏感：
+
+```{r}
+#| eval: false
+library(margins)
+margins(mod, variables = "bill_length_mm", data = head(dat, 3), unit_ses = TRUE)$SE_dydx_bill_length_mm
+
+margins(mod, variables = "bill_length_mm", data = head(dat, 3), eps = 1e-4, unit_ses = TRUE)$SE_dydx_bill_length_mm
+
+margins(mod, variables = "bill_length_mm", data = head(dat, 3), eps = 1e-5, unit_ses = TRUE)$SE_dydx_bill_length_mm
+```
+
+
+## 贝叶斯估计值与可信区间
+
+关于贝叶斯估计值与可信区间的讨论，[参见 `brms` 教程](brms.html)。
+
+
+<!--
+## Uncertainty around unit-level or average estimates
+
+Note that it is normal to observe that confidence intervals around average estimates tend to be tighter than those around unit-level estimates:
+
+```{r}
+library(marginaleffects)
+mod <- lm(mpg ~ hp * qsec, mtcars)
+
+## On average CIs around unit-level estimates are:
+pre1 <- predictions(mod)
+as.numeric(mean(pre1$conf.high - pre1$conf.low))
+
+## The CI of the average estimate is:
+pre2 <- tidy(predictions(mod))
+as.numeric(pre2$conf.high - pre2$conf.low)
+
+## On average CIs around unit-level estimates are:
+cmp1 <- comparisons(mod, variables = "hp")
+mean(cmp1$conf.high - cmp1$conf.low)
+
+## The CI of the average estimate is:
+cmp2 <- comparisons(mod, variables = "hp", comparison = "differenceavg")
+cmp2$conf.high - cmp2$conf.low
+```
+
+Relevant?
+https://en.wikipedia.org/wiki/Jensen%27s_inequality
+https://math.stackexchange.com/questions/34009/is-the-variance-of-a-convex-function-a-convex-function/34021#34021?newreg=698ab30a481945878307935ac5d6b629
+
+
+NO LONGER RELEVANT WITH THE AVERAGE() + RECALL() REFACTOR SINCE WE COMPUTE SEs DIRECTLY ON THE MARGINS W
+
+### Standard Error of the Average Marginal Effect or Contrast
+
+The `avg_*()` functions computes the average marginal effect (or contrast) when they are applied to an object produced by `slopes()` (or `comparisons()`). This is done in 3 steps:
+
+1. Extract the Jacobian used to compute unit-level standard errors.
+2. Take the average of that Jacobian.
+3. Estimate the standard error of the average marginal effect as the square root of the diagonal of J'VJ, where V is the variance-covariance matrix.
+
+As [explained succinctly on Stack Exchange:](https://stats.stackexchange.com/a/331311/4874)
+
+> we want the variance of the Average Marginal Effect (AME) and hence our transformed function is: $AME =  \frac{1}{N} \sum_{i=1}^N g_i(x_i,\hat{\beta})$ Then using the delta method we have $Var \left( g(\hat{\beta}) \right) = J_g' \Omega_{\hat{\beta}} J_g$ where $\Omega_{\hat{\beta}} = Var(\hat{\beta})$ and $J_g' = \frac{\partial\left[\frac{1}{N}\sum_{i=1}^N g (x_i,\hat{\beta})\right]}{\partial \hat\beta} = \frac{1}{N}{\left[\sum_{i=1}^N \frac{\partial \left (g (x_i,\hat{\beta})\right)}{\partial \hat\beta}\right]}$ Which justifies using the "average Jacobian" in the delta method to calculate variance of the AME.
+
+References:
+
+* Dowd, Bryan E, William H Greene, and Edward C Norton. “Computation of Standard Errors.” Health Services Research 49, no. 2 (April 2014): 731–50. https://doi.org/10.1111/1475-6773.12122.
+* https://stats.stackexchange.com/questions/283831/delta-method-for-marginal-effects-of-generalized-linear-model?rq=1
+-->
