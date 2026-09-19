@@ -1,0 +1,77 @@
+---
+title: "匹配"
+subtitle: "*Matching* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Matching*](https://marginaleffects.com/bonus/matching.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/matching.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+
+
+本章介绍如何在对数据集做预处理以获得更好的协变量平衡之后，用 `marginaleffects` 估计处理效应。篇幅非常短。想要更全面地理解和应用这些方法的读者，可以参考 [Noah Greifer 在这一主题上出色而详尽的工作](https://ngreifer.github.io/)，以及 [`MatchIt` 包的教程与网站](https://kosukeimai.github.io/MatchIt/)
+
+我们要重点介绍的流程可以拆成三步：
+
+1. 用 `MatchIt` 对数据做预处理，获得更好的协变量平衡
+2. 对所关心的结局拟合一个回归模型
+3. 用 `marginaleffects` 和 [G 计算](https://marginaleffects.com/chapters/gcomputation.html) 来估计所关心的量，比如处理组的平均处理效应（ATT）
+
+首先，我们加载所需的包，以及经典的 Lalonde 实验数据：
+
+```{r}
+library("MatchIt")
+library("marginaleffects")
+data("lalonde", package = "MatchIt")
+
+head(lalonde)
+```
+
+我们关心的是 `treat` 变量对 `re78` 这个结局的处理效应。`treat` 是一个二值变量，表示个体是否接受了职业培训。`re78` 则是个体在 1978 年的收入。
+
+
+## 匹配
+
+第一步是对数据集做预处理，以获得更好的协变量平衡。为此，我们使用 `MatchIt::matchit()` 函数，基于马氏距离做 1 对 1、无放回的最近邻匹配。该函数还支持许多其他匹配方法，包括倾向得分匹配；参见 `?matchit`。
+
+```{r}
+dat <- matchit(
+    treat ~ age + educ + race + married + nodegree + re74 + re75, 
+    data = lalonde, distance = "mahalanobis")
+
+dat <- match_data(dat)
+```
+
+## 拟合
+
+接下来，我们估计一个在处理与协变量之间带交互项的线性回归模型。注意我们用 `weights` 参数来使用匹配方法给出的权重：
+
+```{r}
+fit <- lm(
+    re78 ~ treat * (age + educ + race + married + nodegree),
+    data = dat,
+    weights = weights)
+```
+
+## 所关心的量
+
+最后，我们用 `marginaleffects` 包的 `avg_comparisons()` 函数来估计 ATT 及其标准误。实际上，这个函数是通过 [G 计算](https://marginaleffects.com/chapters/gcomputation.html) 来估计所关心的量。我们用到下面这些参数：
+ 
+* `variables = "treat"` 表示我们关心的是 `treat` 变量的效应。
+* `newdata = subset(dat, treat == 1)` 表示我们只想估计处理组个体的效应（也就是 ATT）。
+* `vcov = ~subclass` 表示我们希望按配对归属（记录在 `dat` 的 `subclass` 变量中）对标准误做聚类。
+
+```{r, warning=FALSE}
+avg_comparisons(
+    fit,
+    variables = "treat",
+    newdata = subset(dat, treat == 1),
+    vcov = ~subclass)
+```
+
+更多细节（包括关于不确定性估计的讨论）参见 [MatchIt 教程](https://kosukeimai.github.io/MatchIt/articles/estimating-effects.html)。
+
+## 延伸阅读
+
+[`MatchIt` 中题为 "Estimating Effects After Matching" 的教程](https://cran.r-project.org/web/packages/MatchIt/vignettes/estimating-effects.html) 介绍了更多选项，包括不同的不确定性度量（自助法、聚类等）、不同的估计目标（ATE 等），以及不同的调整策略。
