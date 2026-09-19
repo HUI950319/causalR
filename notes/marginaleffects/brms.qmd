@@ -1,0 +1,986 @@
+---
+title: "贝叶斯模型"
+subtitle: "*Bayes* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Bayes*](https://marginaleffects.com/bonus/brms.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/brms.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+> 原文中指向原书章节的交叉引用已改写为指向 marginaleffects.com 的链接（那些章节不在本次翻译范围内）。
+
+
+```{r, include = FALSE}
+options(width = 1000)
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  eval = FALSE,
+  fig.width = 9,
+  fig.asp = .4,
+  out.width = "100%",
+  warning = FALSE,
+  message = FALSE,
+  comment = "#>"
+)
+
+library(ggplot2)
+
+theme_clean <- function() {
+  theme_minimal() +
+    theme(panel.grid.minor = element_blank(),
+          strip.text = element_text(size = rel(1), hjust = 0),
+          strip.background = element_blank(),
+          legend.position = "bottom")
+}
+ggplot2::theme_set(theme_clean())
+
+
+source("https://raw.githubusercontent.com/vincentarelbundock/marginaleffects/5c38b0b7673d5e992aa80022d1001905c49cc755/inst/tinytest/helpers.R")
+```
+
+`marginaleffects` 包提供了一些便捷函数，用于计算和展示由 `brms` 包估计的贝叶斯模型的预测值、对比和边际效应。为了计算这些量，`marginaleffects` 依赖 `brms` 包中的核心函数从后验分布中抽样。所使用的抽样类型由 `predictions` 或 `slopes` 函数的 `type` 参数控制：
+
+* `type = "response"`：使用 `brms::posterior_epred` 函数计算期望值的后验抽样。
+* `type = "link"`：使用 `brms::posterior_linpred` 函数计算线性预测值的后验抽样。
+* `type = "prediction"`：使用 `brms::posterior_predict` 函数计算后验预测分布的后验抽样。
+
+`predictions` 和 `slopes` 函数还可以通过 `...` 省略号将额外的参数传递给 `brms` 的预测函数。例如，如果 `mod` 是一个混合效应模型，下面这条命令将计算后验预测分布的 10 次抽样，同时忽略所有组水平效应：
+
+```{r, eval = FALSE}
+predictions(mod, type = "prediction", ndraws = 10, re_formula = NA)
+```
+
+如需查看可用参数的完整列表，请参阅 `brms` 的文档：
+
+```{r, eval = FALSE}
+?brms::posterior_epred
+?brms::posterior_linpred
+?brms::posterior_predict
+```
+
+## 后验汇总（概率）
+
+考虑下面这个关于泰坦尼克号生还情况的逻辑回归模型：
+
+```{r, eval = FALSE}
+library(brms)
+library(posterior)
+library(marginaleffects)
+mod <- brm(survived ~ woman * age + passengerClass,
+           family = bernoulli(link = "logit"),
+           data = dat)
+```
+```{r, eval = TRUE, include = FALSE}
+library(brms)
+library(posterior)
+library(marginaleffects)
+mod <- marginaleffects:::modelarchive_model("brms_titanic_int")
+```
+
+我们可以将 `marginaleffects` 的大多数函数应用到这个模型上，然后调用 `get_draws()` 从后验分布中提取抽样。例如，我们可以计算每个舱位等级的平均预测结局的后验抽样：
+
+```{r}
+#| eval: true
+pred <- avg_predictions(mod, by = "passengerClass")
+```
+
+为了汇总后验分布，我们调用 `get_draws()` 函数，以 `posterior` 包定义的 `rvar` 格式提取抽样。然后，我们调用 `posterior` 包中的函数来汇总该分布。
+
+```{r}
+#| eval: true
+draws <- get_draws(pred, "rvar")
+
+# expected value of the posterior distribution
+E(draws$rvar)
+
+# quantiles of the posterior distribution
+quantile2(draws$rvar, c(0.05, 0.5, 0.95))
+
+# mass of the posterior above 0.5
+Pr(draws$rvar > 0.5)
+```
+
+
+## 带乘法交互项的逻辑回归
+
+加载所需的库，并从 [Rdatasets 档案库](https://vincentarelbundock.github.io/Rdatasets/) 下载泰坦尼克号乘客数据：
+
+```{r, message = FALSE}
+library(marginaleffects)
+library(brms)
+library(ggplot2)
+library(ggdist)
+
+dat <- get_dataset("Titanic", "Stat2Data")
+dat$survived <- ifelse(dat$survived == "yes", 1, 0)
+dat$woman <- ifelse(dat$sex == "female", 1, 0)
+```
+
+拟合一个带乘法交互项的 logit 模型：
+
+```{r, eval = FALSE}
+mod <- brm(survived ~ woman * age + passengerClass,
+           family = bernoulli(link = "logit"),
+           data = dat)
+```
+
+```{r, include = FALSE}
+mod <- marginaleffects:::modelarchive_model("brms_titanic_int")
+```
+### 调整预测值
+
+我们可以使用 `predictions` 函数计算结局变量（即在泰坦尼克号上生还的概率）的[调整预测值](https://marginaleffects.com/chapters/predictions.html)。默认情况下，该函数会为数据集的每一行计算预测值：
+
+```{r}
+predictions(mod)
+```
+
+为了可视化结局变量与某个自变量之间的关系，我们可以使用 `plot_predictions` 函数绘制条件调整预测值：
+
+```{r}
+plot_predictions(mod, condition = "age")
+```
+
+使用 `newdata` 参数和 `datagrid` 函数，为一些用户指定的自变量取值计算调整预测值：
+
+```{r}
+pred <- predictions(mod,
+                    newdata = datagrid(woman = 0:1,
+                                       passengerClass = c("1st", "2nd", "3rd")))
+pred
+```
+
+`get_draws` 函数从模型的后验分布中抽样，并生成一个包含 `drawid` 和 `draw` 列的数据框。
+
+```{r}
+pred <- get_draws(pred)
+head(pred)
+```
+
+这种“长”格式的数据便于绘制结果图：
+
+```{r}
+ggplot(pred, aes(x = draw, fill = factor(woman))) +
+    geom_density() +
+    facet_grid(~ passengerClass, labeller = label_both) +
+    labs(x = "Predicted probability of survival", y = "", fill = "Woman")
+```
+
+### 斜率
+
+使用 `slopes()` 可以为数据集的每一行[计算边际效应（也就是回归方程的斜率）](https://marginaleffects.com/chapters/slopes.html)，使用 `avg_slopes()` 可以计算“平均边际效应”，也就是所有观测层面斜率的平均值：
+
+```{r}
+mfx <- slopes(mod)
+mfx
+```
+
+计算边际效应时，将部分自变量固定为用户指定的取值，其余自变量固定在其均值：
+
+```{r}
+slopes(
+    mod,
+    newdata = datagrid(
+        woman = 1,
+        passengerClass = "1st"))
+```
+
+计算并绘制条件边际效应：
+
+```{r}
+plot_slopes(mod, variables = "woman", condition = "age")
+```
+
+`get_draws` 会生成一个包含 `drawid` 和 `draw` 列的数据集：
+
+```{r}
+draws <- get_draws(mfx)
+
+dim(draws)
+
+head(draws)
+```
+
+我们可以使用这个数据集绘制结果图。例如，绘制当 `woman` 变量等于 0 或 1 时，`age` 的边际效应的后验密度：
+
+```{r}
+mfx <- slopes(mod,
+    variables = "age",
+    newdata = datagrid(woman = 0:1)) |>
+    get_draws()
+
+ggplot(mfx, aes(x = draw, fill = factor(woman))) +
+    stat_halfeye(slab_alpha = .5) +
+    labs(x = "Marginal Effect of Age on Survival",
+         y = "Posterior density",
+         fill = "Woman")
+```
+
+## 随机效应模型
+
+本节复现了 Andrew Heiss 的博客文章中一个随机效应模型的部分分析：[“在多层贝叶斯模型中正确计算后验预测值和平均边际效应的指南。”](https://www.andrewheiss.com/blog/2021/11/10/ame-bayes-re-guide) 主要目的是演示 `marginaleffects` 的用法。关于下文计算的各个量的详细讨论，请参阅原文。
+
+加载库并下载数据：
+
+```{r, message = FALSE}
+library(brms)
+library(ggdist)
+library(patchwork)
+library(marginaleffects)
+
+vdem_2015 <- read.csv("https://github.com/vincentarelbundock/marginaleffects/raw/main/website/data/raw/vdem_2015.csv")
+
+head(vdem_2015)
+```
+
+拟合一个基础模型：
+
+```{r, eval = FALSE}
+mod <- brm(
+  bf(media_index ~ party_autonomy + civil_liberties + (1 | region),
+     phi ~ (1 | region)),
+  data = vdem_2015,
+  family = Beta(),
+  control = list(adapt_delta = 0.9))
+```
+
+```{r, include = FALSE}
+mod <- marginaleffects:::modelarchive_model("brms_vdem")
+```
+
+### 后验预测值
+
+为了计算自变量特定取值下的后验预测值，我们使用 `newdata` 参数和 `datagrid` 函数。我们还使用 `type` 参数来计算两种类型的预测值：一种考虑残差（观测层面）方差（`prediction`），另一种忽略残差方差（`response`）。
+
+```{r}
+nd = datagrid(model = mod,
+              party_autonomy = c(TRUE, FALSE),
+              civil_liberties = .5,
+              region = "Middle East and North Africa")
+p1 <- predictions(mod, type = "response", newdata = nd) |>
+    get_draws() |>
+    transform(type = "Response")
+p2 <- predictions(mod, type = "prediction", newdata = nd) |>
+    get_draws() |>
+    transform(type = "Prediction")
+pred <- rbind(p1, p2)
+```
+
+提取后验抽样并绘图：
+
+```{r}
+ggplot(pred, aes(x = draw, fill = party_autonomy)) +
+    stat_halfeye(alpha = .5) +
+    facet_wrap(~ type) +
+    labs(x = "Media index (predicted)", 
+         y = "Posterior density",
+         fill = "Party autonomy")
+```
+
+### 边际效应与对比
+
+正如[边际效应 vignette](https://marginaleffects.com/chapters/slopes.html)中所说，对于自变量取值的每一种组合，都应该有一个独特的边际效应。这里，我们只考虑一种自变量取值组合：`region` 为“中东与北非”，`civil_liberties` 为 0.5。然后，我们计算边际效应后验分布的均值：
+
+```{r}
+mfx <- slopes(mod,
+                       newdata = datagrid(civil_liberties = .5,
+                                          region = "Middle East and North Africa"))
+mfx
+```
+
+使用 `get_draws()` 从边际效应的后验分布中提取抽样，并绘图：
+
+```{r}
+mfx <- get_draws(mfx)
+
+ggplot(mfx, aes(x = draw, y = term)) +
+  stat_halfeye() +
+  labs(x = "Marginal effect", y = "")
+```
+
+绘制以某个自变量为条件的边际效应图：
+
+```{r, fig.asp = .8}
+plot_slopes(mod,
+         variables = "civil_liberties",
+         condition = "party_autonomy")
+```
+
+### 连续自变量
+
+```{r, fig.asp = .6}
+pred <- predictions(mod,
+                    newdata = datagrid(party_autonomy = FALSE,
+                                       region = "Middle East and North Africa",
+                                       civil_liberties = seq(0, 1, by = 0.05))) |>
+        get_draws()
+
+ggplot(pred, aes(x = civil_liberties, y = draw)) +
+    stat_lineribbon() +
+    scale_fill_brewer(palette = "Reds") +
+    labs(x = "Civil liberties",
+         y = "Media index (predicted)",
+         fill = "")
+```
+
+这条线在公民自由不同取值下的斜率，可以通过下面的方式得到：
+
+```{r}
+mfx <- slopes(mod,
+    newdata = datagrid(
+        civil_liberties = c(.2, .5, .8),
+        party_autonomy = FALSE,
+        region = "Middle East and North Africa"),
+    variables = "civil_liberties")
+mfx
+```
+
+绘图如下：
+
+```{r}
+mfx <- get_draws(mfx)
+
+ggplot(mfx, aes(x = draw, fill = factor(civil_liberties))) +
+    stat_halfeye(slab_alpha = .5) +
+    labs(x = "Marginal effect of Civil Liberties on Media Index",
+         y = "Posterior density",
+         fill = "Civil liberties")
+```
+                                 
+`slopes` 函数可以通过省略号（`...`）把任意参数继续传递给 `posterior_predict` 函数。这样可以改变返回的预测值类型。例如，[`posterior_predict.brmsfit` 方法的 `re_formula=NA` 参数](https://cran.r-project.org/web/packages/brms/brms.pdf)将计算*不*包含任何组水平效应的边际效应：
+
+```{r}
+mfx <- slopes(
+    mod,
+    newdata = datagrid(
+        civil_liberties = c(.2, .5, .8),
+        party_autonomy = FALSE,
+        region = "Middle East and North Africa"),
+    variables = "civil_liberties",
+    re_formula = NA) |>
+    get_draws()
+
+ggplot(mfx, aes(x = draw, fill = factor(civil_liberties))) +
+    stat_halfeye(slab_alpha = .5) +
+    labs(x = "Marginal effect of Civil Liberties on Media Index",
+         y = "Posterior density",
+         fill = "Civil liberties")
+```
+
+```{r, eval = FALSE, include = FALSE}
+library(emmeans)
+emtrends(mod,
+         ~ civil_liberties,
+         var = "civil_liberties",
+         at = list(party_autonomy = FALSE,
+                   civil_liberties = c(.2, .5, .8),
+                   region = "Middle East and North Africa"),
+         transform = "response")
+```                                  
+
+### 全局总均值
+
+```{r, fig.width = 9}
+pred <- predictions(
+    mod,
+    re_formula = NA,
+    newdata = datagrid(party_autonomy = c(TRUE, FALSE))) |>
+    get_draws()
+
+mfx <- slopes(
+    mod,
+    re_formula = NA,
+    variables = "party_autonomy") |>
+    get_draws()
+
+plot1 <- ggplot(pred, aes(x = draw, fill = party_autonomy)) +
+         stat_halfeye(slab_alpha = .5) +
+         labs(x = "Media index (Predicted)",
+              y = "Posterior density",
+              fill = "Party autonomy")
+
+plot2 <- ggplot(mfx, aes(x = draw)) +
+         stat_halfeye(slab_alpha = .5)  +
+         labs(x = "Contrast: Party autonomy TRUE - FALSE",
+              y = "",
+              fill = "Party autonomy")
+
+## combine plots using the `patchwork` package
+plot1 + plot2
+```
+
+### 特定区域的预测值与对比
+
+按区域和公民自由水平划分的媒体指数预测值：
+
+```{r, out.width = "100%", fig.width = 9}
+pred <- predictions(mod,
+                    newdata = datagrid(region = vdem_2015$region,
+                                       party_autonomy = FALSE, 
+                                       civil_liberties = seq(0, 1, length.out = 100))) |> 
+        get_draws()
+
+ggplot(pred, aes(x = civil_liberties, y = draw)) +
+    stat_lineribbon() +
+    scale_fill_brewer(palette = "Reds") +
+    facet_wrap(~ region) +
+    labs(x = "Civil liberties",
+         y = "Media index (predicted)",
+         fill = "")
+```
+
+按区域和公民自由水平划分的媒体指数预测值：
+
+```{r, out.width = "100%", fig.width = 9}
+pred <- predictions(mod,
+                    newdata = datagrid(region = vdem_2015$region,
+                                       civil_liberties = c(.2, .8),
+                                      party_autonomy = FALSE)) |>
+        get_draws()
+
+ggplot(pred, aes(x = draw, fill = factor(civil_liberties))) +
+    stat_halfeye(slab_alpha = .5) +
+    facet_wrap(~ region) +
+    labs(x = "Media index (predicted)",
+         y = "Posterior density",
+         fill = "Civil liberties")
+```
+
+按区域和政党自主性划分的媒体指数预测值：
+
+```{r, fig.asp = .9}
+pred <- predictions(mod,
+                    newdata = datagrid(region = vdem_2015$region,
+                                       party_autonomy = c(TRUE, FALSE),
+                                       civil_liberties = .5)) |>
+        get_draws()
+
+ggplot(pred, aes(x = draw, y = region , fill = party_autonomy)) +
+    stat_halfeye(slab_alpha = .5) +
+    labs(x = "Media index (predicted)",
+         y = "",
+         fill = "Party autonomy")
+```
+
+按区域列出的政党自主性 TRUE/FALSE 对比（边际效应）：
+
+```{r, fig.asp = .9}
+mfx <- slopes(
+    mod,
+    variables = "party_autonomy",
+    newdata = datagrid(
+        region = vdem_2015$region,
+        civil_liberties = .5)) |>
+    get_draws()
+
+ggplot(mfx, aes(x = draw, y = region , fill = party_autonomy)) +
+    stat_halfeye(slab_alpha = .5) +
+    labs(x = "Media index (predicted)",
+         y = "",
+         fill = "Party autonomy")
+```
+
+### 假设分组
+
+我们也可以为一个假设分组（而不是某个已观测到的区域）获取预测值或边际效应。为此，我们创建一个数据集，在 `region` 列中填入 `"New Region"`。然后调用 `marginaleffects` 或 `predictions` 函数，并传入 `allow_new_levels` 参数。这个参数会通过省略号（`...`）传递给 `brms` 包的 `posterior_epred` 函数：
+
+```{r}
+dat <- data.frame(civil_liberties = .5,
+                  party_autonomy = FALSE,
+                  region = "New Region")
+
+mfx <- slopes(
+    mod,
+    variables = "party_autonomy",
+    allow_new_levels = TRUE,
+    newdata = dat)
+
+draws <- get_draws(mfx)
+
+ggplot(draws, aes(x = draw)) +
+     stat_halfeye() +
+     labs(x = "Marginal effect of party autonomy in a generic world region", y = "")
+```
+
+### 随机效应的平均、边际化与积分
+
+考虑一个带随机效应的逻辑回归模型：
+
+```{r, eval = FALSE}
+dat <- get_dataset("EmplUK", "plm")
+dat$x <- as.numeric(dat$output > median(dat$output))
+dat$y <- as.numeric(dat$emp > median(dat$emp))
+mod <- brm(y ~ x + (1 | firm), data = dat, backend = "cmdstanr", family = "bernoulli")
+```
+
+```{r, include = FALSE}
+dat <- get_dataset("EmplUK", "plm")
+dat$x <- as.numeric(dat$output > median(dat$output))
+dat$y <- as.numeric(dat$emp > median(dat$emp))
+mod <- marginaleffects:::modelarchive_model("brms_logit_re")
+```
+
+我们可以按如下方式，对给定的 `x` 值和每个 firm（随机效应）计算调整后的预测值：
+
+```{r}
+p <- predictions(mod, newdata = datagrid(x = 0, firm = unique))
+head(p)
+```
+
+我们可以使用 `avg_predictions()` 函数或 `by` 参数，对随机效应进行平均/边际化/积分：
+
+```{r}
+avg_predictions(mod, newdata = datagrid(x = 0, firm = unique))
+
+predictions(mod, newdata = datagrid(x = 0:1, firm = unique), by = "x")
+```
+
+我们也可以从随机效应的（假定为高斯分布的）总体分布中抽样，做法是让 `predictions()` 为随机效应的新“水平”生成预测值。如果接下来我们使用 `avg_predictions()` 函数或 `by` 参数对预测值求平均，就相当于[“积分掉了随机效应”，正如 `brmsmargins` 包的 vignette 中所述。](https://cran.r-project.org/web/packages/brmsmargins/index.html)在下面的代码中，我们为原始数据集中不存在的 100 个 firm 标识符生成预测值。我们还让 `predictions()` 将 `allow_new_levels` 和 `sample_new_levels` 参数继续传递给 `brms::posterior_epred` 函数：
+
+```{r}
+predictions(
+    mod,
+    newdata = datagrid(x = 0:1, firm = -1:-100),
+    allow_new_levels = TRUE,
+    sample_new_levels = "gaussian",
+    by = "x")
+```
+
+在其他 `slopes` 系列函数中，我们同样可以“积分掉”随机效应。例如：
+
+```{r}
+avg_comparisons(
+    mod,
+    newdata = datagrid(firm = -1:-100),
+    allow_new_levels = TRUE,
+    sample_new_levels = "gaussian")
+```
+
+这与 `brmsmargins` 命令的输出结果几乎等价（由于随机种子不同会有细微差异）：
+
+```{r}
+library(brmsmargins)
+bm <- brmsmargins(
+  k = 100,
+  object = mod,
+  at = data.frame(x = c(0, 1)),
+  CI = .95,
+  CIType = "ETI",
+  contrasts = cbind("AME x" = c(-1, 1)),
+  effects = "integrateoutRE")
+bm$ContrastSummary |> data.frame()
+```
+
+关于 `brmsmargins` 的更多信息，请参阅[替代软件 vignette](https://marginaleffects.com/bonus/alternative_software.html)。
+
+## 多项 logit
+
+拟合一个结局变量为分类变量（加州住宅的采暖系统选择）、连接函数为 logit 的模型：
+
+```{r, eval = FALSE}
+dat <- get_dataset("Heating", "Ecdat")
+mod <- brm(depvar ~ ic.gc + oc.gc,
+           data = dat,
+           family = categorical(link = "logit"))
+```
+
+```{r, include = FALSE}
+dat <- "https://vincentarelbundock.github.io/Rdatasets/csv/Ecdat/Heating.csv"
+dat <- read.csv(dat)
+mod <- marginaleffects:::modelarchive_model("brms_heating")
+```
+
+### 调整后的预测值
+
+计算结局变量每个水平的预测概率：
+
+```{r}
+pred <- predictions(mod)
+
+head(pred)
+```
+
+提取后验抽样并绘图：
+
+```{r}
+draws <- get_draws(pred)
+
+ggplot(draws, aes(x = draw, fill = group)) +
+    geom_density(alpha = .2, color = "white") +
+    labs(x = "Predicted probability",
+         y = "Density",
+         fill = "Heating system")
+```
+
+使用 `plot_predictions` 函数，以 `oc.gc` 回归变量的取值为条件，绘制结局变量 `depvar` 每个水平的条件调整预测值：
+
+```{r}
+plot_predictions(mod, condition = "oc.gc") +
+    facet_wrap(~ group) +
+    labs(y = "Predicted probability")
+```
+
+### 边际效应
+
+```{r}
+avg_slopes(mod)
+```
+
+## Hurdle 模型
+
+
+本节复现了 [Andrew Heiss 又一篇精彩博客文章](https://www.andrewheiss.com/blog/2022/05/09/hurdle-lognormal-gaussian-brms/#emmeans-with-hurdle-models)中的部分分析。
+
+首先，我们使用 `gapminder` 包中的数据，在 `brms` 中估计一个带随机效应的 hurdle 模型：
+704G
+```{r, eval = FALSE}
+library(gapminder)
+library(brms)
+library(dplyr)
+library(ggplot2)
+library(ggdist)
+library(cmdstanr)
+library(patchwork)
+library(marginaleffects)
+
+set.seed(1024)
+
+CHAINS <- 4
+ITER <- 2000
+WARMUP <- 1000
+BAYES_SEED <- 1234
+
+gapminder <- gapminder::gapminder |> 
+  filter(continent != "Oceania") |> 
+  # Make a bunch of GDP values 0
+  mutate(prob_zero = ifelse(lifeExp < 50, 0.3, 0.02),
+         will_be_zero = rbinom(n(), 1, prob = prob_zero),
+         gdpPercap = ifelse(will_be_zero, 0, gdpPercap)) |> 
+  select(-prob_zero, -will_be_zero) |> 
+  # Make a logged version of GDP per capita
+  mutate(log_gdpPercap = log1p(gdpPercap)) |> 
+  mutate(is_zero = gdpPercap == 0)
+
+mod <- brm(
+  bf(gdpPercap ~ lifeExp + year + (1 + lifeExp + year | continent),
+     hu ~ lifeExp),
+  data = gapminder,
+  backend = "cmdstanr",
+  family = hurdle_lognormal(),
+  cores = 2,
+  chains = CHAINS, iter = ITER, warmup = WARMUP, seed = BAYES_SEED,
+  silent = 2)
+```
+
+```{r, include = FALSE}
+url <- "https://github.com/vincentarelbundock/modelarchive/raw/main/data/brms_hurdle_heiss.rds"
+tmp <- tempfile()
+download.file(url, tmp)
+mod <- readRDS(tmp)
+gapminder <- mod$data
+```
+
+### 调整后的预测值
+
+原始数据中每个观测的调整后预测值：
+
+```{r}
+predictions(mod) |> head()
+```
+
+`hu` 参数的调整后预测值：
+
+```{r}
+predictions(mod, dpar = "hu") |> head()
+```
+
+另一种尺度下的预测值：
+
+```{r}
+predictions(mod, type = "link", dpar = "hu") |> head()
+```
+
+将调整后预测值绘制为 `lifeExp` 的函数：
+
+```{r}
+plot_predictions(
+    mod,
+    condition = "lifeExp") +
+    labs(y = "mu") +
+plot_predictions(
+    mod,
+    dpar = "hu",
+    condition = "lifeExp") +
+    labs(y = "hu")
+```
+
+包含多个条件、并使用 `brms` 的 `re_formula` 参数的预测值：
+
+```{r}
+plot_predictions(
+    mod,
+    re_formula = NULL,
+    condition = c("lifeExp", "continent"))
+```
+
+### 用 `get_draws()` 提取抽样
+
+`get_draws()` 函数用于从 `marginaleffects` 生成的对象中提取后验的原始抽样。这样我们就可以使用更丰富的几何对象（geom）和汇总方法，比如 `ggdist` 包中提供的那些：
+
+```{r}
+predictions(
+    mod,
+    re_formula = NULL,
+    newdata = datagrid(model = mod,
+                       continent = gapminder$continent,
+                       year = c(1952, 2007),
+                       lifeExp = seq(30, 80, 1))) |>
+    get_draws() |>
+    ggplot(aes(lifeExp, draw, fill = continent, color = continent)) +
+    stat_lineribbon(alpha = .25) +
+    facet_grid(year ~ continent)
+```
+
+### 平均对比
+
+当 `lifeExp` 增加 1 时，`gdpPercap` 会发生什么变化？
+
+```{r}
+avg_comparisons(mod)
+```
+当 `lifeExp` 增加一个标准差时，`gdpPercap` 会发生什么变化？
+
+```{r}
+avg_comparisons(mod, variables = list(lifeExp = "sd"))
+```
+
+当 `lifeExp` 从 50 增加到 60、同时 `year` 从最小值增加到最大值时，`gdpPercap` 会发生什么变化？
+
+```{r}
+avg_comparisons(
+    mod,
+    variables = list(lifeExp = c(50, 60), year = "minmax"),
+    cross = TRUE)
+```
+
+绘制平均对比的后验分布抽样（这与对比的后验分布抽样*并不*相同）：
+
+```{r}
+avg_comparisons(mod) |>
+    get_draws() |>
+    ggplot(aes(estimate, term)) +
+    stat_dotsinterval() +
+    labs(x = "Posterior distribution of average contrasts", y = "")
+```
+
+### 边际效应（斜率）
+
+`lifeExp` 在不同尺度和不同参数下的平均边际效应：
+
+```{r}
+avg_slopes(mod)
+
+avg_slopes(mod, type = "link")
+
+avg_slopes(mod, dpar = "hu")
+
+avg_slopes(mod, dpar = "hu", type = "link")
+```
+
+绘制条件边际效应
+
+```{r}
+plot_slopes(
+    mod,
+    variables = "lifeExp",
+    condition = "lifeExp") +
+    labs(y = "mu") +
+
+plot_slopes(
+    mod,
+    dpar = "hu",
+    variables = "lifeExp",
+    condition = "lifeExp") +
+    labs(y = "hu")
+```
+
+或者，我们也可以调用 `slopes()` 或 `comparisons()`，并配合 `get_draws()` 函数，以获得更精细的控制：
+
+```{r}
+comparisons(
+    mod,
+    type = "link",
+    variables = "lifeExp",
+    newdata = datagrid(lifeExp = c(40, 70), continent = gapminder$continent)) |>
+    get_draws() |>
+    ggplot(aes(draw, continent, fill = continent)) +
+    stat_dotsinterval() +
+    facet_grid(lifeExp ~ .) +
+    labs(x = "Effect of a 1 unit change in Life Expectancy")
+```
+
+## 贝叶斯估计与可信区间
+
+对于由 `brms` 或 `rstanarm` 等包生成的贝叶斯模型，`marginaleffects` 包的函数会把后验分布的中位数报告为其主要估计值。
+
+默认的可信区间是等尾区间（分位数），默认用于确定分布中心的函数是中位数。用户可以通过设置全局选项来自定义所报告的区间类型。请注意，报告的估计值和区间都会随之略有变化：
+
+```{r}
+library(insight)
+library(marginaleffects)
+
+mod <- insight::download_model("brms_1")
+
+options(marginaleffects_posterior_interval = "hdi")
+options(marginaleffects_posterior_center = mean)
+avg_comparisons(mod)
+
+options(marginaleffects_posterior_interval = "eti")
+options(marginaleffects_posterior_center = stats::median)
+avg_comparisons(mod)
+```
+
+## 随机变量：`posterior` 与 `ggdist`
+
+`posterior`、`brms` 和 `ggdist` 包的近期版本让抽取、汇总和绘制随机变量都变得容易。`get_draws()` 可以生成 `rvar` 类的对象，它通过返回一个带有 `rvar` 类型列的数据框，让使用这些功能变得容易：
+
+
+```{r, results = "hide"}
+library(brms)
+library(ggdist)
+library(ggplot2)
+library(marginaleffects)
+mod <- brm(am ~ mpg + hp, data = mtcars, family = bernoulli)
+```
+
+```{r}
+avg_comparisons(mod) |>
+  get_draws(shape = "rvar") |>
+  ggplot(aes(y = term, xdist = rvar)) + 
+  stat_slabinterval()
+```
+
+## 非线性假设检验
+
+```{r, include=FALSE}
+mod <- marginaleffects:::modelarchive_model("brms_numeric2")
+dat <- mtcars
+```
+
+我们首先估计一个模型：
+
+```{r}
+#| eval = FALSE
+mod <- brm(am ~ mpg + hp, data = mtcars, family = bernoulli(),
+           seed = 1024, silent = 2, chains = 4, iter = 1000)
+```
+
+请注意，我们可以用两种不同的方式计算平均对比：使用 `avg_comparisons()` 函数，或者使用 `comparison` 参数：
+
+```{r}
+avg_comparisons(mod)
+
+comparisons(mod, comparison = "differenceavg")
+```
+
+现在，我们使用 `hypothesis` 参数来比较 `comparisons()` 输出结果中的第一行和第二行：
+
+```{r}
+comparisons(
+    mod,
+    comparison = "differenceavg",
+    hypothesis = "b2 - b1 = 0.2")
+```
+
+`brms` 包的 `hypothesis()` 函数也可以执行非线性假设检验，并生成一些方便的统计量和汇总结果。这个函数接受一个 D×P 的后验分布抽样矩阵，其中 D 是抽样次数，N 是参数个数。我们可以用 `get_draws(x, shape = "DxP")` 得到这样一个矩阵，只需在我们的操作链中再加上几个调用即可：
+
+```{r}
+avg_comparisons(mod, comparison = "differenceavg") |>
+    get_draws(shape = "DxP") |>
+    brms::hypothesis("b2 - b1 > .2")
+```
+
+
+## 分布参数
+
+一些 `brms` 模型允许用户对分布参数进行建模：
+
+```{r, results = "hide", echo=FALSE}
+data(iris)
+library(brms)
+mod <- brm(bf(
+    Sepal.Length ~ Sepal.Width * Petal.Length,
+    sigma ~ Sepal.Width * Petal.Length), 
+    family = gaussian(), data = iris,
+    backend = "cmdstanr")
+```
+
+```{r, eval = FALSE}
+data(iris)
+library(brms)
+mod <- brm(bf(
+    Sepal.Length ~ Sepal.Width * Petal.Length,
+    sigma ~ Sepal.Width * Petal.Length), 
+    family = gaussian(), data = iris,
+    backend = "cmdstanr")
+```
+
+我们可以使用 `marginaleffects`，通过指定 `dpar` 参数，基于这些参数的后验抽样来计算相应的量；该参数会在内部传递给 `brms` 的预测函数。例如：
+
+```{r}
+avg_predictions(mod)
+
+avg_predictions(mod, dpar = "sigma")
+
+avg_slopes(mod, dpar = "sigma")
+```
+
+
+
+## 手动计算：反事实比较
+
+下面是一个手动复现 `comparisons()` 输出结果的示例，希望它能帮助一些读者理解其背后的原理：
+
+```{r, eval = FALSE}
+library(marginaleffects)
+data("ChickWeight")
+
+mod = brm(data = ChickWeight,
+          weight ~ Time * Diet + (Time|Chick),
+          seed = 123,
+          backend = "cmdstanr")
+
+# NA
+comparisons(mod,
+    variables = "Time",
+    by = "Diet",
+    re_formula = NA)
+
+d0 <- ChickWeight
+d1 <- transform(d0, Time = Time + 1)
+p0 <- posterior_epred(mod, newdata = d0, re_formula = NA)
+p1 <- posterior_epred(mod, newdata = d1, re_formula = NA)
+p <- p1 - p0
+cmp <- apply(p, 1, function(x) tapply(x, ChickWeight$Diet, mean))
+apply(cmp, 1, quantile, prob = .025)
+
+# NULL
+comparisons(mod,
+    variables = "Time",
+    by = "Diet",
+    re_formula = NULL)
+
+d0 <- ChickWeight
+d1 <- transform(d0, Time = Time + 1)
+p0 <- posterior_epred(mod, newdata = d0, re_formula = NULL)
+p1 <- posterior_epred(mod, newdata = d1, re_formula = NULL)
+p <- p1 - p0
+cmp <- apply(p, 1, function(x) tapply(x, ChickWeight$Diet, mean))
+apply(cmp, 1, quantile, prob = .025)
+```
+
+
+## 支持自定义模型
+
+`Stan` 和 `JAGS` 的用户可以使用 `marginaleffects` 包，从他们的模型中计算预测值、对比和边际效应。为此，他们需要编写一个自定义函数来从模型的后验分布中抽样，然后通过 `draw_posterior` 参数把该函数传给 `marginaleffects`。更多细节请参阅 [扩展](https://marginaleffects.com/bonus/extensions.html) 文档。
