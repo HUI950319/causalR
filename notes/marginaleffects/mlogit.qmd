@@ -1,0 +1,118 @@
+---
+title: "多项 Logit"
+subtitle: "*Multinomial Logit* · marginaleffects 官方文档中译"
+lang: zh
+---
+
+> **来源**：Vincent Arel-Bundock，marginaleffects 官方文档 · [*Multinomial Logit*](https://marginaleffects.com/bonus/mlogit.html)
+> （[GitHub 仓库](https://github.com/vincentarelbundock/marginaleffects)，源文件 `website/bonus/mlogit.qmd`，revision `870f15a0`），GPL-3.0 许可。
+> 本页为中文翻译，非原文；按 GPL-3.0 保留原作者署名与许可证，并标明这是修改（翻译）后的版本。
+> 页面中的代码块由本站在渲染时真实执行。
+
+
+本教程展示如何用 *marginaleffects* 包估计和解释**多项 logit（mlogit）**模型。当我们希望对三个或更多无序备选项之间的选择建模时，多项 logit 模型就很有用——例如通勤者在多种交通方式（开车、公交、自行车、步行）之间做选择。在这类模型中，数据以「长」格式排列，每一个*个体—选项*组合占一行。由于这种结构不同于大多数其他模型所用的「每个个体一行」的布局，*marginaleffects* 目前的支持仅限于 `predictions()` 和 `avg_predictions()` 两个函数。下面的例子表明，借助 `hypothesis` 参数，我们仍然可以得到边际效应和处理效应，从而回答关于政策干预的实质性问题。
+
+## 关于实现的说明
+
+本教程演示的是如何把 `predictions()` 与自定义假设函数结合起来处理多项 logit 模型，而不是使用 `comparisons()`。对多项模型来说，`comparisons()` 实现起来会更复杂，而用 `predictions()` 搭配自定义假设的做法则提供了一种灵活而强大的替代方案。只需再做少量工作，这种做法就可以扩展到支持更高级的分析，同时保留大多数使用场景所需的核心功能。
+
+## 拟合模型
+
+```{r}
+#| message: false
+#| warning: false
+library(dplyr)
+library(mlogit)
+library(marginaleffects)
+
+# Fishing mode‑choice data from mlogit
+ data(Fishing)
+ Fish <- dfidx(Fishing, varying = 2:9, shape = "wide", choice = "mode")
+
+ m <- mlogit(mode ~ price + catch | income, data = Fish)
+```
+
+## 对比分析
+
+假设我们想知道，海滩出行价格上涨 100 美元会如何影响出行方式的选择。我们创建原始数据的两个副本：一个使用观测到的价格（`lo`），另一个使用上涨后的海滩价格（`hi`）。`term` 变量用来标记每种情形，之后我们会对二者做对比。
+
+```{r}
+# Prepare data for the two scenarios
+lo <- transform(as.data.frame(Fish), term = "lo")
+lo$id1 <- Fish$idx$id1
+lo$id2 <- Fish$idx$id2
+lo$idx <- NULL
+
+hi <- transform(lo,
+    price = ifelse(id2 == "beach", price + 100, price),
+    term = "hi")
+
+dat <- rbind(lo, hi)
+dat$term <- factor(dat$term, levels = c("lo", "hi"))
+```
+
+## 平均预测概率
+
+下面的调用先得到个体层面的拟合值，然后按选择*组*（即备选项）和*情形*（term）求平均：
+
+```{r}
+#| warning: false
+predictions(m,
+    newdata = dat,
+    by = c("group", "term"))
+```
+
+## 另一种做法：自定义假设函数
+
+同样的结果也可以通过向 `hypothesis` 参数提供一个自定义汇总函数来得到。自定义函数提供了相当大的灵活性：
+
+```{r}
+#| warning: false
+h <- \(x) aggregate(estimate ~ term + group, data = x, FUN = mean)
+predictions(m, newdata = dat, hypothesis = h)
+```
+
+除了使用 base R 的 `aggregate()` 函数，我们也可以用 `dplyr` 包来汇总数据。
+
+```{r}
+#| eval: false
+library(dplyr) 
+h <- function(x) {
+  x |> summarize(estimate = mean(estimate), .by = c("term", "group"))
+}
+predictions(m, newdata = dat, hypothesis = h)
+```
+
+## 平均边际效应（风险差）
+
+最后，我们估计价格上涨对每种出行方式的期望概率的平均效应。我们在一个自定义假设函数中分三步进行：
+
+1. 在每个*情形*（term）和*组*（group）内部对个体层面的拟合值求平均。
+2. 计算 `hi` 与 `lo` 两个平均值之间的差。
+3. 把分组变量重命名为 `term`，以符合 *marginaleffects* 的预期。
+
+```{r}
+#| warning: false
+h <- function(x) {
+    x |>
+        aggregate(estimate ~ term + group, data = _, FUN = mean) |>
+        aggregate(estimate ~ group, data = _, FUN = diff) |>
+        setNames(c("term", "estimate"))
+}
+predictions(m, newdata = dat, hypothesis = h)
+```
+
+解读：海滩出行价格上涨 100 美元，会使选择海滩的概率下降大约十个百分点，同时小幅提高其他几种出行方式的概率。
+
+同样的结果也可以用 `dplyr` 得到：
+
+```{r}
+#| eval: false
+h <- function(x) {
+  x |>
+    summarize(estimate = mean(estimate), .by = c("term", "group")) |>
+    summarize(estimate = diff(estimate), .by = "group") |>
+    rename(term = group)
+}
+predictions(m, newdata = dat, hypothesis = h)
+```
