@@ -1,0 +1,157 @@
+plt_test_deps <- function(...) {
+  for (pkg in c(...)) skip_if_not_installed(pkg)
+}
+
+plt_lm_res <- function() {
+  skip_if_not_installed("sensemakr")
+  get_sens(sensemakr::darfur,
+           treat = "directlyharmed", outcome = "peacefactor",
+           adj_var = c("age", "farmer_dar", "herder_dar", "pastvoted",
+                       "hhsize_darfur", "female", "village"),
+           bench_var = "female", method = "lm",
+           bench_args = list(k_treat = 1:3))
+}
+
+plt_cox_res <- function(...) {
+  skip_if_not_installed("survival")
+  skip_if_not_installed("tipr")
+  d <- stats::na.omit(survival::lung[, c("time", "status", "sex", "age")])
+  d$status <- d$status - 1L
+  d$sex <- factor(d$sex, labels = c("male", "female"))
+  get_sens(d, treat = "sex", outcome = "status", time = "time",
+           adj_var = "age", method = "cox", ...)
+}
+
+plt_iv_res <- function() {
+  skip_if_not_installed("iv.sensemakr")
+  e <- new.env()
+  utils::data("card", package = "iv.sensemakr", envir = e)
+  get_sens(e$card, treat = "educ", outcome = "lwage", instrument = "nearc4",
+           adj_var = c("exper", "expersq", "black", "south", "smsa"),
+           bench_var = "black", method = "iv")
+}
+
+test_that("plt_sens draws a labelled native contour for the linear backend", {
+  plt_test_deps("sensemakr")
+  res <- plt_lm_res()
+  p <- plt_sens(res, type = "contour")
+
+  expect_s3_class(p, "ggplot")
+  expect_equal(unname(attr(p, "plot_size")), c(7, 6))
+  # Native, not a wrapped grob: the contour levels must survive as text and
+  # every benchmark bound must be inside the default window.
+  d <- ggplot2::ggplot_build(p)$data
+  txt <- unlist(lapply(d, function(l) if ("label" %in% names(l)) l$label))
+  expect_true(length(txt) > 3L)
+  expect_true(any(grepl("1x female", txt)))
+  expect_true(any(grepl("3x female", txt)))
+  expect_true(any(grepl("Unadjusted", txt)))
+  # the critical contour is the red dashed one
+  expect_true(any(vapply(d, function(l)
+    any(l$colour == "red" & l$linetype == 2, na.rm = TRUE), logical(1))))
+})
+
+test_that("plt_sens reproduces sensemakr adjusted estimates on the contour", {
+  plt_test_deps("sensemakr")
+  res <- plt_lm_res()
+  st <- res$sens$sensitivity_stats
+  # The label printed next to each bound must equal sensemakr's own adjusted
+  # estimate for that scenario.
+  expect_equal(
+    as.numeric(sensemakr::adjusted_estimate(st$estimate, st$se, st$dof,
+                                            res$bounds$r2_treat,
+                                            res$bounds$r2_out)),
+    res$bounds$adj_estimate, tolerance = 1e-8)
+})
+
+test_that("plt_sens wraps the sensemakr extreme plot as a ggplot", {
+  plt_test_deps("sensemakr", "ggplotify")
+  p <- plt_sens(plt_lm_res(), type = "extreme", extreme_r2 = c(1, 0.5))
+  expect_s3_class(p, "ggplot")
+})
+
+test_that("plt_sens defaults to the type that matches the backend", {
+  plt_test_deps("sensemakr", "survival", "tipr")
+  expect_s3_class(plt_sens(plt_lm_res()), "ggplot")
+  p <- plt_sens(plt_cox_res())
+  expect_s3_class(p, "ggplot")
+  expect_match(p$labels$x, "Confounder-outcome risk ratio")
+})
+
+test_that("plt_sens draws a native tipping-point curve for the Cox backend", {
+  plt_test_deps("survival", "tipr")
+  res <- plt_cox_res()
+  p <- plt_sens(res, type = "tip")
+
+  expect_s3_class(p, "ggplot")
+  expect_gte(length(p$layers), 5L)
+  expect_match(p$labels$title, "Tipping point for sex")
+  # the curve must actually cross the null at the reported tipping point
+  d <- ggplot2::ggplot_build(p)$data[[2]]
+  expect_true(min(d$x) <= res$stats$tip_effect)
+  expect_true(max(d$x) >= res$stats$tip_effect)
+})
+
+test_that("plt_sens draws the E-value curve through the reported E-value", {
+  plt_test_deps("survival", "tipr")
+  res <- plt_cox_res()
+  p <- plt_sens(res, type = "evalue", title = "custom")
+
+  expect_s3_class(p, "ggplot")
+  expect_identical(p$labels$title, "custom")
+  expect_equal(unname(attr(p, "plot_size")), c(7.5, 5.5))
+  # On the bias-factor curve the point (E, E) must lie on the diagonal.
+  b <- 1 / causalR:::.sens_hr_to_rr(res$stats$estimate, FALSE)
+  e <- res$stats$evalue_point
+  expect_equal(b * (e - 1) / (e - b), e, tolerance = 1e-6)
+})
+
+test_that("plt_sens rejects a type the backend cannot draw", {
+  plt_test_deps("sensemakr", "survival", "tipr")
+  expect_error(plt_sens(plt_lm_res(), type = "tip"),
+               "not available for method")
+  expect_error(plt_sens(plt_cox_res(), type = "contour"),
+               "not available for method")
+})
+
+test_that("plt_sens narrows sensitivity_of to what the backend supports", {
+  plt_test_deps("iv.sensemakr", "ggplotify")
+  res <- plt_iv_res()
+  expect_s3_class(plt_sens(res, type = "contour"), "ggplot")
+  expect_error(
+    plt_sens(res, type = "contour",
+             contour_args = list(sensitivity_of = "estimate")),
+    "should be one of")
+  expect_error(
+    plt_sens(res, type = "contour", contour_args = list(nlevels = 4)),
+    "unknown field")
+})
+
+test_that("plt_sens validates x, lim and save", {
+  plt_test_deps("survival", "tipr")
+  res <- plt_cox_res()
+  expect_error(plt_sens(res$stats), "must be a `sens_res` object")
+  expect_error(plt_sens(res, lim = 1), "must be `NULL` or two numbers")
+  expect_error(plt_sens(res, save = "out.pdf"), "must be `NULL` or a list")
+  expect_s3_class(plt_sens(res, save = list()), "ggplot")
+  expect_s3_class(plt_sens(res, save = NULL), "ggplot")
+})
+
+test_that("plt_sens writes a PDF through RegR::save_plt when save is non-empty", {
+  plt_test_deps("survival", "tipr", "RegR")
+  f <- tempfile(fileext = ".pdf")
+  on.exit(unlink(f), add = TRUE)
+  p <- plt_sens(plt_cox_res(), type = "tip", save = list(filename = f))
+  expect_s3_class(p, "ggplot")
+  expect_true(file.exists(f))
+  expect_gt(file.size(f), 0)
+})
+
+test_that("plt_sens honours the binary-confounder parameterisation", {
+  plt_test_deps("survival", "tipr")
+  res <- plt_cox_res(evalue_args = list(confounder = "binary",
+                                        exposed_prev = 0.5,
+                                        unexposed_prev = 0.2))
+  p <- plt_sens(res, type = "tip")
+  expect_match(p$labels$x, "prevalence 0.5 vs 0.2")
+})

@@ -6,7 +6,7 @@
 \alias{causalR-package}
 \title{causalR: Causal Inference and Target Trial Emulation Toolkit}
 \description{
-Reusable helpers for observational causal inference and target trial emulation (TTE) in clinical research: weight diagnostics, clone-censor-weight templates, and reporting figures. The repository also carries the 24-week study materials and the weekly analysis code these functions are distilled from.
+Reusable helpers for observational causal inference and target trial emulation (TTE) in clinical research: weight diagnostics, clone-censor-weight templates, sensitivity analysis for unmeasured confounding, and reporting figures. The repository also carries the 24-week study materials and the weekly analysis code these functions are distilled from.
 }
 \seealso{
 Useful links:
