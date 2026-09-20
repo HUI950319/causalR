@@ -1,0 +1,355 @@
+---
+title: "get_sens and plt_sens: Sensitivity Analysis for Unmeasured Confounding"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{get_sens and plt_sens: Sensitivity Analysis for Unmeasured Confounding}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE, comment = "#>",
+  fig.width = 7, fig.height = 5.5, dpi = 120,
+  out.width = "100%", fig.align = "center",
+  message = FALSE, warning = FALSE
+)
+
+# Every backend is a Suggests dependency, and two of them are GitHub-only, so
+# each section is skipped rather than failed when its packages are missing.
+has_lm   <- requireNamespace("sensemakr", quietly = TRUE)
+has_cox  <- requireNamespace("survival", quietly = TRUE) &&
+            requireNamespace("tipr", quietly = TRUE)
+has_dml  <- requireNamespace("dml.sensemakr", quietly = TRUE)
+has_iv   <- requireNamespace("iv.sensemakr", quietly = TRUE)
+has_wrap <- requireNamespace("ggplotify", quietly = TRUE)
+```
+
+Every effect estimated from observational data rests on an assumption no data
+can check: that nothing outside the model confounds treatment and outcome.
+Sensitivity analysis replaces the yes/no question "is that true?" with a
+quantitative one: **how strong would an unmeasured confounder have to be before
+the conclusion changes?**
+
+`get_sens()` answers that question through one of four established backends and
+returns all four in the same shape. `plt_sens()` draws the matching figure.
+
+```{r load}
+library(causalR)
+```
+
+## Choosing a backend
+
+| Your estimate | `method` | Backend | What it reports |
+|---|---|---|---|
+| Linear outcome (OLS) | `"lm"` | sensemakr | Partial \(R^2\), robustness value, bias-adjusted bounds |
+| Cox model / hazard ratio | `"cox"` | tipr | Tipping point, E-value |
+| Double machine learning | `"dml"` | dml.sensemakr | Robustness value, confounding bounds on the ATE |
+| Instrumental variable | `"iv"` | iv.sensemakr | Robustness value, Anderson–Rubin bounds |
+
+The two `sensemakr`-family backends are not on CRAN:
+
+```r
+remotes::install_github(c("carloscinelli/dml.sensemakr",
+                          "carloscinelli/iv.sensemakr"))
+```
+
+## One output shape
+
+Whichever backend runs, the result is a `sens_res` with the same four elements:
+
+- **`$stats`** — one row per estimand, always the same 18 columns.
+- **`$bounds`** — the confounding scenarios, always the same 12 columns
+  (`NULL` when none was requested, and always `NULL` for `"cox"`).
+- **`$fit`** — the fitted model (`lm`, `coxph`, `dml` or `iv_fit`).
+- **`$sens`** — the backend's own sensitivity object.
+
+Columns a backend does not produce are `NA` rather than absent, so results from
+different backends stack with `rbind()`. Printing the object also echoes a
+ready-to-paste `plt_sens()` call.
+
+## Linear outcome: `method = "lm"`
+
+```{r skip-lm, eval = !has_lm, echo = FALSE, results = "asis"}
+cat("> **Not run.** This section needs sensemakr, not available here, so the ",
+    "code below was skipped and produced no output or figure.\n", sep = "")
+```
+
+The Darfur data ask whether being directly harmed in an attack changes later
+support for peace. The worry is that men were both more exposed and more
+hawkish, so `female` is the natural yardstick for an unmeasured confounder.
+
+```{r lm-fit, eval = has_lm}
+adj <- c("age", "farmer_dar", "herder_dar", "pastvoted",
+         "hhsize_darfur", "female", "village")
+
+res_lm <- get_sens(sensemakr::darfur,
+                   treat = "directlyharmed", outcome = "peacefactor",
+                   adj_var = adj, bench_var = "female", method = "lm",
+                   bench_args = list(k_treat = 1:3))
+res_lm
+```
+
+Two numbers carry the argument. `rv_q` is the **robustness value**: the share of
+residual variation in *both* treatment and outcome that a confounder would have
+to explain to drive the estimate to zero. `rv_qa` is the same thing for the
+confidence interval rather than the point estimate. `r2yd_x` is how much the
+treatment itself explains, which puts the robustness value in context.
+
+The `$bounds` rows answer the calibrated version: a confounder as strong as
+`female`, twice as strong, three times as strong.
+
+```{r lm-contour, eval = has_lm}
+plt_sens(res_lm, type = "contour")
+```
+
+Each contour is a level of the adjusted estimate; the red dashed line is where
+it reaches the threshold (zero by default). The triangle at the origin is the
+unadjusted estimate and the diamonds are the benchmark scenarios. Since all
+three benchmarks sit left of the critical line, a confounder up to three times
+as strong as `female` would not overturn the result.
+
+The extreme-scenario plot asks the same question from the other direction: if a
+confounder explained essentially all of the residual outcome variation, how much
+of the treatment would it need to explain?
+
+```{r lm-extreme, eval = has_lm && has_wrap}
+plt_sens(res_lm, type = "extreme", extreme_r2 = c(1, 0.75, 0.5))
+```
+
+## Cox model: `method = "cox"`
+
+```{r skip-cox, eval = !has_cox, echo = FALSE, results = "asis"}
+cat("> **Not run.** This section needs `survival` and `tipr`, not available here, so the ",
+    "code below was skipped and produced no output or figure.\n", sep = "")
+```
+
+For a hazard ratio there is no partial \(R^2\) to report, so this backend gives
+the two quantities that clinical journals ask for: the **tipping point** (how
+strong the confounder–outcome association must be before the interval crosses
+the null) and the **E-value** (how strong the confounder must be with *both*
+exposure and outcome to explain the effect away).
+
+```{r cox-fit, eval = has_cox}
+lung <- stats::na.omit(survival::lung[, c("time", "status", "sex", "age", "ph.ecog")])
+lung$status <- lung$status - 1L
+lung$sex <- factor(lung$sex, labels = c("male", "female"))
+
+res_cox <- get_sens(lung, treat = "sex", outcome = "status", time = "time",
+                    adj_var = c("age", "ph.ecog"), method = "cox")
+res_cox$stats[, c("estimate", "conf.low", "conf.high",
+                  "evalue_point", "evalue_ci", "tip_effect")]
+```
+
+Note that `estimate` and the confidence limits are hazard ratios while
+`std.error` is on the log-hazard scale — the same convention `summary.coxph()`
+uses.
+
+```{r cox-tip, eval = has_cox, fig.height = 5}
+plt_sens(res_cox, type = "tip")
+```
+
+The dotted vertical line is the tipping point. The upper curve is the confidence
+limit nearest the null, and it crosses 1 exactly there.
+
+```{r cox-evalue, eval = has_cox, fig.height = 5}
+plt_sens(res_cox, type = "evalue")
+```
+
+Each curve traces the confounder–exposure and confounder–outcome risk ratios
+that would exactly explain the effect away. The marked points are where a curve
+meets the diagonal — the E-value is the smallest pair of *equal* associations
+that would suffice.
+
+### Choosing `rare`
+
+A hazard ratio only approximates a risk ratio when the outcome is rare.
+`evalue_args$rare` decides how that is handled, and the same switch drives
+`tipr`'s `hr_correction`:
+
+```{r cox-rare, eval = has_cox}
+rbind(
+  common = get_sens(lung, treat = "sex", outcome = "status", time = "time",
+                    adj_var = c("age", "ph.ecog"), method = "cox",
+                    evalue_args = list(rare = FALSE))$stats,
+  rare   = get_sens(lung, treat = "sex", outcome = "status", time = "time",
+                    adj_var = c("age", "ph.ecog"), method = "cox",
+                    evalue_args = list(rare = TRUE))$stats
+)[, c("evalue_point", "evalue_ci")]
+```
+
+The default `rare = FALSE` applies the VanderWeele–Ding transform
+\(RR = (1 - 0.5^{\sqrt{HR}}) / (1 - 0.5^{\sqrt{1/HR}})\), which shrinks the
+ratio towards the null and so reports the smaller, more conservative E-value.
+Set `rare = TRUE` only when the outcome really is rare over follow-up. This
+differs from `tipr`'s own default, which leaves the hazard ratio untransformed.
+
+A binary confounder is parameterised by its prevalence in each arm instead of by
+a standardised mean difference:
+
+```{r cox-binary, eval = has_cox}
+get_sens(lung, treat = "sex", outcome = "status", time = "time",
+         adj_var = c("age", "ph.ecog"), method = "cox",
+         evalue_args = list(confounder = "binary",
+                            exposed_prev = 0.5, unexposed_prev = 0.2)
+)$stats[, c("tip_effect", "tip_n")]
+```
+
+## Double machine learning: `method = "dml"`
+
+```{r skip-dml, eval = !has_dml, echo = FALSE, results = "asis"}
+cat("> **Not run.** This section needs the GitHub-only `dml.sensemakr`, not available here, so the ",
+    "code below was skipped and produced no output or figure.\n", sep = "")
+```
+
+With flexible learners in place of a linear adjustment, the sensitivity question
+becomes how much residual variation a confounder would have to explain on each
+side. `dml_args` controls the cross-fitting; the settings below are deliberately
+small so this vignette builds quickly.
+
+```{r dml-fit, eval = has_dml}
+data("pension", package = "dml.sensemakr")
+set.seed(20260921)
+pen <- pension[sample(nrow(pension), 900L), ]
+
+res_dml <- get_sens(pen, treat = "e401", outcome = "net_tfa",
+                    adj_var = c("age", "inc", "educ", "fsize",
+                                "marr", "twoearn", "pira", "hown"),
+                    bench_var = "inc", method = "dml",
+                    bench_args = list(k_treat = 1:2, bound = c(0.04, 0.03)),
+                    dml_args = list(cf_folds = 2L, cf_reps = 1L,
+                                    cf_seed = 20260921L, dirty_tuning = FALSE))
+res_dml$stats[, c("estimand", "estimate", "conf.low", "conf.high",
+                  "rv_q", "rv_qa")]
+res_dml$bounds
+```
+
+DML bounds are *intervals*, not point adjustments: `adj_low`/`adj_high` bracket
+the estimate and `adj_conf.low`/`adj_conf.high` bracket the confidence interval.
+That is why `adj_estimate`, `adj_se` and `adj_statistic` are `NA` here — there
+is no single adjusted number to report.
+
+```{r dml-contour, eval = has_dml && has_wrap}
+plt_sens(res_dml, type = "contour")
+```
+
+Raise `dml_args$cf_folds` and leave `dirty_tuning = TRUE` for real work; set
+`cf_seed` so the cross-fitting is reproducible.
+
+## Instrumental variables: `method = "iv"`
+
+```{r skip-iv, eval = !has_iv, echo = FALSE, results = "asis"}
+cat("> **Not run.** This section needs the GitHub-only `iv.sensemakr`, not available here, so the ",
+    "code below was skipped and produced no output or figure.\n", sep = "")
+```
+
+Here the assumption at risk is exclusion: the instrument must affect the outcome
+only through the treatment. `iv.sensemakr` asks how strongly a confounder would
+have to be associated with the instrument before the Anderson–Rubin interval
+stops excluding the null.
+
+```{r iv-fit, eval = has_iv}
+data("card", package = "iv.sensemakr")
+
+res_iv <- get_sens(card, treat = "educ", outcome = "lwage",
+                   instrument = "nearc4",
+                   adj_var = c("exper", "expersq", "black", "south", "smsa",
+                               "reg661", "reg662", "reg663", "reg664",
+                               "reg665", "reg666", "reg667", "reg668",
+                               "smsa66"),
+                   bench_var = "black", method = "iv",
+                   bench_args = list(k_treat = 1:3))
+res_iv$stats[, c("estimand", "estimate", "conf.low", "conf.high",
+                 "rv_qa", "xrv_qa")]
+```
+
+Three estimands are reported by default: the IV estimate itself, the first stage
+(`fs`) and the reduced form (`rf`). `iv_args$parm` narrows that. `conf.low` and
+`conf.high` are Anderson–Rubin limits, which is why there is no `std.error` —
+the interval is not symmetric around the estimate and can be unbounded.
+
+```{r iv-contour, eval = has_iv && has_wrap}
+plt_sens(res_iv, type = "contour")
+```
+
+## Reading the numbers
+
+The two headline quantities are on different scales and **must not be
+compared**:
+
+| | Scale | Range | Reads as |
+|---|---|---|---|
+| `rv_q`, `rv_qa`, `xrv_qa` | Partial \(R^2\) | \([0, 1)\) | Share of residual variation the confounder must explain |
+| `evalue_point`, `evalue_ci` | Risk-ratio multiplier | \([1, \infty)\) | How strongly the confounder must be associated with both exposure and outcome |
+
+There is no monotone mapping between them — the E-value depends on the effect
+scale and on whether the outcome is rare — so they live in separate columns and
+each is `NA` outside its own backend. A robustness value of 0.14 and an E-value
+of 2.29 say nothing about each other.
+
+## Benchmarking and manual scenarios
+
+`bench_args` is shared by the `"lm"`, `"dml"` and `"iv"` backends. `k_treat`
+(and `k_out`, which defaults to it) sets the multiples of `bench_var`; `bound`
+adds one hand-specified scenario as `c(treatment-side R2, outcome-side R2)`,
+mapped to whichever parameter names the backend uses.
+
+```{r bench, eval = has_lm}
+get_sens(sensemakr::darfur, treat = "directlyharmed", outcome = "peacefactor",
+         adj_var = adj, bench_var = c("female", "pastvoted"), method = "lm",
+         bench_args = list(k_treat = c(1, 2), bound = c(0.05, 0.10),
+                           bound_label = "Worst case")
+)$bounds[, c("bound_label", "r2_treat", "r2_out", "adj_estimate")]
+```
+
+`bench_var` must be a subset of `adj_var` — a yardstick you did not adjust for
+is not a yardstick.
+
+## Saving
+
+`plt_sens()` follows the shared save contract: `save` is the last argument, both
+`NULL` and `list()` skip saving, and a non-empty list is forwarded to
+`RegR::save_plt()`. Width and height left out default to the size the figure was
+pinned to.
+
+```r
+plt_sens(res_cox, type = "tip",
+         save = list(filename = "Figure 3. Tipping point.pdf"))
+```
+
+## Things that will bite you
+
+**Arguments that do not apply are an error, not a warning.** Passing
+`dml_args` to `method = "lm"`, or `time` to anything but `"cox"`, stops with a
+message naming the methods that do use it. Silently ignoring a backend list is
+the easiest way to believe a setting took effect when it never did.
+
+```{r unused, eval = has_lm, error = TRUE}
+get_sens(sensemakr::darfur, treat = "directlyharmed", outcome = "peacefactor",
+         adj_var = adj, method = "lm", dml_args = list(cf_folds = 10L))
+```
+
+**`EValue` is deliberately not used.** Its `estimate` methods clash with `lava`,
+which `dml.sensemakr` pulls in through `caret`: once both namespaces are loaded,
+`EValue::evalues.HR()` fails in either load order. The E-values here come from
+`tipr::e_value()` plus the VanderWeele–Ding transform and reproduce
+`EValue::evalues.HR()` to six decimal places on both settings of `rare`.
+
+**Not every figure is a real ggplot.** The `"lm"` contour and both Cox figures
+are drawn natively, so they accept further layers, scales and themes. The
+`"dml"` and `"iv"` contours and the `"extreme"` plot are base-graphics figures
+captured with `ggplotify::as.ggplot()`: they save and compose, but their
+contents are a fixed grob, and because `gridGraphics` cannot emulate labels on
+contour lines those two contours carry no level labels. The IV contour also
+ignores `lim`, `threshold` and `contour_args`, since
+`iv.sensemakr::ovb_contour_plot()` accepts none of them.
+
+**dplyr verbs drop the `method` attribute** carried by `$stats` and `$bounds`.
+Subset with `[` if you need it preserved.
+
+## See also
+
+`?get_sens`, `?plt_sens`, and the upstream references: Cinelli & Hazlett (2020)
+for the partial \(R^2\) framework, VanderWeele & Ding (2017) for the E-value,
+Chernozhukov et al. (2024) for DML sensitivity, and Cinelli & Hazlett (2022) for
+the IV case.

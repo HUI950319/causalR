@@ -79,8 +79,8 @@ lines. Wrapping therefore loses every contour level, which is the readable
 content of the figure. Three of the four types avoid that:
 \describe{
 \item{\code{"contour"} for \code{method = "lm"}}{Drawn natively from sensemakr's
-own \code{\link[sensemakr:adjusted_estimate]{sensemakr::adjusted_estimate()}}, \code{\link[sensemakr:adjusted_estimate]{sensemakr::adjusted_t()}} and
-\code{\link[sensemakr:adjusted_estimate]{sensemakr::adjusted_ci()}}, so the surface is identical to the upstream
+own \code{\link[sensemakr:adjusted_estimate]{sensemakr::adjusted_estimate()}}, \code{\link[sensemakr:adjusted_t]{sensemakr::adjusted_t()}} and
+\code{\link[sensemakr:adjusted_ci]{sensemakr::adjusted_ci()}}, so the surface is identical to the upstream
 figure but the levels stay labelled and the result is a real \code{ggplot}
 that accepts further layers, scales and themes.}
 \item{\code{"tip"} and \code{"evalue"}}{Drawn natively; there is no upstream
