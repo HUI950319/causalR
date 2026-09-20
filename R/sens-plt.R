@@ -170,18 +170,31 @@
   so <- contour_args$sensitivity_of
   draw <- switch(
     a$method,
-    dml = function() dml.sensemakr::ovb_contour_plot(
-      x$fit, parameter = estimand, which.bound = so, level = a$conf_level,
-      rho2 = a$rho2, threshold = threshold,
-      lim.x = lim[1L], lim.y = lim[2L],
-      nlevels = contour_args$n_levels, grid.number = contour_args$grid_n,
-      round = contour_args$round),
+    dml = function() {
+      # Mark the manual scenario the way the lm and iv contours mark theirs;
+      # the upstream default leaves the panel with only the unadjusted point.
+      bnd <- a$bench_args$bound
+      dml.sensemakr::ovb_contour_plot(
+        x$fit, parameter = estimand, which.bound = so, level = a$conf_level,
+        rho2 = a$rho2, threshold = threshold,
+        cf.d = if (is.null(bnd)) NULL else bnd[1L],
+        cf.y = if (is.null(bnd)) NULL else bnd[2L],
+        bound.label = a$bench_args$bound_label,
+        lim.x = lim[1L], lim.y = lim[2L],
+        nlevels = contour_args$n_levels, grid.number = contour_args$grid_n,
+        round = contour_args$round)
+    },
+    # iv.sensemakr takes no window arguments of its own, but forwards `...`
+    # to the plotter underneath, and its default 0.4 window squeezes a typical
+    # IV problem into a sliver against the axes.
     iv = function() iv.sensemakr::ovb_contour_plot(
       x$fit, benchmark_covariates = a$bench_var,
       kz = a$bench_args$k_treat,
       ky = if (is.null(a$bench_args$k_out)) a$bench_args$k_treat
            else a$bench_args$k_out,
-      sensitivity.of = so, parm = estimand),
+      sensitivity.of = so, parm = estimand,
+      lim = lim[1L], lim.y = lim[2L],
+      nlevels = contour_args$n_levels, round = contour_args$round),
     stop(sprintf("Unsupported method: '%s'", a$method), call. = FALSE))
   .sens_grab(draw)
 }
@@ -380,9 +393,8 @@
 #'     [ggplotify::as.ggplot()], because those surfaces are not exposed as
 #'     grid functions. The result is a `ggplot` that saves and composes, but
 #'     its contents are a fixed grob: further layers and themes do not reach
-#'     it, and the DML and IV contours carry no level labels. The IV contour
-#'     additionally ignores `lim`, `threshold` and every `contour_args` field,
-#'     since [iv.sensemakr::ovb_contour_plot()] accepts none of them.}
+#'     it, and the DML and IV contours carry no level labels. `threshold` also
+#'     does not reach the IV contour, which always marks its own null.}
 #' }
 #'
 #' @return A `ggplot` object, carrying its pinned size in

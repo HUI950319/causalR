@@ -79,8 +79,8 @@ lines. Wrapping therefore loses every contour level, which is the readable
 content of the figure. Three of the four types avoid that:
 \describe{
 \item{\code{"contour"} for \code{method = "lm"}}{Drawn natively from sensemakr's
-own \code{\link[sensemakr:adjusted_estimate]{sensemakr::adjusted_estimate()}}, \code{\link[sensemakr:adjusted_t]{sensemakr::adjusted_t()}} and
-\code{\link[sensemakr:adjusted_ci]{sensemakr::adjusted_ci()}}, so the surface is identical to the upstream
+own \code{\link[sensemakr:adjusted_estimate]{sensemakr::adjusted_estimate()}}, \code{\link[sensemakr:adjusted_estimate]{sensemakr::adjusted_t()}} and
+\code{\link[sensemakr:adjusted_estimate]{sensemakr::adjusted_ci()}}, so the surface is identical to the upstream
 figure but the levels stay labelled and the result is a real \code{ggplot}
 that accepts further layers, scales and themes.}
 \item{\code{"tip"} and \code{"evalue"}}{Drawn natively; there is no upstream
@@ -89,9 +89,8 @@ figure for either.}
 \code{\link[ggplotify:as.ggplot]{ggplotify::as.ggplot()}}, because those surfaces are not exposed as
 grid functions. The result is a \code{ggplot} that saves and composes, but
 its contents are a fixed grob: further layers and themes do not reach
-it, and the DML and IV contours carry no level labels. The IV contour
-additionally ignores \code{lim}, \code{threshold} and every \code{contour_args} field,
-since \code{\link[iv.sensemakr:ovb_contour_plot]{iv.sensemakr::ovb_contour_plot()}} accepts none of them.}
+it, and the DML and IV contours carry no level labels. \code{threshold} also
+does not reach the IV contour, which always marks its own null.}
 }
 }
 

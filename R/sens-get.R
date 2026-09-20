@@ -685,10 +685,20 @@ get_sens <- function(data,
                         ceiling((rng[2L] + pad) * 20) / 20),
                 estimand = NULL))
   }
-  r2 <- c(x$bounds$r2_treat, x$bounds$r2_out, x$stats$rv_q, x$stats$rv_qa)
-  r2 <- r2[is.finite(r2)]
-  top <- if (length(r2)) min(0.9, ceiling(max(r2) * 1.25 * 100) / 100) else 0.15
-  list(type = "contour", lim = c(top, top),
+  # Per axis, not one square window: the treatment-side and outcome-side
+  # partial R2 routinely differ by an order of magnitude (an IV benchmark sits
+  # at 0.007 against 0.22), and a single window then hides the whole contour
+  # against one axis. The robustness value enters both, since it is the point
+  # the reader is looking for.
+  rv <- c(x$stats$rv_q, x$stats$rv_qa)
+  axis_top <- function(v) {
+    v <- c(v, rv)
+    v <- v[is.finite(v)]
+    if (!length(v) || max(v) <= 0) return(0.15)
+    min(0.9, ceiling(max(v) * 1.25 * 1000) / 1000)
+  }
+  list(type = "contour",
+       lim = c(axis_top(x$bounds$r2_treat), axis_top(x$bounds$r2_out)),
        estimand = if (identical(a$method, "lm")) NULL else x$stats$estimand[1L])
 }
 
