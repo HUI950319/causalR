@@ -1,0 +1,337 @@
+---
+title: "5. 生存结局：tte_data_melt() 与四个必踩的坑"
+subtitle: "删失编码反着来、默认学习器坏掉、协变量必须标准化、时间必须分箱"
+lang: zh
+---
+
+`outcome_type = "time-to-event"` 是这个包功能最强、也最容易悄悄算错的一条路。
+四个问题分别在数据编码、依赖版本、数值稳定性和计算量上，
+**其中三个不报错**。本页按"从数据到结果"的顺序走一遍。
+
+## `tte_data_melt()`：宽表变长表 {#sec-melt}
+
+```r
+tte_data_melt(data, confounders, exposure, outcome, censoring,
+              time_cutoff, prop_score_values)
+```
+
+把一人一行的宽表展开成"人 × 时间"的长表，这是离散时间风险模型的标准做法。
+
+### 时间网格
+
+```r
+unique_times <- sort(unique(c(data[get(outcome) < time_cutoff, get(outcome)],
+                              time_cutoff)))
+```
+
+网格是**数据里所有小于 `time_cutoff` 的观测时间**，加上 `time_cutoff` 本身。
+每个人被复制到 $|{\text{unique\_times}}|$ 行。
+
+### 三个派生列
+
+| 列 | 含义 |
+|---|---|
+| `id` | 受试者编号（`rbindlist(idcol = "id")` 加的） |
+| `failure` | 该时间点是否发生事件；只在**观测到事件**的那一行为 1 |
+| `keep` | 该行是否落在此人的随访期内；事件/删失之后的填充行为 0 |
+
+`keep` 决定训练集：`fit_failure_hazard()` 与 `fit_censoring_hazard()`
+都只用 `keep == 1` 的行训练，但在**全部**行上预测。
+
+### 删失指示的编码
+
+::: {.callout-important}
+## `censoring` 列：1 = 删失，0 = 事件
+
+与 `survival::Surv(time, status)` 的 `status = 1` 表示事件**正好相反**。
+四个人的玩具例子，`time_cutoff = 5`：
+
+```r
+d <- data.table(w_1 = c(0.5,-0.5,1,0), a = c(1,0,1,0),
+                t = c(2,3,5,5), cens_flag = c(0,1,0,1))
+unihtee:::tte_data_melt(d, "w_1", "a", "t", "cens_flag", 5, NULL)
+```
+
+```text
+       id   w_1     a     t cens_flag failure  keep
+ 1:     1   0.5     1     2         0       1     1   <- t=2 出事件（cens_flag=0）
+ 2:     1   0.5     1     3         0       0     0      之后是填充行
+ 3:     1   0.5     1     5         0       0     0
+ 4:     2  -0.5     0     2         0       0     1
+ 5:     2  -0.5     0     3         1       0     1   <- t=3 被删失（cens_flag=1）
+ 6:     2  -0.5     0     5         1       0     0
+ 7:     3   1.0     1     2         0       0     1
+ 8:     3   1.0     1     3         0       0     1
+ 9:     3   1.0     1     5         0       1     1   <- 恰好在 cutoff 出事件
+10:     4   0.0     0     2         0       0     1
+11:     4   0.0     0     3         0       0     1
+12:     4   0.0     0     5         1       0     1   <- 恰好在 cutoff 被删失
+```
+
+从标准生存数据过来必须写 `1L - status`：
+
+```r
+d[, cens_flag := 1L - cens]     # GBSG2 的 cens: 1 = 事件
+```
+
+**传反了不报错。** GBSG2（15 个分箱、`time_cutoff = 12`、`Lrnr_glmnet`、
+协变量已标准化）：
+
+```text
+  正确编码: ace = 0.6648, 排第一 = progrec (p = 0.459)
+  传反了  : ace = 0.9797, 排第一 = estrec  (p = 0.315)
+```
+
+边际 RMST 差大了 47%，头名变量也换了。
+上线前的检查只有一句话：`sum(dat$cens_flag)` 必须等于**删失人数**，
+而不是事件数。
+:::
+
+### 长表规模 {#sec-cost}
+
+$$
+\text{行数} \;=\; n \times \bigl(\#\{\text{原始数据里} < t \text{的不同时间}\} + 1\bigr).
+$$
+
+GBSG2 以**天**为单位，中位数以下就有 291 个不同时间：
+
+```text
+unique event/censor times < median: 291
+=> long data rows at cutoff = median: 200312
+```
+
+20 万行，三个 `sl3` 模型各拟合一次，外加 7 个变量各自一轮 TMLE 迭代——
+实际上跑不动。**必须先把时间分箱**：
+
+```r
+d[, t_bin := as.integer(cut(time,
+                            breaks = quantile(time, probs = seq(0, 1, length.out = 16)),
+                            include.lowest = TRUE, labels = FALSE))]
+```
+
+分箱数与代价（GBSG2，$n = 686$，`Lrnr_glmnet`，`effect = "absolute"`，
+`time_cutoff` 取倒数第四个分箱）：
+
+| 分箱数 | `time_cutoff` | 长表行数 | 耗时 | 排第一 | `progrec` 名次 |
+|---:|---:|---:|---:|---|---:|
+| 8 | 5 | 3 430 | 5.0 s | `progrec` (p = 0.460) | 1 |
+| 15 | 12 | 8 232 | 17.4 s | `progrec` (p = 0.468) | 1 |
+| 30 | 27 | 18 522 | 56.1 s | `progrec` (p = 0.574) | 1 |
+
+耗时大致随行数**超线性**增长（行数 ×5.4 → 耗时 ×11）。
+排序在三档分箱下稳定，p 值随分箱变细而变大。
+
+::: {.callout-warning}
+## 分箱数和 `time_cutoff` 是分析者的自由度，必须预先写死
+
+上面三行的 p 值从 0.460 到 0.574，还不算大；
+但分箱方案、`time_cutoff` 的位置都直接改变估计的**目标参数**
+（$t$ 变了，RMST 差就变了），换一个组合就是换一个假设检验。
+把分箱规则（分位数？等距？几个箱？）与 $t$ 写进分析计划，
+不要在看到结果之后再调。
+:::
+
+## 默认学习器在 xgboost ≥ 3.x 下必定报错 {#sec-xgboost}
+
+::: {.callout-important}
+## `Lrnr_xgboost` + `xgboost` 3.2.1.1 ⇒ `ALTLIST classes must provide a Set_elt method`
+
+```r
+unihtee(dd, covs, covs, "a", "t_bin", censoring = "cens_flag", time_cutoff = 12,
+        outcome_type = "time-to-event", effect = "absolute")
+```
+
+```text
+Error in fit_object$training_offset <- task$has_node("offset") :
+  ALTLIST classes must provide a Set_elt method [class: XGBAltrepPointerClass, pkg: xgboost]
+In addition: Warning messages:
+1: Passed invalid function arguments: nthread, eval_metric. These should be passed
+   as a list to argument 'params'. ...
+2: Parameter 'watchlist' has been renamed to 'evals'. ...
+3: Argument 'objective' is only for custom objectives. ...
+Failed on Lrnr_xgboost_20_1
+```
+
+这是 `sl3` 1.4.5 的 `Lrnr_xgboost` 与 `xgboost` 3.x 的不兼容，
+不是 `unihtee` 的 bug，但因为它是**两个生存参数的默认值**，
+所以生存路径**开箱即坏**。
+
+修法：显式换掉两个学习器。
+
+```r
+L <- sl3::Lrnr_glmnet$new()
+unihtee(..., failure_hazard_estimator = L, censoring_hazard_estimator = L)
+```
+
+`Lrnr_ranger` 也可以，但风险模型的结局是极不平衡的 0/1
+（每个时间点只有少数人出事件），森林容易输出接近 0 的风险，
+`cumprod(1 - hazard)` 于是几乎不下降。`glmnet` 更稳。
+无论选哪个，**记得连 `cross_fit = TRUE` 一起开**。
+:::
+
+## 协变量必须标准化 {#sec-standardize}
+
+::: {.callout-important}
+## 不标准化时 SE 会大三个数量级，所有 p 值都 ≈ 1
+
+GBSG2，15 个分箱，`Lrnr_glmnet`，`set.seed(99)`，**原始协变量尺度**：
+
+```text
+ace = 0.6868
+        modifier  estimate        se p_value
+1: menostat_post  0.161000    0.7260  0.8250
+2:    tgrade_num -0.062300    0.5955  0.9167
+3:           age -0.002900    1.2670  0.9982
+4:         tsize  0.004410    3.5680  0.9990
+5:        pnodes  0.000667    1.9510  0.9997
+6:        estrec -0.000498  183.5000  1.0000
+7:       progrec -0.000864 1125.0000  1.0000
+```
+
+同一个种子，**协变量标准化后**：
+
+```text
+ace = 0.6868                                  <- 完全一样
+        modifier    estimate        se   p_value
+1:       progrec -0.16991541 0.2288286 0.4577575
+2:        pnodes -0.07157998 0.3702869 0.8467166
+3: menostat_post  0.05835220 0.3590156 0.8708854
+4:         tsize  0.05749778 0.3831973 0.8807272
+5:    tgrade_num  0.04639988 0.3465861 0.8934999
+6:        estrec -0.02333858 0.3194417 0.9417580
+7:           age -0.02356390 0.3656039 0.9486103
+```
+
+`progrec` 的 SE 从 **1125** 降到 **0.229**。
+
+**为什么 `ace` 一模一样？** 因为 `Lrnr_glmnet` 内部本来就标准化，
+失败/删失风险的拟合值逐位相同。纯粹的尺度问题应该让估计与 SE
+同步按 $\operatorname{sd}(W_j)$ 缩放，$z$ 值不变。实测 $z$ 变了
+（$-7.7\times10^{-7}$ → $-0.647$），所以问题**不在参数的量纲**，
+而在[第 4 页](04-estimators.qmd#sec-recycling)那个向量回收 bug：
+
+```r
+centred_modifiers_dt^2 / modifier_vars * plugin_estimates
+```
+
+`modifier_vars` 在原始尺度上跨了 5 个数量级：
+
+```text
+          age menostat_post         tsize    tgrade_num        pnodes
+     102.4294        0.2444      204.3818        0.3397       29.9809
+      progrec        estrec
+   40938.0569    23434.6998
+```
+
+按行错位除法之后，`progrec` 那一列会被除以 `menostat_post` 的 0.244、
+`tgrade_num` 的 0.340 等等，直接爆掉。GBSG2 的 $686 = 7 \times 98$ 正好整除，
+所以**连 R 的长度不匹配警告都没有**。
+标准化让所有 `modifier_vars` 都等于 1，错位除法就无害了。
+
+标准化后与"正确回收"版本的对照（同一份拟合）：
+
+```text
+        modifier plugin se_pkg se_fixed ratio
+1:           age -0.018 0.3646   0.3638 1.002
+2: menostat_post  0.019 0.3589   0.3588 1.000
+3:         tsize  0.067 0.3821   0.3758 1.017
+4:    tgrade_num  0.117 0.3472   0.3478 0.998
+5:        pnodes  0.092 0.3720   0.3721 1.000
+6:       progrec -0.175 0.2285   0.2289 0.998
+7:        estrec -0.076 0.3194   0.3149 1.014
+```
+
+残留误差 2% 以内——那是 `plugin_estimates` 的错位，可以接受。
+
+**生存路径一律先做 `scale()`。** 记得标准化之后 `estimate`
+的单位变成"每一个标准差"，解释时要换算回来。
+:::
+
+## 完整可跑的 GBSG2 例子
+
+```r
+library(unihtee); library(data.table); library(sl3); library(TH.data)
+data("GBSG2", package = "TH.data")
+
+d <- as.data.table(GBSG2)
+d[, `:=`(a             = as.integer(horTh == "yes"),      # 0/1 数值治疗
+         menostat_post = as.integer(menostat == "Post"),  # 因子 -> 0/1
+         tgrade_num    = as.integer(tgrade))]
+covs <- c("age", "menostat_post", "tsize", "tgrade_num", "pnodes", "progrec", "estrec")
+
+# 1. 时间分箱（15 个分位数箱）
+d[, t_bin := as.integer(cut(time,
+                            breaks = quantile(time, probs = seq(0, 1, length.out = 16)),
+                            include.lowest = TRUE, labels = FALSE))]
+# 2. 删失指示反过来：1 = 删失
+d[, cens_flag := 1L - cens]
+sum(d$cens_flag)   #> 387  = 删失人数（不是事件数 299），方向就对了
+
+# 3. 协变量标准化
+ds <- d[, c(covs, "a", "t_bin", "cens_flag"), with = FALSE]
+ds[, (covs) := lapply(.SD, function(x) as.numeric(scale(x))), .SDcols = covs]
+
+# 4. 换掉默认的 xgboost 学习器
+L <- Lrnr_glmnet$new()
+
+set.seed(99)
+fit <- unihtee(
+  data                       = ds,
+  confounders                = covs,
+  modifiers                  = covs,
+  exposure                   = "a",
+  outcome                    = "t_bin",
+  censoring                  = "cens_flag",
+  time_cutoff                = 12,
+  outcome_type               = "time-to-event",
+  effect                     = "absolute",
+  failure_hazard_estimator   = L,
+  censoring_hazard_estimator = L
+)
+fit
+```
+
+17 秒，输出见上一节。$n = 686$、299 个事件、7 个候选变量，
+**没有任何变量达到显著**（最小 p = 0.458）。这与本书
+[效应修饰的效应尺度](../sources/effect-modifier-effect-scale.qmd)
+一页的结论一致：GBSG2 上的"修饰效应"信号很弱，
+不同方法给出的头名变量互相打架，`progrec` 只是其中一个常见候选。
+
+## 相对尺度的生存参数
+
+同一份数据，`effect = "relative"`：
+
+```text
+ace = 0.1066
+        modifier estimate     se p_value p_value_fdr
+1: menostat_post  -0.0516 0.1757   0.769       0.994
+2:        pnodes  -0.3476 1.4331   0.808       0.994
+3:           age  -0.0392 0.1657   0.813       0.994
+4:    tgrade_num   0.0221 0.0962   0.818       0.994
+5:         tsize  -0.0381 0.3859   0.921       0.994
+6:        estrec  -0.0038 0.1243   0.975       0.994
+7:       progrec  -0.0007 0.1060   0.994       0.994
+```
+
+`pnodes` 的 SE 是估计值的 4 倍，整张表没有任何结构——
+排序与绝对尺度完全不同（`progrec` 从第 1 掉到第 7）。
+本机实测里**相对生存参数是这个包最不稳的一条路**，
+再加上[第 1 页](01-parameter.qmd)指出的
+"插值估计与一步/TMLE 目标参数不一致"，建议默认用绝对尺度（RMST 差）。
+
+## 生存路径的最小检查清单
+
+| 检查 | 命令 |
+|---|---|
+| 删失编码方向 | `sum(dat$cens_flag)` 应等于**删失人数**，不是事件数 |
+| 时间已分箱 | `length(unique(dat$t_bin)) <= 30` |
+| 长表规模可接受 | `nrow(dat) * (length(unique(dat$t_bin[dat$t_bin < cutoff])) + 1)` |
+| 协变量已标准化 | `sapply(dat[, ..covs], var)` 全部为 1 |
+| 学习器不是 xgboost | 显式传 `failure_hazard_estimator` / `censoring_hazard_estimator` |
+| 治疗是 0/1 数值 | `is.numeric(dat$a) && all(dat$a %in% 0:1)` |
+| modifier 不是因子 | `all(sapply(dat[, ..covs], is.numeric))` |
+
+## 接下来
+
+- [第 6 页](06-print-plot.qmd)：结果怎么看、怎么画；
+- [第 7 页](07-pitfalls.qmd)：全部失效路径汇总与工作流。

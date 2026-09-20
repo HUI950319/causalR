@@ -1,0 +1,358 @@
+---
+title: "3. nuisance 拟合与 sl3 学习器"
+subtitle: "fit_prop_score / fit_cond_outcome / fit_failure_hazard / fit_censoring_hazard / cross_fit_fold"
+lang: zh
+---
+
+`unihtee` 的双稳健性全靠四个 nuisance 参数。它们各有一个内部函数，
+接口高度一致：`fit_*(train_data, valid_data, learners, ...)`，
+返回一个**已经算好反事实预测**的 `list`。
+
+本页逐个展开，并给出两个决定成败的实测结论：
+默认条件结局学习器让插值估计**恒为 0**；
+不交叉拟合地用灵活学习器会让 SE **塌缩到不可信**。
+
+## 四个 nuisance 的分工
+
+| 函数 | 估计的量 | 协变量 | 何时用 |
+|---|---|---|---|
+| `fit_prop_score()` | $g(W) = P(A=1 \mid W)$ | `confounders` | 总是 |
+| `fit_cond_outcome()` | $Q(a, W) = \mathbb{E}[Y \mid A=a, W]$ | `exposure` + `confounders` | 连续、二分类 |
+| `fit_failure_hazard()` | $\lambda(t \mid a, W)$ | `outcome`(时间) + `exposure` + `confounders` | 生存 |
+| `fit_censoring_hazard()` | $\lambda_C(t \mid a, W)$ | 同上 | 生存 |
+
+`unihtee()` 只会用到其中**三个**：非生存路径是
+`fit_prop_score` + `fit_cond_outcome`，生存路径是
+`fit_prop_score` + `fit_failure_hazard` + `fit_censoring_hazard`。
+源码用 `is.null(cond_outcome_fit)` 来判断走哪条路。
+
+## `fit_prop_score()` {#sec-prop}
+
+```r
+fit_prop_score(train_data, valid_data, learners, exposure, confounders)
+```
+
+返回 `list(estimates, fit)`。两个细节：
+
+**（1）`outcome_type = "binomial"` 是写死的。**
+
+```r
+train_data_task <- sl3::sl3_Task$new(data = train_data, covariates = confounders,
+                                     outcome = exposure, outcome_type = "binomial")
+```
+
+所以 `exposure` 必须是 0/1；传别的会在 `sl3` 层面出问题。
+
+**（2）倾向评分被截断在 $1/\min(\sqrt n, 1000)$。**
+
+```r
+truncation <- 1/min(sqrt(nrow(train_data)), 1000)
+prop_score_est[prop_score_est < truncation]       <- truncation
+prop_score_est[prop_score_est > (1 - truncation)] <- 1 - truncation
+```
+
+::: {.callout-warning}
+## 这个截断比大多数人预期的更狠
+
+| $n$ | 截断界 | 相当于 |
+|---|---|---|
+| 200 | 0.0707 | 逆权重上限 14 |
+| 500 | 0.0447 | 逆权重上限 22 |
+| 2 000 | 0.0224 | 逆权重上限 45 |
+| 10 000 | 0.0100 | 逆权重上限 100 |
+| $\ge 10^6$ | 0.0010 | 逆权重上限 1000 |
+
+README 的数据（$n = 500$，$A \sim \text{Bern}(\text{plogis}(w_1 + w_2))$）实测：
+
+```text
+truncation bound 1/min(sqrt(n), 1000) = 0.04472136
+range of estimated PS: 0.04472136  0.95527864
+n truncated: 15
+```
+
+500 个人里 **15 个（3%）**的倾向评分被截断了。这是**偏倚与方差的交换**，
+而且**不可配置**——没有参数能改它。在 overlap 很差的观察性数据上，
+这个截断会把估计往 0 拉，而 SE 不会跟着变大，
+结果是**看起来很稳的、偏小的估计**。
+
+诊断办法：自己先拟合一遍倾向评分，数一下有多少人落在界外。
+```r
+g <- unihtee:::fit_prop_score(dt, NULL, sl3::Lrnr_glm_fast$new(), "a", cn)$estimates
+mean(g <= 1/min(sqrt(nrow(dt)), 1000) | g >= 1 - 1/min(sqrt(nrow(dt)), 1000))
+```
+超过 5% 就该重新考虑调整集或改用已知倾向评分（`prop_score_values`）。
+:::
+
+## `fit_cond_outcome()` {#sec-outcome}
+
+```r
+fit_cond_outcome(train_data, valid_data, learners, outcome, exposure, confounders)
+```
+
+返回四个元素：
+
+| 元素 | 内容 |
+|---|---|
+| `estimates` | $\hat Q(A_i, W_i)$，按观测到的 $A_i$ |
+| `exp_estimates` | $\hat Q(1, W_i)$，把整列 `exposure` 改成 1 后重新预测 |
+| `noexp_estimates` | $\hat Q(0, W_i)$ |
+| `fit` | 训练好的 `sl3` 对象 |
+
+协变量集是 `c(exposure, confounders)`——**没有交互项**。
+
+### 默认学习器让插值估计恒为 0 {#sec-default-learner}
+
+::: {.callout-important}
+## `Lrnr_glm_fast` + 无交互 ⇒ 插值 CATE 是常数 ⇒ 全部 plug-in TEM-VIP = 0
+
+帮助页写的是 "Defaults to a generalized linear model with one- and two-way
+interactions among all `confounders` and `exposure` variables"。
+源码里的默认值是 `sl3::Lrnr_glm_fast$new()`，即
+$\hat Q(a, w) = \hat\beta_0 + \hat\beta_A a + w^\top \hat\beta$，
+于是 $\hat Q(1,w) - \hat Q(0,w) \equiv \hat\beta_A$，与 $w$ 无关。
+
+实测（README 数据，$n = 500$）：
+
+```text
+range of plug-in CATE (on rescaled Y): 0.01947076 0.01947076
+sd of plug-in CATE: 5.323979e-17
+plug-in TEM-VIP estimates:
+ w_1  w_2  w_3  w_4  w_5  w_6  w_7  w_8  w_9 w_10
+   0    0    0    0    0    0    0    0    0    0
+```
+
+**全部精确为 0。** 三条后果：
+
+1. `estimator` 参数真正决定了一切：插值不可用，
+   你实际拿到的是纯粹由 EIF 修正项（一步）或靶向步（TMLE）撑起来的估计；
+2. 方差项里那个 `plugin_estimates` 乘子是 0，
+   于是[第 4 页](04-estimators.qmd#sec-recycling)讲的回收 bug 正好被抵消——
+   **这就是为什么默认路径的 SE 是对的**；
+3. 一旦你换成能表达交互的学习器，(2) 就不再成立。
+:::
+
+### 换成能表达交互的学习器
+
+```r
+lrn_int <- sl3::Pipeline$new(
+  sl3::Lrnr_define_interactions$new(interactions = lapply(cn, function(m) c("a", m))),
+  sl3::Lrnr_glm_fast$new()
+)
+unihtee(dt, cn, cn, "a", "y", outcome_type = "continuous",
+        effect = "absolute", cond_outcome_estimator = lrn_int)
+```
+
+```text
+   modifier estimate    se  p_value p_value_fdr
+1:      w_3    1.027 0.143 7.55e-13    7.55e-12
+2:      w_4   -0.838 0.150 2.19e-08    1.09e-07
+3:      w_8    0.128 0.131 3.28e-01    8.65e-01
+4:     w_10   -0.122 0.130 3.46e-01    8.65e-01
+```
+
+在这份**所有协变量方差都等于 1** 的数据上没什么问题。
+但只要各变量方差不同，SE 就会出错——见
+[第 4 页](04-estimators.qmd#sec-recycling)那个 277 倍的例子。
+**换非默认学习器时，先把 `modifiers` 全部标准化到单位方差。**
+
+### 常用学习器对照
+
+同一份数据，`cond_outcome_estimator` 与 `prop_score_estimator` 一起换：
+
+```text
+-- Lrnr_glm_fast (默认)   0.6 s
+   w_3  1.045 (se 0.160)   w_4 -0.869 (se 0.151)
+-- Lrnr_glmnet            0.2 s
+   w_3  1.016 (se 0.136)   w_4 -0.897 (se 0.131)     w_1  0.126 (p = 0.251)
+-- Lrnr_ranger            0.4 s
+   w_3  0.591 (se 0.064)   w_4 -0.575 (se 0.062)     w_2 -0.112 (p = 0.073)
+```
+
+`glmnet` 与默认几乎一致（DGP 本来就是线性的）。
+`ranger` 的估计**只有真值的六成**，SE **只有默认的四成**——
+这不是 `ranger` 不好，是没开交叉拟合。
+
+## 交叉拟合 `cross_fit_fold()` {#sec-crossfit}
+
+```r
+cross_fit_fold(fold, data, confounders, modifiers, exposure, outcome,
+               censoring, outcome_type, effect, estimator,
+               cond_outcome_estimator, prop_score_estimator, prop_score_values,
+               failure_hazard_estimator, censoring_hazard_estimator)
+```
+
+`origami::cross_validate()` 的回调，每折返回四样东西：
+
+```r
+list(unscaled_eif_vars = nrow(eif_dt) * eif_dt[, lapply(.SD, var)],
+     tem_vip_fit       = <本折的 TEM-VIP 估计>,
+     ace_estimate      = <本折的边际效应>,
+     prop_valid_data   = nrow(valid_data) / nrow(data))
+```
+
+`unihtee()` 把各折按验证集占比加权合并：
+
+```r
+tem_vip_fit <- rbindlist(Map(`*`, results$tem_vip_fit, results$prop_valid_data))[
+                 , lapply(.SD, sum)]
+eif_vars    <- rbindlist(results$unscaled_eif_vars)[, lapply(.SD, sum)] / n_obs
+```
+
+生存结局的折按 `cluster_ids = data$id` 划分，
+保证同一个人的所有时间行落在同一折——这是对的。
+
+### 为什么"灵活学习器 + 不交叉拟合"是灾难
+
+`cross_fit = FALSE` 时，`fit_cond_outcome(valid_data = NULL)` 走的是
+`cond_outcome_fit$predict()`，即**样本内预测**。
+AIPW 伪结局里那一项 $\frac{2A-1}{g(W)}\bigl(Y - \hat Q(A,W)\bigr)$
+的大小直接由残差决定，残差被过拟合压小，整条 EIF 的方差就跟着塌。
+
+实测残差规模（结局已缩放到 $[0,1]$）：
+
+```text
+Lrnr_glm_fast   sd(Y - Qhat) = 0.1024   sd(plug-in CATE) = 0.0000
+Lrnr_ranger     sd(Y - Qhat) = 0.0477   sd(plug-in CATE) = 0.0500
+```
+
+森林把残差压掉一半多。同一个种子，开与不开交叉拟合：
+
+```r
+L <- sl3::Lrnr_ranger$new()
+set.seed(2); unihtee(dt, cn, cn, "a", "y", outcome_type = "continuous",
+                     effect = "absolute",
+                     cond_outcome_estimator = L, prop_score_estimator = L)
+set.seed(2); unihtee(dt, cn, cn, "a", "y", outcome_type = "continuous",
+                     effect = "absolute", cross_fit = TRUE,
+                     cond_outcome_estimator = L, prop_score_estimator = L)
+```
+
+```text
+-- cross_fit = FALSE            （真值 Ψ_3 = 1, Ψ_4 = -1）
+   modifier estimate     se  p_value
+1:      w_3    0.589 0.0623 0.00e+00
+2:      w_4   -0.571 0.0608 5.86e-21
+3:      w_2   -0.095 0.0616 1.22e-01
+
+-- cross_fit = TRUE
+   modifier estimate     se  p_value
+1:      w_4   -0.945 0.1698 2.65e-08
+2:      w_3    0.895 0.1618 3.13e-08
+3:     w_10   -0.193 0.1532 2.08e-01
+```
+
+::: {.callout-important}
+## 一条硬规则
+
+**只要 `cond_outcome_estimator` 或 `prop_score_estimator` 不是线性/GLM
+一类的低复杂度学习器，就必须 `cross_fit = TRUE`。**
+
+不开的代价是**双向的**：点估计向 0 缩（0.589 对真值 1），
+SE 也向 0 缩（0.062 对 0.170），两者相除得到一个 $z = 9.5$ 的假确定性。
+这不是"保守一点"的问题——它比正确答案更显著，会把噪声变量也一起推上去。
+
+默认的 `Lrnr_glm_fast` 之所以不需要交叉拟合，
+是因为低维 GLM 的样本内残差与样本外残差差别很小（$n \gg p$ 时）。
+一旦 $p$ 接近 $n$，即使 GLM 也该开。
+:::
+
+开交叉拟合的代价很低：本机 $n = 500$、$p = 10$ 的 5 折只多花 0.3 秒。
+
+### 交叉拟合后的方差是怎么算的
+
+注意 `unihtee()` 在 `cross_fit = TRUE` 时**不**用 `eif_dt[, lapply(.SD, var)]`，
+而是把各折的 `n_v \cdot \widehat{\operatorname{Var}}_v(\text{EIF})` 加起来再除以 $n$：
+
+$$
+\widehat{\operatorname{Var}}(\text{EIF}) =
+\frac{1}{n}\sum_{v=1}^{V} n_v \,\widehat{\operatorname{Var}}_v(\text{EIF}).
+$$
+
+这是标准的 CV-TMLE 方差写法。副作用是**交叉拟合下的 SE 一般更大**
+（上面 0.062 → 0.170），这正是它该有的样子。
+
+## 生存的两个风险函数 {#sec-hazard}
+
+```r
+fit_failure_hazard  (train_data, valid_data, learners, confounders, exposure, times)
+fit_censoring_hazard(train_data, valid_data, learners, confounders, exposure, times, censoring)
+```
+
+两者结构相同，各返回 `list(estimates, exp_estimates, noexp_estimates)`——
+注意**没有 `fit`**（与 `fit_cond_outcome()`/`fit_prop_score()` 不同），
+所以拿不到训练好的模型对象。
+
+关键实现细节：
+
+1. **协变量是 `c(times, exposure, confounders)`**——时间本身作为一个协变量进模型，
+   这就是所谓的"把离散时间风险当成一个二分类问题"。
+2. **训练只用 `keep == 1` 的行**，即每个人在他自己的随访期内的行；
+   `keep == 0` 的填充行不参加训练，但**参加预测**。
+3. 反事实预测同样靠把整列 `exposure` 改成 1 / 0 后重新预测。
+
+生存条件下的存活函数由 `cumprod(1 - hazard)` 按 `id` 累乘得到，
+删失分布同理，详见[第 5 页](05-survival.qmd)。
+
+## 学习器怎么写
+
+`sl3` 的对象都是 R6：
+
+```r
+library(sl3)
+
+# 单个学习器
+lrn_glmnet <- Lrnr_glmnet$new()
+lrn_rf     <- Lrnr_ranger$new(num.trees = 500)
+lrn_earth  <- Lrnr_earth$new()
+
+# Stack：一组候选
+stack <- Stack$new(lrn_glmnet, lrn_rf, lrn_earth)
+
+# Super Learner：带元学习器的集成
+sl <- Lrnr_sl$new(learners = stack, metalearner = Lrnr_nnls$new())
+
+unihtee(dt, cn, cn, "a", "y",
+        outcome_type = "continuous", effect = "absolute",
+        cond_outcome_estimator = sl,
+        prop_score_estimator   = Lrnr_sl$new(
+          learners    = Stack$new(Lrnr_glmnet$new(), Lrnr_ranger$new()),
+          metalearner = Lrnr_solnp$new(
+            loss_function  = loss_loglik_binomial,
+            learner_function = metalearner_logistic_binomial)),
+        cross_fit = TRUE)
+```
+
+本机实测（`set.seed(3)`，README 数据，$n = 500$、$p = 10$）：
+
+```text
+elapsed: 34 s
+   modifier estimate    se  p_value
+1:      w_3    1.071 0.155 4.40e-12
+2:      w_4   -0.856 0.160 8.46e-08
+3:      w_8    0.247 0.164 1.31e-01
+4:     w_10   -0.128 0.131 3.29e-01
+```
+
+比默认路径（0.58 秒）慢 **58 倍**，估计与 SE 都没有实质改善——
+这份数据的真实 $Q$ 本来就是线性的。
+**Super Learner 值不值得，取决于你是否真的怀疑 nuisance 有非线性**，
+不要因为"更先进"就默认开。
+
+::: {.callout-note}
+## 倾向评分的元学习器要用二分类的损失
+
+`Lrnr_sl$new()` 的默认元学习器是按连续结局配的。
+倾向评分是二分类问题，要显式换成 `loss_loglik_binomial` +
+`metalearner_logistic_binomial`（官方 vignette 的 Super Learner 一节就是这么写的），
+否则集成权重是按平方损失优化的，与后面的 logistic fluctuation 不匹配。
+`sl3` 的完整用法见本书[Super Learning 一章](../tlverse/06-sl3.qmd)。
+:::
+
+`sl3` 需要的可选包：`glmnet`（`Lrnr_glmnet`）、`ranger`（`Lrnr_ranger`）、
+`earth`（`Lrnr_earth`）、`xgboost`（`Lrnr_xgboost`）、`Rsolnp`（`Lrnr_solnp`）——
+全部列在 `unihtee` 的 `Suggests` 里，装 `unihtee` 时不会自动装。
+
+## 接下来
+
+- [第 4 页](04-estimators.qmd)：三个估计量、EIF 的闭式，以及那个会让 SE 错掉 277 倍的回收 bug；
+- [第 5 页](05-survival.qmd)：生存路径完整走一遍。

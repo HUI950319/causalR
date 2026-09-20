@@ -1,0 +1,223 @@
+---
+title: "6. print.unihtee() 与 plot.unihtee()"
+subtitle: "结果表怎么读，那条回归线画的到底是什么"
+lang: zh
+---
+
+0.0.3 的 NEWS 只写了三条，其中两条是这一页的内容：
+"Adding plotting functionality" 与 "`unihtee()` now outputs a `unihtee` class object
+with associated plotting and printing methods"。在 0.0.2 及更早，
+`unihtee()` 返回的是一个普通 `list`，没有类。
+
+## `print.unihtee()` {#sec-print}
+
+```r
+print(x, ...)
+```
+
+函数体一行：
+
+```r
+print(x$temvip_inference_tbl, ...)
+```
+
+所以 `print(fit)` 与 `fit$temvip_inference_tbl` 打印出来的东西完全一样，
+`...` 原样转发给 `data.table` 的 `print`（可以用 `nrows =`、`topn =` 等）。
+
+```r
+fit <- unihtee(dt, cn, cn, "a", "y",
+               outcome_type = "continuous", effect = "absolute")
+fit
+```
+
+```text
+    modifier     estimate        se           z      p_value    ci_lower
+ 1:      w_3  1.044592804 0.1599527  6.53063474 6.549161e-11  0.73108547
+ 2:      w_4 -0.869002514 0.1505155 -5.77351005 7.763697e-09 -1.16401281
+ 3:      w_8  0.137803254 0.1138565  1.21032372 2.261547e-01 -0.08535554
+ 4:      w_1  0.115258422 0.1168820  0.98610900 3.240796e-01 -0.11383036
+ 5:      w_9  0.124150185 0.1295567  0.95826884 3.379272e-01 -0.12978102
+ 6:     w_10 -0.097928234 0.1356345 -0.72200119 4.702937e-01 -0.36377176
+ 7:      w_6  0.054845105 0.1157812  0.47369617 6.357166e-01 -0.17208602
+ 8:      w_2 -0.064478504 0.1761998 -0.36593963 7.144101e-01 -0.40983019
+ 9:      w_7 -0.014704981 0.1485610 -0.09898279 9.211519e-01 -0.30588450
+10:      w_5  0.001500152 0.1100365  0.01363321 9.891226e-01 -0.21417147
+      ci_upper  p_value_fdr
+ 1:  1.3581001 6.549161e-10
+ 2: -0.5739922 3.881849e-08
+ 3:  0.3609620 6.758544e-01
+ 4:  0.3443472 6.758544e-01
+ 5:  0.3780814 6.758544e-01
+ 6:  0.1679153 7.838229e-01
+ 7:  0.2817762 8.930127e-01
+ 8:  0.2808732 8.930127e-01
+ 9:  0.2764745 9.891226e-01
+10:  0.2171718 9.891226e-01
+```
+
+### 读这张表的三条规矩
+
+1. **不要横向比 `estimate` 的绝对大小。** $\hat\Psi_j$ 的量纲是
+   「结局单位 / $W_j$ 单位」。上表里所有 $W_j$ 恰好都是标准正态，可以比；
+   真实数据上不行。排序用 `z` 或 `p_value`（表本身就是按 `p_value` 排的）。
+2. **`p_value_fdr` 只在这一次调用的 `modifiers` 内部做 BH。**
+   分批调用拼不出全局 FDR。
+3. **`modifier` 是 `factor`。** 要按名字取行先转字符：
+
+```r
+as.data.table(fit$temvip_inference_tbl)[as.character(modifier) == "w_3"]
+```
+
+### 常用的后处理
+
+```r
+tb <- as.data.table(fit$temvip_inference_tbl)
+tb[, modifier := as.character(modifier)]
+
+# 按 FDR 阈值挑
+tb[p_value_fdr < 0.05, modifier]
+
+# 只保留区间不跨 0 的
+tb[ci_lower * ci_upper > 0]
+
+# 取 top-k 做交集（多方法互证时常用）
+head(tb$modifier, 5)
+```
+
+`unihtee` 没有 `summary()`、没有 `coef()`、没有 `predict()`——
+`print` 和 `plot` 就是全部的方法。
+
+## `plot.unihtee()` {#sec-plot}
+
+```r
+plot(x, y, ..., modifier_name, print_interpretation = TRUE)
+```
+
+| 参数 | 说明 |
+|---|---|
+| `x` | `unihtee()` 的返回对象 |
+| `y`、`...` | 文档明确写着 "Ignored" |
+| `modifier_name` | **必填**，单个变量名；没有默认值 |
+| `print_interpretation` | `TRUE` 时在控制台 `cat()` 一句解读 |
+
+返回 `ggplot` 对象，可以继续叠图层。
+
+### 它画的是什么
+
+源码只有两行实质内容：
+
+```r
+plotting_tbl <- data.frame(
+  x = modifier_vals,
+  y = ace_estimate + temvip_est * (modifier_vals - mean(modifier_vals)),
+  ace_estimate = ace_estimate)
+```
+
+即把 TEM-VIP 当成斜率、把 `ace_estimate` 当成在 $\bar W_j$ 处的截距，画出那条直线
+
+$$
+\widehat{\mathrm{CATE}}(W_j) \;\approx\;
+\widehat{\mathrm{ACE}} + \hat\Psi_j\,(W_j - \bar W_j).
+$$
+
+::: {.callout-warning}
+## 这条线不是拟合出来的，是**画**出来的
+
+图上没有一个点来自数据的 CATE 估计——横轴是 $W_j$ 的**真实取值**，
+纵轴完全由 $(\widehat{\mathrm{ACE}}, \hat\Psi_j)$ 这两个数决定。
+换句话说，**这张图不能用来判断线性假设对不对**：
+无论真实的 $\tau(W_j)$ 是不是线性，它都会画成一条直线。
+
+要看真实形状，得自己估 CATE（`grf`、X-learner）再画散点或平滑曲线。
+`plot.unihtee()` 的用途只有一个：**把一个抽象的斜率数字翻译成
+"在这个变量的实际取值范围上，效应从多少变到多少"**，
+用于跟临床合作者沟通。
+:::
+
+### 连续变量
+
+```r
+plot(fit, modifier_name = "w_3")
+#> The TEM-VIP estimate corresponds to the slope of the black line.
+```
+
+![连续修饰变量的 TEM-VIP 图。黑线的斜率就是 $\hat\Psi_3 = 1.045$，
+红色虚线是 `ace_estimate = 0.0174`，两线在 $\bar w_3$ 处相交。
+标题里给的是估计值与名义 95% 区间。
+横轴范围就是 `fit$data[["w_3"]]` 的实际取值范围。
+](../../images/unihtee-plot-continuous.png){#fig-continuous}
+
+### 二值变量
+
+源码用 `identical(sort(unique(modifier_vals)), c(0, 1))` 判断，
+命中时换成两个点 + 参考线：
+
+```r
+dtb[, w_b := as.numeric(w_3 > 0)]
+fb <- unihtee(dtb, c(cn, "w_b"), c(cn, "w_b"), "a", "y",
+              outcome_type = "continuous", effect = "absolute")
+plot(fb, modifier_name = "w_b")
+#> The TEM-VIP estimate corresponds to the vertical distance between both points.
+```
+
+![二值修饰变量的 TEM-VIP 图。两个点的**纵向距离**就是 $\hat\Psi$。
+这里把 `w_3 > 0` 二值化之后 $\hat\Psi = 1.330$（连续版是 1.054），
+因为二值化改变了分母 $\operatorname{Var}(W_j)$，两个数不可直接比。
+](../../images/unihtee-plot-binary.png){#fig-binary}
+
+::: {.callout-note}
+## 判定二值的条件很严格
+
+`identical(sort(unique(modifier_vals)), c(0, 1))` 要求：
+取值集合**恰好**是 $\{0, 1\}$，且是 `double`。
+所以 `0L/1L`（整数）、只出现一个取值、或编码成 $\{1,2\}$
+都会走连续分支，画成一条直线——不报错，只是图的形式不对。
+需要二值样式就确保列是 `as.numeric(x)` 且两个取值都出现。
+:::
+
+### 两个会报错的调用
+
+```r
+plot(fit)
+#> Error: argument "modifier_name" is missing, with no default
+
+plot(fit, modifier_name = "not_a_var")
+#> Warning in mean.default(modifier_vals) :
+#>   argument is not numeric or logical: returning NA
+#> Error: arguments imply differing number of rows: 0, 1
+```
+
+变量名打错时的报错完全看不出病因（`differing number of rows: 0, 1`
+来自 `data.frame()` 收到了长度 0 的 `x`）。
+批量画图时先自己过滤一遍名字：
+
+```r
+for (m in head(as.character(fit$temvip_inference_tbl$modifier), 5)) {
+  p <- plot(fit, modifier_name = m, print_interpretation = FALSE)
+  ggplot2::ggsave(sprintf("temvip-%s.png", m), p, width = 7, height = 4.6, dpi = 150)
+}
+```
+
+`print_interpretation = FALSE` 在批量场景下很有用，
+否则控制台会被那句解读刷屏——注意它是 `cat()` 出来的，
+`suppressMessages()` 拦不住。
+
+### 叠图层
+
+返回的是普通 `ggplot`，可以照常改：
+
+```r
+library(ggplot2)
+plot(fit, modifier_name = "w_3", print_interpretation = FALSE) +
+  labs(title = "w_3 的效应修饰", x = "w_3（标准化）", y = "条件平均因果效应") +
+  theme_minimal(base_size = 13)
+```
+
+标题里那串
+`"... TEM-VIP Inference [Estimate (Nominal 95% CI)]: 1.045 (0.731; 1.358)"`
+是 `ggtitle()` 加的，`labs(title = )` 会把它整个覆盖掉。
+想保留就别改 `title`，改 `subtitle`。
+
+## 接下来
+
+[第 7 页](07-pitfalls.qmd)：全部失效路径汇总与一套可照抄的工作流。

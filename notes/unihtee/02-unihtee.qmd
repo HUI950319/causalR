@@ -1,0 +1,422 @@
+---
+title: "2. unihtee()：唯一的导出函数"
+subtitle: "18 个参数逐项、返回对象结构，以及两个必定踩的默认值"
+lang: zh
+---
+
+包里只有这一个函数被 `export()`。它的 18 个参数分成五组：
+数据与角色（5 个）、生存专用（2 个）、参数选择（3 个）、
+学习器与交叉拟合（7 个）、并行（1 个）。
+
+## 签名
+
+```r
+unihtee(
+  data,                                                  # data.frame / data.table
+  confounders,                                           # 字符向量
+  modifiers,                                             # 字符向量，应为 confounders 子集
+  exposure,                                              # 单个列名
+  outcome,                                               # 单个列名
+  censoring = NULL,                                      # 仅生存；1 = 删失
+  time_cutoff = NULL,                                    # 仅生存
+  outcome_type = c("continuous", "binary", "time-to-event"),
+  effect = c("absolute", "relative"),                    # 必须显式传，见下
+  estimator = c("tmle", "onestep"),
+  cross_fit = FALSE,
+  cross_fit_folds = 5,
+  cond_outcome_estimator     = sl3::Lrnr_glm_fast$new(),
+  prop_score_estimator       = sl3::Lrnr_glm_fast$new(),
+  prop_score_values = NULL,                              # 列名，不是数值向量
+  failure_hazard_estimator   = sl3::Lrnr_xgboost$new(),
+  censoring_hazard_estimator = sl3::Lrnr_xgboost$new(),
+  parallel = FALSE
+)
+```
+
+## 数据与角色
+
+### `data`
+
+任何能被 `data.table::as.data.table()` 接住的宽表，**一人一行**
+（生存结局也是一人一行，长表由包内部自己展开）。函数第一件事是裁列：
+
+```r
+to_keep <- unique(c(confounders, modifiers, exposure, outcome,
+                    prop_score_values, censoring))
+data <- data[, ..to_keep]
+```
+
+没被列出的列直接丢弃，所以数据里有多余的 ID 列、时间列不会出问题。
+
+### `confounders` 与 `modifiers`
+
+- `confounders`：进入**所有** nuisance 模型的调整变量集合。
+- `modifiers`：要输出 TEM-VIP 的候选变量，帮助页要求是 `confounders` 的子集。
+
+::: {.callout-warning}
+## "必须是子集"这个要求没有被检查
+
+帮助页写 "This vector must be a subset of `confounders`"，但源码里**没有任何断言**。
+实测传一个超集不报错也不警告：
+
+```r
+unihtee(dt, confounders = cn[1:5], modifiers = cn,   # 10 个 modifier，5 个 confounder
+        exposure = "a", outcome = "y",
+        outcome_type = "continuous", effect = "absolute")
+#> 正常返回，排第一的仍是 w_3
+```
+
+后果是安静的：`w_6`…`w_10` 的 TEM-VIP 被计算了，
+但 nuisance 模型从没见过它们，于是这几个变量的估计既不双稳健也没有有效影响函数保证。
+把 `modifiers` 写成 `confounders` 的子集是你自己的责任。
+:::
+
+::: {.callout-warning}
+## 因子型 `modifier` 直接报错
+
+```r
+dtf[, grp := factor(ifelse(w_5 > 0, "hi", "lo"))]
+unihtee(dtf, c(cn, "grp"), c(cn, "grp"), "a", "y",
+        outcome_type = "continuous", effect = "absolute")
+#> Error: Calling var(x) on a factor x is defunct.
+#>   Use something like 'all(duplicated(x)[-1L])' to test for a constant vector.
+```
+
+因为 `compute_eif()` 要算 `var(data[[modifier]])`。
+**因子放在 `confounders` 里没问题**（`sl3` 自己会处理）：
+
+```r
+unihtee(dtf, confounders = c(cn, "grp"), modifiers = cn, ...)   # OK
+```
+
+分类变量要当修饰变量看，必须先自己 one-hot 成 0/1 数值列——
+官方 vignette 的 "Data Requirements" 一节也是这么说的，
+只是它没提不照做会报一个看不出病因的错。
+:::
+
+### `exposure`、`outcome`
+
+单个列名。`exposure` 必须是 **0/1 数值**：源码里到处是
+`data[[exposure]] * prop_scores + (1 - data[[exposure]]) * (1 - prop_scores)`
+这样的算术，因子会直接算错或报错。
+
+`outcome` 的处理随 `outcome_type` 变：
+
+| `outcome_type` | 对 `outcome` 做了什么 |
+|---|---|
+| `"continuous"` | **min–max 缩放到 $[0,1]$**，`rescale_factor = max - min`，最后在 `test_hypotheses()` 里乘回去 |
+| `"binary"` | 原样使用，`rescale_factor = 1` |
+| `"time-to-event"` | 当作**时间**列，交给 `tte_data_melt()` 展开 |
+
+缩放这一步是 TMLE 的需要（logistic fluctuation 要求结局在 $[0,1]$）。
+副作用是：`estimate` 与 `se` 都会被乘回 `max - min`，
+所以连续结局下的 `ci_lower`/`ci_upper` 是原始单位的，可以直接读。
+
+## 生存专用
+
+### `censoring`
+
+::: {.callout-important}
+## `1 = 删失、0 = 事件`——与 R 生存数据惯例相反
+
+`survival::Surv(time, status)` 里 `status = 1` 是**事件**。
+`unihtee` 反过来。`tte_data_melt()` 的源码：
+
+```r
+censored <- obs_data[[censoring]]
+...
+if (censored && event_time <= time_cutoff)      obs_data[num_reps, censoring] <- 1
+if (censored == 0 && event_time <= time_cutoff) obs_data[num_reps, "failure"]  <- 1
+```
+
+四个人的玩具数据，`time_cutoff = 5`：
+
+```r
+d <- data.table(w_1 = c(0.5,-0.5,1,0), a = c(1,0,1,0),
+                t = c(2,3,5,5), cens_flag = c(0,1,0,1))
+unihtee:::tte_data_melt(d, "w_1", "a", "t", "cens_flag", 5, NULL)
+```
+
+```text
+       id   w_1     a     t cens_flag failure  keep
+ 1:     1   0.5     1     2         0       1     1     <- cens_flag=0 => 记为事件
+ 2:     1   0.5     1     3         0       0     0
+ 3:     1   0.5     1     5         0       0     0
+ 4:     2  -0.5     0     2         0       0     1
+ 5:     2  -0.5     0     3         1       0     1     <- cens_flag=1 => 记为删失
+ 6:     2  -0.5     0     5         1       0     0
+ 7:     3   1.0     1     2         0       0     1
+ 8:     3   1.0     1     3         0       0     1
+ 9:     3   1.0     1     5         0       1     1
+10:     4   0.0     0     2         0       0     1
+11:     4   0.0     0     3         0       0     1
+12:     4   0.0     0     5         1       0     1
+```
+
+所以从 `GBSG2` 这类标准生存数据过来，必须写 `1L - cens`。
+
+**传反了不报错**。GBSG2 上的对照（15 个时间分箱，`time_cutoff = 12`，
+`Lrnr_glmnet`，协变量已标准化）：
+
+```text
+  正确编码: ace = 0.6648, 排第一 = progrec (p = 0.459)
+  传反了  : ace = 0.9797, 排第一 = estrec  (p = 0.315)
+```
+
+边际效应大了 47%，头名变量也换了。这类错误只能靠事先检查
+`sum(censoring_col)` 是不是等于删失人数来发现。
+:::
+
+### `time_cutoff`
+
+评估 RMST / 生存概率的时间点 $t$。它同时决定长表的行数：
+
+$$
+\text{长表行数} = n \times \bigl(\#\{\text{原始数据里} < t \text{的不同时间}\} + 1\bigr).
+$$
+
+GBSG2 的时间以**天**为单位，中位数以下就有 291 个不同取值，
+按中位数截断的长表是 $686 \times 292 = 200\,312$ 行。
+**必须先分箱**，代价实测见[第 5 页](05-survival.qmd#sec-cost)。
+
+## 参数选择
+
+### `outcome_type`
+
+`match.arg()`，省略即 `"continuous"`。
+
+### `effect` {#sec-effect-bug}
+
+::: {.callout-important}
+## 这个参数看着可省略，其实不能省
+
+```r
+unihtee(dt, cn, cn, "a", "y", outcome_type = "continuous")   # 不传 effect
+#> Error in unihtee(...) : the condition has length > 1
+```
+
+原因在源码里一眼可见：函数开头做了
+`param_effect <- match.arg(effect)`，但后面调 `plugin_estimator()` 时
+传的是**没匹配过的** `effect`：
+
+```r
+plugin_estimates <- plugin_estimator(data = data, outcome = outcome,
+                                     modifiers = modifiers,
+                                     effect = effect,          # <- 不是 param_effect
+                                     cond_outcome_fit = cond_outcome_fit,
+                                     failure_hazard_fit = failure_hazard_fit)
+```
+
+`plugin_estimator()` 里 `if (effect == "absolute")` 于是拿到一个长度 2 的逻辑向量，
+R ≥ 4.2 对此直接报错。同一行下面的 `compute_eif()` 拿的是 `param_effect`，没事。
+
+**反直觉的例外：`cross_fit = TRUE` 不受影响。** 交叉拟合走的是另一个分支，
+`plugin_estimator()` 在 `cross_fit_fold()` 里被调用，而 `unihtee()` 传给它的是
+已经匹配好的 `param_effect`：
+
+```r
+unihtee(dt, cn, cn, "a", "y", outcome_type = "continuous", cross_fit = TRUE)
+#> 正常返回；top = w_3, estimate = 1.081
+```
+
+所以同一个"省略 `effect`"的写法，开不开交叉拟合结果完全不同——
+一个报错，一个默默按 `"absolute"` 跑。**永远显式写 `effect =`。**
+:::
+
+### `effect = "relative"` + `outcome_type = "continuous"` {#sec-relative-continuous}
+
+不报错，但结果无意义（SE 七位数），完整证据见
+[第 1 页](01-parameter.qmd)的 callout。一句话：**别这么配**。
+
+### `estimator`
+
+`"tmle"`（默认）或 `"onestep"`。两者的点估计不同、SE 几乎相同：
+
+```r
+# README 的数据，n = 500
+```
+
+```text
+    modifier  onestep_est onestep_se    onestep_p     tmle_est   tmle_se       tmle_p
+ 1:      w_3  0.974943032  0.1598217 1.059410e-09  1.044592804 0.1599527 6.549161e-11
+ 2:      w_4 -0.922396554  0.1507034 9.321867e-10 -0.869002514 0.1505155 7.763697e-09
+ 3:      w_8  0.125695800  0.1139188 2.698620e-01  0.137803254 0.1138565 2.261547e-01
+ 4:      w_1  0.110196513  0.1170283 3.463858e-01  0.115258422 0.1168820 3.240796e-01
+...
+ace onestep: 0.01948085   ace tmle: 0.01738359
+```
+
+SE 只差在第四位小数，因为**两条路径的方差都由同一个未靶向的影响函数算出**，
+仅有的差别是用来中心化的 `ace_estimate` 不同。
+详见[第 4 页](04-estimators.qmd#sec-test)。
+
+选择建议：默认 TMLE 即可；`"onestep"` 快一些（本机 n = 2000、p = 50 时
+0.14 s vs 0.55 s），且有一个便于自查的闭式解（
+[第 4 页](04-estimators.qmd#sec-onestep-identity)）。
+
+## 学习器与交叉拟合
+
+这四个参数都接受 `sl3` 的学习器对象（`Lrnr_*$new()`）或 `Stack`/`Pipeline`。
+逐项说明与实测对照在[第 3 页](03-nuisance.qmd)，这里只列**帮助页与源码不一致**之处。
+
+| 参数 | 帮助页写的默认 | 源码里的默认 | 用于 |
+|---|---|---|---|
+| `cond_outcome_estimator` | "GLM with one- and **two-way interactions** among all confounders and exposure" | `sl3::Lrnr_glm_fast$new()`（**纯主效应**） | 连续、二分类 |
+| `prop_score_estimator` | "GLM with one- and two-way interactions among all confounders" | `sl3::Lrnr_glm_fast$new()`（纯主效应） | 全部 |
+| `failure_hazard_estimator` | "an XGBoost learner" | `sl3::Lrnr_xgboost$new()` | 生存 |
+| `censoring_hazard_estimator` | "an XGBoost learner" | `sl3::Lrnr_xgboost$new()` | 生存 |
+
+前两行的后果不是"少了点灵活性"，而是**插值估计精确为 0**，见
+[第 3 页](03-nuisance.qmd#sec-default-learner)。
+后两行在 `xgboost` ≥ 3.x 下**必定报错**，见
+[第 5 页](05-survival.qmd#sec-xgboost)。
+
+### `cross_fit`、`cross_fit_folds`
+
+默认 `FALSE` / `5`。**用任何比 GLM 灵活的学习器时必须打开**，
+否则 nuisance 是样本内预测，SE 会被压到不可信，
+实测证据在[第 3 页](03-nuisance.qmd#sec-crossfit)。
+
+### `prop_score_values`
+
+::: {.callout-warning}
+## 是**列名**，不是数值向量
+
+帮助页里 `unihtee()` 写的是 "An optional `character`"，但
+`compute_eif()` 的帮助页写的是 "A `numeric` vector"。源码以前者为准：
+
+```r
+prop_score_fit <- list(estimates = data[[prop_score_values]])
+```
+
+传向量的报错会把你的整条倾向评分打印出来：
+
+```r
+unihtee(dt2, cn, cn, "a", "y", outcome_type = "continuous",
+        effect = "absolute", prop_score_values = dt2$true_ps)
+#> Error: columns not found: [0.838838367797516, 0.685288560610673,
+#>   0.203513083968037, 0.302653148575963, ... ]
+```
+
+正确写法是先把已知倾向评分写成一列：
+
+```r
+dt2[, true_ps := plogis(w_1 + w_2)]
+unihtee(dt2, cn, cn, "a", "y", outcome_type = "continuous",
+        effect = "absolute", prop_score_values = "true_ps")
+```
+
+```text
+   modifier estimate    se  p_value p_value_fdr
+1:      w_3    1.014 0.148 7.96e-12    7.96e-11
+2:      w_4   -0.883 0.151 4.95e-09    2.48e-08
+3:      w_1    0.146 0.120 2.25e-01    7.50e-01
+4:     w_10   -0.116 0.131 3.79e-01    8.94e-01
+```
+
+比默认的估计倾向评分略准（1.014 / −0.883 对 1.045 / −0.869，真值 1 / −1）。
+RCT 里用它是划算的：官方 vignette 指出，已知倾向评分能让**绝对**尺度的估计量
+在条件结局模型错误设定时仍保持渐近线性。
+
+给了 `prop_score_values` 之后，`fit_prop_score()` **完全不会被调用**，
+`prop_score_estimator` 保持默认值即可，传什么都不影响结果。
+:::
+
+### `parallel`
+
+只在 `cross_fit = TRUE` 时有意义，走 `origami` 的 `use_future`。
+**不设 `future::plan()` 也不报错**，只是退化成串行：
+
+```r
+unihtee(dt, cn, cn, "a", "y", outcome_type = "continuous",
+        effect = "absolute", cross_fit = TRUE, parallel = TRUE)
+#> OK without a future plan, 1.2 s
+```
+
+要真并行得自己先 `future::plan(future::multisession, workers = 5)`。
+以本机实测的耗时量级（连续结局 n = 2000、p = 50 只要 0.55 秒），
+并行基本只对生存结局有意义。
+
+## 返回对象
+
+```r
+fit <- unihtee(dt, cn, cn, "a", "y",
+               outcome_type = "continuous", effect = "absolute")
+
+class(fit)
+#> [1] "unihtee" "list"
+names(fit)
+#> [1] "temvip_inference_tbl" "ace_estimate"         "data"
+```
+
+| 元素 | 类型 | 内容 |
+|---|---|---|
+| `temvip_inference_tbl` | `data.table`，`length(modifiers)` 行 | 推断结果，按 `p_value` 升序 |
+| `ace_estimate` | 长度 1 的 `numeric` | 边际效应，含义随「结局 × 尺度」变（[第 1 页](01-parameter.qmd)的表） |
+| `data` | `data.table` | **缩放前**的原始数据副本，只保留用到的列 |
+
+`temvip_inference_tbl` 的八列：
+
+```text
+Classes 'data.table' and 'data.frame':  10 obs. of  8 variables:
+ $ modifier   : Factor w/ 10 levels "w_1","w_2","w_3",..
+ $ estimate   : num   Ψ̂_j，已乘回 rescale_factor
+ $ se         : num   sqrt(var(EIF)/n)，已乘回 rescale_factor
+ $ z          : num   estimate / se
+ $ p_value    : num   2 * min(pnorm(z), 1 - pnorm(z))，双侧
+ $ ci_lower   : num   estimate - 1.96 * se     <- 1.96 是写死的常数
+ $ ci_upper   : num   estimate + 1.96 * se
+ $ p_value_fdr: num   p.adjust(p_value, method = "BH")
+```
+
+三个要点：
+
+1. **`modifier` 是 `factor`**，按输入顺序设 level。做 `merge`/`==` 比较时
+   先 `as.character()`，否则容易撞上 level 不一致。
+2. **区间用的是 1.96，不是 `qnorm(0.975)`**（1.959964）。差别在第四位小数，
+   但如果你要和别的软件对 CI，这是一条已知的偏差来源。
+3. **`p_value_fdr` 是在这 `length(modifiers)` 个检验内部做的 BH**。
+   如果你分批跑（比如按变量块分三次调用），三张表各自 BH，
+   合起来并不控制整体 FDR。
+
+`fit$data` 保留的是**原始尺度**的数据，这正是 `plot.unihtee()` 能把横轴画成原始
+单位的原因（[第 6 页](06-print-plot.qmd#sec-plot)）。
+
+## 两个结局类型的实测对照 {#sec-binary}
+
+同一份数据（$n = 500$，$p = 10$，$\tau = w_3 - w_4$），
+二分类结局 $Y \sim \text{Bern}(\text{plogis}(-1 + w_1 + w_2 + a w_3 - a w_4))$：
+
+```r
+for (eff in c("absolute", "relative"))
+  print(unihtee(dtb, cn, cn, "a", "y", outcome_type = "binary", effect = eff))
+```
+
+```text
+-- absolute   ace = 0.0059
+   modifier estimate    se  p_value p_value_fdr
+1:      w_3    0.142 0.041 0.000635     0.00635
+2:     w_10   -0.127 0.045 0.004810     0.02400
+3:      w_4   -0.110 0.044 0.012100     0.04030
+4:      w_6   -0.050 0.037 0.168000     0.42000
+
+-- relative   ace = 0.0843
+   modifier estimate    se  p_value p_value_fdr
+1:      w_4   -0.620 0.181 0.000607     0.00607
+2:      w_3    0.510 0.209 0.014600     0.07290
+3:     w_10   -0.366 0.171 0.032600     0.08970
+4:      w_2   -0.312 0.149 0.035900     0.08970
+```
+
+两把尺子都把噪声变量 `w_10` 排进前三，且**绝对尺度在 FDR < 0.05 下报了它**。
+$n = 500$、$p = 10$ 的二分类结局上，这个方法的功效不足以支撑"FDR 显著即真"的读法；
+把阈值当成排序用、再在独立数据上确认，是更实际的用法。
+
+相对尺度的 `ace = 0.0843` 是**边际对数风险比**，绝对尺度的 `0.0059` 是
+**边际风险差**——两个数不该互相对照着读。
+
+## 接下来
+
+- [第 3 页](03-nuisance.qmd)：四个 nuisance 函数、学习器怎么选、交叉拟合什么时候是必须的；
+- [第 5 页](05-survival.qmd)：生存路径的完整流程与全部坑；
+- [第 7 页](07-pitfalls.qmd)：一页纸的检查清单。

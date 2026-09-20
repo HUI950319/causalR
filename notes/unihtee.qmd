@@ -1,0 +1,319 @@
+---
+title: "unihtee 包函数手册"
+subtitle: "基于 0.0.3 的逐函数用法说明与本机实测"
+lang: zh
+---
+
+`unihtee` 回答的问题只有一个：**在一堆基线协变量里，哪些变量身上的治疗效应
+和平均水平不一样？** 它不建树、不切亚组、不输出个体化治疗规则，
+而是对每一个候选变量单独给出一个**变量重要性参数**（TEM-VIP）、
+一个标准误、一个 p 值和一个 BH 校正后的 p 值——
+形态上就是一张"按 p 值排序的变量表"，可以直接当作高维筛选的第一道工序。
+
+它与本书里其它几个包的分工是清楚的：`model4you` 和 `StratifiedMedicine` 产出的是
+**树与亚组**，`grf` 产出的是**个体化 CATE**，而 `unihtee` 产出的是
+**逐变量的检验结果**。三者互为补充，不互相替代。
+
+本部分是该包的**函数用法手册**，逐个覆盖
+[官方文档](https://insightsengineering.github.io/unihtee/main/)
+与包内帮助库里的全部 23 个帮助主题——其中只有 1 个是导出函数（`unihtee()`），
+2 个是 S3 方法，其余 20 个是内部函数，但它们决定了这个包在你数据上的实际行为，
+所以本手册一并展开。每页给出参数逐项说明、可直接运行的代码、返回对象结构，
+以及**本机实际运行后发现的默认值陷阱与失效路径**。
+
+## 核对环境与证据边界
+
+本手册核对截止 **2026 年 9 月 20 日**，环境为：
+
+| 项目 | 值 |
+|---|---|
+| 包版本 | `unihtee` 0.0.3（GitHub `insightsengineering/unihtee`，SHA `9d68472`，**不在 CRAN**） |
+| R | Windows R 4.4.3 |
+| 关键依赖 | `sl3` 1.4.5、`data.table` 1.18.2.1、`origami` 1.0.8、`ggplot2` 4.0.2 |
+| 学习器侧 | `xgboost` 3.2.1.1、`glmnet` 5.0、`ranger` 0.18.0、`earth` 5.3.4 |
+| 示例数据 | 官方 README 的模拟 DGP（n = 500，p = 10）、`TH.data::GBSG2`（n = 686，299 个事件） |
+
+证据分三级，正文中逐处标明：
+
+1. **文档**——包自带帮助页、`DESCRIPTION`/`NEWS` 与官方 pkgdown 站点的原文；
+2. **源码**——本机已安装包的函数体（`unihtee:::` 可复核）；
+3. **实测**——在上述环境下实际运行的输出。
+
+本手册**不在本站渲染时执行代码**：所有代码块都是静态的，
+展示的输出是在上述环境中单独运行后粘贴回来的。
+`glmnet`/`ranger` 一类学习器带交叉验证随机性，本手册对每处随机结果都标注了种子。
+
+::: {.callout-important}
+## 六处必须先知道的实测结论
+
+它们全部影响默认调用，且大多**不报错**：
+
+1. **不传 `effect` 就必定报错。** 函数签名写的是
+   `effect = c("absolute", "relative")`，看上去可省略，
+   但 `plugin_estimator()` 拿到的是**没有 `match.arg()` 过**的原始向量，
+   于是抛 `the condition has length > 1`。反直觉的是
+   **`cross_fit = TRUE` 这条路径不受影响**，因为它走的是另一个分支。
+   见[第 2 页](unihtee/02-unihtee.qmd#sec-effect-bug)。
+2. **`effect = "relative"` 不能和 `outcome_type = "continuous"` 一起用。**
+   连续结局会被先做 min–max 缩放到 $[0,1]$，相对效应分支要除以缩放后的
+   $\hat{Q}$，最小的那几个观测把它除爆。实测 SE = **5 077 385**，
+   而且估计值随结局单位线性变化（说明它压根不是一个对数尺度的量）。
+   不报错。见[第 2 页](unihtee/02-unihtee.qmd#sec-relative-continuous)。
+3. **默认条件结局学习器不含交互，于是 plug-in 估计恒为 0。** 帮助页写的是
+   "a generalized linear model with one- and two-way interactions"，
+   源码里却是 `sl3::Lrnr_glm_fast$new()`——纯主效应。
+   实测 plug-in CATE 的标准差是 $5.3\times10^{-17}$，
+   全部 TEM-VIP plug-in 估计**精确为 0**。整个信号都来自 EIF 修正项。
+   见[第 3 页](unihtee/03-nuisance.qmd#sec-default-learner)。
+4. **方差项里有一个静默的回收错误。** `compute_eif()` 写的是
+   `centred_modifiers_dt^2 / modifier_vars * plugin_estimates`，
+   而 `centred_modifiers_dt` 是 `data.table`、后两者是普通向量——
+   R 会**按行**而不是按列回收；观测数恰好是变量数的整数倍时**连警告都没有**。
+   后果：只要 plug-in 估计非 0 且各变量方差不同，报告的 SE 就是错的。
+   实测一个方差为 100 的变量 SE 被放大 **277 倍**。
+   默认学习器下 plug-in 恒为 0，这个项正好消失，所以平时看不出来。
+   见[第 4 页](unihtee/04-estimators.qmd#sec-recycling)。
+5. **生存结局的 `censoring` 列是「1 = 删失、0 = 事件」**，与 R 生存数据惯例相反。
+   传反了不报错：GBSG2 上 ACE 从 0.665 变成 0.980，排第一的变量从
+   `progrec` 变成 `estrec`。另外默认的
+   `failure_hazard_estimator = sl3::Lrnr_xgboost$new()` 在 `xgboost` ≥ 3.x 下
+   **必定**报 `ALTLIST classes must provide a Set_elt method`。
+   见[第 5 页](unihtee/05-survival.qmd)。
+6. **灵活学习器 + 不交叉拟合 = 灾难性的乐观。** `fit_cond_outcome()` 在
+   `cross_fit = FALSE` 时用**样本内**预测，随机森林把残差压到几乎为 0，
+   AIPW 修正项随之塌缩。实测 `Lrnr_ranger` 下估计 0.589（真值 1）、
+   SE 0.062（交叉拟合后是 0.170），p 值直接打到 0。
+   见[第 3 页](unihtee/03-nuisance.qmd#sec-crossfit)。
+:::
+
+## 这个包在估计什么
+
+给定 $O = (W, A, Y) \sim P_0$：$W$ 是 $p$ 个基线协变量，$A \in \{0,1\}$ 是治疗，
+$Y$ 是结局。对**每一个**候选修饰变量 $W_j$，`unihtee` 估计
+
+$$
+\Psi_j(P_0) \;=\;
+\frac{\operatorname{Cov}_{P_0}\!\bigl[\,\tau(W),\; W_j \,\bigr]}
+     {\operatorname{Var}_{P_0}[W_j]},
+\qquad
+\tau(W) = \mathbb{E}[Y \mid A=1, W] - \mathbb{E}[Y \mid A=0, W].
+$$
+
+分子分母合起来就是**把 CATE 对单个 $W_j$ 做一元最小二乘回归得到的斜率**。
+它回答的是"$W_j$ 每增加一个单位，治疗效应平均改变多少"，
+而不是"$W_j$ 是不是出现在某棵树的分裂里"。
+
+`effect = "relative"` 把 $\tau$ 换成对数比：
+
+$$
+\Gamma_j(P_0) \;=\;
+\frac{\operatorname{Cov}_{P_0}\!\bigl[\,
+  \log \mathbb{E}[Y \mid A=1, W] - \log \mathbb{E}[Y \mid A=0, W],\; W_j \bigr]}
+     {\operatorname{Var}_{P_0}[W_j]}.
+$$
+
+四种「结局类型 × 效应尺度」组合各自对应一个不同的 $\tau$：
+
+| `outcome_type` | `effect` | $\tau(W)$ 是什么 | 可用性 |
+|---|---|---|---|
+| `"continuous"` | `"absolute"` | CATE，原始结局单位 | 默认路径，最稳 |
+| `"continuous"` | `"relative"` | 缩放后结局的对数比 | **不要用**，见上面第 2 条 |
+| `"binary"` | `"absolute"` | 风险差 | 可用 |
+| `"binary"` | `"relative"` | 对数风险比 | 可用，常比绝对尺度更灵敏 |
+| `"time-to-event"` | `"absolute"` | 截至 $t$ 的 RMST 之差 | 可用，需分箱与标准化 |
+| `"time-to-event"` | `"relative"` | $\log S(t\mid 1,W) - \log S(t\mid 0,W)$ | 可用但实测最不稳 |
+
+一次调用内部走的是这条流水线：
+
+```text
+data（宽表）
+   │  ① 连续结局 min–max 缩放到 [0,1]；生存结局展开成长表 tte_data_melt()
+   ▼
+   │  ② 拟合 nuisance：倾向评分 g(W)，以及 Q(a,W) 或 (失败风险, 删失风险)
+   ▼
+   │  ③ 造出双稳健伪结局 AIPW_i，并按每个 W_j 计算有效影响函数 EIF
+   ▼
+   │  ④ 点估计：plugin / one-step / TMLE 三选一（默认 TMLE）
+   ▼
+   │  ⑤ test_hypotheses()：SE = sd(EIF)/√n，z 检验，±1.96 区间，BH 校正
+   ▼
+temvip_inference_tbl（按 p 值升序）+ ace_estimate + data
+```
+
+::: {.callout-note}
+## one-step 估计量其实就是"AIPW 伪结局的一元回归斜率"
+
+源码层面可以把它写死：`one_step_estimator()` 返回的正是
+
+$$
+\hat\Psi_j^{\text{1-step}}
+= \frac{1}{n}\sum_{i=1}^{n}
+  \frac{(W_{ij} - \bar W_j)}{\widehat{\operatorname{Var}}(W_j)}\,\mathrm{AIPW}_i
+= \frac{n-1}{n}\cdot
+  \frac{\widehat{\operatorname{Cov}}(W_j, \mathrm{AIPW})}
+       {\widehat{\operatorname{Var}}(W_j)} .
+$$
+
+本机手工复算与 `unihtee()` 的输出在 10 个变量上最大差 $1.95\times10^{-3}$，
+比值恰好是 $499/500$。推导与验证代码见
+[第 4 页](unihtee/04-estimators.qmd#sec-onestep-identity)。
+
+这个恒等式解释了这个包的两个特征：**它天然是"每个变量一个数"的边际方法**，
+不做联合选择；以及**它在 $n$ 不大时的功效上限，就是同样一批 $\mathrm{AIPW}$
+伪结局能提供的信息量**——所以不要指望换一个更花哨的学习器能把功效换出来，
+能换来的是点估计的无偏性（见下面的最小例子）。
+:::
+
+## 函数地图
+
+23 个帮助主题按角色归类如下，每行给出所在页面。
+
+### 唯一的导出函数
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `unihtee()` | 全部功能的唯一入口 | [2. unihtee()](unihtee/02-unihtee.qmd) |
+
+### S3 方法
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `print.unihtee()` | 打印结果表 | [6. print 与 plot](unihtee/06-print-plot.qmd#sec-print) |
+| `plot.unihtee()` | 单个变量的 TEM-VIP 回归线图 | [6. print 与 plot](unihtee/06-print-plot.qmd#sec-plot) |
+
+### nuisance 估计与交叉拟合
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `fit_prop_score()` | 倾向评分 $g(W)$，带截断 | [3. nuisance 与学习器](unihtee/03-nuisance.qmd#sec-prop) |
+| `fit_cond_outcome()` | 条件结局 $Q(a, W)$ 及两个反事实预测 | [3. nuisance 与学习器](unihtee/03-nuisance.qmd#sec-outcome) |
+| `fit_failure_hazard()` | 条件失败风险（生存） | [3. nuisance 与学习器](unihtee/03-nuisance.qmd#sec-hazard) |
+| `fit_censoring_hazard()` | 条件删失风险（生存） | [3. nuisance 与学习器](unihtee/03-nuisance.qmd#sec-hazard) |
+| `cross_fit_fold()` | 单折交叉拟合，`origami` 回调 | [3. nuisance 与学习器](unihtee/03-nuisance.qmd#sec-crossfit) |
+
+### 估计量与推断
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `compute_eif()` | 有效影响函数，全包的核心 | [4. 三个估计量](unihtee/04-estimators.qmd#sec-eif) |
+| `plugin_estimator()` | 插值估计 | [4. 三个估计量](unihtee/04-estimators.qmd#sec-plugin) |
+| `one_step_estimator()` | 一步估计 | [4. 三个估计量](unihtee/04-estimators.qmd#sec-onestep) |
+| `tml_estimator()` | 靶向极大似然估计 | [4. 三个估计量](unihtee/04-estimators.qmd#sec-tmle) |
+| `one_step_ate_estimator()`、`tml_ate_estimator()` | 边际 ATE（非生存、绝对） | [4. 三个估计量](unihtee/04-estimators.qmd#sec-ace) |
+| `one_step_estimator_ate_log_outcome()`、`tml_estimator_ate_log_outcome()` | 边际对数效应（非生存、相对） | [4. 三个估计量](unihtee/04-estimators.qmd#sec-ace) |
+| `one_step_rmst_diff_estimator()`、`tml_rmst_diff_estimator()` | 边际 RMST 之差（生存、绝对） | [4. 三个估计量](unihtee/04-estimators.qmd#sec-ace) |
+| `one_step_estimator_rmst_log_outcome()`、`tml_estimator_rmst_log_outcome()` | 边际对数生存比（生存、相对） | [4. 三个估计量](unihtee/04-estimators.qmd#sec-ace) |
+| `test_hypotheses()` | SE、z、95% 区间、BH 校正 | [4. 三个估计量](unihtee/04-estimators.qmd#sec-test) |
+| `bound_precision()` | 把 $[0,1]$ 的量截断到 $[10^{-6}, 1-10^{-6}]$ | [4. 三个估计量](unihtee/04-estimators.qmd#sec-bound) |
+
+### 生存数据
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `tte_data_melt()` | 宽表展开成"人 × 时间"长表 | [5. 生存结局](unihtee/05-survival.qmd#sec-melt) |
+
+第一页[TEM-VIP 参数](unihtee/01-parameter.qmd)先把参数本身讲清楚，
+最后一页[实测清单与工作流](unihtee/07-pitfalls.qmd)汇总全部失效路径与一套可照抄的流程。
+
+## 最小可运行例子
+
+官方 README 的例子，逐字可跑：
+
+```r
+library(unihtee)
+library(MASS)
+library(data.table)
+library(sl3)
+
+set.seed(510)
+
+n_obs <- 500
+w <- mvrnorm(n = n_obs, mu = rep(0, 10), Sigma = diag(10))
+confounder_names <- paste0("w_", seq_len(10))
+colnames(w) <- confounder_names
+a <- rbinom(n = n_obs, size = 1, prob = plogis(w[, 1] + w[, 2]))
+y <- rnorm(n = n_obs, mean = w[, 1] + w[, 2] + a * w[, 3] - a * w[, 4])
+dt <- as.data.table(cbind(w, a, y))
+
+unihtee(
+  data = dt,
+  confounders = confounder_names,
+  modifiers = confounder_names,
+  exposure = "a",
+  outcome = "y",
+  outcome_type = "continuous",
+  effect = "absolute"
+)
+```
+
+```text
+    modifier     estimate        se           z      p_value    ci_lower
+ 1:      w_3  1.044592804 0.1599527  6.53063474 6.549161e-11  0.73108547
+ 2:      w_4 -0.869002514 0.1505155 -5.77351005 7.763697e-09 -1.16401281
+ 3:      w_8  0.137803254 0.1138565  1.21032372 2.261547e-01 -0.08535554
+ 4:      w_1  0.115258422 0.1168820  0.98610900 3.240796e-01 -0.11383036
+ 5:      w_9  0.124150185 0.1295567  0.95826884 3.379272e-01 -0.12978102
+ 6:     w_10 -0.097928234 0.1356345 -0.72200119 4.702937e-01 -0.36377176
+ 7:      w_6  0.054845105 0.1157812  0.47369617 6.357166e-01 -0.17208602
+ 8:      w_2 -0.064478504 0.1761998 -0.36593963 7.144101e-01 -0.40983019
+ 9:      w_7 -0.014704981 0.1485610 -0.09898279 9.211519e-01 -0.30588450
+10:      w_5  0.001500152 0.1100365  0.01363321 9.891226e-01 -0.21417147
+      ci_upper  p_value_fdr
+ 1:  1.3581001 6.549161e-10
+ 2: -0.5739922 3.881849e-08
+ 3:  0.3609620 6.758544e-01
+ 4:  0.3443472 6.758544e-01
+ ...
+```
+
+真值是 $\tau(W) = w_3 - w_4$，所以 $\Psi_3 = 1$、$\Psi_4 = -1$，其余为 0。
+TMLE 给出 1.045 与 $-0.869$，BH 校正后只有这两个变量显著——这是这个包表现最好的形态。
+整个调用 0.58 秒。
+
+为了有个尺子，同一份数据上跑 10 个 `lm(y ~ a * w_j)`：
+
+```text
+     Estimate Std. Error Pr(>|t|)
+w_3    0.7602     0.1569   0.0000
+w_4   -0.8711     0.1482   0.0000
+w_1    0.1668     0.1686   0.3230
+...
+```
+
+朴素 OLS 也挑出同样两个变量，SE 也相当，但 $w_3$ 的系数被混杂压到 0.76——
+$A$ 依赖 $w_1, w_2$，$Y$ 也依赖 $w_1, w_2$，一元交互模型没有调整它们。
+**`unihtee` 在这里的价值不是"找到了更多变量"，而是"点估计不偏"。**
+只按"真变量有没有进前几名"来评价这类方法，会正好把它唯一的优势评没了。
+
+## 官方资料
+
+| 资源 | 位置 |
+|---|---|
+| pkgdown 站点 | <https://insightsengineering.github.io/unihtee/main/> |
+| 源码仓库 | <https://github.com/insightsengineering/unihtee> |
+| 唯一的 vignette | `vignette("using-unihtee")`，即站点的 Articles → Using unihtee |
+| 主方法论文 | Boileau P, Leng N, Hejazi NS, van der Laan M, Dudoit S (2025). *A Nonparametric Framework for Treatment Effect Modifier Discovery in High Dimensions*. **JRSS-B** 87(1), 157–185. [doi:10.1093/jrsssb/qkae084](https://doi.org/10.1093/jrsssb/qkae084) |
+| 前作（预测性生物标志物） | Boileau P, Qi NT, van der Laan MJ, Dudoit S, Leng N (2022). *A flexible approach for predictive biomarker discovery*. **Biostatistics**. [doi:10.1093/biostatistics/kxac029](https://doi.org/10.1093/biostatistics/kxac029) |
+| 同类参数的另一条线 | Hines O, Diaz-Ordaz K, Vansteelandt S (2022). *Variable importance measures for heterogeneous causal effects*. [arXiv:2204.06030](https://arxiv.org/abs/2204.06030) |
+| 学习器框架 | `sl3`：<https://tlverse.org/sl3/>；本书[Super Learning 一章](tlverse/06-sl3.qmd) |
+
+安装只能从 GitHub（它会连带拉 `sl3`，`sl3` 本身也不在 CRAN）：
+
+```r
+remotes::install_github("insightsengineering/unihtee")
+```
+
+## 与本书其它页面的关系
+
+- [观察性研究中的效应修饰变量识别](sources/effect-modifier-discovery.qmd)——
+  TEM-VIP 在整个方法谱系里的位置；
+- [快速筛选 modifier 的 R 包](sources/quick-screening-r-packages.qmd)——
+  `unihtee` 与其它十几个包在同一批数据上的横向对照；
+- [筛选软件与方法核查](sources/modifier-screening-audit.qmd)——
+  "预后变量"与"效应修饰变量"被混为一谈的典型现场，
+  `unihtee` 是少数在**参数定义层面**就只盯修饰的包；
+- [效应修饰的效应尺度](sources/effect-modifier-effect-scale.qmd)——
+  `effect = "absolute"` 与 `"relative"` 在同一份数据上给出不同排序的原因；
+- [model4you 包函数手册](model4you.qmd)、
+  [StratifiedMedicine 包函数手册](stratifiedmedicine.qmd)——
+  树/亚组路线的两个对照实现。

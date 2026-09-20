@@ -1,0 +1,396 @@
+---
+title: "4. 三个估计量、EIF 与假设检验"
+subtitle: "compute_eif / plugin_estimator / one_step_estimator / tml_estimator / 8 个边际估计量 / test_hypotheses / bound_precision"
+lang: zh
+---
+
+本页覆盖 14 个帮助主题，是这个包的算法核心。
+三件事值得先说：one-step 估计量有一个**精确的闭式**，
+TMLE 有两个**会静默生效的安全阀**，
+以及方差项里有一个**静默的向量回收错误**。
+
+## `compute_eif()`：一切的中心 {#sec-eif}
+
+```r
+compute_eif(data, effect, confounders, exposure, outcome, modifiers,
+            prop_score_fit, prop_score_values,
+            cond_outcome_fit, failure_hazard_fit, censoring_hazard_fit,
+            ace_estimate, plugin_estimates)
+```
+
+返回一个 $n \times p$ 的 `data.table`，每列是一个候选修饰变量的有效影响函数取值。
+`unihtee()` **调用它两次**，靠最后两个参数区分：
+
+| 调用 | `ace_estimate` / `plugin_estimates` | 得到 | 用途 |
+|---|---|---|---|
+| 第一次 | `NULL` / `NULL` | **未中心化** EIF | 喂给 `one_step_estimator()` 做点估计 |
+| 第二次 | 实际值 | **中心化** EIF | 算方差，即报告里的 `se` |
+
+### 非生存路径的 AIPW 伪结局
+
+```r
+ipws <- (2 * A - 1) / (A * g + (1 - A) * (1 - g))
+
+# effect == "absolute"
+aipws <- ipws * (Y - Qhat) + Qhat_1 - Qhat_0
+
+# effect == "relative"
+aipws <- ipws * (Y - Qhat) / Qhat + log(Qhat_1) - log(Qhat_0)
+```
+
+相对分支里那个 $1/\hat Q$ 就是[第 1 页](01-parameter.qmd)所说的
+"连续结局不能用相对尺度"的元凶：结局被缩放到 $[0,1]$ 之后
+最小的观测的 $\hat Q$ 贴着 0。源码里只给了 `eps <- 1e-10` 的下界保护，
+$10^{-10}$ 这个量级救不了任何东西。
+
+### EIF 本体
+
+```r
+modifier_vars       <- sapply(modifiers, function(m) var(data[[m]]))
+centred_modifiers_dt <- <每个 modifier 减去自己的均值>
+
+if (is.null(ace_estimate)) {
+  eif_dt <- tcrossprod(aipws, 1/modifier_vars) * centred_modifiers_dt
+} else {
+  eif_dt <- tcrossprod(aipws, 1/modifier_vars) * centred_modifiers_dt -
+            centred_modifiers_dt^2 / modifier_vars * plugin_estimates
+}
+```
+
+写成数学（$\bar W_j$、$\widehat{\operatorname{Var}}(W_j)$ 是样本量）：
+
+$$
+\widehat D_j(O_i) =
+\frac{W_{ij} - \bar W_j}{\widehat{\operatorname{Var}}(W_j)}
+\Bigl(\mathrm{AIPW}_i - \widehat{\mathrm{ACE}}\Bigr)
+\;-\;
+\frac{(W_{ij} - \bar W_j)^2}{\widehat{\operatorname{Var}}(W_j)}\,\hat\Psi_j^{\text{plugin}} .
+$$
+
+第一项是"伪结局对 $W_j$ 的协方差贡献"，第二项是"因为分母 $\operatorname{Var}(W_j)$
+也要估计而产生的修正"。
+
+### 方差项里的向量回收 bug {#sec-recycling}
+
+::: {.callout-important}
+## `data.table / numeric` 按**行**回收，不按列
+
+上面那句
+
+```r
+centred_modifiers_dt^2 / modifier_vars * plugin_estimates
+```
+
+里，`centred_modifiers_dt` 是 $n$ 行 $p$ 列的 `data.table`，
+而 `modifier_vars` 和 `plugin_estimates` 是长度 $p$ 的普通向量。
+作者显然想让第 $j$ 列除以 `modifier_vars[j]`，但 R 的
+`Ops.data.frame` 是**逐列**把整个右侧向量回收下去的：
+
+```r
+dt <- data.table(x = c(1,1,1,1), y = c(1,1,1,1))
+v  <- c(10, 100)          # 意图：x 列除 10，y 列除 100
+dt / v
+```
+
+```text
+       x     y
+1:  0.10  0.10
+2:  0.01  0.01
+3:  0.10  0.10
+4:  0.01  0.01
+```
+
+得到的是**按行交替**的结果，不是按列。
+更糟的是，**当行数是列数的整数倍时，R 连警告都不发**——
+`length(modifiers)` 整除 $n$ 的情况一点也不罕见（GBSG2 的 $686 = 7 \times 98$ 正好命中）。
+
+**什么时候会咬人：**
+
+| 条件 | 后果 |
+|---|---|
+| `plugin_estimates` 全为 0（默认 `Lrnr_glm_fast`，连续/二分类） | 整项为 0，**SE 正确** |
+| 各 `modifier` 方差相同（已标准化） | 除法无害，只剩 `plugin_estimates` 的错位，**SE 误差在 2% 以内** |
+| 方差不同 + plug-in 非 0（换学习器，或**任何生存结局**） | **SE 可以错几个数量级** |
+
+实测。同一份数据，把 `w_10` 的方差设成 100、其余为 1，
+条件结局用带交互的学习器（于是 plug-in 非 0）：
+
+```text
+-- Lrnr_glm_fast (默认) : max|plugin| = 4.615e-18
+   modifier se_pkg se_fixed ratio
+1:      w_3 0.1600   0.1600     1
+2:      w_4 0.1505   0.1505     1
+3:     w_10 0.0136   0.0136     1
+
+-- 带交互的 pipeline     : max|plugin| = 0.08384
+   modifier se_pkg se_fixed   ratio
+1:      w_3 0.1433   0.1188   1.206
+2:      w_4 0.1497   0.1322   1.133
+3:     w_10 3.4892   0.0126 277.345
+```
+
+`w_10` 的 SE 被放大 **277 倍**，它的 p 值于是永远是 1。
+GBSG2 上未标准化时 `progrec` 的 SE = 1125、`estrec` = 183.5
+（[第 5 页](05-survival.qmd#sec-standardize)）就是同一个机制。
+
+**规避办法（两选一，可以都做）：**
+
+1. **把所有 `modifiers` 标准化到单位方差**——这样 `modifier_vars` 全是 1，
+   除法的错位无害，残留的只有 `plugin_estimates` 错位，实测 SE 比值 0.998–1.017；
+2. 用默认的主效应学习器跑连续/二分类结局，plug-in 恒为 0，该项精确消失。
+
+生存结局**没有第 2 条可选**：`plugin_estimator()` 的生存分支用的是失败风险模型，
+插值 CATE 永远不是常数。所以**生存路径必须标准化协变量**。
+
+自查代码（把正确的 EIF 重算一遍比 SE）：
+
+```r
+correct_eif <- function(aipws, dat, mods, ace, plugin) {
+  as.data.table(lapply(mods, function(m) {
+    cw <- dat[[m]] - mean(dat[[m]]); vj <- var(dat[[m]])
+    (aipws - ace) * cw / vj - cw^2 / vj * plugin[[m]]
+  })) |> setNames(mods)
+}
+```
+:::
+
+## `plugin_estimator()` {#sec-plugin}
+
+```r
+plugin_estimator(data, outcome, modifiers, effect, cond_outcome_fit, failure_hazard_fit)
+```
+
+$$
+\hat\Psi_j^{\text{plugin}} =
+\frac{\widehat{\operatorname{Cov}}\bigl(W_j,\ \hat\tau(W)\bigr)}
+     {\widehat{\operatorname{Var}}(W_j)},
+\qquad
+\hat\tau(W) = \hat Q(1,W) - \hat Q(0,W).
+$$
+
+**它从不作为报告值出现**——`unihtee()` 只把它送进第二次 `compute_eif()`
+用于中心化。所以插值估计的一切问题都只影响 `se`，不影响 `estimate`。
+
+三个细节：
+
+1. 默认学习器下它恒为 0（[第 3 页](03-nuisance.qmd#sec-default-learner)）；
+2. 它接到的 `effect` 参数**没经过 `match.arg()`**，这是
+   [第 2 页](02-unihtee.qmd#sec-effect-bug)那个"不传 `effect` 就报错"的根源；
+3. 生存 + 相对尺度时它算的是
+   $\int_0^t \log\frac{S(u\mid1,W)}{S(u\mid0,W)}\,du$，
+   而一步与 TMLE 用的是 $\log\frac{S(t\mid1,W)}{S(t\mid0,W)}$——
+   两者不是同一个量（[第 1 页](01-parameter.qmd)）。
+
+## `one_step_estimator()` {#sec-onestep}
+
+```r
+one_step_estimator(uncentered_eif_data)   # 就是 colMeans
+```
+
+函数体只有一行：对未中心化 EIF 的每一列取均值。
+
+### 它等于 AIPW 伪结局的一元回归斜率 {#sec-onestep-identity}
+
+把定义展开：
+
+$$
+\hat\Psi_j^{\text{1-step}}
+= \frac1n \sum_i \frac{W_{ij} - \bar W_j}{\widehat{\operatorname{Var}}(W_j)}\mathrm{AIPW}_i
+= \frac{\frac1n\sum_i (W_{ij}-\bar W_j)\mathrm{AIPW}_i}{\widehat{\operatorname{Var}}(W_j)}
+= \frac{n-1}{n}\cdot
+  \frac{\widehat{\operatorname{Cov}}(W_j, \mathrm{AIPW})}{\widehat{\operatorname{Var}}(W_j)} ,
+$$
+
+最后一步是因为 `cov()`/`var()` 用的是 $n-1$ 分母而 `mean()` 用 $n$。
+
+本机手工复算：
+
+```r
+g    <- ps$estimates
+ipw  <- (2*d$a - 1) / (d$a*g + (1-d$a)*(1-g))
+aipw <- ipw * (d$y - q$estimates) + q$exp_estimates - q$noexp_estimates
+sapply(cn, function(m) cov(d[[m]], aipw) / var(d[[m]]) * rescale_factor)
+```
+
+```text
+    modifier manual_ols_on_aipw unihtee_onestep          diff
+ 1:      w_3        0.976896826     0.974943032 -1.953794e-03
+ 2:      w_4       -0.924245044    -0.922396554  1.848490e-03
+ 3:      w_8        0.125947695     0.125695800 -2.518954e-04
+ 4:      w_1        0.110417348     0.110196513 -2.208347e-04
+ ...
+max abs diff: 0.001953794
+```
+
+每一行的比值都恰好是 $499/500$。**这个恒等式可以当作自查工具**：
+如果你手算的斜率和 `unihtee()` 的输出对不上 $(n-1)/n$ 这个因子，
+说明 nuisance 或数据对齐出了问题。
+
+## `tml_estimator()` {#sec-tmle}
+
+```r
+tml_estimator(data, confounders, modifiers, exposure, outcome, effect,
+              prop_score_fit, prop_score_values = NULL,
+              cond_outcome_fit, failure_hazard_fit, censoring_hazard_fit)
+```
+
+**逐个 modifier 独立做一次靶向**。对第 $j$ 个变量，
+在 logit 尺度上对 $\hat Q$ 加一个波动项：
+
+$$
+\operatorname{logit}\hat Q^*_a = \operatorname{logit}\hat Q_a + \epsilon_a H_j,
+\qquad
+H_j = \frac{W_j - \bar W_j}{\widehat{\operatorname{Var}}(W_j)} ,
+$$
+
+$\epsilon_1, \epsilon_0$ 各由一个**无截距、带权重**的二项 GLM 估计，
+权重分别是 $A/g(W)$ 与 $(1-A)/(1-g(W))$：
+
+```r
+q_1_tilt_fit <- glm(Y ~ -1 + scaled_mod, offset = qlogis(q_star),
+                    weights = h_partial_1, family = "binomial", start = 0)
+```
+
+迭代到得分 $\bar{\text{score}}$ 的绝对值小于 $\log(n)/n$，或迭代 10 次为止。
+最后
+
+$$
+\hat\Psi_j^{\text{TMLE}} =
+\frac{\widehat{\operatorname{Cov}}\bigl(W_j,\ \hat Q^*_1 - \hat Q^*_0\bigr)}
+     {\widehat{\operatorname{Var}}(W_j)} .
+$$
+
+::: {.callout-warning}
+## 两个安全阀会把靶向步**静默关掉**
+
+```r
+if (is.na(coef(q_1_tilt_fit))) {
+  q_1_tilt_fit$coefficients <- 0
+} else if (!q_1_tilt_fit$converged || abs(max(coef(q_1_tilt_fit))) > tilt_tol) {
+  q_1_tilt_fit$coefficients <- 0     # tilt_tol <- 5
+}
+```
+
+$\epsilon$ 是 `NA`、GLM 不收敛、或 $|\epsilon| > 5$ 时，
+这一轮的波动被置 0——**没有警告，没有返回码**。
+如果两个臂都被置 0 且一次都没成功过，`tml_estimator()` 返回的就是
+未靶向的插值估计；默认学习器下那是 **0**。
+
+怎么判断自己有没有踩到：把 `estimator = "onestep"` 再跑一遍。
+TMLE 与一步的差距通常在几个百分点（README 数据上 1.045 vs 0.975）。
+**如果 TMLE 给出的数接近 0 而一步不是，几乎可以肯定是靶向步被关掉了。**
+
+相对尺度还多一层保护：`bounded_q_star[bounded_q_star < 0.1] <- 0.1`，
+把 clever covariate 的分母硬抬到 0.1。这会让相对尺度的靶向在
+$\hat Q$ 很小的区域**有偏但不爆**。
+:::
+
+$\hat\Psi^{\text{TMLE}}$ 的 SE 并**不**来自靶向后的 $\hat Q^*$：
+`unihtee()` 里 `eif_dt` 用的是初始的 `cond_outcome_fit`。
+这在渐近上无所谓，在有限样本上意味着 TMLE 的 SE 与一步的 SE 几乎相同
+（实测 0.1599527 vs 0.1598217），两条路径的置信区间宽度一样。
+
+## 8 个边际效应估计量 {#sec-ace}
+
+`ace_estimate` 按「结局 × 尺度 × 估计量」分派到 8 个函数之一：
+
+| 结局 | 尺度 | one-step | TMLE |
+|---|---|---|---|
+| 连续/二分类 | 绝对 | `one_step_ate_estimator()` | `tml_ate_estimator()` |
+| 连续/二分类 | 相对 | `one_step_estimator_ate_log_outcome()` | `tml_estimator_ate_log_outcome()` |
+| 生存 | 绝对 | `one_step_rmst_diff_estimator()` | `tml_rmst_diff_estimator()` |
+| 生存 | 相对 | `one_step_estimator_rmst_log_outcome()` | `tml_estimator_rmst_log_outcome()` |
+
+它们签名一致（生存版不要 `confounders`），都返回**一个数**。
+`one_step_ate_estimator()` 的实现就是标准 AIPW：
+
+$$
+\widehat{\mathrm{ATE}} = \frac1n\sum_i \Bigl[
+\frac{2A_i-1}{g(W_i)^{A_i}(1-g(W_i))^{1-A_i}}\bigl(Y_i - \hat Q(A_i,W_i)\bigr)
++ \hat Q(1,W_i) - \hat Q(0,W_i)\Bigr].
+$$
+
+`tml_ate_estimator()` 用同一套 logistic fluctuation，clever covariate 换成
+$A/g$ 与 $(1-A)/(1-g)$（不带 $W_j$）。
+
+::: {.callout-note}
+## 两处文档 typo（不影响运行）
+
+`compute_eif()` 的帮助页把两个参数的说明写反了：
+
+```text
+cond_outcome_fit:   A 'list' output by the 'fit_failure_hazard()' function.
+failure_hazard_fit: A 'list' output by the 'fit_cond_outcome()' function.
+```
+
+按源码，`cond_outcome_fit` 来自 `fit_cond_outcome()`，
+`failure_hazard_fit` 来自 `fit_failure_hazard()`。
+同样的错在 `plugin_estimator()`、`tml_estimator()`、四个生存边际估计量的帮助页里
+都有一份（那几处还多带一个孤立的单引号：`function()'`）。
+参数名本身没错，照名字传就行。
+:::
+
+`ace_estimate` 只有三个用处：中心化 EIF、`plot.unihtee()` 的截距、
+以及给你一个"平均而言治疗有多大用"的参照。**它不进推断表**，
+没有 SE 也没有 p 值；要对边际效应做推断，用 `tmle`/`drtmle` 一类包。
+
+## `test_hypotheses()` {#sec-test}
+
+```r
+test_hypotheses(n_obs, estimates, var_estimates, rescale_factor)
+```
+
+全部推断在这 10 行里：
+
+```r
+estimates     <- estimates     * rescale_factor
+var_estimates <- var_estimates * rescale_factor^2
+test_dt[, se       := sqrt(var / n_obs), by = modifier]
+test_dt[, z        := estimate / se,     by = modifier]
+test_dt[, p_value  := 2 * min(pnorm(z), 1 - pnorm(z)), by = modifier]
+test_dt[, ci_lower := estimate - 1.96 * se, by = modifier]
+test_dt[, ci_upper := estimate + 1.96 * se, by = modifier]
+test_dt[, p_value_fdr := p.adjust(p_value, method = "BH")]
+```
+
+四个要点：
+
+1. **`n_obs` 是 `unihtee()` 开头取的 `nrow(data)`**，即**人数**，
+   生存结局展开成长表之前就取好了——这是对的；
+2. **`rescale_factor` 无条件相乘**。绝对尺度正确；相对尺度错（
+   [第 1 页](01-parameter.qmd)）；二分类与生存的 `rescale_factor` 都是 1，不受影响；
+3. **1.96 是硬编码常数**，不是 `qnorm(0.975)`；置信水平不可配置；
+4. **BH 在这一张表内部做**。分批调用 `unihtee()` 不能拼出全局 FDR 控制。
+
+### 名义水平校准如何
+
+纯噪声 DGP（$n = 200$，5 个独立协变量，$A \sim \text{Bern}(0.5)$，
+$Y \sim N(w_1 + 0.5A, 1)$，没有任何效应修饰），默认设置跑 40 次：
+
+```text
+reps with >=1 raw p<0.05 (family-wise): 0.175
+marginal rejection rate per modifier:   0.035
+```
+
+单变量拒绝率 **3.5%**（名义 5%），略保守；
+5 个变量里至少一个假阳性的比例 17.5%（独立时理论值 $1-0.95^5 = 22.6\%$）。
+**默认路径的一类错误是可信的**——前提是用默认学习器、低维、不开花哨的东西。
+
+## `bound_precision()` {#sec-bound}
+
+```r
+bound_precision(vals, tol = 1e-06)   # 把 [0,1] 的量截到 [tol, 1-tol]
+```
+
+三行函数，作者署名是 Nima S. Hejazi（来自 `tlverse` 生态的同一段代码）。
+只在 `tml_estimator()` 里用，作用是让 `qlogis()` 不返回 $\pm\infty$。
+`tol` 在 `unihtee()` 里不可配置，永远是 $10^{-6}$。
+
+副作用：**结局恰好等于 min 或 max 的那些观测**，缩放后是 0 或 1，
+靶向时被拉到 $10^{-6}$ / $1-10^{-6}$，对应的 logit 是 $\mp 13.8$。
+连续结局的极端观测因此在 TMLE 里被压得很扁。样本量小、结局重尾时值得留意。
+
+## 接下来
+
+- [第 5 页](05-survival.qmd)：生存路径，本包最容易出错的部分；
+- [第 7 页](07-pitfalls.qmd)：全部失效路径汇总与可照抄的工作流。

@@ -1,0 +1,275 @@
+---
+title: "7. 实测清单与工作流"
+subtitle: "全部失效路径、默认值陷阱，以及一套可照抄的流程"
+lang: zh
+---
+
+本页汇总前六页的全部实测结论，并给出两套可以直接抄的流程
+（非生存 / 生存）。所有结论在 2026-09-20、Windows R 4.4.3、
+`unihtee` 0.0.3、`sl3` 1.4.5 下复核。
+
+## 一、会报错的路径
+
+| # | 触发条件 | 报错 | 修法 |
+|---:|---|---|---|
+| 1 | 省略 `effect=`，且 `cross_fit = FALSE` | `the condition has length > 1` | 永远显式写 `effect = "absolute"` 或 `"relative"` |
+| 2 | 生存结局用默认 `failure_hazard_estimator`，`xgboost` ≥ 3.x | `ALTLIST classes must provide a Set_elt method` | 传 `failure_hazard_estimator = sl3::Lrnr_glmnet$new()`，删失风险同 |
+| 3 | `modifiers` 里有因子列 | `Calling var(x) on a factor x is defunct` | 先 one-hot 成 0/1 数值列；因子放 `confounders` 没问题 |
+| 4 | `prop_score_values` 传数值向量 | `columns not found: [0.838…, 0.685…, …]` | 传**列名**字符串 |
+| 5 | `plot()` 不给 `modifier_name` | `argument "modifier_name" is missing` | 必填参数 |
+| 6 | `plot()` 的 `modifier_name` 拼错 | `arguments imply differing number of rows: 0, 1` | 从 `fit$temvip_inference_tbl$modifier` 里取名字 |
+
+第 1 条有个反直觉的例外：**`cross_fit = TRUE` 时省略 `effect` 不报错**，
+会默默按 `"absolute"` 跑。两条路径在这一点上行为不一致。
+
+## 二、不报错但结果是错的
+
+::: {.callout-important}
+## 这一组才是真正的风险
+
+| # | 条件 | 表现 | 判别 | 修法 |
+|---:|---|---|---|---|
+| 7 | `censoring` 列传成"1 = 事件" | ACE 与排序都变（GBSG2：0.665 → 0.980，头名 progrec → estrec） | `sum(cens_col)` 应等于**删失人数** | 传 `1L - status` |
+| 8 | 生存结局 / 非默认学习器 + 协变量未标准化 | SE 大几个数量级，所有 p ≈ 1（GBSG2 progrec SE = 1125） | 比较各 `modifier` 的 `var()` 跨度 | 全部 `scale()` |
+| 9 | 灵活学习器 + `cross_fit = FALSE` | 估计与 SE **同时**向 0 缩（ranger：0.589 / 0.062，真值 1 / 交叉拟合后 0.170） | 开一次交叉拟合对比 | `cross_fit = TRUE` |
+| 10 | `effect = "relative"` + `outcome_type = "continuous"` | SE 七位数，估计随结局单位线性变化 | 看 `se` 是否离谱 | 改用 `"absolute"`，或先对 $Y$ 取对数 |
+| 11 | `modifiers` 不是 `confounders` 的子集 | 多出来的变量既无双稳健也无 EIF 保证 | 无提示，只能自查 | `stopifnot(all(modifiers %in% confounders))` |
+| 12 | 分批调用后把各表的 `p_value_fdr` 拼一起 | 不控制全局 FDR | 无提示 | 一次调用覆盖全部候选变量 |
+| 13 | TMLE 靶向步被安全阀静默关掉 | 估计接近插值（默认学习器下即 0） | 与 `estimator = "onestep"` 对比 | 换学习器 / 开交叉拟合 / 改用一步 |
+:::
+
+第 8 与第 9 条的根源是两个独立的问题，值得分开记：
+
+- **第 8 条**是 `compute_eif()` 里
+  `centred_modifiers_dt^2 / modifier_vars * plugin_estimates`
+  这一句的**向量回收方向错误**——`data.table` 除以普通向量是按行回收的。
+  观测数是变量数的整数倍时**连警告都没有**。
+  它只在 `plugin_estimates` 非 0 时才发作，
+  所以连续/二分类 + 默认学习器是安全的，生存结局**永远**发作。
+  详见[第 4 页](04-estimators.qmd#sec-recycling)。
+- **第 9 条**是统计问题，不是 bug：`cross_fit = FALSE` 用样本内预测，
+  过拟合把 AIPW 的残差项压没了。详见[第 3 页](03-nuisance.qmd#sec-crossfit)。
+
+## 三、帮助页与源码不一致
+
+| 帮助页写的 | 源码实际 | 影响 |
+|---|---|---|
+| `cond_outcome_estimator` 默认含"one- and two-way interactions" | `sl3::Lrnr_glm_fast$new()`，**纯主效应** | 插值 CATE 是常数 ⇒ 全部 plug-in TEM-VIP = 0（实测 sd = $5.3\times10^{-17}$） |
+| `prop_score_estimator` 同上 | 同上 | 倾向评分是主效应 logistic |
+| `modifiers` "must be a subset of `confounders`" | 无任何断言 | 传超集不报错 |
+| `compute_eif()` 的 `prop_score_values` 是 "A numeric vector" | `unihtee()` 按**列名**用 | 传向量报错 |
+| `compute_eif()`/`plugin_estimator()`/`tml_estimator()` 及四个生存边际估计量的帮助页把 `cond_outcome_fit` 与 `failure_hazard_fit` 的来源写反 | 按参数名对应 | 纯文档 typo，不影响运行 |
+| 本书[效应修饰的效应尺度](../sources/effect-modifier-effect-scale.qmd)记为 "log RMST 比" | 一步/TMLE 用的是 $\log S(t\mid1,W) - \log S(t\mid0,W)$ | 口径不同；另外 `plugin_estimator()` 的同一分支还把对数比沿时间积了一次，与另两个估计量不一致 |
+
+## 四、不可配置的硬编码常数
+
+| 常数 | 值 | 位置 | 后果 |
+|---|---|---|---|
+| 倾向评分截断 | $1/\min(\sqrt n, 1000)$ | `fit_prop_score()` | $n=500$ 时是 0.045，实测 3% 的观测被截断 |
+| 置信区间乘子 | `1.96` | `test_hypotheses()` | 置信水平不可改；与 `qnorm(0.975)` 差第四位小数 |
+| 多重校正方法 | `"BH"` | `test_hypotheses()` | 想要 Bonferroni 得自己对 `p_value` 再算 |
+| TMLE 最大迭代 | `10` | `tml_estimator()` | — |
+| TMLE 停止准则 | $\log(n)/n$ | `tml_estimator()` | — |
+| TMLE 波动上限 | $\lvert\epsilon\rvert \le 5$ | `tml_estimator()` | 超过就静默置 0 |
+| logit 截断 | $10^{-6}$ | `bound_precision()` | 结局取到 min/max 的观测被压扁 |
+| 相对尺度 $\hat Q$ 下界 | `1e-10`（EIF）/ `0.1`（TMLE clever covariate） | `compute_eif()` / `tml_estimator()` | 前者救不了连续结局 |
+
+## 五、性能参考
+
+本机（Windows R 4.4.3，单线程）：
+
+| 场景 | 配置 | 耗时 |
+|---|---|---|
+| 连续，$n=500$，$p=10$ | 默认 TMLE | 0.58 s |
+| 连续，$n=2000$，$p=50$ | 默认 TMLE | 0.55 s |
+| 连续，$n=2000$，$p=50$ | 默认 one-step | 0.14 s |
+| 连续，$n=500$，$p=10$ | 5 折交叉拟合 | 0.3 s |
+| 连续，$n=500$，$p=10$ | Super Learner（glmnet+ranger+earth）+ 交叉拟合 | 34 s |
+| 生存，$n=686$，$p=7$ | 8 分箱、glmnet | 5.0 s |
+| 生存，$n=686$，$p=7$ | 15 分箱、glmnet | 17.4 s |
+| 生存，$n=686$，$p=7$ | 30 分箱、glmnet | 56.1 s |
+
+两条结论：**非生存路径便宜到不用考虑性能**（$p$ 的影响比 $n$ 大，
+因为 TMLE 是逐变量迭代的）；**生存路径的成本由分箱数决定**，
+不是由 $n$ 决定。`parallel = TRUE` 只在 `cross_fit = TRUE` 时有意义，
+而且需要自己先设 `future::plan()`，否则静默串行。
+
+## 六、可照抄的工作流
+
+### A. 连续 / 二分类结局
+
+```r
+library(unihtee); library(data.table); library(sl3)
+
+dt <- as.data.table(your_data)
+
+confounders <- c(...)              # 全部基线调整变量
+modifiers   <- confounders         # 候选修饰变量，必须是子集
+
+## 0. 前置检查 -------------------------------------------------------------
+stopifnot(all(modifiers %in% confounders))
+stopifnot(is.numeric(dt$a), all(dt$a %in% c(0, 1)))
+stopifnot(all(sapply(dt[, ..modifiers], is.numeric)))   # 因子会报错
+
+## 1. 标准化 modifier（让 SE 的回收 bug 失效，也让 estimate 可横向比较）
+dt[, (modifiers) := lapply(.SD, function(x) as.numeric(scale(x))), .SDcols = modifiers]
+
+## 2. overlap 诊断：被截断的比例超过 5% 就别往下走了
+g <- unihtee:::fit_prop_score(dt, NULL, Lrnr_glm_fast$new(), "a", confounders)$estimates
+tr <- 1 / min(sqrt(nrow(dt)), 1000)
+mean(g <= tr | g >= 1 - tr)
+
+## 3. 主分析：默认学习器，显式写 effect
+fit <- unihtee(
+  data         = dt,
+  confounders  = confounders,
+  modifiers    = modifiers,
+  exposure     = "a",
+  outcome      = "y",
+  outcome_type = "continuous",       # 或 "binary"
+  effect       = "absolute",         # 显式！
+  estimator    = "tmle"
+)
+
+## 4. 自查 1：一步估计应与 TMLE 同量级
+fit_os <- unihtee(dt, confounders, modifiers, "a", "y",
+                  outcome_type = "continuous", effect = "absolute",
+                  estimator = "onestep")
+merge(as.data.table(fit$temvip_inference_tbl)[,    .(modifier, tmle = estimate)],
+      as.data.table(fit_os$temvip_inference_tbl)[, .(modifier, onestep = estimate)],
+      by = "modifier")               # 差得离谱 = TMLE 靶向步被关掉了
+
+## 5. 自查 2：一步估计有闭式，可以手算复核
+##    Ψ̂_j = (n-1)/n * cov(W_j, AIPW) / var(W_j)
+
+## 6. 灵活学习器版本（可选，必须开交叉拟合）
+fit_ml <- unihtee(dt, confounders, modifiers, "a", "y",
+                  outcome_type = "continuous", effect = "absolute",
+                  cond_outcome_estimator = Lrnr_glmnet$new(),
+                  prop_score_estimator   = Lrnr_glmnet$new(),
+                  cross_fit = TRUE, cross_fit_folds = 5)
+
+## 7. 尺子：同一份数据上的 OLS 交互扫描
+ols <- t(sapply(modifiers, function(m)
+  summary(lm(reformulate(paste0("a*", m), "y"), data = dt))$coefficients[
+    paste0("a:", m), c("Estimate", "Pr(>|t|)")]))
+```
+
+### B. 生存结局
+
+```r
+## 1. 时间分箱（先写进分析计划，不要看结果再调）
+n_bins <- 15
+dt[, t_bin := as.integer(cut(time,
+       breaks = quantile(time, probs = seq(0, 1, length.out = n_bins + 1)),
+       include.lowest = TRUE, labels = FALSE))]
+cutoff <- 12                                   # ≤ n_bins
+
+## 2. 删失指示反向：1 = 删失
+dt[, cens_flag := 1L - status]
+sum(dt$cens_flag)                              # 必须等于删失人数
+
+## 3. 协变量标准化（生存路径这一步是必须的，不是可选）
+dt[, (covs) := lapply(.SD, function(x) as.numeric(scale(x))), .SDcols = covs]
+
+## 4. 换掉坏掉的默认学习器
+L <- Lrnr_glmnet$new()
+
+set.seed(99)
+fit <- unihtee(
+  data                       = dt[, c(covs, "a", "t_bin", "cens_flag"), with = FALSE],
+  confounders                = covs,
+  modifiers                  = covs,
+  exposure                   = "a",
+  outcome                    = "t_bin",
+  censoring                  = "cens_flag",
+  time_cutoff                = cutoff,
+  outcome_type               = "time-to-event",
+  effect                     = "absolute",     # 相对尺度实测最不稳
+  failure_hazard_estimator   = L,
+  censoring_hazard_estimator = L
+)
+
+## 5. 敏感性：换分箱数与 cutoff，看排序是否稳定
+```
+
+## 七、这个包该用在哪一步
+
+::: {.callout-note}
+## 定位：筛选，不是确认
+
+`unihtee` 的输出是**每个变量一个边际投影**。它的长处与短处都来自这一点：
+
+**长处**
+
+- 参数在定义层面只看 $\tau(W)$，不看基线水平，
+  因此**天然排除了纯预后变量**——这是 MOB/树路线（`model4you`、
+  `StratifiedMedicine` 的默认配置）做不到的，
+  那边的分裂检验默认把截距也算进去；
+- 有正式的渐近正态推断与 BH 校正，可以写进方法学；
+- 点估计在有混杂时不偏（落地页的最小例子：真值 1，
+  `unihtee` 给 0.97–1.04，朴素 OLS 交互给 0.76）；
+- 支持观察性数据、三种结局类型、已知倾向评分。
+
+**短处**
+
+- **边际**：与真修饰变量相关的变量也会显著，这是参数性质，消不掉；
+- **线性投影**：$\tau(W_j)$ 若是 U 形，$\Psi_j$ 可能接近 0；
+- **不给亚组**：要可读的切点得另找 `rsides` / `TSDT` / MOB；
+- **功效受限**：一步估计就是 AIPW 伪结局的一元回归斜率，
+  不会比同样这批伪结局提供更多信息。
+
+**因此推荐的位置：**
+
+```text
+候选变量 20–100 个
+      │
+      ├─ unihtee()：批量 TEM-VIP + BH   ← 本包在这里
+      │     ↓ 取 top-k 或 FDR < 0.1
+      ├─ 与机制不同的方法取交集（树/森林类：pmforest+varimp、TSDT、rsides）
+      │     ↓
+      ├─ 在独立数据 / 预先规定的框架里确认，效应尺度保持一致
+      │     ↓
+      └─ 需要可读亚组时再上 MOB / SIDES
+```
+
+"取交集"的前提是机制真的不同：`unihtee` 与 `uniCATE` 都是单变量半参数路子，
+交集大但不增信息；与树/森林类取交集才有意义。
+本书[快速筛选 modifier 的 R 包](../sources/quick-screening-r-packages.qmd)
+与[筛选软件与方法核查](../sources/modifier-screening-audit.qmd)
+给了更完整的方法谱系。
+:::
+
+## 八、一页纸速查
+
+```r
+## 必须显式写的三件事
+effect = "absolute"                  # 省了会报错（除非 cross_fit = TRUE）
+failure_hazard_estimator = Lrnr_glmnet$new()      # 生存：默认 xgboost 是坏的
+censoring_hazard_estimator = Lrnr_glmnet$new()
+
+## 必须自己做的三件事
+modifiers 全部 scale() 到单位方差     # 否则 SE 可能错几个数量级
+censoring 列 = 1L - status           # 与 survival 惯例相反
+灵活学习器 ⇒ cross_fit = TRUE        # 否则估计与 SE 一起塌
+
+## 结果在哪
+fit$temvip_inference_tbl             # estimate / se / z / p_value / ci / p_value_fdr
+fit$ace_estimate                     # 边际效应，没有 SE
+fit$data                             # 缩放前的原始数据副本
+
+## 不要做的三件事
+effect = "relative" + outcome_type = "continuous"   # SE 七位数
+按 estimate 的绝对大小横向排序                        # 有量纲，用 z 或 p
+分批调用再把 p_value_fdr 拼起来                       # 不控制全局 FDR
+```
+
+## 回到目录
+
+- [手册首页](../unihtee.qmd)
+- [1. TEM-VIP 参数](01-parameter.qmd)
+- [2. unihtee()](02-unihtee.qmd)
+- [3. nuisance 与学习器](03-nuisance.qmd)
+- [4. 三个估计量](04-estimators.qmd)
+- [5. 生存结局](05-survival.qmd)
+- [6. print 与 plot](06-print-plot.qmd)
