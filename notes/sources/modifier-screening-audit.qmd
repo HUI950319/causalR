@@ -1,0 +1,725 @@
+---
+title: "快速筛选效应修饰变量：R 包、函数与方法学核查"
+subtitle: "34 条软件／方法记录的版本核实、筛选机制比较与推荐组合"
+lang: zh
+---
+
+**针对"在医学观察性数据中，筛选某一个明确治疗／暴露变量的'调整后效应修饰变量'"这一目标，本次核查的推荐不是单一软件，而是：**
+
+> **`unihtee` 做正式的批量修饰效应检验，`grf` 补充非线性异质性发现；需要衡量变量的独立信息贡献时，再使用 TE-VIM 或适当配置的 `tidyhte` VIMP。最终确认必须在独立数据或预先规定的分析框架下进行，并保持效应尺度一致。**
+> 这些方法分别回答"是否存在线性修饰趋势""哪些变量被异质性模型利用""移除变量损失多少异质性信息"，不能互相替代。([Insights Engineering][1])
+
+**核查日期：2026 年 9 月 20 日。**
+
+原报告附有一份比较表（文件名 `effect_modifier_R_review_2026-09-20.xlsx`），含 **34 条软件／方法记录、25 个比较字段、6 个工作表**，分别是"说明与推荐、软件总表、筛选机制、生存专表、流程与误差控制、文献与来源"。同一软件用于不同任务时分别列出，因此不是"34 个独立 R 包"。**该附件未随本页收录**，正文按方法分组给出其中的主要内容。
+
+**范围说明：**本页以明确的效应修饰问题为中心，使用公开可访问的原始论文、官方软件手册和作者仓库核查。它属于结构化范围检索与软件审查，**不是已经完成 Web of Science、Scopus 等登录数据库逐条检索、去重和双人筛选的系统综述**；也未进行 R 包安装测试或运行速度基准实验。无法核实的版本、发布日期和功能均保留标记，不用网页抓取时间代替软件发布日期。
+
+本页与前两页（[观察性研究中的效应修饰变量识别](effect-modifier-discovery.qmd)、[快速筛选效应修饰变量的 R 包](quick-screening-r-packages.qmd)）主题相同但侧重不同：前两页给方法谱系与包清单，本页逐条核实版本、接口默认值和各类"重要性"到底测的是什么，并明确指出若干常见的误读。
+
+---
+
+## 一、Executive summary：哪些方法最值得优先使用？
+
+| 实际任务                  | 优先方法                                                                | 为什么优先                             | 不能据此直接宣称什么                    |
+| ----------------------- | ------------------------------------------------------------------- | --------------------------------- | ----------------------------- |
+| **观察性研究：批量检验候选修饰变量**    | **`unihtee::unihtee()`**                                            | 明确定义 TEM-VIP；允许指定调整变量和候选修饰变量；支持推断 | 显著的单变量投影不等于该变量具有独立、非线性的全部修饰作用 |
+| **快速发现非线性、复杂异质性，并排序**   | **`grf::causal_forest()` → `variable_importance()`**                | 软件成熟；能学习复杂 CATE；排序成本相对低           | 分裂重要性不是因果效应大小，也不是正式的变量显著性检验   |
+| **检验变量与 CATE 的调整后线性关系** | **`grf::best_linear_projection()`**                                 | 使用合适的得分构造投影及统计推断                  | 不是对全部非线性修饰作用的万能检验             |
+| **衡量"移除变量损失多少异质性信息"**   | **TE-VIM；`tidyhte::add_vimp()`**                                    | 比单纯树分裂频率更接近明确的总体重要性问题             | 不能忽略零重要性下的推断退化、样本切分和目标定义      |
+| **右删失生存结局**             | **`causal_survival_forest()` + 生存版 TEM-VIP；研究型扩展为 survival TE-VIM** | 可以围绕 RMST 或固定时点生存概率定义异质性          | 不应把输出自动解释为 HR 异质性             |
+| **数百个候选变量的第一轮筛选**       | **仅针对 $A\times X$ 的 Elastic Net／group lasso；`personalized`；R-loss 路线** | 能限制搜索空间并进行稀疏选择                    | 非零系数、入选频率不是未经选择影响的 P 值        |
+| **RCT：正式、快速的单变量修饰筛选**   | **`uniCATE::unicate()`／`sunicate()`**                               | 原生围绕随机试验中的预测性生物标志物发现设计            | 不应原样迁移为已完成混杂调整的观察性分析          |
+
+上述推荐分别依据官方接口、方法学目标和当前软件状态，而非单纯按下载量或更新时间排序。([Insights Engineering][1])
+
+**最重要的取舍是：**
+
+* **追求快速排序：**优先 GRF，但把结果定位为探索。
+* **追求可解释的正式检验：**优先 TEM-VIP／BLP，但承认它们主要是投影问题。
+* **追求一般非线性的重要性定义：**考虑 TE-VIM，但付出更高计算与实现成本。
+* **追求最终临床结论：**使用独立验证和同一效应尺度，而不是将探索结果直接包装成确认性发现。
+
+---
+
+## 二、首先明确：要筛选的到底是哪一种"重要性"？
+
+### 2.1 普通预后重要性不是效应修饰重要性
+
+考虑一个人为构造的例子：
+
+$$
+Y=100X_1+A(2+X_2)+\varepsilon.
+$$
+
+则：
+
+$$
+\tau(X)=E\{Y(1)-Y(0)\mid X\}=2+X_2.
+$$
+
+在这个例子中，$X_1$ 可以是预测结局 $Y$ 最重要的变量，却完全不改变治疗效应；真正的修饰变量是 $X_2$。
+
+因此：
+
+$$
+\boxed{\text{预测 }Y\text{ 的重要性}\neq\text{解释 }\tau(X)\text{ 的重要性}}
+$$
+
+这就是为什么**普通 RF、XGBoost 或 SHAP 对结局预测的重要性，不能直接被称为效应修饰重要性**。重要性计算必须与治疗效应目标、治疗交互结构或适当的治疗效应得分联系起来。([arXiv][2])
+
+### 2.2 "调整后效应修饰"还需要区分两个层次
+
+设：
+
+$$
+W=(C,X),
+$$
+
+其中 $C$ 为混杂调整变量，$X$ 为候选修饰变量。
+
+**第一层：对治疗—结局关系进行混杂调整。**
+
+目标是识别：
+
+$$
+\tau(W)=E\{Y(1)-Y(0)\mid W\}.
+$$
+
+**第二层：在多个修饰变量之间分配或解释异质性。**
+
+这时至少有三个不同问题：
+
+| 问题                                 | 对应目标                      |
+| ---------------------------------- | ------------------------- |
+| $X_j$ 是否与治疗效应呈现总体线性趋势？           | 单变量 TEM-VIP／uniCATE slope |
+| 同时考虑其他指定修饰变量后，$X_j$ 的线性投影系数是否非零？ | 多变量 BLP                   |
+| 其他变量仍保留时，移除 $X_j$ 损失多少异质性信息？     | LOCO TE-VIM               |
+
+**治疗效应已经混杂调整，并不意味着单变量修饰指标已经排除了其他修饰变量的替代解释。**高度相关的两个生物标志物，可能都具有显著单变量斜率，但其中一个的 LOCO 重要性很低。([arXiv][2])
+
+另外，某变量是治疗效应修饰变量，不等于"干预这个变量本身就会改变治疗效应"；后者是另一个因果问题。
+
+---
+
+## 三、方法谱系与核心数学定义
+
+### 3.1 六类方法不是简单的优劣替代关系
+
+可以沿着以下发展脉络理解：
+
+**传统交互检验 → 正则化交互筛选 → 递归子群发现 → CATE 学习／因果森林 → 正交或双重稳健学习 → TE-VIM／TEM-VIP 等明确总体参数。**
+
+但它们形成的是不同分支：有的寻找临床规则，有的寻找非零交互，有的估计总体重要性，不能简单认为"更新的方法全面取代旧方法"。([Wiley Online Library][3])
+
+| 分类                       | 核心问题              | 典型方法                                      |
+| ------------------------ | ----------------- | ----------------------------------------- |
+| **Type 1：总体层面的重要性参数**    | 变量对治疗效应异质性贡献多少？   | TE-VIM、TEM-VIP、适当定义的 VIMP                 |
+| **Type 2：CATE 关联／投影**    | 变量与 CATE 的关系是什么？  | uniCATE、TEM-VIP、BLP                       |
+| **Type 3：算法特定重要性**       | 特定模型多大程度利用该变量？    | GRF split importance、置换重要性、XGBoost gain   |
+| **Type 4：治疗交互正则化**       | 哪些 `A×X` 项应保留？    | glmnet、FindIt、glinternet、samTEMsel        |
+| **Type 5：递归分割**          | 什么变量和切点划分出不同治疗效应？ | MOB、causal tree、SIDES、QUINT               |
+| **Type 6：CATE → 第二阶段模型** | 用哪些变量或规则解释估计的异质性？ | Virtual Twins、CRE、PRISM、aggregation trees |
+
+**TEM-VIP 同时属于 Type 1 和 Type 2：它既是明确的总体参数，也是一种投影型修饰效应总结。**
+
+### 3.2 TE-VIM：移除变量损失多少 CATE 信息？
+
+设 $S$ 是准备移除的变量集合：
+
+$$
+\tau_{-S}(W_{-S})
+=
+E\{\tau(W)\mid W_{-S}\}.
+$$
+
+则一种核心 TE-VIM 定义为：
+
+$$
+\Theta_S
+=
+E\left[
+\{\tau(W)-\tau_{-S}(W_{-S})\}^2
+\right].
+$$
+
+等价地：
+
+$$
+\Theta_S
+=
+\operatorname{Var}\{\tau(W)\}
+-
+\operatorname{Var}\{\tau_{-S}(W_{-S})\}.
+$$
+
+它回答的是：
+
+> **当其他变量都还在时，移除这一组变量，会损失多少治疗效应异质性信息？**
+
+还可以标准化为：
+
+$$
+\Psi_S=
+\frac{\Theta_S}
+{\operatorname{Var}\{\tau(W)\}},
+$$
+
+但要求总体异质性方差大于零。与 LOCO 相对，keep-one-in 更接近考察仅保留某变量时能解释多少异质性。([arXiv][2])
+
+**它的优势**是可以捕捉非线性和变量组合的重要性，并且目标参数不依赖于必须使用哪一种 CATE 学习器。
+
+**它的限制**是：参数不依赖算法，不代表有限样本结果不依赖模型拟合；同时，在 $\Theta_S=0$ 附近，影响函数和常规推断可能退化，不能机械使用普通 Wald P 值。标准化指标在几乎没有总体异质性时也可能不稳定。([arXiv][2])
+
+**软件状态：**`ohines/tevims` 是作者论文复现代码仓库，**不是已经核实具有稳定导出函数的标准 CRAN R 包**。不能把仓库名字写成一个可直接调用的 `tevims()` 函数。([GitHub][4])
+
+### 3.3 TEM-VIP／uniCATE slope：变量与治疗效应的线性趋势
+
+对于绝对效应尺度，中心化后的连续候选变量对应的核心投影可写为：
+
+$$
+\beta_j=
+\frac{\operatorname{Cov}\{\tau(W),X_j\}}
+{\operatorname{Var}(X_j)}.
+$$
+
+它回答：
+
+> **随着 $X_j$ 增加，治疗效应总体上是否呈现正向或负向线性趋势？**
+
+这里是在复杂、非参数 CATE 上定义一个低维总结，**不要求真实 CATE 本身就是线性函数**。但这个总结不能覆盖所有类型的非线性修饰。([Insights Engineering][5])
+
+例如，若 $X$ 关于零对称且：
+
+$$
+\tau(X)=X^2,
+$$
+
+则可能有：
+
+$$
+\operatorname{Cov}\{\tau(X),X\}=0,
+$$
+
+尽管治疗效应明显随 $X$ 变化。这说明：
+
+$$
+\boxed{\text{斜率不显著}\not\Rightarrow\text{不存在效应修饰}}
+$$
+
+同样，纯粹由 $X_1X_2$ 驱动的异质性，也可能被逐变量线性筛选遗漏。
+
+因此，建议将 **TEM-VIP 与非线性 CATE 方法并行使用**，而不是把前者作为唯一入口。
+
+#### `unihtee` 与 `uniCATE` 的实际区别
+
+| 项目            | `unihtee`             | `uniCATE`              |
+| ------------- | --------------------- | ---------------------- |
+| 官方主要定位        | 非参数、高维治疗效应修饰发现        | 随机试验中的预测性生物标志物发现       |
+| 观察性研究         | 明确考虑                  | 不建议直接照搬；优先转向 `unihtee` |
+| 调整变量与候选变量     | 分开指定，但候选变量须是调整变量集合的子集 | 按其 RCT 工作流使用           |
+| 估计方式          | one-step／TMLE         | 针对 uniCATE 参数的估计与推断    |
+| cross-fitting | 支持，但当前接口默认 **FALSE**  | 按函数与分析流程配置             |
+| 生存结局          | 支持                    | `sunicate()` 支持        |
+| 主要结果          | 估计、推断表及调整后 P 值        | 修饰效应估计与检验              |
+
+尤其要注意：**"支持 cross-fitting"不等于"默认已经开启"。**`unihtee` 当前接口中的 `cross_fit = FALSE`，使用机器学习拟合相关模型时应主动检查设置。([Insights Engineering][1])
+
+### 3.4 DR pseudo-outcome 如何把混杂调整带入筛选？
+
+对于二元治疗，令：
+
+$$
+e(W)=P(A=1\mid W),\qquad
+\mu_a(W)=E(Y\mid A=a,W).
+$$
+
+常见的双重稳健得分为：
+
+$$
+D=
+\mu_1(W)-\mu_0(W)
++
+\frac{A}{e(W)}\{Y-\mu_1(W)\}
+-
+\frac{1-A}{1-e(W)}\{Y-\mu_0(W)\}.
+$$
+
+在相应识别和估计条件下，它的条件期望对应治疗效应。因此，可以围绕 $D$ 构建异质性回归、投影和重要性分析，而不是直接围绕原始 $Y$ 做普通重要性。([arXiv][2])
+
+但是：
+
+**"第一步用了 DR 得分"不意味着任意第二步算法、重要性统计量和 P 值都自动双重稳健、有效。**还需要考虑得分估计误差、交叉拟合、第二阶段目标以及选择过程。
+
+对于右删失生存结局，也不能简单将上述公式中的 $Y$ 替换为随访时间；需要相应的生存与删失处理。([GRF Labs][6])
+
+### 3.5 筛选机制比较表
+
+| 方法                              | 依据什么判断"重要"                         | 是否有明确总体目标       | 是否依赖具体算法   | 正式推断与关键限制                |
+| ------------------------------- | ---------------------------------- | --------------- | ---------- | ------------------------ |
+| **TE-VIM**                      | 移除变量后 CATE 最优预测误差增加                | 是               | 目标不依赖；估计依赖 | 可研究 SE／CI／检验；零重要性需要专门处理  |
+| **TEM-VIP**                     | CATE 对单变量的投影斜率等                    | 是               | 目标不依赖      | 可推断；主要反映边际投影趋势           |
+| **uniCATE slope**               | 单个标志物与治疗效应的投影关系                    | 是               | 目标不依赖      | 适合 RCT；不能排除全部非线性修饰       |
+| **tidyhte VIMP**                | 从包含全部修饰变量的模型中移除某变量造成的总体 $R^2$ 下降 | 是，需明确使用的目标与配置   | 可用不同学习器    | 样本切分影响零重要性下推断是否有效        |
+| **GRF VI**                      | 按深度加权的变量分裂使用情况                     | 不是 TE-VIM 那样的参数 | 是          | 主要探索排序，无默认变量级显著性检验       |
+| **GRF BLP**                     | CATE 的最优线性投影系数                     | 是               | 目标不依赖森林结构  | 有推断；投影变量和权重决定问题          |
+| **Permutation VIM**             | 置换变量后损失函数增加                        | 取决于定义           | 常依赖模型和置换方式 | 是否针对修饰作用取决于预测目标          |
+| **XGBoost importance**          | Gain／Cover／Frequency 等             | 通常不是独立因果参数      | 是          | 不提供自动有效的修饰效应 P 值         |
+| **Treatment-interaction LASSO** | `A×X` 系数是否非零                       | 有模型化目标          | 是          | 选择后普通回归 P 值不自动有效         |
+| **Stability selection**         | 重抽样中被选中的频率                         | 是选择稳定性，不是效应大小   | 依赖基础选择器    | 某些程序控制 PFER；不等于每个变量的 FDR |
+| **Recursive partitioning**      | 参数不稳定、治疗效应差异或特定子群评分                | 依方法而定           | 是          | 数据驱动切点和路径增加选择偏倚          |
+| **Virtual Twins**               | 第二阶段模型解释估计治疗效应                     | 依两阶段定义          | 是          | 需处理第一阶段误差和子群选择           |
+| **Bayesian inclusion／usage**    | 后验入选或分裂使用情况                        | 取决于明确的贝叶斯模型     | 是          | 树使用频率不等于"真修饰变量的后验概率"     |
+
+这一表中最不能混淆的是：**TE-VIM、TEM-VIP、GRF 分裂重要性和 XGBoost gain 测量的不是同一个东西。**([arXiv][2])
+
+---
+
+## 四、R 包总表：版本、函数与筛选机制
+
+以下日期为本轮核实到的 **CRAN 发布日期或明确的软件日期**。GitHub 没有核实到正式发布信息时直接注明。
+
+完整的 DR、cross-fitting、高维、非线性、自动切点、混杂调整、计算负担等 25 列比较见前述附件；正文按方法分组，避免一张过宽表难以阅读。
+
+### 4.1 总体参数、投影与因果森林
+
+| 软件／方法                                                                 | 核实版本；发布日期            | 核心函数／实现                                                                                                              | 主要用途与定位                        |
+| --------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| [unihtee](https://github.com/insightsengineering/unihtee)             | 0.0.1；正式发布日期未核实      | `unihtee()`                                                                                                          | TEM-VIP；观察性、RCT、连续／二分类／生存；正式推断 |
+| [uniCATE](https://github.com/insightsengineering/uniCATE)             | 0.4.0；正式发布日期未核实      | `unicate()`、`sunicate()`                                                                                             | RCT 单变量预测性标志物筛选                |
+| [tevims](https://github.com/ohines/tevims)                            | 论文复现仓库；非标准包版本        | 作者脚本                                                                                                                 | TE-VIM；研究型实现                   |
+| [Survival TE-VIM](https://doi.org/10.1111/sjos.70001)                 | 2025 年方法论文           | 未核实通用、稳定的 R 导出 API                                                                                                   | 生存 CATE 信息损失及相关重要性参数           |
+| [tidyhte](https://cran.r-project.org/web/packages/tidyhte/index.html) | **1.0.4；2025-07-29** | `add_vimp()`、`calculate_vimp()`、`construct_pseudo_outcomes()`、`estimate_QoI()`                                       | DR 异质性工作流与 $R^2$-loss VIMP   |
+| [grf](https://cran.r-project.org/web/packages/grf/index.html)         | **2.6.1；2026-03-04** | `causal_forest()`、`causal_survival_forest()`、`variable_importance()`、`best_linear_projection()`、`test_calibration()` | 非线性 CATE、探索排序、投影和校准检验          |
+
+#### `tidyhte` 需要特别解释的地方
+
+`calculate_vimp()` 的官方描述是移除某个 moderator 后总体 $R^2$ 的下降；实际工作更适合从公开工作流 `add_vimp()` 进入，而不是直接依赖标为内部用途的辅助函数。
+
+**不能直接把它写成"与标准化 TE-VIM 完全相同"。**例如，在一个以 $D$ 为响应的理想化 $R^2$ 定义中，分母可以是 $\operatorname{Var}(D)$，而标准化 TE-VIM 的分母是 $\operatorname{Var}\{\tau(W)\}$；两者并不当然一致。本轮未完整核实所有配置对应的分母实现，因此不将其等同。
+
+官方 `VIMP_cfg` 还明确提示：**不使用相应样本切分时，推断只对非零重要性有效**。这对用它"筛选零与非零变量"尤为重要。
+
+#### GRF 三个函数要分开理解
+
+**`variable_importance()`：**按分裂深度加权的使用频率，不是 permutation importance，也不是 TE-VIM。森林的分裂目标与异质性有关，使其比普通结局森林的重要性更贴近这一问题，但它仍然是算法特定指标。([GRF Labs][7])
+
+**`best_linear_projection()`：**估计指定变量对 CATE 的线性投影，提供系数、标准误与检验。它不是简单对森林预测值执行一次普通 `lm()`；`all` 与 `overlap` 等目标设置也会改变所针对的人群。([GRF Labs][8])
+
+**`test_calibration()`：**用于森林预测的整体校准／异质性信号检验，不是逐个变量的修饰效应检验。不能把其显著性分配给森林重要性排名靠前的变量。([Ddimmery][9])
+
+### 4.2 交互正则化、模型森林与 boosting
+
+| 软件                                                                                          | 核实版本；发布日期             | 核心函数                                                                                  | 筛选机制与主要提醒                                           |
+| ------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| [partykit](https://cran.r-project.org/web/packages/partykit/index.html)                     | **1.3-0；2026-08-22**  | `mob()`                                                                               | 模型参数不稳定性；不是默认专门检验治疗参数                               |
+| [model4you](https://cran.r-project.org/web/packages/model4you/index.html)                   | **0.9-9；2026-02-12**  | `pmtree()`、`pmforest()`、`varimp()`／`varimp.pmforest()`                                | 个体化参数模型与置换重要性；需检查究竟针对哪些参数与损失                        |
+| [BioPred](https://cran.r-project.org/web/packages/BioPred/index.html)                       | **1.0.2；2024-11-04**  | `XGBoostSub_con()`、`XGBoostSub_bin()`、`XGBoostSub_sur()`、`predictive_biomarker_imp()` | A-learning／weight-learning 修改损失；算法特定标志物重要性          |
+| [FindIt](https://cran.r-project.org/web/packages/FindIt/index.html)                         | **1.3.0；2025-09-23**  | `FindIt()`                                                                            | 主效应与治疗异质性项使用不同惩罚；SVM／稀疏选择框架                         |
+| [StratifiedMedicine](https://cran.r-project.org/web/packages/StratifiedMedicine/index.html) | **1.0.7；2026-03-24**  | `filter_train()`、`PRISM()`、`submod_train()`                                           | 筛选→个体效应→子群→估计；不同步骤可能针对不同目标                          |
+| [glmnet](https://cran.r-project.org/web/packages/glmnet/index.html)                         | **5.0；2026-05-04**    | `glmnet()`、`cv.glmnet()`                                                              | 手工构造 `A×X` 后 LASSO／Elastic Net；普通用法不自动成为因果筛选        |
+| [glinternet](https://cran.r-project.org/web/packages/glinternet/index.html)                 | **1.0.13；2026-07-18** | `glinternet()`、`glinternet.cv()`                                                      | 强层级 group lasso；可以限制仅搜索与 A 有关的交互                    |
+| [hierNet](https://cran.r-project.org/web/packages/hierNet/index.html)                       | **1.10.1；2026-09-09** | `hierNet()`、`hierNet.logistic()`、`hierNet.varimp()`                                   | 层级交互选择；不是专用因果修饰器，且不能把默认设置写成强层级                      |
+| [samTEMsel](https://github.com/syhyunpark/samTEMsel)                                        | 0.1.0；正式发布日期未核实       | `samTEMsel()`、`cv.samTEMsel()`                                                        | 稀疏加性治疗修饰模型；能选择非线性 $A\times f(X_j)$                |
+| [personalized](https://cran.r-project.org/web/packages/personalized/index.html)             | **0.2.8；2026-01-08**  | `fit.subgroup()` 及 propensity／augmentation 辅助函数                                       | weighting／A-learning、稀疏 benefit score；支持多种结局与观察性工作流 |
+
+#### 三个容易导致结论错误的默认设置
+
+**第一，`model4you::varimp()` 不能不加检查地称为"治疗效应重要性"。**
+
+模型树可以对治疗系数，也可以对截距、其他回归系数进行不稳定性检验。`parm` 等参数能够限制检验对象，但其置换重要性的评价损失还需要单独审查。
+
+**只将树的分割限制到治疗参数，不保证后续所有重要性评价都已经剔除了预后贡献。**此外，`conditional = TRUE` 所指的是条件置换，不是"自动完成因果混杂调整"。([CRAN][10])
+
+**第二，`StratifiedMedicine` 的 `interaction = TRUE` 不等于只保留治疗交互变量。**
+
+当前筛选逻辑会保留主效应或交互项满足条件的变量，因此某变量可能仅因预后主效应而入选。若目标严格限定为 predictive variables，应提取真正的 `A×X` 项，或使用自定义筛选步骤，而不是把整个 `filter.vars` 直接视为修饰变量列表。([cran.r-project.org][11])
+
+**第三，已知核心 A 时，没必要搜索所有两两交互。**
+
+`glinternet` 提供 `interactionCandidates` 和 `interactionPairs`，可将搜索限制到 A 与候选变量之间。这样比无差别搜索全部 $X_jX_k$ 更符合这一研究问题，也能明显缩小搜索空间。([CRAN][12])
+
+#### BioPred 的重要性怎么解释？
+
+由于训练使用的是治疗相关的修改损失，BioPred 的重要性比"普通 XGBoost 预测 Y 的重要性"更接近预测性标志物发现。
+
+但是，其 Gain／Cover／Frequency 等指标仍是**特定 boosting 模型的使用或损失改进指标**；`predictive_biomarker_imp()` 也不是一个自动提供总体 causal VIM、标准误和 P 值的函数。([CRAN][13])
+
+### 4.3 子群、规则与两阶段筛选
+
+| 软件                                                                        | 核实版本；发布日期            | 核心函数                              | 筛选的主要对象                                    |
+| ------------------------------------------------------------------------- | -------------------- | --------------------------------- | ------------------------------------------ |
+| [tehtuner](https://cran.r-project.org/web/packages/tehtuner/index.html)   | **0.3.0；2023-04-01** | `tunevt()`                        | Virtual Twins 的第二阶段变量／子群；针对恒定治疗效应零假设进行置换校准 |
+| [CRE](https://cran.r-project.org/web/packages/CRE/index.html)             | **0.2.7；2024-10-19** | `cre()`                           | Causal Rule Ensemble；规则生成、稳定选择与诚实推断        |
+| [SubgrpID](https://cran.r-project.org/web/packages/SubgrpID/index.html)   | **0.14；2026-03-10**  | `SubgrpID()`                      | Sequential BATTing；bootstrap 阈值聚合与标志物签名    |
+| [rsides](https://cran.r-project.org/web/packages/rsides/index.html)       | **0.1；2024-06-10**   | **`SubgroupSearch()`**            | SIDES／SIDEScreen；递归搜索治疗获益子群                |
+| [TSDT](https://cran.r-project.org/web/packages/TSDT/index.html)           | **1.0.8；2025-01-07** | `TSDT()`                          | bootstrap 树、治疗特定子群评分与聚合                    |
+| [quint](https://cran.r-project.org/web/packages/quint/index.html)         | **2.2.2；2022-07-01** | `quint()`                         | 定性交互：A 优于 B 与 B 优于 A 的方向反转                 |
+| [subscreen](https://cran.r-project.org/web/packages/subscreen/index.html) | **4.0.1；2025-03-18** | `subscreencalc()`、`subscreenvi()` | 系统子群探索与治疗组之间的重要性排名变化                       |
+
+**CRE 主要选的是规则，不只是变量。**例如，"年龄大于某值且某标志物较低"是一条规则；参与规则的变量可以再汇总，但规则的推断结果不能直接转换为每个单独变量的因果重要性 P 值。其工作流提供 AIPW 等效应估计选择以及发现／推断切分。([CRAN][14])
+
+**Virtual Twins 的基本结构确实是：**
+
+$$
+\text{估计治疗与对照的预测结果差}
+\rightarrow
+\text{第二阶段树／稀疏模型解释这一差值}.
+$$
+
+不过，`tehtuner` 的置换校准针对特定零假设及算法流程，**不是任意观察性研究中对 A 随意置换都有效**，也不是每个候选变量都得到独立、通用的显著性检验。([Wiley Online Library][3])
+
+另外三点尤其值得核对：
+
+| 软件              | 容易误判之处                                  |
+| --------------- | --------------------------------------- |
+| **SubgrpID**    | 没有提供治疗信息时，可以进行的是预后性子群发现，不应称为治疗修饰发现      |
+| **TSDT**        | 某些评分针对单治疗组的良好结局；只有明确的治疗对比评分才对应治疗效应问题    |
+| **subscreenvi** | 组间 RF 重要性排名变化是探索线索，不是已经识别的总体 causal VIM |
+
+这些限制来自各软件的实际参数和评分设计，而不是对"树方法"整体的否定。([CRAN][15])
+
+### 4.4 Bayesian 与补充方法
+
+| 软件／方法                                                                             | 核实版本；发布日期             | 与修饰变量筛选的关系                                   |
+| --------------------------------------------------------------------------------- | --------------------- | -------------------------------------------- |
+| [bcf](https://cran.r-project.org/web/packages/bcf/index.html)                     | **2.0.2；2024-02-27**  | 分开建模预后部分与治疗效应部分；适合观察性异质性建模，但不自动输出"真修饰变量后验概率" |
+| [bartCause](https://cran.r-project.org/web/packages/bartCause/index.html)         | **1.0-10；2025-12-11** | BART 因果效应估计；不是专用变量筛选器                        |
+| [BART](https://cran.r-project.org/web/packages/BART/index.html)                   | **2.9.10；2026-01-24** | 支持稀疏先验、变量使用信息及生存模型；普通输出仍可能只是结局预测重要性          |
+| [dbarts](https://cran.r-project.org/web/packages/dbarts/index.html)               | **0.9-34；2026-08-21** | 通用 BART 计算工具；需另外构造治疗效应目标                     |
+| [aggTrees](https://cran.r-project.org/web/packages/aggTrees/refman/aggTrees.html) | 2.1.0；发布日期未核实         | CATE 与诚实样本上的异质性子群聚合；未将未核实的入口函数写入推荐调用         |
+| [causalTree](https://github.com/susanathey/causalTree)                            | 作者 GitHub；版本／日期未核实    | `causalTree()`；治疗效应树及诚实估计路线                  |
+| [rlearner](https://github.com/xnie/rlearner)                                      | 作者 GitHub；版本／日期未核实    | R-loss／正交残差化后拟合 CATE，可结合稀疏模型                 |
+| [PermuCATE](https://github.com/jpaillard/permucate)                               | ICML 2025 作者实现        | 条件置换型 CATE 重要性；**本轮核实的是 Python 实现，不是 R 包**   |
+
+#### Bayesian PIP 能不能直接表示"效应修饰概率"？
+
+只有在模型明确对**治疗效应部分**设置变量选择机制，并定义了对应后验事件时，类似：
+
+$$
+P(X_j\text{进入治疗效应模型}\mid data)
+$$
+
+的量才有相应解释。
+
+普通 BART 的 `varcount`、`varprob` 或树分裂使用比例，不能直接写成：
+
+$$
+P(X_j\text{是真实效应修饰变量}\mid data).
+$$
+
+即使在 BCF 中预后部分与治疗效应部分分开建模，也必须区分"后验使用情况""模型入选概率"和"真实因果修饰的概率"。([CRAN][16])
+
+---
+
+## 五、生存结局专题：OS、PFS、DFS 应该怎样选择？
+
+### 5.1 先选效应尺度，再选软件
+
+右删失生存结局中，至少有以下三个不同目标：
+
+$$
+\Delta_S(t,X)=S_1(t\mid X)-S_0(t\mid X)
+$$
+
+$$
+\Delta_{\mathrm{RMST}}(t,X)
+=
+\int_0^t\{S_1(u\mid X)-S_0(u\mid X)\}\,du
+$$
+
+$$
+HR(t,X)=\frac{h_1(t\mid X)}{h_0(t\mid X)}.
+$$
+
+**一个变量可以修饰 RMST 差，而不明显修饰 HR；反过来也可能发生。**所以，"生存结局支持"不能只用一个"是"来概括，还必须说明估计的治疗效应是什么。([GRF Labs][6])
+
+### 5.2 生存方法比较
+
+| 方法                                  | 主要治疗效应尺度                         | 删失与混杂处理                 | 筛选／推断定位                                |
+| ----------------------------------- | -------------------------------- | ----------------------- | -------------------------------------- |
+| **`unihtee()`：absolute**            | **RMST 差的修饰趋势**                  | 相应治疗、事件、删失模型            | 正式投影型修饰推断                              |
+| **`unihtee()`：relative**            | 生存概率比的相对修饰参数                     | 相应生存与删失模型               | 不应自动称为 DR，也不是 HR                       |
+| **`uniCATE::sunicate()`**           | 固定时点 **生存概率差**的修饰趋势              | RCT 下的生存／删失工作流          | RCT 的单变量正式筛选                           |
+| **Survival TE-VIM**                 | RMST 差或生存概率差的异质性信息损失             | 生存与删失调整；影响函数方法          | 方法学上有吸引力，R 实现便利性尚不能与 GRF 等同            |
+| **`grf::causal_survival_forest()`** | **RMST 差或固定时点生存概率差**             | 因果生存森林的处理与得分            | 非线性发现；VI 仍属探索                          |
+| **`BioPred::XGBoostSub_sur()`**     | 修改生存损失下的 benefit score           | 输入 propensity 等，按函数处理删失 | 不能将模型分数或 gain 自动解释为 HR 修饰效应            |
+| **`StratifiedMedicine`**            | 依 PLE／参数估计步骤，可涉及 RMST 或 Cox 相对效应 | 依所选模块                   | 必须检查前后步骤是否变换了效应尺度                      |
+| **`personalized`**                  | Cox-loss 等得到的 benefit score      | weighting／A-learning 等  | 稀疏筛选有用，但不是默认逐变量正式 HR 交互检验              |
+| **MOB／`model4you`**                 | 基础生存模型的参数                        | 依模型和自定义实现               | 官方常见示例包括 Weibull／AFT；不能默认所有模型都原生支持 Cox |
+| **SubgrpID／SIDES／TSDT**             | 依评分、检验或基础模型，可能包括 HR／治疗对比         | 多数以试验子群发现为核心            | 观察性使用要额外检查混杂和选择推断                      |
+
+来源分别来自生存版 TEM-VIP、uniCATE 教程、GRF 文档以及各软件生存模块。([Insights Engineering][5])
+
+### 5.3 对医学观察性 OS／PFS 数据推荐的流程
+
+$$
+\boxed{
+\text{预先指定 }t
+\rightarrow
+\text{RMST 或生存概率差}
+\rightarrow
+\text{因果生存森林探索}
+\rightarrow
+\text{同尺度 TEM-VIP／BLP 等推断}
+\rightarrow
+\text{独立验证}
+}
+$$
+
+若主要临床问题确实是 HR 异质性，可以另外进行调整后的 Cox 交互分析，但应明确：
+
+> **"RMST 差筛选 → Cox 交互"是跨效应尺度的补充分析，不是同一个假设的直接确认。**
+
+另外，各包的删失编码并不统一。GRF 中事件指示与某些软件的 censoring 指示含义相反，甚至一个包内不同函数也可能不同。实施时必须逐函数确认 **1 表示事件还是删失**，不能直接复用列而不检查。([GRF Labs][6])
+
+---
+
+## 六、观察性研究：哪些方法原生合适，哪些需要额外工作？
+
+| 分类                     | 方法                                                                       | 观察性研究中必须检查什么                                |
+| ---------------------- | ------------------------------------------------------------------------ | ------------------------------------------- |
+| **A：RCT 优先**           | uniCATE、QUINT、原始 Virtual Twins／tehtuner、传统 SIDES 子群工作流                   | 不能仅因软件能接受数据，就认为已经调整混杂；置换需要正确的随机化或交换性基础      |
+| **B：可以使用，但需要明确额外调整策略** | 普通交互 LASSO、MOB／model4you、部分 PRISM／SubgrpID／TSDT 工作流、通用 BART              | 需要正确的结局调整、PS／加权、正交化或其他有效识别策略；不是所有方法都必须使用 PS |
+| **C：原生围绕观察性因果异质性设计**   | unihtee、GRF、tidyhte、CRE 的适当配置、BCF／bartCause、personalized 的适当配置、R-learner | 仍依赖识别假设、overlap、模型估计和配置，不代表自动排除了所有偏倚        |
+
+([GitHub][17])
+
+### DR 与 cross-fitting 不能只填"是／否"
+
+| 方法                       | 更准确的表述                                                                  |
+| ------------------------ | ----------------------------------------------------------------------- |
+| **unihtee**              | 绝对效应参数有相应 DR 结果；相对效应参数不能统一标记为 DR；cross-fitting 可选                       |
+| **GRF**                  | 使用局部中心化、正交或 DR 得分的不同步骤；不能把"整棵森林的所有输出"都简单称为 DR                           |
+| **tidyhte**              | DR pseudo-outcome 工作流；VIMP 推断还受第二阶段、切分和目标配置影响                           |
+| **CRE**                  | 是否 DR 取决于所选效应估计器；AIPW 配置与其他 learner 不完全等价                               |
+| **BCF**                  | 贝叶斯因果模型及 propensity 信息，不是因为使用 PS 就自动成为频率学派 DR 估计                        |
+| **personalized／BioPred** | weighting、A-learning、augmentation 有不同性质；有 PS 或 augmentation 不能直接推出通用 DR |
+
+([Insights Engineering][5])
+
+**还有一个重要实施原则：**
+
+> **从候选修饰变量中剔除 $X_j$，不等于可以从治疗效应识别所需的混杂调整集合中剔除 $X_j$。**
+
+"用于调整的变量"和"最后报告为修饰变量的变量"承担的是不同角色。尤其做 LOCO VIM 或稀疏修饰筛选时，不应为了减少修饰变量而破坏原有混杂控制。
+
+---
+
+## 七、速度、高维性与推荐组合
+
+### 7.1 哪些方法通常更快？
+
+以下是根据算法结构做的**定性计算负担判断，不是实测排名**。
+
+| 方法                            | 一般计算负担                  | 主要耗时来源                      |
+| ----------------------------- | ----------------------- | --------------------------- |
+| 已完成必要模型估计后的批量线性投影             | **Very fast—Fast**      | 得分与各变量的低维计算                 |
+| 仅搜索 `A×X` 的 LASSO／Elastic Net | **Fast**                | 正则化路径和交叉验证                  |
+| unihtee／uniCATE               | **Fast—Moderate**       | 主要依赖 propensity、结局或生存模型的复杂度 |
+| GRF 初次拟合＋分裂 VI                | **Moderate**            | 森林训练；拟合后 VI 相对便宜            |
+| XGBoost modified-loss         | **Fast—Moderate**       | 树数量、深度、调参                   |
+| 对所有变量逐个 LOCO 重拟合              | **Slow—Very intensive** | 多变量、多折、多次重复拟合               |
+| 大量置换／稳定性选择／bootstrap 子群搜索     | **Slow—Very intensive** | 反复运行完整选择流程                  |
+| 贝叶斯森林＋后验重要性分析                 | **Moderate—Slow**       | MCMC 和后验总结                  |
+
+同样是 500 个变量，**仅考虑已知 A 与它们的交互，搜索规模大致随 $p$ 增加；搜索所有两两交互则随 $p^2$ 增加**。因此，限制研究目标往往比换一个更快的软件更有效。`glinternet` 的交互候选限制就是可以直接利用的机制。([CRAN][12])
+
+### 7.2 按候选变量数量推荐
+
+| 候选数量             | 建议第一轮                             | 建议第二轮                   | 不建议                          |
+| ---------------- | --------------------------------- | ----------------------- | ---------------------------- |
+| **约 20 个**       | 预先指定变量后做 TEM-VIP／适当交互检验；并行小规模 GRF | 对重点变量做同尺度 BLP／效应曲线／验证   | 只凭子组内显著性选择变量                 |
+| **20–50 个**      | unihtee 批量筛选＋GRF 非线性排序            | 少量变量／变量组的 VIM 与验证       | 将"斜率不显著"作为排除一切非线性作用的依据       |
+| **50–100／200 个** | 正交得分或治疗交互的稀疏筛选＋GRF                | 对候选集做正式推断，注意独立切分        | 对所有变量反复做复杂 LOCO，且没有算力或样本规划   |
+| **约 500 或更多**    | 仅 `A×X` 的稀疏模型、分组惩罚或稳定选择；共享必要模型拟合  | 缩小范围后再做非线性 CATE 和少量 VIM | 一次塞入数百变量做普通未惩罚 BLP，并将结果当稳定结论 |
+
+这些数量不是硬阈值。真正决定可行性的还包括样本量、事件数、删失比例、治疗组重叠、变量相关性以及信噪比。
+
+### 7.3 四套实用组合
+
+#### 方案 A：观察性研究，优先正式筛选
+
+**定义效应尺度与调整集合 → `unihtee()` 批量 TEM-VIP → 多重检验处理 → 独立数据上的同尺度验证。**
+
+同时运行 GRF 作为非线性补充；不要求变量必须同时在线性和非线性方法中"显著"才允许进一步研究。两种方法回答的问题不同。([Insights Engineering][1])
+
+#### 方案 B：观察性生存结局
+
+**预设时点和 RMST／生存概率差 → `causal_survival_forest()` → 探索 VI → 生存 TEM-VIP 或其他同尺度推断 → 独立验证。**
+
+Survival TE-VIM 可用于更深入的重要性分析，但目前不宜把它描述成与 GRF 一样成熟便捷的一键 R 工作流。([GRF Labs][6])
+
+#### 方案 C：高维快速筛选
+
+**仅治疗交互的 Elastic Net／group lasso，或 R-loss 稀疏模型 → 重抽样稳定性 → 因果森林 → 少量变量／变量组的正式推断。**
+
+这里的稀疏筛选针对修饰结构，不能把必要混杂变量一并删掉。([CRAN][12])
+
+#### 方案 D：需要最终形成可解释的临床规则
+
+**AIPW／CATE 学习 → CRE 或适当子群树 → 诚实切分后的规则效应估计 → 外部验证。**
+
+最终报告的对象是规则及其治疗效应，不是强行给参与规则的每个变量分配一个"独立因果重要性"。([CRAN][14])
+
+---
+
+## 八、多重比较、探索和最终确认
+
+### 8.1 哪些结果可以做多重检验校正？
+
+| 输出                        | 是否可以直接使用 BH／Holm     |
+| ------------------------- | -------------------- |
+| 满足条件的 TEM-VIP／uniCATE P 值 | 可以；需要定义完整检验家族        |
+| 预先指定变量的有效 BLP／交互检验 P 值    | 可以                   |
+| GRF 分裂重要性                 | **不可以直接做**，因为它不是 P 值 |
+| XGBoost gain              | **不可以直接做**           |
+| LASSO 非零系数                | **不可以直接做**           |
+| 稳定选择频率                    | 不能当 P 值；按对应稳定选择理论解释  |
+| 数据驱动子群的普通未校正 P 值          | 不能认为加一次 BH 就解决了选择问题  |
+
+`unihtee` 返回调整后的 P 值结果；uniCATE 工作流支持多重检验处理。BLP 的多变量检验家族通常需要用户自行安排。`tehtuner`、SIDES 和 CRE 某些配置具有各自的误差控制机制，但它们控制的对象未必都是"变量级 FDR"。([Insights Engineering][1])
+
+BH、Holm、Bonferroni、置换控制回答的错误率问题不同；BH 的有效性还涉及检验之间的依赖结构。**最先需要保证的是单个 P 值本身有效，而不是先选择一种校正名称。**
+
+### 8.2 cross-fitting 不等于独立确认
+
+下面三个概念应分开：
+
+| 机制                     | 主要解决的问题                         |
+| ---------------------- | ------------------------------- |
+| **Cross-fitting**      | 减少必要模型估计与评估使用同一观测导致的偏倚，满足特定推断条件 |
+| **Honest tree／forest** | 分割学习与叶节点效应估计之间的样本角色分离           |
+| **独立发现／确认样本**          | 数据驱动选择变量、切点或规则之后的确认性检验          |
+
+在同一数据中先按森林 VI 选择前 10 个变量，再对这 10 个变量做 BLP 或 Cox 交互，**不会因为第一步用了 cross-fitting 就自动成为确认性分析**。([GRF Labs][8])
+
+### 8.3 最终 $P_{\text{interaction}}$ 应怎样报告？
+
+对于预先指定或在独立发现数据中选出的变量 $Z$，可以在确认样本中拟合与目标效应尺度一致的模型，例如：
+
+$$
+g\{E(Y\mid A,Z,C)\}
+=
+\beta_0+\beta_AA+\beta_ZZ+\beta_{AZ}AZ+\gamma^\top C.
+$$
+
+检验：
+
+$$
+H_0:\beta_{AZ}=0.
+$$
+
+若 $Z$ 采用样条、多个分类水平或多维规则，应考虑相应交互项的**整体检验**，而不是挑选其中一个最小 P 值。对于 Cox 模型，这对应的是所选相对风险模型中的交互，而不是直接检验 RMST 差是否被修饰。([Taylor & Francis Online][18])
+
+报告应同时给出效应估计、置信区间、效应随 $Z$ 的变化，以及必要的内部／外部验证，而不只给一个 P 值。
+
+**"一个亚组显著，另一个亚组不显著"不是交互显著的证据。**
+
+---
+
+## 九、目前最值得优先掌握的 10 个 R 函数
+
+这不是从第一名到第十名的通用排行榜，而是覆盖不同研究目的的优先工具集。
+
+| 函数                                  | 为什么值得优先掌握          | 最适合的数据／任务             | 主要输出及推断定位           |
+| ----------------------------------- | ------------------ | --------------------- | ------------------- |
+| **`unihtee::unihtee()`**            | 最贴近"调整后、批量效应修饰检验"  | 观察性；连续、二分类、生存         | TEM-VIP、推断表、调整后 P 值 |
+| **`grf::causal_forest()`**          | 成熟的非线性因果异质性学习      | 连续／二分类结局、RCT／观察性      | CATE；为后续排序和投影提供基础   |
+| **`grf::causal_survival_forest()`** | 生存 HTE 的实用主力       | 右删失；RMST／生存概率差        | 生存 CATE；不是 HR 模型    |
+| **`grf::variable_importance()`**    | 拟合后快速查看候选变量        | 森林探索阶段                | 深度加权分裂重要性；不是正式检验    |
+| **`grf::best_linear_projection()`** | 将复杂 CATE 转为可解释投影   | 少量、预指定或适当独立选择的变量      | 系数、标准误、检验           |
+| **`tidyhte::add_vimp()`**           | 将变量重要性加入完整 HTE 工作流 | DR 异质性分析              | VIMP；需正确配置零假设推断     |
+| **`personalized::fit.subgroup()`**  | 治疗相关损失与稀疏建模结合      | 高维、benefit score、子群发现 | 修饰结构／评分；不是自动逐变量确认   |
+| **`uniCATE::unicate()`**            | RCT 中正式、快速的单变量筛选   | 非生存随机试验               | uniCATE 修饰参数与检验     |
+| **`uniCATE::sunicate()`**           | RCT 生存标志物筛选        | 固定时点生存概率差             | 生存 uniCATE 推断       |
+| **`CRE::cre()`**                    | 从因果效应学习走向临床规则      | 可解释子群与规则发现            | 规则与相应效应推断           |
+
+这些函数的推荐分别基于官方定位和接口；**TE-VIM 未列为一个"R 函数"，是因为当前核实的是作者研究代码，而不是一个已经验证的标准调用接口。**([Insights Engineering][1])
+
+---
+
+## 十、关键原始文献与 2023–2026 年进展
+
+### 10.1 近期最值得关注的方向
+
+| 文献／方向                                     | 时间                     | 与本问题的关系                                  |
+| ----------------------------------------- | ---------------------- | ----------------------------------------- |
+| **Hines 等：TE-VIM**                        | 2022 预印本；**2025 期刊论文** | 将异质性变量重要性定义为明确的总体信息损失参数                   |
+| **Boileau 等：TEM-VIP／unihtee**             | **2025**               | 高维、非参数、观察性效应修饰发现                          |
+| **Ziersen、Martinussen：survival TE-VIM**   | 2024 预印本；**2025 期刊论文** | 将治疗效应重要性推广到删失生存结局                         |
+| **Bénard、Josse：causal forest importance** | **2025**               | 专门讨论如何分解因果森林学到的异质性；不是默认 GRF split VI 的同义词 |
+| **Paillard 等：PermuCATE**                  | **ICML 2025**          | 条件置换型 CATE 重要性；本轮作者实现为 Python             |
+| **2026 年多包更新**                            | 2026                   | 有利于软件维护和可用性，但"2026 年更新"不等于"2026 年提出新统计方法" |
+
+([arXiv][2])
+
+其中，Bénard–Josse 论文已核实题名与 DOI，但本轮未充分核实一个可直接推荐的作者 R API，因此没有将其包装成现成 R 包。
+
+### 10.2 原始论文与可追踪入口
+
+| 主题                      | 原始论文／软件依据                                                                                                        | DOI／入口                                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **TE-VIM**              | Hines 等，*Variable importance measures for heterogeneous treatment effects*，Biometrics，2025                       | [10.1093/biomtc/ujaf140](https://doi.org/10.1093/biomtc/ujaf140)                               |
+| **TEM-VIP**             | Boileau 等，*A nonparametric framework for treatment effect modifier discovery in high dimensions*，JRSS B，2025     | [10.1093/jrsssb/qkae084](https://doi.org/10.1093/jrsssb/qkae084)                               |
+| **uniCATE**             | Boileau 等，*A flexible approach for predictive biomarker discovery*                                               | [10.1093/biostatistics/kxac029](https://doi.org/10.1093/biostatistics/kxac029)                 |
+| **Survival TE-VIM**     | Ziersen、Martinussen，生存异质性变量重要性                                                                                   | [10.1111/sjos.70001](https://doi.org/10.1111/sjos.70001)                                       |
+| **因果森林重要性**             | Bénard、Josse，*Variable importance for causal forests: breaking down the heterogeneity of treatment effects*，2025 | [10.1515/jci-2023-0062](https://doi.org/10.1515/jci-2023-0062)                                 |
+| **PermuCATE**           | Paillard 等，*Measuring Variable Importance in Heterogeneous Treatment Effects with Confidence*                    | [ICML 2025 原文](https://proceedings.mlr.press/v267/paillard25a.html)                            |
+| **Virtual Twins**       | Foster、Taylor、Ruberg，*Subgroup identification from randomized clinical trial data*，2011                          | [10.1002/sim.4322](https://doi.org/10.1002/sim.4322)                                           |
+| **SIDES**               | Lipkovich 等，差异治疗效应递归搜索，2011                                                                                      | [10.1002/sim.4289](https://doi.org/10.1002/sim.4289)                                           |
+| **QUINT**               | Dusseldorp、Van Mechelen，定性交互树                                                                                    | [10.1002/sim.5933](https://doi.org/10.1002/sim.5933)；PMID **23922224**                         |
+| **Modified covariates** | Tian 等，*A Simple Method for Estimating Interactions Between a Treatment and a Large Number of Covariates*，2014   | [10.1080/01621459.2014.951443](https://doi.org/10.1080/01621459.2014.951443)；PMID **25729117** |
+| **FindIt**              | Imai、Ratkovic，2013                                                                                               | [10.1214/12-AOAS593](https://doi.org/10.1214/12-AOAS593)                                       |
+| **personalized 方法基础**   | Chen 等，2017                                                                                                      | [10.1111/biom.12676](https://doi.org/10.1111/biom.12676)                                       |
+| **Virtual Twins 校准**    | Wolf 等，2022                                                                                                      | [10.1177/17407745221095855](https://doi.org/10.1177/17407745221095855)                         |
+| **BCF**                 | Hahn、Murray、Carvalho，2020                                                                                        | [10.1214/19-BA1195](https://doi.org/10.1214/19-BA1195)                                         |
+
+这里尤其要纠正一个时间问题：**Hines 的 TE-VIM 常被按 2022 年预印本引用，但目前已核实到 2025 年 Biometrics 正式论文。**软件版本更新、预印本时间、在线发表时间和正式卷期年份应分别记录。
+
+---
+
+## 最终建议：从哪里开始？
+
+对"**已知核心 A，医学观察性数据，20–100 个候选临床变量，希望筛选调整后的效应修饰变量**"这一最常见场景，本次核查的建议是：
+
+$$
+\boxed{
+\begin{aligned}
+&\text{明确因果问题、效应尺度和调整集合}\\
+&\downarrow\\
+&\text{预先规划发现／推断样本与多重检验}\\
+&\downarrow\\
+&\text{TEM-VIP 批量筛选}\quad+\quad\text{GRF 非线性探索}\\
+&\downarrow\\
+&\text{对少量变量或变量组做 BLP／VIM／效应曲线分析}\\
+&\downarrow\\
+&\text{同尺度、适当独立的交互或修饰效应确认}\\
+&\downarrow\\
+&\text{内部稳定性评价与外部验证}
+\end{aligned}
+}
+$$
+
+**最值得优先投入学习的是 `unihtee`、`grf` 和一种只针对治疗交互的稀疏筛选方法。**`tidyhte`／TE-VIM 用于进一步回答"重要性究竟有多大"，CRE 用于把结果转成规则；MOB、SIDES、QUINT 等则在明确需要可解释子群和切点时发挥作用。
+
+**最应避免的流程是：普通 RF／XGBoost 预测结局 → 提取重要变量 → 直接称为效应修饰因子。**它回答的不是这里的核心研究问题。
+
+[1]: https://insightsengineering.github.io/unihtee/main/reference/unihtee.html "Univariate Heterogeneous Treatment Effect Modifier Estimator — unihtee • unihtee"
+[2]: https://arxiv.org/html/2204.06030v4 "Variable importance measures for heterogeneous treatment effects"
+[3]: https://onlinelibrary.wiley.com/doi/abs/10.1002/sim.4322 "Subgroup identification from randomized clinical trial data - Statistics in Medicine"
+[4]: https://github.com/ohines/tevims "GitHub - ohines/tevims: Treatment Effect Variable Importance Measures"
+[5]: https://insightsengineering.github.io/unihtee/main/articles/using-unihtee.html "Using unihtee"
+[6]: https://grf-labs.github.io/grf/reference/causal_survival_forest.html "Causal survival forest — causal_survival_forest • grf"
+[7]: https://grf-labs.github.io/grf/reference/variable_importance.html "Calculate a simple measure of 'importance' for each feature. — variable_importance • grf"
+[8]: https://grf-labs.github.io/grf/reference/best_linear_projection.html "Best linear projection of the conditional average treatment effect — best_linear_projection • grf"
+[9]: https://ddimmery.github.io/tidyhte/reference/index.html "Function reference • tidyhte"
+[10]: https://cran.r-project.org/web/packages/model4you/refman/model4you.html "Help for package model4you"
+[11]: https://cran.r-project.org/web/packages/StratifiedMedicine/refman/StratifiedMedicine.html "Help for package StratifiedMedicine"
+[12]: https://cran.r-project.org/web/packages/glinternet/refman/glinternet.html "Help for package glinternet"
+[13]: https://cran.r-project.org/web/packages/BioPred/refman/BioPred.html "Help for package BioPred"
+[14]: https://cran.r-project.org/web/packages/CRE/refman/CRE.html "Help for package CRE"
+[15]: https://cran.r-project.org/web/packages/SubgrpID/refman/SubgrpID.html "Help for package SubgrpID"
+[16]: https://cran.r-project.org/web/packages/bcf/refman/bcf.html "Help for package bcf"
+[17]: https://github.com/insightsengineering/uniCATE "GitHub - insightsengineering/uniCATE: Univariate conditional average treatment effect estimation for predictive biomarker discovery"
+[18]: https://www.tandfonline.com/doi/abs/10.1080/01621459.2014.951443 "A Simple Method for Estimating Interactions Between a Treatment and a Large Number of Covariates - JASA"
