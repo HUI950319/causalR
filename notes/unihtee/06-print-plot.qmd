@@ -1,13 +1,19 @@
 ---
-title: "6. print.unihtee() 与 plot.unihtee()"
-subtitle: "结果表怎么读，那条回归线画的到底是什么"
+title: "6. 结果可视化"
+subtitle: "print.unihtee() / plot.unihtee() 逐项，以及从 temvip_inference_tbl 自己画的六类图"
 lang: zh
 ---
 
-0.0.3 的 NEWS 只写了三条，其中两条是这一页的内容：
+`unihtee` 的可视化只有一个函数、一个必填参数，能画的也只有一条直线。
+所以这一页分两半：前半把内置的 `print.unihtee()` 与 `plot.unihtee()` 讲透，
+**包括它画出来的那条线能说明什么、不能说明什么**；
+后半给出**从 `temvip_inference_tbl` 自己画**的六类图——
+森林图、火山图、排序条形图、交叉拟合对照、效应尺度对照、生存森林图，
+每一张都附可直接运行的代码和本机实际输出。
+
+0.0.3 的 NEWS 只写了三条，其中两条就是这一页的内容：
 "Adding plotting functionality" 与 "`unihtee()` now outputs a `unihtee` class object
-with associated plotting and printing methods"。在 0.0.2 及更早，
-`unihtee()` 返回的是一个普通 `list`，没有类。
+with associated plotting and printing methods"。0.0.2 及更早返回的是普通 `list`，没有类。
 
 ## `print.unihtee()` {#sec-print}
 
@@ -21,8 +27,8 @@ print(x, ...)
 print(x$temvip_inference_tbl, ...)
 ```
 
-所以 `print(fit)` 与 `fit$temvip_inference_tbl` 打印出来的东西完全一样，
-`...` 原样转发给 `data.table` 的 `print`（可以用 `nrows =`、`topn =` 等）。
+所以 `print(fit)` 与 `fit$temvip_inference_tbl` 完全一样，
+`...` 原样转发给 `data.table` 的 `print`（`nrows =`、`topn =` 都可用）。
 
 ```r
 fit <- unihtee(dt, cn, cn, "a", "y",
@@ -46,46 +52,33 @@ fit
  1:  1.3581001 6.549161e-10
  2: -0.5739922 3.881849e-08
  3:  0.3609620 6.758544e-01
- 4:  0.3443472 6.758544e-01
- 5:  0.3780814 6.758544e-01
- 6:  0.1679153 7.838229e-01
- 7:  0.2817762 8.930127e-01
- 8:  0.2808732 8.930127e-01
- 9:  0.2764745 9.891226e-01
-10:  0.2171718 9.891226e-01
+ ...
 ```
 
 ### 读这张表的三条规矩
 
 1. **不要横向比 `estimate` 的绝对大小。** $\hat\Psi_j$ 的量纲是
    「结局单位 / $W_j$ 单位」。上表里所有 $W_j$ 恰好都是标准正态，可以比；
-   真实数据上不行。排序用 `z` 或 `p_value`（表本身就是按 `p_value` 排的）。
-2. **`p_value_fdr` 只在这一次调用的 `modifiers` 内部做 BH。**
-   分批调用拼不出全局 FDR。
-3. **`modifier` 是 `factor`。** 要按名字取行先转字符：
+   真实数据上不行。排序用 `z` 或 `p_value`（表本身就按 `p_value` 排）。
+2. **`p_value_fdr` 只在这一次调用的 `modifiers` 内部做 BH。** 分批调用拼不出全局 FDR。
+3. **`modifier` 是 `factor`。** 按名字取行先转字符：
 
 ```r
 as.data.table(fit$temvip_inference_tbl)[as.character(modifier) == "w_3"]
 ```
 
-### 常用的后处理
+### 常用后处理
 
 ```r
 tb <- as.data.table(fit$temvip_inference_tbl)
 tb[, modifier := as.character(modifier)]
 
-# 按 FDR 阈值挑
-tb[p_value_fdr < 0.05, modifier]
-
-# 只保留区间不跨 0 的
-tb[ci_lower * ci_upper > 0]
-
-# 取 top-k 做交集（多方法互证时常用）
-head(tb$modifier, 5)
+tb[p_value_fdr < 0.05, modifier]      # 按 FDR 阈值挑
+tb[ci_lower * ci_upper > 0]           # 区间不跨 0
+head(tb$modifier, 5)                  # top-k，用于多方法取交集
 ```
 
-`unihtee` 没有 `summary()`、没有 `coef()`、没有 `predict()`——
-`print` 和 `plot` 就是全部的方法。
+`unihtee` 没有 `summary()`、`coef()`、`predict()`——`print` 和 `plot` 就是全部方法。
 
 ## `plot.unihtee()` {#sec-plot}
 
@@ -100,7 +93,7 @@ plot(x, y, ..., modifier_name, print_interpretation = TRUE)
 | `modifier_name` | **必填**，单个变量名；没有默认值 |
 | `print_interpretation` | `TRUE` 时在控制台 `cat()` 一句解读 |
 
-返回 `ggplot` 对象，可以继续叠图层。
+返回 `ggplot` 对象，可继续叠图层。
 
 ### 它画的是什么
 
@@ -113,26 +106,14 @@ plotting_tbl <- data.frame(
   ace_estimate = ace_estimate)
 ```
 
-即把 TEM-VIP 当成斜率、把 `ace_estimate` 当成在 $\bar W_j$ 处的截距，画出那条直线
+即把 TEM-VIP 当斜率、`ace_estimate` 当在 $\bar W_j$ 处的截距，画出
 
 $$
 \widehat{\mathrm{CATE}}(W_j) \;\approx\;
 \widehat{\mathrm{ACE}} + \hat\Psi_j\,(W_j - \bar W_j).
 $$
 
-::: {.callout-warning}
-## 这条线不是拟合出来的，是**画**出来的
-
-图上没有一个点来自数据的 CATE 估计——横轴是 $W_j$ 的**真实取值**，
-纵轴完全由 $(\widehat{\mathrm{ACE}}, \hat\Psi_j)$ 这两个数决定。
-换句话说，**这张图不能用来判断线性假设对不对**：
-无论真实的 $\tau(W_j)$ 是不是线性，它都会画成一条直线。
-
-要看真实形状，得自己估 CATE（`grf`、X-learner）再画散点或平滑曲线。
-`plot.unihtee()` 的用途只有一个：**把一个抽象的斜率数字翻译成
-"在这个变量的实际取值范围上，效应从多少变到多少"**，
-用于跟临床合作者沟通。
-:::
+横轴取自 `fit$data`，也就是**缩放前的原始数据**，所以横轴单位可以直接读。
 
 ### 连续变量
 
@@ -141,10 +122,9 @@ plot(fit, modifier_name = "w_3")
 #> The TEM-VIP estimate corresponds to the slope of the black line.
 ```
 
-![连续修饰变量的 TEM-VIP 图。黑线的斜率就是 $\hat\Psi_3 = 1.045$，
+![连续修饰变量的 TEM-VIP 图。黑线斜率就是 $\hat\Psi_3 = 1.045$，
 红色虚线是 `ace_estimate = 0.0174`，两线在 $\bar w_3$ 处相交。
-标题里给的是估计值与名义 95% 区间。
-横轴范围就是 `fit$data[["w_3"]]` 的实际取值范围。
+标题给的是估计值与名义 95% 区间。
 ](../../images/unihtee-plot-continuous.png){#fig-continuous}
 
 ### 二值变量
@@ -160,19 +140,97 @@ plot(fb, modifier_name = "w_b")
 #> The TEM-VIP estimate corresponds to the vertical distance between both points.
 ```
 
-![二值修饰变量的 TEM-VIP 图。两个点的**纵向距离**就是 $\hat\Psi$。
-这里把 `w_3 > 0` 二值化之后 $\hat\Psi = 1.330$（连续版是 1.054），
+![二值修饰变量的 TEM-VIP 图。两点的**纵向距离**就是 $\hat\Psi$。
+把 `w_3 > 0` 二值化之后 $\hat\Psi = 1.330$（连续版是 1.054），
 因为二值化改变了分母 $\operatorname{Var}(W_j)$，两个数不可直接比。
 ](../../images/unihtee-plot-binary.png){#fig-binary}
 
 ::: {.callout-note}
 ## 判定二值的条件很严格
 
-`identical(sort(unique(modifier_vals)), c(0, 1))` 要求：
-取值集合**恰好**是 $\{0, 1\}$，且是 `double`。
-所以 `0L/1L`（整数）、只出现一个取值、或编码成 $\{1,2\}$
-都会走连续分支，画成一条直线——不报错，只是图的形式不对。
+`identical(sort(unique(modifier_vals)), c(0, 1))` 要求取值集合**恰好**是
+$\{0,1\}$ 且是 `double`。所以 `0L/1L`（整数）、只出现一个取值、
+或编码成 $\{1,2\}$ 都会走连续分支画成直线——不报错，只是图的形式不对。
 需要二值样式就确保列是 `as.numeric(x)` 且两个取值都出现。
+:::
+
+### 批量画：统一纵轴才看得出差别
+
+`plot.unihtee()` 一次只画一个变量，纵轴按该变量自适应。
+直接排版会得到六张"看起来都很斜"的图——因为噪声变量的纵轴范围只有 ±0.3。
+**把纵轴统一**之后，信号与噪声才分得开：
+
+```r
+library(patchwork)
+
+tb   <- as.data.table(fit$temvip_inference_tbl)[, modifier := as.character(modifier)]
+top6 <- head(tb$modifier, 6)
+
+# 先算出六张图共同的纵轴范围
+rng <- range(sapply(top6, function(m) {
+  e <- tb[modifier == m, estimate]; x <- fit$data[[m]]
+  range(fit$ace_estimate + e * (x - mean(x)))
+}))
+
+ps <- lapply(top6, function(m)
+  plot(fit, modifier_name = m, print_interpretation = FALSE) +
+    coord_cartesian(ylim = rng) +
+    theme_bw(base_size = 11) + theme(legend.position = "none") +
+    ggtitle(sprintf("%s:  %.3f  (%.3f, %.3f)", m, tb[modifier == m, estimate],
+                    tb[modifier == m, ci_lower], tb[modifier == m, ci_upper])) +
+    labs(x = m, y = NULL))
+
+wrap_plots(ps, ncol = 3)
+```
+
+![top-6 的内置图，纵轴已统一。只有 `w_3` / `w_4` 的线是明显倾斜的，
+其余四条几乎贴着 `ace_estimate` 那条红虚线。
+不统一纵轴时六张图看上去都一样斜——这是批量出图最常见的误读来源。
+`print_interpretation = FALSE` 必须加，否则控制台被那句解读刷屏；
+它是 `cat()` 出来的，`suppressMessages()` 拦不住。
+](../../images/unihtee-plot-panel.png){#fig-panel}
+
+### 这条线不是拟合出来的，是**画**出来的 {#sec-line-limit}
+
+::: {.callout-important}
+## 内置图不能用来判断线性假设对不对
+
+图上没有一个点来自数据的 CATE 估计——横轴是 $W_j$ 的真实取值，
+纵轴完全由 $(\widehat{\mathrm{ACE}}, \hat\Psi_j)$ **两个数**决定。
+无论真实的 $\tau(W_j)$ 是什么形状，它都会画成一条直线。
+
+要看真实形状，得把 **AIPW 伪结局**画出来。它可以从包的内部函数直接取到，
+不需要另装 `grf`：
+
+```r
+d2 <- copy(dt); mn <- min(d2$y); rf <- max(d2$y) - mn
+d2$y <- (d2$y - mn) / rf                                  # 复现内部的 min–max 缩放
+g <- unihtee:::fit_prop_score(d2, NULL, Lrnr_glm_fast$new(), "a", cn)$estimates
+q <- unihtee:::fit_cond_outcome(d2, NULL, Lrnr_glm_fast$new(), "y", "a", cn)
+aipw <- ((2 * d2$a - 1) / (d2$a * g + (1 - d2$a) * (1 - g)) * (d2$y - q$estimates) +
+          q$exp_estimates - q$noexp_estimates) * rf       # 乘回原始结局单位
+
+ggplot(data.frame(x = dt$w_5, aipw = aipw), aes(x)) +
+  geom_point(aes(y = aipw), colour = "grey70", size = .6, alpha = .5) +
+  geom_smooth(aes(y = aipw), method = "loess", formula = y ~ x, span = .9, se = FALSE) +
+  geom_abline(intercept = fit$ace_estimate - tb[modifier == "w_5", estimate] * mean(dt$w_5),
+              slope = tb[modifier == "w_5", estimate], linewidth = 1)
+```
+
+在一份 $\tau(W) = w_3 + (w_5^2 - 1)$、$n = 800$ 的数据上跑：
+
+![三种情形并排。①线性修饰：直线与真值几乎重合，$p = 7.1\times10^{-8}$。
+②**U 形修饰：loess 完美地跟住了真实的抛物线，而 `unihtee` 的直线是平的，
+$\hat\Psi = -0.14$、$p = 0.42$——漏报。**
+③纯噪声：正确地给出 0。
+中间那张不是估计误差，是 **TEM-VIP 参数本身的盲区**：
+$\Psi_5 = \operatorname{Cov}(W_5^2, W_5)/\operatorname{Var}(W_5) = \mathbb{E}[W_5^3] = 0$，
+对称的非单调修饰在这个参数下真值就是 0，加样本量、换学习器、开交叉拟合都救不回来。
+](../../images/unihtee-line-vs-truth.png){#fig-line-vs-truth}
+
+**这张对照图应该作为常规诊断跑一遍**，尤其是当某个你有先验理由怀疑的变量
+在结果表里排得很靠后时。发现是 U 形，就该换用能抓非线性的方法
+（`grf`、MOB 树、或者先对该变量做样条/分箱再跑一次 `unihtee`）。
 :::
 
 ### 两个会报错的调用
@@ -187,37 +245,298 @@ plot(fit, modifier_name = "not_a_var")
 #> Error: arguments imply differing number of rows: 0, 1
 ```
 
-变量名打错时的报错完全看不出病因（`differing number of rows: 0, 1`
-来自 `data.frame()` 收到了长度 0 的 `x`）。
-批量画图时先自己过滤一遍名字：
+名字打错时的报错完全看不出病因（`differing number of rows: 0, 1`
+来自 `data.frame()` 收到长度 0 的 `x`）。批量出图前先过滤名字：
 
 ```r
 for (m in head(as.character(fit$temvip_inference_tbl$modifier), 5)) {
   p <- plot(fit, modifier_name = m, print_interpretation = FALSE)
-  ggplot2::ggsave(sprintf("temvip-%s.png", m), p, width = 7, height = 4.6, dpi = 150)
+  ggsave(sprintf("temvip-%s.png", m), p, width = 7, height = 4.6, dpi = 150)
 }
 ```
 
-`print_interpretation = FALSE` 在批量场景下很有用，
-否则控制台会被那句解读刷屏——注意它是 `cat()` 出来的，
-`suppressMessages()` 拦不住。
-
 ### 叠图层
 
-返回的是普通 `ggplot`，可以照常改：
+返回的是普通 `ggplot`，照常改：
 
 ```r
-library(ggplot2)
 plot(fit, modifier_name = "w_3", print_interpretation = FALSE) +
-  labs(title = "w_3 的效应修饰", x = "w_3（标准化）", y = "条件平均因果效应") +
+  labs(subtitle = "n = 500，TMLE，默认学习器",
+       x = "w_3（标准化）", y = "条件平均因果效应") +
   theme_minimal(base_size = 13)
 ```
 
-标题里那串
-`"... TEM-VIP Inference [Estimate (Nominal 95% CI)]: 1.045 (0.731; 1.358)"`
-是 `ggtitle()` 加的，`labs(title = )` 会把它整个覆盖掉。
-想保留就别改 `title`，改 `subtitle`。
+标题里那串 `"... TEM-VIP Inference [Estimate (Nominal 95% CI)]: 1.045 (0.731; 1.358)"`
+是 `ggtitle()` 加的，`labs(title = )` 会整个覆盖掉。想保留就改 `subtitle`。
+
+## 自己画：三类结果表图
+
+内置图一次只讲一个变量。筛选阶段真正要看的是**整张表**，
+而这需要自己画。下面三类图覆盖了绝大多数场景，代码可直接抄。
+
+共同的准备：
+
+```r
+library(ggplot2); library(data.table)
+tb <- as.data.table(fit$temvip_inference_tbl)[, modifier := as.character(modifier)]
+tb[, sig := fifelse(p_value_fdr < 0.05, "FDR < 0.05", "不显著")]
+```
+
+::: {.callout-note}
+## 中文标签的字体
+
+本页所有图用 `ragg::agg_png` 输出（`ggsave(..., device = ragg::agg_png)`）。
+Windows 默认 PNG 设备在 CJK 上容易掉字，`ragg` 不会。
+`ragg` 是 `ggplot2` 的常见配套，多数环境已经装了。
+:::
+
+### 森林图：变量少（≤ 20）时的首选 {#sec-forest}
+
+森林图同时给出**效应大小**、**精度**和**显著性**，是结果表最忠实的翻译。
+
+```r
+tb[, modifier := factor(modifier, levels = tb[order(estimate), modifier])]
+
+ggplot(tb, aes(x = estimate, y = modifier, colour = sig)) +
+  geom_vline(xintercept = 0, linetype = "22", colour = "grey40") +
+  geom_errorbar(aes(xmin = ci_lower, xmax = ci_upper), width = .22, linewidth = .6) +
+  geom_point(size = 2.4) +
+  geom_text(aes(x = ci_upper, label = sprintf("  p=%.1e", p_value_fdr)),
+            hjust = 0, size = 3, colour = "grey30") +
+  scale_colour_manual(values = c("FDR < 0.05" = "#C0392B", "不显著" = "grey55")) +
+  scale_x_continuous(expand = expansion(mult = c(.05, .35))) +
+  labs(x = "Ψ̂ⱼ（结局单位 / W_j 单位）", y = NULL, colour = NULL) +
+  theme_bw(base_size = 11) + theme(legend.position = "bottom")
+```
+
+![README 数据（$n=500$，$p=10$）的森林图。按 `estimate` 排序而不是按 p 排序，
+是为了让"正负两端"一眼可见。区间跨 0 的都是灰的；
+`w_3` / `w_4` 的区间离 0 很远，其余八个几乎对称地压在 0 上。
+右侧标注的是 **BH 校正后**的 p。
+](../../images/unihtee-forest.png){#fig-forest}
+
+### 火山图：变量多时看整体格局 {#sec-volcano}
+
+变量上到几十个，森林图就太长了。火山图把**效应大小**（横轴）与
+**证据强度**（纵轴）摊在一个平面上，还能用点大小编码精度：
+
+```r
+tb[, lab := fifelse(p_value_fdr < 0.05, modifier, NA_character_)]
+
+ggplot(tb, aes(x = estimate, y = -log10(p_value))) +
+  geom_hline(yintercept = -log10(0.05), linetype = "22", colour = "grey45") +
+  geom_vline(xintercept = 0, linetype = "22", colour = "grey80") +
+  geom_point(aes(size = 1 / se, shape = sig), alpha = .85) +
+  ggrepel::geom_text_repel(aes(label = lab), size = 3.1, min.segment.length = 0, seed = 1) +
+  scale_shape_manual(values = c("FDR < 0.05" = 16, "不显著" = 1)) +
+  scale_size_continuous(range = c(1.4, 4), guide = "none") +
+  labs(x = "Ψ̂ⱼ", y = expression(-log[10](p)), shape = NULL) +
+  theme_bw(base_size = 11) + theme(legend.position = "bottom")
+```
+
+在一份更接近真实筛选场景的数据上（$n = 1000$，$p = 50$，
+真修饰变量 `w_3` / `w_4` / `w_7`，`w_1` / `w_2` 是**纯预后兼混杂**变量）：
+
+![高维筛选的火山图。三个真修饰变量在最外侧且实心；
+**`w_1` / `w_2` 虽然既是混杂又是强预后变量，却正确地留在了 0 附近**——
+这正是 TEM-VIP 与"看 $Y$ 的变量重要性"的根本区别。
+但注意 `w_45` 这个纯噪声变量也过了 BH 0.05：
+$n = 1000$、50 个检验下，**FDR 0.05 里出现 1 个假阳性完全正常**，
+不要把"FDR 显著"读成"确认"。
+](../../images/unihtee-volcano.png){#fig-volcano}
+
+### 排序条形图：把"该往下查哪几个"讲清楚 {#sec-rankbar}
+
+火山图适合放论文，条形图适合放工作汇报——它直接回答"接下来查哪几个"。
+把 BH 的**实际临界点**画出来，比只画 0.05 更有信息：
+
+```r
+tb20 <- head(tb[order(p_value)], 20)[, modifier := factor(modifier, levels = rev(modifier))]
+thr  <- max(tb[p_value_fdr < 0.05, p_value])      # BH 在本次调用内的实际临界 p
+
+ggplot(tb20, aes(x = -log10(p_value), y = modifier)) +
+  geom_col(width = .7, fill = "grey70") +
+  geom_vline(xintercept = -log10(0.05), linetype = "22", colour = "grey40") +
+  geom_vline(xintercept = -log10(thr), colour = "#C0392B", linewidth = .45) +
+  labs(x = expression(-log[10](p)), y = NULL) +
+  theme_bw(base_size = 11)
+```
+
+![同一份 $p = 50$ 的数据，top-20。灰虚线是未校正的 0.05，
+红实线是 BH 在本次调用内的实际临界点——**它比 0.05 严得多**，
+这就是 `p_value_fdr` 在做的事。
+横轴是证据强度不是效应大小；效应大小要回到森林图看。
+](../../images/unihtee-rank-bar.png){#fig-rankbar}
+
+## 自己画：三类诊断对照图
+
+这一组不是为了展示结果，而是为了**在出结果之前发现自己配错了**。
+每一张都对应[第 7 页](07-pitfalls.qmd)清单里的一条。
+
+### 交叉拟合开没开 {#sec-fig-crossfit}
+
+[第 3 页](03-nuisance.qmd#sec-crossfit)那条硬规则的可视化版本。
+把三种配置的估计与区间画在一起，再标上真值：
+
+```r
+grab <- function(f, tag) as.data.table(f$temvip_inference_tbl)[
+  , .(modifier = as.character(modifier), estimate, se, ci_lower, ci_upper, cfg = tag)]
+
+L <- Lrnr_ranger$new()
+set.seed(2); f1 <- unihtee(dt, cn, cn, "a", "y", outcome_type = "continuous", effect = "absolute")
+set.seed(2); f2 <- unihtee(dt, cn, cn, "a", "y", outcome_type = "continuous", effect = "absolute",
+                           cond_outcome_estimator = L, prop_score_estimator = L)
+set.seed(2); f3 <- unihtee(dt, cn, cn, "a", "y", outcome_type = "continuous", effect = "absolute",
+                           cond_outcome_estimator = L, prop_score_estimator = L, cross_fit = TRUE)
+
+cmp <- rbindlist(list(grab(f1, "① 默认 glm / 不交叉拟合"),
+                      grab(f2, "② ranger / 不交叉拟合"),
+                      grab(f3, "③ ranger / 交叉拟合")))[modifier %in% c("w_3","w_4","w_8","w_5")]
+
+ggplot(cmp, aes(x = estimate, y = modifier, colour = cfg)) +
+  geom_vline(xintercept = 0, linetype = "22", colour = "grey75") +
+  geom_errorbar(aes(xmin = ci_lower, xmax = ci_upper), width = .22,
+                position = position_dodge(width = .65), linewidth = .6) +
+  geom_point(size = 2.2, position = position_dodge(width = .65)) +
+  theme_bw(base_size = 11) + theme(legend.position = "bottom")
+```
+
+![上：估计与名义 95% 区间，× 是真值。
+② 的区间**比 ① 窄一半，却离真值更远**——这是最危险的组合，
+它在形式上比正确答案更"显著"。
+下：同一批变量的 SE，② 只有 ③ 的四成。
+把这张图跑一遍只要几秒，是判断"我该不该开 `cross_fit`"最快的方法。
+](../../images/unihtee-crossfit.png){#fig-crossfit}
+
+### 换一把效应尺度，名次变了多少 {#sec-fig-scale}
+
+`effect = "absolute"` 与 `"relative"` 是两个不同的参数，不是同一个量的两种表达。
+用名次连线图（bump chart）看它们是否给出一致的结论：
+
+```r
+r <- rbindlist(lapply(c("absolute", "relative"), function(e) {
+  f <- unihtee(dtb, cn, cn, "a", "y", outcome_type = "binary", effect = e)
+  t <- as.data.table(f$temvip_inference_tbl)[, .(modifier = as.character(modifier), p_value)]
+  t[, `:=`(rank = rank(p_value), scale = e)]
+}))
+
+ggplot(r, aes(x = scale, y = rank, group = modifier)) +
+  geom_line(linewidth = .8, alpha = .85) + geom_point(size = 2.6) +
+  scale_y_reverse(breaks = 1:10) +
+  labs(x = NULL, y = "名次（1 = p 值最小）") + theme_bw(base_size = 11)
+```
+
+![二分类结局，$n = 500$。真修饰变量 `w_3` 名次 1→2、`w_4` 名次 3→6，
+而**纯噪声 `w_5` 是 2→1，两把尺子都把它排在 `w_4` 之前**。
+混杂兼预后变量 `w_1` / `w_2` 在两边都在中下游，说明参数定义确实在起作用。
+这张图的用法是：**先画，再决定写哪一把尺度进方法学**；
+两边结论打架时不要事后挑一个好看的报。
+](../../images/unihtee-scale-rank.png){#fig-scale}
+
+### 协变量标准化前后的 SE {#sec-fig-se}
+
+[第 4 页](04-estimators.qmd#sec-recycling)那个向量回收 bug 的可视化。
+生存结局和任何非默认学习器都会触发它，**画一次就知道自己有没有中招**：
+
+```r
+se <- merge(ts[, .(modifier, se_std = se)], tr[, .(modifier, se_raw = se)], by = "modifier")
+se[, vj := sapply(modifier, function(m) var(ds[[m]]))]      # 原始尺度的方差
+
+sl <- melt(se[order(vj)], id.vars = c("modifier", "vj"),
+           measure.vars = c("se_raw", "se_std"),
+           variable.name = "scale", value.name = "se")
+
+ggplot(sl, aes(x = se, y = factor(modifier, levels = se[order(vj), modifier]), colour = scale)) +
+  geom_line(aes(group = modifier), colour = "grey75", linewidth = .6) +
+  geom_point(size = 2.8) +
+  scale_x_log10() +
+  labs(x = "报告的 se（对数刻度）", y = NULL, colour = NULL) +
+  theme_bw(base_size = 11) + theme(legend.position = "bottom")
+```
+
+![GBSG2，同一份 nuisance 拟合（`glmnet` 内部本来就标准化，
+所以两边的 `ace_estimate` **逐位相同**，只有报告的 SE 变了）。
+上：`progrec` 的 SE 从 0.229 变成 1125，跨了将近四个数量级。
+下：**放大倍数与该变量的原始方差成正比**——
+这正是"按行回收"应该有的指纹，而不是量纲效应
+（真的量纲效应会让 SE 和估计同比缩放，$z$ 不变；这里 $z$ 从 $-7.7\times10^{-7}$ 变成 $-0.647$）。
+纵轴按原始方差排序，可以看到一条清晰的斜坡。
+](../../images/unihtee-se-blowup.png){#fig-se-blowup}
+
+判断规则很简单：**把所有 `modifiers` 的 `var()` 打出来，跨度超过一个数量级就先 `scale()`。**
+
+## 生存结局的图 {#sec-survival-plot}
+
+`plot.unihtee()` 对生存结局**照常可用**——`fit$data` 里存的是原始宽表，
+纵轴的"条件平均因果效应"在这里读作"截至 $t$ 的 RMST 差"。
+但更常用的还是森林图：
+
+```r
+ts <- as.data.table(f_s$temvip_inference_tbl)[, modifier := as.character(modifier)]
+ts[, modifier := factor(modifier, levels = ts[order(estimate), modifier])]
+
+ggplot(ts, aes(x = estimate, y = modifier)) +
+  geom_vline(xintercept = 0, linetype = "22", colour = "grey40") +
+  geom_errorbar(aes(xmin = ci_lower, xmax = ci_upper), width = .2,
+                colour = "grey45", linewidth = .6) +
+  geom_point(size = 2.4, colour = "#2E86C1") +
+  geom_text(aes(x = ci_upper, label = sprintf("  p=%.2f", p_value)),
+            hjust = 0, size = 3, colour = "grey30") +
+  scale_x_continuous(expand = expansion(mult = c(.06, .3))) +
+  labs(x = "Ψ̂ⱼ（每个标准差对应的 RMST 差改变量）", y = NULL) +
+  theme_bw(base_size = 11)
+```
+
+![GBSG2，15 个时间分箱、`time_cutoff = 12`、`Lrnr_glmnet`、协变量已标准化。
+**七个变量的区间全部跨 0**，最小的 p 是 `progrec` 的 0.46。
+横轴单位是"每个标准差"——因为做了标准化，解释时要乘回 `sd(progrec)` 才是原始单位。
+这张图的价值恰恰在于它是阴性的：它把"没有发现"画得和"有发现"一样清楚，
+而只报一张按 p 排序的表很容易被读成"progrec 最重要"。
+](../../images/unihtee-survival-forest.png){#fig-survival-forest}
+
+## 一张图该配哪种场景
+
+| 想回答的问题 | 用哪张图 | 本页位置 |
+|---|---|---|
+| 某个特定变量的效应怎么随它变化 | 内置 `plot.unihtee()` | [@fig-continuous]、[@fig-binary] |
+| 前几名变量里哪些真的在动 | 内置图批量 + **统一纵轴** | [@fig-panel] |
+| 我会不会漏了一个非线性修饰变量 | AIPW 伪结局散点 + loess | [@fig-line-vs-truth] |
+| 效应有多大、精度如何（变量 ≤ 20） | 森林图 | [@fig-forest] |
+| 几十个变量的整体格局 | 火山图 | [@fig-volcano] |
+| 接下来该往下查哪几个 | 排序条形图 + BH 临界线 | [@fig-rankbar] |
+| 我该不该开 `cross_fit` | 三配置估计/区间对照 | [@fig-crossfit] |
+| 两把效应尺度结论一致吗 | 名次连线图 | [@fig-scale] |
+| 我的 SE 可不可信 | 标准化前后 SE 对照（对数轴） | [@fig-se-blowup] |
+| 生存结局的结果怎么呈现 | 森林图（注意单位是"每个标准差"） | [@fig-survival-forest] |
+
+## 导出与在 Quarto 里使用
+
+```r
+# 本页全部图形的输出方式：ragg 保证中文不掉字，白底在深浅主题下都可读
+ggsave("temvip-forest.png", p, width = 8, height = 5, dpi = 150,
+       device = ragg::agg_png, bg = "white")
+```
+
+在 Quarto 里插入并交叉引用：
+
+````markdown
+![说明文字。](../../images/temvip-forest.png){#fig-my-forest}
+
+正文里用 [@fig-my-forest] 引用。
+````
+
+::: {.callout-note}
+## 本页图形的可复现性
+
+所有图形在 Windows R 4.4.3、`unihtee` 0.0.3、`sl3` 1.4.5、`ggplot2` 4.0.2 下生成，
+随机过程均已固定种子（README 数据 `set.seed(510)`；
+$p = 50$ 的筛选场景 `set.seed(77)`；U 形演示 `set.seed(2026)`；
+`ranger` 对照 `set.seed(2)`；GBSG2 `set.seed(99)`）。
+`glmnet` / `ranger` 带交叉验证随机性，换种子结果会小幅变动，
+但本页讨论的**方向性结论**（内置图是直线、U 形漏报、
+不交叉拟合 SE 塌缩、未标准化 SE 爆炸）与种子无关。
+:::
 
 ## 接下来
 
-[第 7 页](07-pitfalls.qmd)：全部失效路径汇总与一套可照抄的工作流。
+[第 7 页](07-pitfalls.qmd)：全部失效路径汇总与可照抄的工作流。
