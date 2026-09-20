@@ -1,0 +1,620 @@
+# =============================================================================
+# psw-get.R -- propensity score weights for a binary exposure
+# =============================================================================
+#
+# Architecture (3 layers + shared helpers from utils-sens.R):
+#
+#   L1  get_PSW(data, treat, adj_var, ps, estimand, ...)
+#         |
+#         +-- L2 pipeline stages, run in this fixed order
+#         |     .psw_fit       fit the propensity model, or take a given score
+#         |     .psw_trim      set trimmed units to NA, optionally refit
+#         |     .psw_trunc     clamp the score into an interval
+#         |     .psw_balance   halfmoon::check_balance() over every weight
+#         |
+#         +-- L3 helpers
+#               .psw_tilt        the tilting function h(e) of one estimand
+#               .psw_crump       Crump et al. optimal symmetric trim point
+#               .psw_stats_row   the 15-column standardised $stats row
+#               .psw_treat       resolve the exposure to a 0/1 integer
+#               .psw_plt_spec    plt_PSW() arguments echoed by print()
+#
+#   print.psw_res reports the diagnostics table and the matching plt_PSW()
+#   call.
+#
+# Every estimand shares one processed propensity score. Trimming or truncating
+# per estimand would leave the weight columns describing different analysis
+# populations, which is exactly the side-by-side comparison the function
+# exists for.
+#
+# The weights are the closed-form tilting functions of Li, Morgan & Zaslavsky
+# (2018) rather than a call into propensity or WeightIt: they are one line
+# each, WeightIt cannot produce the entropy weight at all, and computing them
+# here keeps the hard dependencies at stats. Every column is checked against
+# propensity::wt_*() in the test suite.
+# =============================================================================
+
+.PSW_ESTIMANDS <- c("ATE", "ATT", "ATC", "ATO", "ATM", "EW")
+
+# Stabilisation multiplies by the marginal probability of the observed
+# exposure. That only recentres a weight whose tilting function is free of the
+# score, i.e. ATE -- which is also the only weight propensity gives a
+# `stabilize` argument to.
+.PSW_STABILIZE <- "ATE"
+
+# WeightIt methods that actually estimate a propensity score. The balancing
+# weight methods ("ebal", "energy", "optweight", ...) return weights without a
+# score, so they cannot feed a tilting function.
+.PSW_PS_METHODS <- c("glm", "gbm", "cbps", "bart", "super")
+
+.PSW_TRIM_DEFAULTS  <- list(method = "none", lower = NULL, upper = NULL,
+                            refit = TRUE)
+.PSW_TRUNC_DEFAULTS <- list(method = "none", lower = 0.01, upper = 0.99)
+
+# Arguments the function manages itself and will not forward to the backend.
+.PSW_MANAGED <- c("formula", "data", "method", "estimand", "ps", "x", "y")
+
+
+# ---- L3 helpers ------------------------------------------------------------
+
+# The six tilting functions h(e) of Li, Morgan & Zaslavsky (2018). The weight
+# is h(e) / P(Z = z | X), so a treated unit gets h(e)/e and a control unit
+# h(e)/(1-e). log1p() keeps the entropy tilt accurate as e approaches 1.
+#' @keywords internal
+#' @noRd
+.psw_tilt <- function(estimand, ps) {
+  switch(
+    estimand,
+    ATE = rep(1, length(ps)),
+    ATT = ps,
+    ATC = 1 - ps,
+    ATO = ps * (1 - ps),
+    ATM = pmin(ps, 1 - ps),
+    EW  = -(ps * log(ps) + (1 - ps) * log1p(-ps)),
+    stop(sprintf("Unsupported estimand: '%s'", estimand), call. = FALSE))
+}
+
+# Crump, Hotz, Imbens & Mitnik (2009): the optimal symmetric cut-off is the
+# smallest alpha whose retained set satisfies
+#   1 / (alpha (1 - alpha))  <=  2 * mean(1 / (e (1 - e)))
+# The criterion is evaluated at the observed scores rather than on a grid, and
+# returns at the first alpha that satisfies it, so the usual case -- few units
+# in the tails -- exits after a handful of candidates.
+#' @keywords internal
+#' @noRd
+.psw_crump <- function(ps) {
+  v <- 1 / (ps * (1 - ps))
+  cand <- sort(unique(pmin(ps, 1 - ps)))
+  for (a in c(0, cand[cand < 0.5])) {
+    keep <- ps >= a & ps <= 1 - a
+    if (!any(keep)) return(0)
+    if (1 / (a * (1 - a)) <= 2 * mean(v[keep])) return(a)
+  }
+  0
+}
+
+#' @keywords internal
+#' @noRd
+.psw_stats_row <- function(estimand, w, z, keep, smd_max = NA_real_,
+                           smd_over = NA_real_) {
+  ess <- function(x) {
+    x <- x[is.finite(x)]
+    if (!length(x)) return(NA_real_)
+    sum(x)^2 / sum(x^2)
+  }
+  wk <- w[keep]
+  tibble::tibble(
+    estimand  = estimand,
+    n         = sum(keep),
+    n_treat   = sum(keep & z == 1L),
+    n_ctrl    = sum(keep & z == 0L),
+    ess       = ess(wk),
+    ess_treat = ess(w[keep & z == 1L]),
+    ess_ctrl  = ess(w[keep & z == 0L]),
+    ess_pct   = ess(wk) / sum(keep),
+    w_min     = min(wk),
+    w_max     = max(wk),
+    w_mean    = mean(wk),
+    w_sd      = stats::sd(wk),
+    w_cv      = stats::sd(wk) / mean(wk),
+    smd_max   = as.numeric(smd_max),
+    smd_over  = as.numeric(smd_over))
+}
+
+# Resolve the exposure to a 0/1 integer. A two-level factor is read as "the
+# second level is the treated arm", the same convention glm uses for a factor
+# response, so the score and the weights cannot disagree about direction.
+#' @keywords internal
+#' @noRd
+.psw_treat <- function(x, nm) {
+  if (is.logical(x)) return(as.integer(x))
+  if (is.factor(x) || is.character(x)) {
+    lv <- if (is.factor(x)) levels(droplevels(x)) else sort(unique(x))
+    if (length(lv) != 2L)
+      stop(sprintf("`treat` column `%s` must have exactly 2 levels; found %d.",
+                   nm, length(lv)), call. = FALSE)
+    return(as.integer(match(as.character(x), lv) - 1L))
+  }
+  u <- sort(unique(x))
+  if (!all(u %in% c(0, 1)))
+    stop(sprintf("`treat` column `%s` must be 0/1, logical or a two-level factor.",
+                 nm), call. = FALSE)
+  as.integer(x)
+}
+
+
+# ---- L2 pipeline stages ----------------------------------------------------
+
+# Returns the fitted score and the model that produced it. `glm` is handled
+# directly; every other method is a WeightIt backend, and the ones that return
+# no score at all are rejected rather than silently dropped.
+#' @keywords internal
+#' @noRd
+.psw_fit <- function(data, treat, adj_var, method, ps_args) {
+  form <- stats::reformulate(adj_var, response = treat)
+
+  if (identical(method, "glm")) {
+    args <- utils::modifyList(list(family = stats::binomial()), ps_args)
+    fit  <- do.call(stats::glm, c(list(formula = form, data = data), args))
+    return(list(ps = unname(stats::fitted(fit)), fit = fit))
+  }
+
+  if (!requireNamespace("WeightIt", quietly = TRUE))
+    stop(sprintf("Package 'WeightIt' is required for get_PSW(method = \"%s\")",
+                 method), call. = FALSE)
+  obj <- do.call(WeightIt::weightit,
+                 c(list(formula = form, data = data, method = method,
+                        estimand = "ATE"), ps_args))
+  if (is.null(obj$ps))
+    stop(sprintf("WeightIt method \"%s\" returns balancing weights without a propensity score, so it cannot feed a tilting function. Use one of %s.",
+                 method,
+                 paste0("\"", .PSW_PS_METHODS, "\"", collapse = " / ")),
+         call. = FALSE)
+  list(ps = unname(as.numeric(obj$ps)), fit = obj)
+}
+
+# Trimming removes units from the analysis population but not rows from the
+# data: a trimmed unit's score becomes NA, so every weight column stays
+# aligned with the input and downstream code sees one NA pattern. Same
+# convention as propensity::ps_trim().
+#' @keywords internal
+#' @noRd
+.psw_trim <- function(ps, ta) {
+  if (identical(ta$method, "none")) return(list(ps = ps, bounds = NULL))
+
+  b <- switch(
+    ta$method,
+    ps   = c(if (is.null(ta$lower)) 0.1 else ta$lower,
+             if (is.null(ta$upper)) 0.9 else ta$upper),
+    pctl = unname(stats::quantile(
+      ps,
+      c(if (is.null(ta$lower)) 0.01 else ta$lower,
+        if (is.null(ta$upper)) 0.99 else ta$upper))),
+    cr   = {
+      a <- .psw_crump(ps)
+      c(a, 1 - a)
+    })
+
+  if (!is.numeric(b) || length(b) != 2L || anyNA(b) || b[1L] >= b[2L])
+    stop("`trim_args` must give a lower bound strictly below the upper bound.",
+         call. = FALSE)
+  ps[ps < b[1L] | ps > b[2L]] <- NA_real_
+  list(ps = ps, bounds = b)
+}
+
+#' @keywords internal
+#' @noRd
+.psw_trunc <- function(ps, ua) {
+  if (identical(ua$method, "none")) return(list(ps = ps, bounds = NULL))
+
+  b <- switch(
+    ua$method,
+    ps   = c(ua$lower, ua$upper),
+    pctl = unname(stats::quantile(ps, c(ua$lower, ua$upper), na.rm = TRUE)))
+
+  if (!is.numeric(b) || length(b) != 2L || anyNA(b) || b[1L] >= b[2L])
+    stop("`trunc_args` must give a lower bound strictly below the upper bound.",
+         call. = FALSE)
+  list(ps = pmin(pmax(ps, b[1L]), b[2L]), bounds = b)
+}
+
+# halfmoon returns a long table whose `method` column holds the weight column
+# name, or "observed" for the unweighted comparison.
+#
+# Two things about the call are load-bearing. `.exposure` is captured with
+# rlang::enquo() and resolved by name, so it has to reach check_balance() as a
+# literal string rather than as the symbol `treat`; do.call() inlines the
+# values and is also the only form tidyselect takes for `.vars` / `.weights`
+# without a deprecation warning. And the trimmed rows are dropped here: a
+# weight column with any NA makes check_balance() return NA for that whole
+# weight -- silently, and even with na.rm = TRUE. Balance belongs to the
+# analysis population in any case, which is exactly the retained set.
+#' @keywords internal
+#' @noRd
+.psw_balance <- function(data, adj_var, treat, wcols, keep) {
+  if (!requireNamespace("halfmoon", quietly = TRUE))
+    stop("Package 'halfmoon' is required for get_PSW(balance = TRUE); use balance = FALSE to skip the balance table.",
+         call. = FALSE)
+  do.call(halfmoon::check_balance,
+          list(.data     = data[keep, , drop = FALSE],
+               .vars     = adj_var,
+               .exposure = treat,
+               .weights  = wcols,
+               .metrics  = "smd",
+               na.rm     = TRUE))
+}
+
+# The love plot is the figure to reach for first, but it needs the balance
+# table; without one the effective sample sizes are all there is to show.
+#' @keywords internal
+#' @noRd
+.psw_plt_spec <- function(x) {
+  list(type = if (is.null(x$balance)) "ess" else "love")
+}
+
+
+# ---- L1 public entry point -------------------------------------------------
+
+#' Propensity score weights for a binary exposure
+#'
+#' Single entry point that turns one propensity score into any combination of
+#' the six tilting-function weights -- inverse probability, SMR, overlap,
+#' matching and entropy weights -- and reports their effective sample size,
+#' weight distribution and covariate balance side by side, so the weighting
+#' scheme can be chosen on evidence rather than habit.
+#'
+#' `get_PSW()` constructs and diagnoses weights; it does not estimate a
+#' treatment effect. Feed `result$data` and the weight column of your choice
+#' to an outcome model, for example
+#' `survival::coxph(Surv(t, d) ~ z, data = result$data, weights = w_ato, robust = TRUE)`.
+#' Note that `RegR::get_eff_cat()` is **not** a downstream consumer of these
+#' columns: it refits its own propensity model internally, so trimming,
+#' truncation and refitting done here would not carry over to it.
+#'
+#' @section Weighting schemes:
+#' With \eqn{e = P(Z = 1 \mid X)} and tilting function \eqn{h(e)}, the weight
+#' is \eqn{h(e) / P(Z = z \mid X)}: \eqn{h(e)/e} for a treated unit and
+#' \eqn{h(e)/(1-e)} for a control unit (Li, Morgan and Zaslavsky, 2018).
+#'
+#' \describe{
+#'   \item{`"ATE"`}{\eqn{h = 1}; weights \eqn{1/e} and \eqn{1/(1-e)}. Inverse
+#'     probability of treatment weighting, IPTW; `PSweight`'s `"IPW"`.}
+#'   \item{`"ATT"`}{\eqn{h = e}; weights \eqn{1} and \eqn{e/(1-e)}. SMR
+#'     weighting; `PSweight`'s `"treated"`.}
+#'   \item{`"ATC"`}{\eqn{h = 1-e}; weights \eqn{(1-e)/e} and \eqn{1}. Also
+#'     written ATU.}
+#'   \item{`"ATO"`}{\eqn{h = e(1-e)}; weights \eqn{1-e} and \eqn{e}. Overlap
+#'     weights, OW; `PSweight`'s `"overlap"`. Balances the covariate means of
+#'     the two arms exactly when the score is a logistic fit on those
+#'     covariates, and minimises the variance of the weighted contrast.}
+#'   \item{`"ATM"`}{\eqn{h = \min(e, 1-e)}. Matching weights; `PSweight`'s
+#'     `"matching"`.}
+#'   \item{`"EW"`}{\eqn{h = -(e \ln e + (1-e) \ln(1-e))}. Entropy weights,
+#'     also written ATEN; `PSweight`'s `"entropy"`.}
+#' }
+#'
+#' Only those six names are accepted; the aliases are listed for orientation,
+#' not as arguments.
+#'
+#' @section Order of operations:
+#' The score is fitted (or taken from `ps`), then trimmed, then optionally
+#' refitted on the retained units, then truncated, and only then turned into
+#' weights; stabilisation is applied last. Every estimand shares that one
+#' processed score, because weight columns built on different analysis
+#' populations could not be compared.
+#'
+#' @param data A data frame holding every column named below.
+#' @param treat Length-1 character. The binary exposure column: `0`/`1`,
+#'   logical, or a two-level factor whose **second** level is the treated one.
+#' @param adj_var Character vector of covariates the propensity model adjusts
+#'   for. Required unless `ps` is supplied, and required either way when
+#'   `balance = TRUE`.
+#' @param ps Length-1 character or `NULL` (default). Column holding an
+#'   already-estimated propensity score, strictly inside (0, 1). Supplying it
+#'   skips the modelling step, so `method` and `ps_args` no longer apply.
+#' @param estimand Character vector, any of `"ATE"`, `"ATT"`, `"ATC"`,
+#'   `"ATO"`, `"ATM"`, `"EW"`. All six by default; each produces one weight
+#'   column and one `$stats` row.
+#' @param method Propensity model backend. `"glm"` (default) fits
+#'   [stats::glm()] with a binomial family; `"gbm"`, `"cbps"`, `"bart"` and
+#'   `"super"` are passed to `WeightIt::weightit()` and their score taken from
+#'   it. The balancing-weight methods (`"ebal"`, `"energy"`, `"optweight"`)
+#'   return no propensity score and are rejected.
+#' @param stabilize Logical, default `FALSE`. Multiply the weight by the
+#'   marginal probability of the observed exposure, which recentres it on 1.
+#'   Defined for `"ATE"` only; other weights are left untouched. `TRUE` when
+#'   no selected estimand can use it is an error, not a silent no-op.
+#' @param trim_args Named list controlling which units leave the analysis
+#'   population. Trimmed units keep their row and take `NA` in the score and
+#'   in every weight column.
+#'   \describe{
+#'     \item{`method`}{`"none"` (default), `"ps"` (absolute score bounds,
+#'       defaulting to 0.1 and 0.9), `"pctl"` (score quantiles, defaulting to
+#'       0.01 and 0.99), or `"cr"` (the Crump et al. 2009 optimal symmetric
+#'       cut-off computed from the data, which ignores `lower` and `upper`).}
+#'     \item{`lower`,`upper`}{Numeric bounds or quantile probabilities, or
+#'       `NULL` (default) for the per-method defaults above.}
+#'     \item{`refit`}{Logical, default `TRUE`. Re-estimate the propensity
+#'       model on the retained units, which is what trimming is meant to be
+#'       followed by. Checked only when trimming is actually requested, and an
+#'       error when the score came from `ps` and there is no model to refit.}
+#'   }
+#' @param trunc_args Named list controlling score truncation, which keeps every
+#'   unit but pulls extreme scores in. `method` is `"none"` (default), `"ps"`
+#'   (clamp to `lower`, `upper`) or `"pctl"` (clamp to those quantiles);
+#'   `lower` and `upper` default to 0.01 and 0.99.
+#' @param balance Logical, default `TRUE`. Compute the standardised mean
+#'   differences of `adj_var` under every weight with
+#'   `halfmoon::check_balance()`.
+#' @param ps_args Named list forwarded to the propensity model: [stats::glm()]
+#'   for `method = "glm"` (for example `list(family = binomial("probit"))`),
+#'   otherwise `WeightIt::weightit()`. `formula`, `data`, `method` and
+#'   `estimand` are managed here and rejected if supplied.
+#' @param verbose Logical, default `FALSE`. Report how many units trimming
+#'   removed and how many rows were dropped as incomplete.
+#'
+#' @return An object of class `psw_res`: a list of
+#'   \describe{
+#'     \item{`data`}{The input data plus `ps` (the processed score, `NA` where
+#'       trimmed), `.trimmed` (logical) and one weight column per estimand,
+#'       named `w_ate`, `w_att`, `w_atc`, `w_ato`, `w_atm`, `w_ew`. The `w_`
+#'       prefix is deliberate: it is what
+#'       `halfmoon::plot_ess(.weights = starts_with("w_"))` selects on.}
+#'     \item{`stats`}{One tibble row per estimand, always with the same 15
+#'       columns: `estimand`, `n`, `n_treat`, `n_ctrl`, `ess`, `ess_treat`,
+#'       `ess_ctrl`, `ess_pct`, `w_min`, `w_max`, `w_mean`, `w_sd`, `w_cv`,
+#'       `smd_max`, `smd_over`. The effective sample size is
+#'       \eqn{(\sum w)^2 / \sum w^2}; `smd_max` is the largest absolute
+#'       standardised mean difference across `adj_var`, and `smd_over` counts
+#'       those above 0.1. Both are `NA` when `balance = FALSE`.}
+#'     \item{`balance`}{The `halfmoon::check_balance()` long table
+#'       (`variable`, `group_level`, `method`, `metric`, `estimate`), whose
+#'       `method` column holds the weight column name or `"observed"`. It
+#'       covers the retained units only, because a weight column containing
+#'       any `NA` makes `check_balance()` report `NA` for that whole weight.
+#'       `NULL` when `balance = FALSE`.}
+#'     \item{`fit`}{The propensity model (`glm` or `weightit`), or `NULL` when
+#'       the score was supplied through `ps`.}
+#'   }
+#'   Analysis metadata is attached as `attr(x, "analysis")`.
+#'
+#' @references
+#' Li F, Morgan KL, Zaslavsky AM (2018). Balancing covariates via propensity
+#' score weighting. \emph{Journal of the American Statistical Association}
+#' 113(521):390-400.
+#'
+#' Crump RK, Hotz VJ, Imbens GW, Mitnik OA (2009). Dealing with limited
+#' overlap in estimation of average treatment effects. \emph{Biometrika}
+#' 96(1):187-199.
+#'
+#' @seealso [plt_PSW()] for the matching plots; [get_sens()] for sensitivity
+#'   to unmeasured confounding.
+#'
+#' @examples
+#' set.seed(20260921)
+#' n <- 400
+#' d <- data.frame(x1 = rnorm(n), x2 = rbinom(n, 1, 0.4), x3 = runif(n))
+#' d$z <- rbinom(n, 1, plogis(-0.3 + 0.8 * d$x1 - 0.6 * d$x2 + 1.1 * d$x3))
+#'
+#' res <- get_PSW(d, treat = "z", adj_var = c("x1", "x2", "x3"),
+#'                balance = FALSE)
+#' res
+#'
+#' # The overlap weight keeps the most information, the ATE weight the least
+#' res$stats[, c("estimand", "ess", "ess_pct", "w_max")]
+#'
+#' @examplesIf requireNamespace("halfmoon", quietly = TRUE)
+#' \donttest{
+#' set.seed(20260921)
+#' n <- 400
+#' d <- data.frame(x1 = rnorm(n), x2 = rbinom(n, 1, 0.4), x3 = runif(n))
+#' d$z <- rbinom(n, 1, plogis(-0.3 + 0.8 * d$x1 - 0.6 * d$x2 + 1.1 * d$x3))
+#'
+#' # Overlap and matching weights only, with balance diagnostics and
+#' # percentile truncation of the score
+#' get_PSW(d, treat = "z", adj_var = c("x1", "x2", "x3"),
+#'         estimand   = c("ATO", "ATM"),
+#'         trunc_args = list(method = "pctl", lower = 0.01, upper = 0.99))
+#' }
+#'
+#' @export
+get_PSW <- function(data,
+                    treat,
+                    adj_var    = NULL,
+                    ps         = NULL,
+                    estimand   = c("ATE", "ATT", "ATC", "ATO", "ATM", "EW"),
+                    method     = "glm",
+                    stabilize  = FALSE,
+                    trim_args  = list(method = "none", lower = NULL,
+                                      upper = NULL, refit = TRUE),
+                    trunc_args = list(method = "none", lower = 0.01,
+                                      upper = 0.99),
+                    balance    = TRUE,
+                    ps_args    = list(),
+                    verbose    = FALSE) {
+
+  if (!is.character(estimand) || !length(estimand))
+    stop("`estimand` must be a character vector.", call. = FALSE)
+  estimand <- match.arg(toupper(estimand), .PSW_ESTIMANDS, several.ok = TRUE)
+  estimand <- .PSW_ESTIMANDS[.PSW_ESTIMANDS %in% estimand]
+
+  if (!is.data.frame(data) || !nrow(data))
+    stop("`data` must be a non-empty data frame.", call. = FALSE)
+  for (nm in c("balance", "stabilize", "verbose")) {
+    v <- get(nm)
+    if (!is.logical(v) || length(v) != 1L || is.na(v))
+      stop(sprintf("`%s` must be TRUE or FALSE.", nm), call. = FALSE)
+  }
+
+  treat   <- .sens_check_col(treat, data, "treat", n = 1L)
+  adj_var <- .sens_check_col(adj_var, data, "adj_var")
+  ps      <- .sens_check_col(ps, data, "ps", n = 1L)
+  if (is.null(ps) && is.null(adj_var))
+    stop("Supply `adj_var` to fit a propensity model, or `ps` to use an existing score.",
+         call. = FALSE)
+  if (balance && is.null(adj_var))
+    stop("`adj_var` is required for the balance table; supply it, or use balance = FALSE.",
+         call. = FALSE)
+
+  # Modelling arguments cannot take effect once the score is given. Only an
+  # explicitly supplied value is an error: the `method` default has to stay
+  # harmless, or every call carrying a `ps` would fail.
+  if (!is.null(ps)) {
+    given <- c(method = !missing(method), ps_args = !missing(ps_args))
+    if (any(given))
+      stop(sprintf("`%s` does not apply when `ps` is supplied; the score is taken as given and no model is fitted.",
+                   paste(names(given)[given], collapse = "` / `")),
+           call. = FALSE)
+  } else {
+    if (!is.character(method) || length(method) != 1L || is.na(method))
+      stop("`method` must be a single string.", call. = FALSE)
+    if (!method %in% .PSW_PS_METHODS)
+      stop(sprintf("`method` must be one of %s; got \"%s\".",
+                   paste0("\"", .PSW_PS_METHODS, "\"", collapse = " / "),
+                   method), call. = FALSE)
+  }
+
+  trim_args  <- .merge_named_arg(trim_args,  .PSW_TRIM_DEFAULTS,  "trim_args")
+  trunc_args <- .merge_named_arg(trunc_args, .PSW_TRUNC_DEFAULTS, "trunc_args")
+  trim_args$method  <- match.arg(trim_args$method, c("none", "ps", "pctl", "cr"))
+  trunc_args$method <- match.arg(trunc_args$method, c("none", "ps", "pctl"))
+  if (!is.list(ps_args) || (length(ps_args) && is.null(names(ps_args))))
+    stop("`ps_args` must be a named list.", call. = FALSE)
+  bad <- intersect(names(ps_args), .PSW_MANAGED)
+  if (length(bad))
+    stop(sprintf("`ps_args` may not set %s; %s managed by get_PSW().",
+                 paste0("`", bad, "`", collapse = ", "),
+                 if (length(bad) > 1L) "they are" else "it is"), call. = FALSE)
+
+  if (isTRUE(stabilize) && !any(estimand %in% .PSW_STABILIZE))
+    stop(sprintf("`stabilize = TRUE` has no effect on %s; it is defined for %s only.",
+                 paste0("\"", estimand, "\"", collapse = " / "),
+                 paste0("\"", .PSW_STABILIZE, "\"", collapse = " / ")),
+         call. = FALSE)
+  if (!identical(trim_args$method, "none") && isTRUE(trim_args$refit) &&
+      !is.null(ps))
+    stop("`trim_args$refit = TRUE` needs a propensity model to refit, but the score came from `ps`. Use refit = FALSE.",
+         call. = FALSE)
+
+  # Trimming keeps its rows, so incomplete cases are the only rows dropped.
+  used <- c(treat, adj_var, ps)
+  data <- .sens_complete(data, used, verbose)
+
+  wcols <- paste0("w_", tolower(estimand))
+  clash <- intersect(c("ps", ".trimmed", wcols), names(data))
+  if (length(clash))
+    stop(sprintf("`data` already has column(s) %s, which get_PSW() writes. Rename them first.",
+                 paste0("`", clash, "`", collapse = ", ")), call. = FALSE)
+
+  z <- .psw_treat(data[[treat]], treat)
+  if (length(unique(z)) != 2L)
+    stop(sprintf("`treat` column `%s` has only one arm after dropping incomplete rows.",
+                 treat), call. = FALSE)
+
+  if (is.null(ps)) {
+    f  <- .psw_fit(data, treat, adj_var, method, ps_args)
+    e  <- f$ps
+    ft <- f$fit
+  } else {
+    e  <- as.numeric(data[[ps]])
+    ft <- NULL
+  }
+  if (anyNA(e) || any(e <= 0 | e >= 1))
+    stop("The propensity score must be non-missing and strictly between 0 and 1.",
+         call. = FALSE)
+
+  tr      <- .psw_trim(e, trim_args)
+  e       <- tr$ps
+  trimmed <- is.na(e)
+  if (all(trimmed))
+    stop("Trimming removed every unit; widen `trim_args`.", call. = FALSE)
+  if (isTRUE(verbose) && any(trimmed))
+    cli::cli_inform(c("i" = paste0(
+      "Trimmed {sum(trimmed)} unit{?s} outside [",
+      format(round(tr$bounds[1L], 4)), ", ",
+      format(round(tr$bounds[2L], 4)), "].")))
+
+  # Trimming redefines the analysis population, so the score that weights it
+  # should be estimated on that population rather than carry information from
+  # the units just removed.
+  if (any(trimmed) && isTRUE(trim_args$refit)) {
+    f <- .psw_fit(data[!trimmed, , drop = FALSE], treat, adj_var, method,
+                  ps_args)
+    e[!trimmed] <- f$ps
+    ft <- f$fit
+  }
+
+  un <- .psw_trunc(e, trunc_args)
+  e  <- un$ps
+
+  keep <- !trimmed
+  p1   <- mean(z[keep])
+  den  <- z * e + (1 - z) * (1 - e)
+
+  data[["ps"]]       <- e
+  data[[".trimmed"]] <- trimmed
+  for (i in seq_along(estimand)) {
+    w <- .psw_tilt(estimand[[i]], e) / den
+    if (isTRUE(stabilize) && estimand[[i]] %in% .PSW_STABILIZE)
+      w <- w * (z * p1 + (1 - z) * (1 - p1))
+    data[[wcols[[i]]]] <- w
+  }
+
+  bal <- if (balance) .psw_balance(data, adj_var, treat, wcols, keep) else NULL
+  smd <- function(col) {
+    if (is.null(bal)) return(c(NA_real_, NA_real_))
+    s <- abs(bal$estimate[bal$metric == "smd" & bal$method == col])
+    s <- s[is.finite(s)]
+    if (!length(s)) return(c(NA_real_, NA_real_))
+    c(max(s), sum(s > 0.1))
+  }
+
+  st <- do.call(rbind, lapply(seq_along(estimand), function(i) {
+    m <- smd(wcols[[i]])
+    .psw_stats_row(estimand[[i]], data[[wcols[[i]]]], z, keep,
+                   smd_max = m[[1L]], smd_over = m[[2L]])
+  }))
+
+  structure(
+    list(data = data, stats = st, balance = bal, fit = ft),
+    class = c("psw_res", "list"),
+    analysis = list(
+      treat = treat, adj_var = adj_var, ps = ps,
+      estimand = estimand, wcols = wcols,
+      method = if (is.null(ps)) method else NA_character_,
+      stabilize = stabilize,
+      trim = trim_args, trim_bounds = tr$bounds,
+      trunc = trunc_args, trunc_bounds = un$bounds,
+      n = nrow(data), n_trimmed = sum(trimmed),
+      ps_range = range(e, na.rm = TRUE),
+      call = match.call()))
+}
+
+
+# ---- L3 print --------------------------------------------------------------
+
+#' @export
+#' @noRd
+print.psw_res <- function(x, ...) {
+  a <- attr(x, "analysis")
+  cat(sprintf("<psw_res> n = %d (%d trimmed), treat = %s, score %s\n",
+              a$n, a$n_trimmed, a$treat,
+              if (is.na(a$method)) paste0("supplied (", a$ps, ")")
+              else paste0("from method = \"", a$method, "\"")))
+  cat(sprintf("  range %s%s%s%s\n",
+              .sens_fmt_vec(a$ps_range),
+              if (is.null(a$trim_bounds)) "" else
+                paste0(", trim ", a$trim$method, " ",
+                       .sens_fmt_vec(a$trim_bounds),
+                       if (isTRUE(a$trim$refit)) " + refit" else ""),
+              if (is.null(a$trunc_bounds)) "" else
+                paste0(", truncate ", a$trunc$method, " ",
+                       .sens_fmt_vec(a$trunc_bounds)),
+              if (isTRUE(a$stabilize)) ", stabilized" else ""))
+  cat("\n")
+  print(x$stats)
+  cat("\n# ESS is (sum w)^2 / sum w^2.",
+      "smd_max / smd_over are NA unless balance = TRUE.\n")
+  cat("# plt_PSW: type = \"", .psw_plt_spec(x)$type, "\"\n", sep = "")
+  invisible(x)
+}
