@@ -1,0 +1,814 @@
+---
+title: "观察性医学研究中效应修饰变量的识别与发现"
+subtitle: "方法、文献及 R 实现"
+lang: zh
+---
+
+**核心结论：你的问题应当被表述为"经过混杂校正的治疗效应异质性发现"，而不是"结局预测中的重要变量筛选"。**
+
+对于观察性医学数据，最值得优先考虑的组合是：
+
+> **因果森林／双重稳健 CATE 学习器用于发现异质性 → 针对治疗效应的变量重要性或投影分析用于筛选修饰变量 → 可解释模型形成亚组 → 在独立数据中验证同一效应尺度上的异质性。**
+
+对于 OS/PFS，建议把**固定时间点生存概率差或限制平均生存时间差（RMST difference）**作为主要异质性目标，并将调整后的 Cox 交互作用作为另一种效应尺度上的补充分析，而不是把两者视为同一个检验。([OUP Academic][1])
+
+## 检索范围与证据边界
+
+本报告核对截止日期为 **2026 年 9 月 20 日**。检索覆盖了公开可访问的 PubMed/PMC 记录、原始论文、期刊网站、作者公开稿，以及 CRAN、官方软件文档和官方代码仓库；同时追踪了重要论文的部分参考文献及后续方法研究。
+
+**需要明确：本次未取得 Web of Science、Scopus 的完整授权检索导出，Google Scholar 的完整结果及被引网络也未能全部访问。因此，这是结构化、深入的方法学检索与证据梳理，不是声称已经完成四库穷尽检索、双人筛选和全量去重的注册系统综述。**下文不报告无法核验的检索命中数或 PRISMA 流程数。
+
+复跑四个数据库所需的分组检索式原文以附件形式给出（文件名 `effect_modifier_search_strategy_2026-09-20.txt`）。该附件未随本页收录，此处仅保留其定位说明：它是**可复用检索策略，不是宣称全部执行过的检索日志**。
+
+---
+
+## 1. Executive summary
+
+### 1.1 目前最主流的方法是什么？
+
+"主流"需要区分**临床研究中的常规推断方法**和**数据驱动的效应异质性发现方法**。
+
+| 研究任务               | 优先考虑的方法                                                    | 主要回答的问题                |
+| ------------------ | ---------------------------------------------------------- | ---------------------- |
+| 已有少量明确的候选修饰变量      | 调整后的交互作用回归，必要时使用样条                                         | 某个预先指定的变量是否修饰治疗效应？     |
+| 希望自动发现复杂、非线性 HTE   | Causal forest／GRF、DR-learner                               | 哪些患者的条件平均治疗效应不同？       |
+| 希望明确"哪个变量贡献了异质性"   | DR 投影分析、专门的 treatment-effect variable importance           | 某变量是否对治疗效应差异提供额外信息？    |
+| 希望生成临床可解释的亚组规则     | 治疗参数导向的 MOB、因果树、DR 伪结局上的浅树                                 | 能否用少量变量和切点描述效应不同的人群？   |
+| OS/PFS/DFS 等删失生存结局 | Causal survival forest、RMST／生存概率的 DR 方法，辅以 Cox interaction | 谁获得更大的生存获益，以及这种差异是否可信？ |
+
+上述方法不是互相替代的关系。**发现、解释和确认通常需要不同的统计工具。**([Wiley Online Library][2])
+
+最新的一项真实世界数据范围综述发表于 **2026 年《Value in Health》**，纳入了 74 项研究，指出树模型是较常见的方法，同时发现部分研究实际上只是做结局预测，不能支持其声称的 HTE 分析。这与本次检索的重点非常一致：**不能根据方法名称中出现"机器学习"或"个体化"，就认定它发现了效应修饰。**([PubMed][3])
+
+### 1.2 对你这个研究目标，最重要的五条判断
+
+**第一，调整后的 interaction regression 仍然是确认少量候选修饰变量的基础方法。**现代机器学习并没有使交互作用回归失去价值；关键在于候选变量如何产生、模型尺度是什么，以及检验是否受到数据驱动选择的影响。([PubMed][4])
+
+**第二，自动发现方面，因果森林和 DR-learner 比普通随机森林更贴近问题。**它们的建模目标是治疗效应，而不是单纯预测结局。([arXiv][5])
+
+**第三，MOB 可以寻找治疗效应修饰变量，但必须把参数不稳定性检验对准治疗系数。**如果同时检验截距和其他预后参数，发现的分组可能主要是预后分组。([CRAN][6])
+
+**第四，因果森林的 `variable_importance()` 不能直接当作正式的"效应修饰变量显著性"。**应结合 DR best linear projection、异质性检验、独立验证，或专门的 TE-VIM 方法。([GRF Labs][7])
+
+**第五，OS/PFS 中"HR 的交互作用"和"绝对生存获益的异质性"是两个不同问题。**一个变量可以不修饰 HR，却明显修饰 3 年生存率差或 5 年 RMST 差。([PubMed][8])
+
+---
+
+## 2. 方法学演进与关键概念
+
+### 2.1 首先明确你真正想估计什么
+
+为避免与软件中的 `X` 混淆，以下使用：
+
+* $A$：你的核心治疗／暴露变量，即问题中的 $X$；
+* $Y$：结局；
+* $L$：用于控制混杂的完整基线协变量集合；
+* $Z$：你希望研究的效应修饰变量，可以是 $L$ 的一部分。
+
+以二分类治疗为例，你关心的是：
+
+$$
+\tau(z)=E\{Y(1)-Y(0)\mid Z=z\}.
+$$
+
+如果 $\tau(z)$ 随 $z$ 改变，就存在**加性因果效应尺度上的修饰**。
+
+在一致性、给定 $L$ 的可交换性和正值性等识别条件下，可以写成：
+
+$$
+\tau(z)
+=
+E\{\mu_1(L)-\mu_0(L)\mid Z=z\},
+$$
+
+其中：
+
+$$
+\mu_a(L)=E(Y\mid A=a,L).
+$$
+
+这里有一个非常重要的区别：
+
+> **用于调整混杂的变量集合 $L$，不必等于用于描述异质性的变量集合 $Z$。**
+
+例如，研究"年龄是否修饰治疗效果"时，可以用几十个变量调整混杂，最后只报告年龄对应的治疗效应曲线。不能因为某个混杂变量对异质性贡献不大，就把它从混杂调整模型中删除。([Project Euclid][9])
+
+### 2.2 六个概念的区别
+
+| 概念                                    | 核心含义                             | 不能直接推出什么                         |
+| ------------------------------------- | -------------------------------- | -------------------------------- |
+| **Prognostic factor**                 | 与结局风险有关                          | 不能直接推出它改变治疗效果                    |
+| **Effect modifier／predictive factor** | 在指定效应尺度上，治疗效果随该变量变化              | 不代表干预这个变量本身就能改变治疗反应              |
+| **Statistical interaction**           | 统计模型中存在非加性项，如 $A\times Z$        | 不自动具有因果解释                        |
+| **Causal effect modification**        | 指定的因果效应，如 $\tau(z)$，随 $Z$ 变化     | 不等于所有效应尺度都存在修饰                   |
+| **HTE**                               | 治疗效应异质性的总体概念                     | 不等于某一种算法或某一个指标                   |
+| **CATE**                              | 按协变量条件化的平均治疗效应                   | 不等于已经观察到某个人真实的 $Y_i(1)-Y_i(0)$   |
+
+这些区别也是 PATH 声明、流行病学交互作用报告建议及现代 HTE 方法学文献反复强调的内容。([PubMed][10])
+
+#### 两个必须保留的"不等号"
+
+$$
+\boxed{\text{Statistical interaction}\neq\text{Causal effect modification}}
+$$
+
+统计交互作用需要结合研究设计、混杂控制、效应尺度和模型设定，才可能获得因果解释。
+
+$$
+\boxed{\text{Outcome prediction importance}\neq\text{Effect modifier importance}}
+$$
+
+对死亡风险预测很重要的变量，可能完全不改变治疗效应；反过来，某变量对总体结局预测贡献不大，却可能决定某治疗有益还是有害。([PubMed Central (PMC)][11])
+
+还要补充一个容易忽视的细节：**预后因素与效应修饰变量不是在所有尺度上都互斥的类别。**即使相对效应恒定，高基线风险患者也可能获得更大的绝对获益。([PubMed][8])
+
+### 2.3 方法学演进：这是学习路径，不是严格的单线历史
+
+可以按下面的路径理解：
+
+> **传统交互作用与预设亚组分析**
+> → **递归分割、MOB、Virtual Twins、SIDES、QUINT**
+> → **Honest causal tree**
+> → **Causal forest／GRF／Bayesian causal forest**
+> → **正交化与双重稳健 HTE 学习**
+> → **CATE 的解释、变量贡献量化及正式推断**
+
+但有两点需要纠正：
+
+**CATE 是估计目标，不是最后才出现的新算法；双重稳健估计和 TMLE 的发展也早于因果森林。**现代进展主要是把这些思想与灵活的机器学习、样本分割、交叉拟合及异质性解释结合起来。([De Gruyter Brill][12])
+
+---
+
+## 3. 方法比较：传统交互作用、自动发现与双重稳健推断
+
+### 3.1 传统回归怎样检验效应修饰？
+
+一个一般化模型是：
+
+$$
+g\{E(Y\mid A,Z,C)\}
+=
+f(Z,C)+A\{\beta+h(Z)\},
+$$
+
+其中 $C$ 为其他调整变量，$h(Z)$ 描述治疗效应如何随 $Z$ 变化。
+
+| 模型                              | 交互作用主要对应的尺度       | 应检验什么                         |
+| ------------------------------- | ----------------- | ----------------------------- |
+| Linear regression，identity link | 均值差               | $A\times Z$ 项是否为零             |
+| Logistic regression             | 条件 OR 的变化         | log-OR 尺度的交互作用                |
+| Poisson／log-link 模型             | RR 或发生率比，取决于结局和模型 | log-RR／log-rate-ratio 尺度的交互作用 |
+| Cox regression                  | 条件 HR 的变化         | log-HR 尺度的交互作用                |
+
+**Logistic 的交互作用检验不是风险差交互作用检验；Cox 的交互作用检验也不是 RMST 差交互作用检验。**需要绝对尺度时，应进一步标准化预测结局，直接估计相应的风险差、生存概率差或 RMST 差。([PubMed Central (PMC)][13])
+
+#### P for interaction 的正确解释
+
+它检验的是：
+
+> **在所指定的统计模型和效应尺度上，各亚组的治疗效应是否存在差异。**
+
+它不是"效应修饰存在的概率"，也不衡量异质性的临床重要性。交互作用不显著，尤其在事件数少、变量测量误差大或亚组不平衡时，也不等于已经证明效应完全相同。([PubMed Central (PMC)][14])
+
+对于多分类修饰变量、非线性样条或多个交互作用基函数，应检验**整组交互作用参数**，而不是只挑其中一个系数的 P 值。([Wiley Online Library][2])
+
+#### 为什么"一个亚组显著、另一个不显著"不成立？
+
+例如，以下是一个示意：
+
+| 亚组 |   HR |    95% CI |
+| -- | ---: | --------: |
+| A  | 0.70 | 0.50–0.98 |
+| B  | 0.72 | 0.45–1.15 |
+
+两个点估计非常接近。A 显著而 B 不显著，完全可能只是精度不同。
+
+真正应该检验的是：
+
+$$
+\log(HR_A)-\log(HR_B)=0?
+$$
+
+而不是比较两个亚组内部是否分别达到 $P<0.05$。这一错误有经典 BMJ 方法学文献专门讨论。([BMJ][15])
+
+#### 连续修饰变量怎样处理？
+
+通常优先保留连续形式：
+
+$$
+\text{Treatment}\times\text{Age}
+$$
+
+或者：
+
+$$
+\text{Treatment}\times
+\{\text{Age 的 restricted cubic spline 基函数}\}.
+$$
+
+推荐报告治疗效应随连续变量变化的曲线、置信区间和数据分布。人为二分会损失信息，数据驱动"最佳切点"还会引入选择偏倚和多重检验问题。([PubMed][16])
+
+自动寻找切点可以使用治疗效应导向的树方法，但应把切点视为**待验证的发现**。特别注意：
+
+> **按结局差异最大的切点分组，可能只是找到了预后切点，不保证找到了治疗效应修饰切点。**([arXiv][17])
+
+---
+
+### 3.2 方法比较表
+
+下面的"支持"区分了**方法本身**与**当前常见 R 实现**；"可以调整混杂"不等于自动消除了所有偏倚。
+
+#### 表 A：估计目标和发现能力
+
+| 方法                              | 主要 estimand             | 混杂调整                              | 非线性／连续修饰变量    | 自动发现变量／切点         | 生存结局             |
+| ------------------------------- | ----------------------- | --------------------------------- | ------------- | ----------------- | ---------------- |
+| Adjusted interaction regression | 指定模型尺度上的效应变化；标准化后可得绝对效应 | 协变量调整；也可结合权重                      | 支持，需指定样条或其他函数 | 不自动；惩罚化后可筛选       | Cox 或其他生存模型      |
+| MOB                             | 节点间模型参数差异               | 依赖节点基模型或专门扩展                      | 支持            | 是；需对准治疗参数         | 需合适生存基模型与接口      |
+| model4you                       | 个体化模型参数、树／森林治疗效应        | 基模型调整；观察性正交扩展另设                   | 支持            | 树可给切点；森林不形成单一规则   | 官方实现含 Weibull 模型 |
+| Causal tree                     | 叶节点平均治疗效应               | 取决于设计与实现；不是通用 DR 工具               | 支持阶梯式关系       | 是                 | 原始常见 R 实现非原生生存   |
+| Causal forest／GRF               | CATE                    | 治疗与结局 nuisance models、局部正交化       | 支持            | 自动学习；重要性排名不等于显著筛选 | 需专门 CSF          |
+| Causal survival forest          | RMST 差或固定时间点生存概率差       | 治疗分配与删失调整                         | 支持            | 自动学习复杂异质性         | 是                |
+| DR-learner                      | CATE 或其低维条件平均           | AIPW 伪结局＋交叉拟合                     | 取决于第二阶段学习器    | 可；树／稀疏模型等         | 需删失适配的伪结局        |
+| tidyhte                         | DR CATE、边际化异质性指标及变量贡献   | DR 学习流程                           | 支持            | 提供变量贡献分析；非原生切点树   | 未核实原生删失生存接口      |
+| TMLE                            | 预先定义的因果目标；可扩展到亚组或异质性指标  | 针对目标的 nuisance models 与 targeting | 可扩展           | 本身不是自动筛选器         | 需生存专门实现          |
+| DML                             | 低维结构参数、投影参数；可扩展 CATE    | 正交得分＋交叉拟合                         | 可扩展           | 通常不是自动筛选器         | 需专门扩展            |
+| PRISM／StratifiedMedicine        | 个体效应、亚组及亚组效应的整套流程       | 由所选模块决定                           | 支持            | 支持筛选与分组           | 支持，但各步骤尺度可能不同    |
+
+依据包括原始方法论文、观察性 model-based forest 扩展及官方实现。([美国国家科学院院刊][18])
+
+#### 表 B：推断、可解释性与样本量考虑
+
+| 方法                              | 正式推断的主要边界                          | 可解释性  | 样本量／事件数考虑                   | 主要优势与限制              |
+| ------------------------------- | ---------------------------------- | ----- | --------------------------- | -------------------- |
+| Adjusted interaction regression | 预设、低维、模型合理时较直接；选择后的普通 P 值不再自动有效    | 高     | 小样本时更适合少量预设交互作用；需按交互效应做功效评估 | 易解释，但易漏掉复杂关系         |
+| MOB／model4you tree              | 参数不稳定性检验不等于整棵发现树的后选择推断             | 高     | 每个叶节点、每个治疗组都要有足够信息          | 给出规则；树结构和切点可能不稳定     |
+| model-based forest              | 依具体估计与推断框架                         | 中等    | 比浅树更能平滑，但依赖局部有效样本           | 可联合建模预后与治疗参数         |
+| Honest causal tree              | 独立建树和估计样本可改善叶节点推断                  | 高     | honesty 会减少用于估计的样本          | 透明，但通常比森林不稳定         |
+| Causal forest                   | 点态 CATE、ATE、BLP 等在相应条件下可推断         | 中等    | 强依赖重叠、维度、信噪比和局部样本           | 灵活；不能把所有预测差异当作真实 HTE |
+| Causal survival forest          | 还需删失与随访支持条件                        | 中等    | 事件数、晚期在险人数和删失重叠尤其重要         | 直接针对生存获益；不输出 HR-CATE |
+| DR-learner／tidyhte              | DR 性质不自动赋予任意第二阶段学习器有效置信区间          | 可高可低  | 稀疏／平滑假设及 nuisance 收敛质量重要    | 模块化；需要认真设计第二阶段与验证    |
+| TMLE                            | 对选定目标可进行影响函数推断；不是任意高维点态 CATE 的通用保证 | 取决于目标 | 固定低维目标通常比全 CATE 曲面容易        | 目标明确；实现与理论需匹配        |
+| DML                             | 主要优势是低维目标的正交推断                     | 低维时高  | 需满足 nuisance 误差率、重叠等条件      | 适合预设异质性参数，不等于自动发现    |
+| PRISM                           | 取决于模块和验证设计，不能对整个流程一概称"正式推断"        | 高     | 多阶段筛选、建模和分组都消耗信息            | 流程完整；容易混淆不同阶段的目标     |
+
+**不存在可信的统一规则说"超过某个样本量就一定可以做因果森林"。**在观察性生存分析中，至少应同时检查总样本数、事件数、每个治疗组的样本、亚组内事件数、权重有效样本量、重叠和随访长度，而不是只看 $n$。([arXiv][5])
+
+---
+
+### 3.3 MOB：能否只寻找治疗系数的修饰变量？
+
+#### 可以，而且这是使用 MOB 时最关键的设定之一
+
+`partykit::mob_control()` 的官方文档明确提供：
+
+```r
+parm
+```
+
+用于指定**哪些模型参数进入参数不稳定性检验**；默认是全部参数。因而可以指定治疗系数对应的名称或位置，而不是同时检验截距和所有回归系数。([CRAN][6])
+
+例如，节点模型为：
+
+$$
+g\{E(Y\mid A,C)\}=\beta_0+\beta_A A+\beta_C^\top C.
+$$
+
+关注点应是：
+
+$$
+\beta_A \text{ 是否随候选 }Z\text{ 不稳定？}
+$$
+
+而不只是：
+
+$$
+(\beta_0,\beta_A,\beta_C)\text{ 是否有任何一个参数不稳定？}
+$$
+
+**后一种设定找到的分组可能是预后分组，也可能是治疗效应分组，不能自动区分。**([arXiv][17])
+
+#### 能否调整混杂后再寻找 modifier？
+
+**可以把混杂变量放入基模型，但"加入协变量"并不是一张因果解释的通行证。**
+
+仍需考虑模型形式、治疗重叠、模型错设、未测量混杂，以及分割后局部样本是否足够。`parm` 限制的是不稳定性检验的参数集合，并不会自动把整套算法转换成双重稳健的因果学习器。([PubMed Central (PMC)][11])
+
+这方面非常值得读的是 **Dandl 等，2024，Statistical Methods in Medical Research**。该文专门研究如何对 model-based forests 进行适用于观察性数据的调整，涵盖生存、计数、二分类和有序结局，讨论治疗中心化、预后部分及非可折叠性问题。它比仅引用早期 RCT 场景中的 MOB 更贴近你的问题。([PubMed Central (PMC)][11])
+
+#### model4you 与 MOB 的关系
+
+`model4you` 提供 `pmtree()`、`pmforest()`、`pmodel()` 等工具，用于从基础模型构造个体化模型参数。**它不是"任何模型放进去，都自动得到经过因果校正的 CATE"。**
+
+特别是生存分析，官方现成支持包括 Weibull `survreg` 模型；不能把这直接描述为任意 `coxph` 对象均可无缝使用。基模型变量与候选分割变量也应明确区分。([CRAN][19])
+
+---
+
+### 3.4 Causal forest：如何从 CATE 走向 modifier identification？
+
+#### 因果森林先回答的是"效应如何变化"
+
+因果森林通过针对治疗效应差异的分割和局部估计，学习：
+
+$$
+\tau(L)=E\{Y(1)-Y(0)\mid L\}.
+$$
+
+在观察性数据中，通常需要估计治疗倾向和结局相关 nuisance functions，并依赖无未测量混杂及重叠等条件。RCT 中治疗机制由设计给定；观察性研究中则需要从数据中估计，因此解释和诊断要求不同。([arXiv][5])
+
+#### `variable_importance()` 为什么不能直接叫"modifier importance"？
+
+GRF 官方文档将其描述为基于**分裂使用频率、并按深度加权**的简单指标。
+
+因此，它不是：
+
+* 某变量具有修饰作用的 P 值；
+* 排除其他变量后的独立修饰效应；
+* 某个变量导致异质性的因果贡献。
+
+它可以用于**候选变量排序和探索**，但受相关变量、分裂机会和模型结构影响。([GRF Labs][7])
+
+#### `best_linear_projection()` 能做什么？
+
+它估计 CATE 对用户提供变量的最佳线性投影：
+
+$$
+\tau(L)\approx \beta_0+\beta_Z^\top Z.
+$$
+
+GRF 使用双重稳健方法估计这个投影，而不是简单地把预测出来的 $\widehat\tau_i$ 当作没有误差的结局做 OLS。官方函数也支持全样本目标与 overlap 加权目标。([GRF Labs][20])
+
+一个容易混淆的接口细节是：
+
+```r
+best_linear_projection(forest, A = Z_design)
+```
+
+这里函数参数 `A` 是**投影用的协变量矩阵**，不是治疗变量。
+
+BLP 的边界也很明确：它检验的是所选线性／基函数投影，不是所有可能的非线性修饰。因此，线性项不显著不能排除 U 形或其他复杂异质性；在同一数据上先筛变量再做 BLP，也仍有后选择推断问题。([GRF Labs][20])
+
+#### 更直接对应你问题的新方法：TE-VIM
+
+近年的方法不再满足于"预测谁获益更多"，而是直接量化：
+
+> **去掉某个变量以后，对治疗效应异质性的解释损失了多少？**
+
+一种代表性的目标为：
+
+$$
+\Theta_j=
+E\left[
+\left\{
+\tau(L)-E[\tau(L)\mid L_{-j}]
+\right\}^2
+\right].
+$$
+
+这与普通结局预测的变量重要性不是同一个量。
+
+重点文献包括：
+
+**Hines 等，2025，Biometrics**：提出治疗效应变量重要性指标及有效估计方法。
+
+**Bénard 与 Josse，2025，Journal of Causal Inference**：针对因果森林构建专门的重要性方法，特别处理"被删除变量同时也是混杂变量"的问题。
+
+**Ziersen 与 Martinussen，2025，Scandinavian Journal of Statistics**：将 TE-VIM 扩展到删失生存结局，同时研究生存概率差、RMST 差及最佳部分线性投影。([arXiv][21])
+
+**这些方法比直接读取森林的分裂频率，更贴近"经过混杂校正后识别效应修饰变量"的目标。**但相关变量之间的信息重叠、零异质性边界和各论文的推断条件仍需考虑，不能将指标解释成生物机制上的独立因果贡献。([arXiv][22])
+
+---
+
+### 3.5 双重稳健、正交化和交叉拟合：不能混为一谈
+
+对完整观测结局，常见 AIPW 伪结局为：
+
+$$
+\Gamma_i=
+\widehat\mu_1(L_i)-\widehat\mu_0(L_i)
++
+\frac{A_i}{\widehat e(L_i)}
+\{Y_i-\widehat\mu_1(L_i)\}
+-
+\frac{1-A_i}{1-\widehat e(L_i)}
+\{Y_i-\widehat\mu_0(L_i)\}.
+$$
+
+在适当条件下，如果倾向评分模型正确，或者两个治疗组的结局均值模型正确，其条件期望对应目标 CATE。之后可以用回归、样条、稀疏模型或树来学习：
+
+$$
+E(\Gamma\mid Z).
+$$
+
+这构成 DR-learner 的核心思路。**但第二阶段模型能否逼近真实 CATE、如何构造置信区间，仍是额外问题。**([Project Euclid][9])
+
+| 方法／术语                         | 能否直接称为"双重稳健"？              | 需要特别注意                                       |
+| ----------------------------- | -------------------------- | -------------------------------------------- |
+| AIPW／标准 DR-learner            | 在相应识别与模型条件下，可以             | DR 不等于免疫于无重叠、未测量混杂或第二阶段错设                    |
+| S-learner／T-learner／X-learner | 不能仅凭名称这样称呼                 | 它们是学习架构，不自动具备 DR 性质                          |
+| R-learner                     | 具有正交化性质，但不宜概括成经典"任一模型正确即可" | 正交性与经典双重稳健不是同一个概念                            |
+| Causal forest                 | 应区分森林本体和其 DR 效应汇总／投影       | `average_treatment_effect()`、BLP 等有明确的 DR 构造 |
+| TMLE                          | 许多常见目标下具有 DR 性质            | 具体取决于目标、数据结构和实现                              |
+| DoubleML                      | 需看具体模型和 score              | IRM 的 AIPW 型得分与 PLR 的性质不能混说                  |
+| BART／BCF                      | 不自动属于 DR 方法                | 贝叶斯建模及倾向评分信息不等于经典 DR                         |
+| 加权 Cox＋再加入协变量                 | **不能仅因此称为 DR**             | 需要证明对应估计方程对目标确有双重稳健性                         |
+
+这些区别可从 meta-learner 原论文、R-learner、DML、DR-learner 及官方 GRF 文档中看到。([美国国家科学院院刊][23])
+
+#### 哪些可以提供正式推断？
+
+更成熟的对象通常是：**预设亚组效应、固定的低维投影参数、整体平均效应、部分异质性或变量贡献指标**。对于任意高维、非参数 CATE 曲面的每一点，不能机械套用普通回归的标准误。([Project Euclid][9])
+
+还应区分三种"分开使用数据"的目的：
+
+| 设计                         | 主要解决的问题                       |
+| -------------------------- | ----------------------------- |
+| Nuisance cross-fitting     | 降低机器学习 nuisance 拟合对效应估计的过拟合影响 |
+| Honest tree／forest         | 分开决定树结构与估计叶节点效应               |
+| Discovery–validation split | 分开产生修饰变量／切点假设与确认假设            |
+
+**做过 cross-fitting，不代表在同一数据上筛出来的变量和切点，其普通 P 值就自动有效。**([美国国家科学院院刊][18])
+
+---
+
+## 4. R 包比较：版本、函数及实际能力
+
+### 4.1 最新可核对版本与官方入口
+
+日期为 CRAN 的 **Published** 日期；它不是该方法的原创日期，也不能单独证明软件仍在积极开发。GitHub 研究实现另行注明。
+
+| R 包                    |                     核对版本 | 最近发布／标注日期                    | 主要函数                                                                                                                           | 官方资料与原始方法入口                                                                                                                                                  |
+| ---------------------- | -----------------------: | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **partykit**           |                    1.3-0 | 2026-08-22                   | `mob()`、`mob_control()`、`lmtree()`、`glmtree()`                                                                                 | [CRAN](https://cran.r-project.org/package=partykit)；Zeileis 2008、Hothorn & Zeileis 2015。([CRAN][24])                                                         |
+| **model4you**          |                    0.9-9 | 2026-02-12                   | `pmtree()`、`pmforest()`、`pmodel()`、`pmtest()`                                                                                  | [CRAN](https://cran.r-project.org/package=model4you)；Seibold 2019 软件论文。([CRAN][25])                                                                          |
+| **StratifiedMedicine** |                    1.0.7 | 2026-03-24                   | `PRISM()`                                                                                                                      | [CRAN 与 vignettes](https://cran.r-project.org/package=StratifiedMedicine)；Jemielita & Mehrotra，PRISM 公开稿。([CRAN][26])                                        |
+| **grf**                |                    2.6.1 | 2026-03-04                   | `causal_forest()`、`causal_survival_forest()`、`best_linear_projection()`、`test_calibration()`、`rank_average_treatment_effect()` | [官方教程](https://grf-labs.github.io/grf/)；Wager 2018、Athey 2019、Cui 2023。([CRAN][27])                                                                          |
+| **tidyhte**            |                    1.0.4 | 2025-07-29                   | `basic_config()`、`produce_plugin_estimates()`、`estimate_QoI()`、`calculate_vimp()`                                              | [CRAN](https://cran.r-project.org/package=tidyhte)；Kennedy 2023；官方 methodological details。([CRAN][28])                                                       |
+| **personalized**       |                    0.2.8 | 2026-01-08                   | `fit.subgroup()`、`validate.subgroup()`、`treatment.effects()`                                                                   | [官方 vignette](https://cran.r-project.org/web/packages/personalized/vignettes/usage_of_the_personalized_package.html)；Chen 2017、Huling & Yu 2021。([CRAN][29]) |
+| **Publish**            |               2025.07.24 | 2025-07-24                   | `subgroupAnalysis()`、`publish()`                                                                                               | [官方手册](https://cran.r-project.org/web/packages/Publish/refman/Publish.html)；主要是回归结果与亚组报告工具。 ([CRAN][30])                                                     |
+| **FindIt**             |                    1.3.0 | 2025-09-23                   | `FindIt()`、`CausalANOVA()`                                                                                                     | [CRAN](https://cran.r-project.org/package=FindIt)；Imai & Ratkovic 2013。([CRAN][31])                                                                          |
+| **glmnet**             |                      5.0 | 2026-05-04                   | `glmnet()`、`cv.glmnet()`                                                                                                       | [CRAN](https://cran.r-project.org/package=glmnet)；Friedman 2010、Simon 2011 等。([CRAN][32])                                                                    |
+| **glinternet**         |                   1.0.13 | 2026-07-18                   | `glinternet()`、`glinternet.cv()`                                                                                               | [CRAN](https://cran.r-project.org/package=glinternet)；Lim & Hastie 2015。([CRAN][33])                                                                         |
+| **hierNet**            |                   1.10.1 | 2026-09-09                   | `hierNet()`、`hierNet.logistic()`、`hierNet.cv()`                                                                                | [CRAN](https://cran.r-project.org/package=hierNet)；Bien、Taylor、Tibshirani 2013。([CRAN][34])                                                                  |
+| **causalTree**         |   0.0，GitHub DESCRIPTION | 文件标注 2016-04-12；**不是最新提交日期** | `causalTree()`                                                                                                                 | [作者仓库](https://github.com/susanathey/causalTree)；Athey & Imbens 2016。([GitHub][35])                                                                          |
+| **bartCause**          |                   1.0-10 | 2025-12-11                   | `bartc()`、`predict()`、`summary()`                                                                                              | [CRAN](https://cran.r-project.org/package=bartCause)；Hill 的 BART 因果建模工作。([CRAN][36])                                                                         |
+| **bcf**                |                    2.0.2 | 2024-02-27                   | `bcf()`、`predict()`                                                                                                            | [CRAN](https://cran.r-project.org/package=bcf)；Hahn、Murray、Carvalho 2020。([CRAN][37])                                                                        |
+| **DoubleML**           |                    1.0.2 | 2025-04-11                   | `DoubleMLPLR$new()`、`DoubleMLIRM$new()`、`$fit()`、`$confint()`                                                                  | [CRAN](https://cran.r-project.org/package=DoubleML)；Chernozhukov 2018、软件论文。([CRAN][38])                                                                      |
+| **tmle**               |                    2.1.1 | 2025-08-30                   | `tmle()`、`tmleMSM()`                                                                                                           | [CRAN](https://cran.r-project.org/package=tmle)；van der Laan & Rubin 2006。([CRAN][39])                                                                       |
+| **tmle3**              | 0.2.0，GitHub DESCRIPTION | 最近维护日期未可靠核实                  | `tmle3()` 及目标参数规范                                                                                                              | [官方框架教程](https://tlverse.org/tmle3/)；[仓库](https://github.com/tlverse/tmle3)。 ([GitHub][40])                                                                  |
+
+**不能把 `causalTree` 或 `tmle3` 的 DESCRIPTION 版本日期，当作与 CRAN Published 完全同义的"最近更新"。**
+
+### 4.2 功能矩阵
+
+下表的"需设置／扩展"意味着不能通过一个默认调用直接获得该能力。
+
+| R 包                | 专门用于 HTE？               | 混杂校正               | CATE                     | 生存结局                | 自动筛选 modifier            | 自动切点           | 正式推断                    |
+| ------------------ | ----------------------- | ------------------ | ------------------------ | ------------------- | ------------------------ | -------------- | ----------------------- |
+| partykit           | 通用框架，可针对 HTE            | 基模型／专门扩展           | 节点效应，依模型                 | 需适配基模型              | 可，需指定治疗参数                | 是              | 不稳定性检验；后选择另处理           |
+| model4you          | 是，个体化参数                 | 基模型；观察性扩展另设        | 依效应尺度                    | Weibull 等           | 树／森林探索                   | 树可以            | `pmtest` 等不等于完整后选择推断    |
+| StratifiedMedicine | 是                       | 依模块                | 是                        | 是                   | 是                        | 是              | 依估计与验证模块                |
+| grf                | 因果系列是                   | 是，需合理 nuisance 与假设 | 是                        | 专门 CSF              | 排名／学习，非自动显著性判定           | 森林内部有，不直接给单一规则 | ATE、BLP、RATE、条件下点态 CATE |
+| tidyhte            | 是                       | DR 流程              | 是                        | 未核实原生删失接口           | 提供 VIM 等                 | 非原生树切点         | 部分目标量；非任意筛选后推断          |
+| personalized       | 是                       | PS／A-learning 等    | 部分损失对应；也输出 benefit score | Cox loss            | 可惩罚化筛选                   | 更多是 score 分组   | 提供验证；不等于每个选中变量的有效 P 值   |
+| Publish            | 否                       | 继承输入回归模型           | 非通用 CATE 工具              | Cox 等               | 否                        | 否              | 预设交互作用回归报告              |
+| FindIt             | 是                       | 非通用观察性 DR 调整器      | 依研究设计与模型                 | 非原生                 | 是                        | 非主要功能          | 不能概括为通用选择后推断            |
+| glmnet             | 否                       | 需自行设计              | 需自行构建对比                  | Cox                 | 需显式构造治疗交互项               | 否              | 默认不提供选择后推断              |
+| glinternet         | 否                       | 需自行设计              | 需自行构建                    | 非原生                 | 层级交互筛选                   | 否              | 默认不提供                   |
+| hierNet            | 否                       | 需自行设计              | 需自行构建                    | 非原生                 | 层级交互筛选                   | 否              | 默认不提供                   |
+| causalTree         | 是                       | 依设计／实现             | 叶节点 CATE                 | 非原生                 | 是                        | 是              | Honest 设计下的叶节点推断        |
+| bartCause          | 因果估计                    | BART 与相应调整设置       | 是                        | 非原生                 | 不等于正式 modifier selection | 内部分裂           | 贝叶斯区间                   |
+| bcf                | 是                       | 倾向评分辅助分离预后／治疗效应    | 是                        | 常见实现非原生             | 无通用正式筛选                  | 内部分裂           | 贝叶斯后验                   |
+| DoubleML           | 因果推断，但非筛选器              | 是                  | R 版需另搭建异质性目标             | 非通用原生               | 否                        | 否              | 低维目标推断                  |
+| tmle               | 因果推断，但非筛选器              | 是                  | 亚组／MSM 需定义               | 不能直接等同于通用 `Surv` 支持 | 否                        | 否              | 已定义目标参数                 |
+| tmle3              | 通用 targeted learning 框架 | 依目标与实现             | 需扩展                      | 需扩展                 | 本身不是                     | 否              | 依目标和相应理论                |
+
+该矩阵依据上述官方资料，尤其需要结合 GRF、`personalized`、`DoubleML` 和 `tmle3` 的接口边界解读。([GRF Labs][41])
+
+### 4.3 四个特别容易误用的软件细节
+
+**Publish 并不发现新的 modifier。**`subgroupAnalysis()` 主要把指定亚组放入回归交互作用分析，并报告亚组效应及交互作用检验；官方文档说明其交互作用 P 值来自似然比检验。它适合结果整理，不应被描述为因果机器学习筛选器。([CRAN][42])
+
+**DoubleML 的 Python CATE 示例不能直接当作 R 接口。**本次核对的 R 手册主要提供 PLR、IRM 等估计类，不能把 Python 文档中的 `.cate()`／`.gate()` 原样搬入 R 分析方案。([CRAN][43])
+
+**`personalized` 的 benefit score 不一定就是数值意义上的 CATE。**其解释取决于损失函数和模型；官方确实支持 `cox_loss_lasso`，但不能把这种得分直接称为 RMST 差。([CRAN][44])
+
+**PRISM 的生存流程可能混合不同目标。**官方生存 vignette 的流程包含基于 RMST 的个体效应学习，以及后续的分组和 Cox 亚组效应估计。它适合作为分析框架，但不能把所有步骤都称为同一个生存 CATE，更不能默认整个观察性流程已经双重稳健。([CRAN][45])
+
+---
+
+## 5. 最重要的 30 篇核心文献
+
+"数据类型"表示方法主要针对或可适用的设计，不表示所有论文均包含同一种临床数据。较长题名作少量缩写，DOI 可定位原文。**★ 表示 2022–2026 年工作。**
+
+| 年份    | 第一作者         | 题目                                                                                                             | 期刊                                      | 方法／数据类型                  | 主要贡献                            | DOI                                                          |
+| ----- | ------------ | -------------------------------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------ | ------------------------------- | ------------------------------------------------------------ |
+| 2003  | Altman       | *Interaction revisited: the difference between two estimates*                                                  | BMJ                                     | 交互作用解释；通用                | 解释为何不能比较两个亚组各自是否显著              | `10.1136/bmj.326.7382.219`。([BMJ][15])                       |
+| 2006  | van der Laan | *Targeted Maximum Likelihood Learning*                                                                         | International Journal of Biostatistics  | TMLE；因果与缺失数据             | Targeted learning 原创框架          | `10.2202/1557-4679.1043`。([De Gruyter Brill][12])            |
+| 2006  | Royston      | *Dichotomizing continuous predictors in multiple regression: a bad idea*                                       | Statistics in Medicine                  | 连续变量建模                   | 解释二分类造成的信息损失及分析问题               | `10.1002/sim.2331`。([PubMed][16])                            |
+| 2008  | Zeileis      | *Model-Based Recursive Partitioning*                                                                           | JCGS                                    | MOB；一般参数模型               | 以参数不稳定性驱动递归分割                   | `10.1198/106186008X319331`。([Taylor & Francis Online][46])   |
+| 2011  | Foster       | *Subgroup identification from randomized clinical trial data*                                                  | Statistics in Medicine                  | Virtual Twins；RCT        | 先估计个体对比，再寻找可解释亚组                | `10.1002/sim.4322`。([PubMed][16])                            |
+| 2011  | Lipkovich    | *Subgroup identification based on differential effect search…*                                                 | Statistics in Medicine                  | SIDES；RCT                | 针对治疗差异的亚组搜索及误差控制                | `10.1002/sim.4289`。([Wiley Online Library][47])              |
+| 2012  | Knol         | *Recommendations for presenting analyses of effect modification and interaction*                               | International Journal of Epidemiology   | 交互作用与效应修饰报告              | 明确尺度、分层效应及报告要求                  | `10.1093/ije/dyr218`。([PubMed][10])                          |
+| 2013  | Imai         | *Estimating treatment effect heterogeneity in randomized program evaluation*                                   | Annals of Applied Statistics            | 稀疏 HTE／FindIt；随机研究       | 高维治疗效应异质性建模与变量筛选                | `10.1214/12-AOAS593`。([CRAN][31])                            |
+| 2014  | Tian         | *A Simple Method for Estimating Interactions Between a Treatment and a Large Number of Covariates*             | JASA                                    | Modified covariates      | 面向大量治疗－协变量交互作用的建模               | `10.1080/01621459.2014.951443`。([PubMed Central (PMC)][48])  |
+| 2014  | Dusseldorp   | *Qualitative interaction trees: a tool to identify qualitative treatment–subgroup interactions*                | Statistics in Medicine                  | QUINT；主要为 RCT            | 寻找治疗优劣方向反转的亚组                   | `10.1002/sim.5933`。([Wiley Online Library][49])              |
+| 2016  | Athey        | *Recursive partitioning for heterogeneous causal effects*                                                      | PNAS                                    | Honest causal tree       | 将建树与效应估计分开，支持更可信的亚组推断           | `10.1073/pnas.1510489113`。([美国国家科学院院刊][18])                  |
+| 2016  | Seibold      | *Model-Based Recursive Partitioning for Subgroup Analyses*                                                     | International Journal of Biostatistics  | MOB；临床亚组                 | 将参数不稳定性框架用于临床亚组分析               | `10.1515/ijb-2015-0032`。([arXiv][17])                        |
+| 2017  | Chen         | *A General Statistical Framework for Subgroup Identification and Comparative Treatment Scoring*                | Biometrics                              | 加权／A-learning；RCT、观察性    | 统一多种亚组识别与治疗评分方法                 | `10.1111/biom.12676`。([CRAN][44])                            |
+| 2018  | Wager        | *Estimation and Inference of Heterogeneous Treatment Effects using Random Forests*                             | JASA                                    | Causal forest            | 给出一致性、渐近推断与置信区间的理论条件            | `10.1080/01621459.2017.1319839`。([arXiv][5])                 |
+| 2018  | Chernozhukov | *Double/debiased machine learning for treatment and structural parameters*                                     | The Econometrics Journal                | DML                      | 正交得分与交叉拟合支持低维因果参数推断             | `10.1111/ectj.12097`。([CRAN][38])                            |
+| 2018  | Seibold      | *Individual treatment effect prediction for amyotrophic lateral sclerosis patients*                            | Statistical Methods in Medical Research | Model-based forests；临床数据 | 从单棵亚组树发展到个体化模型参数预测              | `10.1177/0962280217693034`。([PubMed][16])                    |
+| 2019  | Athey        | *Generalized random forests*                                                                                   | Annals of Statistics                    | GRF；局部矩条件                | 将森林推广为一般局部参数估计工具                | `10.1214/18-AOS1709`。([Project Euclid][9])                   |
+| 2019  | Künzel       | *Metalearners for estimating heterogeneous treatment effects using machine learning*                           | PNAS                                    | S／T／X-learners           | 系统化比较通用 CATE 学习架构               | `10.1073/pnas.1804597116`。([美国国家科学院院刊][23])                  |
+| 2019  | Seibold      | *model4you: An R Package for Personalised Treatment Effect Estimation*                                         | Journal of Open Research Software       | R 软件                     | 个体化模型树与森林的软件实现                  | `10.5334/jors.219`。([Journal of Open Research Software][50]) |
+| 2020  | Kent         | *The Predictive Approaches to Treatment effect Heterogeneity (PATH) Statement*                                 | Annals of Internal Medicine             | HTE 分析规范；RCT             | 区分风险建模与效应建模，强调临床解释              | `10.7326/M18-3667`。([PubMed][4])                             |
+| 2020  | Hahn         | *Bayesian Regression Tree Models for Causal Inference: Regularization, Confounding, and Heterogeneous Effects* | Bayesian Analysis                       | BCF；观察性                  | 分离预后与治疗效应，处理正则化诱导的混杂问题          | `10.1214/19-BA1195`。([CRAN][37])                             |
+| 2021  | Nie          | *Quasi-oracle estimation of heterogeneous treatment effects*                                                   | Biometrika                              | R-learner                | 通过残差化／正交化学习治疗效应                 | `10.1093/biomet/asaa076`。([OUP Academic][1])                 |
+| 2021  | Huling       | *Subgroup Identification Using the personalized Package*                                                       | Journal of Statistical Software         | R 软件；多类结局                | 亚组学习、治疗效应评估与验证的一体化实现            | `10.18637/jss.v098.i05`。([统计软件期刊][51])                       |
+| ★2023 | Kennedy      | *Towards optimal doubly robust estimation of heterogeneous causal effects*                                     | Electronic Journal of Statistics        | DR-learner               | DR CATE 学习的误差界与理论保证             | `10.1214/23-EJS2157`。([Project Euclid][9])                   |
+| ★2023 | Cui          | *Estimating heterogeneous treatment effects with right-censored data via causal survival forests*              | JRSS Series B                           | CSF；删失生存／观察性             | 同时针对删失和治疗选择调整的生存 HTE            | `10.1093/jrsssb/qkac001`。([OUP Academic][1])                 |
+| ★2023 | Segal        | *Assessing Heterogeneity of Treatment Effect in Real-World Data*                                               | Annals of Internal Medicine             | 真实世界 HTE 方法学             | 将 HTE 评估放入真实世界研究语境              | `10.7326/M22-1510`。([PubMed][16])                            |
+| ★2024 | Westling     | *Inference for Treatment-Specific Survival Curves Using Machine Learning*                                      | JASA                                    | DR 生存曲线；观察性              | 交叉拟合、生存曲线及时间上的推断；可作为亚组生存效应估计基础  | `10.1080/01621459.2023.2205060`。([PubMed][52])               |
+| ★2024 | Dandl        | *Heterogeneous treatment effect estimation for observational data using model-based forests*                   | Statistical Methods in Medical Research | 正交化 model-based forests  | 将模型森林扩展到观察性及复杂结局                | `10.1177/09622802231224628`。([PubMed Central (PMC)][11])     |
+| ★2025 | Hines        | *Variable importance measures for heterogeneous treatment effects*                                             | Biometrics                              | TE-VIM                   | 直接量化变量对治疗效应异质性的贡献               | `10.1093/biomtc/ujaf140`。([arXiv][21])                       |
+| ★2025 | Ziersen      | *Variable importance measures for heterogeneous treatment effects with survival outcome*                       | Scandinavian Journal of Statistics      | 生存 TE-VIM、部分线性投影         | 面向生存概率差和 RMST 差的 modifier 贡献与推断 | `10.1111/sjos.70001`。([Wiley Online Library][53])            |
+
+**优先阅读顺序建议：**先读 Lipkovich 2024 的总教程和 Segal 2023 的真实世界研究讨论，再读 Kennedy 2023、Cui 2023、Dandl 2024，最后进入 Hines／Ziersen 的变量贡献推断。后两篇最贴近"到底是哪些变量在修饰治疗效应"，但理论门槛也更高。
+
+---
+
+## 6. 2023–2026 年值得重点阅读的 17 篇更新文献
+
+本表与上述核心表部分重叠，**不是额外的 17 篇独立新增文献数**。这里强调近期进展及发表状态。
+
+| 年份   | 第一作者      | 论文／主题                                                                                                         | 发表渠道与状态                                          | 为什么值得读                           | DOI／公开稿                                                             |
+| ---- | --------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | -------------------------------- | ------------------------------------------------------------------- |
+| 2023 | Kennedy   | 双重稳健 CATE 的最优估计                                                                                               | Electronic Journal of Statistics，正式发表            | DR-learner 理论基础                  | `10.1214/23-EJS2157`。([Project Euclid][9])                          |
+| 2023 | Cui       | 右删失数据的 causal survival forest                                                                                 | JRSS B，正式发表                                      | 当前 R 生存 HTE 实践的核心方法之一            | `10.1093/jrsssb/qkac001`。([OUP Academic][1])                        |
+| 2023 | Segal     | 真实世界数据中的 HTE 评估                                                                                               | Annals of Internal Medicine，正式发表                 | 连接因果方法与医学研究设计                    | `10.7326/M22-1510`。([PubMed][16])                                   |
+| 2024 | Westling  | ML 支持的治疗特异性生存曲线推断                                                                                             | JASA，2023 在线、2024 卷期                             | 为固定亚组中的 DR 生存效应估计提供基础            | `10.1080/01621459.2023.2205060`。([Taylor & Francis Online][54])     |
+| 2024 | Dandl     | *What makes forest-based heterogeneous treatment effect estimators work?*                                     | Annals of Applied Statistics，正式发表                | 比较森林组件，突出观察性分析中的治疗中心化            | `10.1214/23-AOAS1799`。([Project Euclid][55])                        |
+| 2024 | Dandl     | 观察性数据的 model-based forests                                                                                    | Statistical Methods in Medical Research，正式发表     | 特别适合衔接 MOB、复杂结局和因果调整             | `10.1177/09622802231224628`。([PubMed Central (PMC)][11])            |
+| 2024 | Lipkovich | *Modern approaches for evaluating treatment effect heterogeneity from clinical trials and observational data* | Statistics in Medicine，正式发表                      | 覆盖传统交互、树方法、机器学习和观察性研究的长篇教程       | `10.1002/sim.10167`。([PubMed][56])                                  |
+| 2024 | Inoue     | RCT 中 ML-HTE 方法的范围综述                                                                                          | Journal of Clinical Epidemiology，正式发表            | 了解临床文献实际使用和报告状况                  | `10.1016/j.jclinepi.2024.111538`。([PubMed][57])                     |
+| 2025 | Thelen    | *Characterizing Treatment Effect Heterogeneity Using Real-World Data*                                         | Clinical Pharmacology & Therapeutics，正式发表        | 适合药物流行病学和比较效果研究                  | `10.1002/cpt.3627`。([PubMed][58])                                   |
+| 2025 | Selby     | RCT 中预测性 HTE 建模的范围综述                                                                                          | JAMA Network Open，正式发表                           | 强调发现的可信度、外部验证及方法间差异              | `10.1001/jamanetworkopen.2025.22390`。([PubMed Central (PMC)][59])   |
+| 2025 | Hines     | 非参数治疗效应变量重要性                                                                                                  | Biometrics，正式发表；早期稿始于 2022                       | 比普通森林重要性更直接回答 modifier 贡献        | `10.1093/biomtc/ujaf140`。([arXiv][21])                              |
+| 2025 | Ziersen   | 生存结局 TE-VIM 与部分线性投影                                                                                           | Scandinavian Journal of Statistics，2025-06-25 在线 | 本次最值得关注的生存 modifier 识别论文之一       | `10.1111/sjos.70001`。([Wiley Online Library][53])                   |
+| 2025 | Bénard    | 因果森林专用变量重要性                                                                                                   | Journal of Causal Inference，正式发表；早期稿为 2023       | 处理变量删除与混杂控制之间的冲突                 | `10.1515/jci-2023-0062`。([De Gruyter Brill][60])                    |
+| 2025 | Yadlowsky | 治疗排序规则的 RATE 评价                                                                                               | JASA，正式发表                                        | 判断模型能否把更获益的人排在前面，而不只看 CATE 图     | `10.1080/01621459.2024.2393466`。([Taylor & Francis Online][61])     |
+| 2025 | Frauen    | *Orthogonal Survival Learners for Estimating Heterogeneous Treatment Effects from Time-to-Event Data*         | NeurIPS 2025 工作；公开全文可读                           | 生存 R／DR learner、正交化和低重叠问题        | [arXiv:2505.13072](https://arxiv.org/abs/2505.13072)。 ([arXiv][62]) |
+| 2026 | Möller    | 真实世界健康数据 ML-HTE 方法范围综述                                                                                        | Value in Health，2026 年 5 月正式卷期                   | 本次核对到的近期综合综述，明确区分预测模型与定制 CATE 方法 | `10.1016/j.jval.2026.01.013`。([PubMed][3])                          |
+| 2026 | Sun       | *Estimating heterogeneous treatment effects with survival outcomes via a deep survival learner*               | **预印本**，2026 年 4 月                               | 多时间点生存异质性与 DR 伪结局的前沿扩展           | [arXiv:2604.10398](https://arxiv.org/abs/2604.10398)。 ([arXiv][63]) |
+
+**证据成熟度上，应把已发表的方法论文、成熟软件接口和最新预印本分开。**不能因为深度学习或新算法更新，就认为它已经优于经过充分验证的回归、DR 学习器或因果森林。
+
+---
+
+## 7. 生存结局专题：OS/PFS 如何寻找 adjusted effect modifiers？
+
+### 7.1 先选定生存效应目标
+
+设 $T(a)$ 是治疗 $a$ 下的潜在事件时间，$h$ 为预先指定的时间窗。
+
+#### 固定时间点生存概率差
+
+$$
+\tau_S(z;h)
+=
+P\{T(1)>h\mid Z=z\}
+-
+P\{T(0)>h\mid Z=z\}.
+$$
+
+临床解释为：
+
+> 在某一类患者中，治疗使 3 年生存概率提高多少个百分点？
+
+#### RMST 差
+
+$$
+\tau_{\mathrm{RMST}}(z;h)
+=
+E\{\min[T(1),h]-\min[T(0),h]\mid Z=z\}.
+$$
+
+临床解释为：
+
+> 在预先规定的 5 年观察窗口内，治疗平均增加多少生存时间？
+
+GRF 的 `causal_survival_forest()` 明确支持 `"RMST"` 和 `"survival.probability"` 两类目标，并要求指定 `horizon`。**它不是估计"个体化 HR"的函数。**([GRF Labs][64])
+
+### 7.2 HR interaction 与绝对生存异质性的区别
+
+假设所有患者的 HR 都相同：
+
+$$
+HR(z)=0.7.
+$$
+
+在比例风险设定下：
+
+$$
+S_1(h\mid z)=S_0(h\mid z)^{0.7}.
+$$
+
+因此：
+
+$$
+S_1(h\mid z)-S_0(h\mid z)
+=
+S_0(h\mid z)^{0.7}-S_0(h\mid z).
+$$
+
+右侧仍然随基线生存率变化。
+
+所以，即使年龄不修饰 HR，年龄相关的基线风险差异也可能造成明显不同的绝对生存获益。这是尺度依赖性的数学结果，不是两种分析谁"做错了"。([PubMed][8])
+
+另外，HR 具有非可折叠性，生存风险集还会随时间改变。因而，**调整后的条件 HR 与标准化的边际生存曲线对比不能直接混用**。复杂生存 HTE 模型尤其需要正确处理预后部分，而不仅是治疗交互项。([PubMed Central (PMC)][11])
+
+### 7.3 六类生存方法怎么选择？
+
+| 方法                                | 主要目标                   | 混杂与删失处理                    | 自动发现能力       | 对你的研究的建议                 |
+| --------------------------------- | ---------------------- | -------------------------- | ------------ | ------------------------ |
+| **Adjusted Cox interaction**      | 条件 HR 的修饰              | 回归调整；需合理生存模型与删失条件          | 需预设变量，或另加惩罚  | 适合少量明确假设、临床论文的相对尺度报告     |
+| **Weighted Cox interaction**      | 加权目标人群中的 HR 交互作用       | PS 权重，必要时额外处理删失；检查权重与方差    | 本身不自动        | 适合作为特定目标人群分析；不应自动称 DR    |
+| **MOB／model-based survival tree** | 节点内生存模型参数变化            | 依基模型、score 和观察性扩展          | 可给变量与切点      | 适合生成可解释规则；必须对准治疗参数       |
+| **Causal survival forest**        | RMST 差／生存概率差           | 专门的治疗与删失调整                 | 强            | 适合观察性 OS/PFS 非线性探索       |
+| **RMST-based HTE model**          | 指定窗口 RMST 差            | 可用标准化、IPCW、伪观测或 DR 构造，性质各异 | 依第二阶段模型      | 临床可解释性强，尤其适合不希望依赖 PH 的目标 |
+| **Doubly robust survival HTE**    | 生存概率／RMST 的 CATE、亚组或投影 | 生存、治疗、删失 nuisance 的专门构造    | 可结合稀疏模型、森林或树 | 适合需要明确因果目标和推断的深入研究       |
+
+依据包括 causal survival forest 原论文、观察性 model-based forests、DR 生存曲线估计及生存 TE-VIM。([OUP Academic][1])
+
+#### 为什么普通 survival forest 不够？
+
+普通生存森林主要学习结局分布或生存风险。它的变量重要性回答的是：
+
+> 哪些变量有助于预测生存？
+
+不是：
+
+> 哪些变量改变治疗带来的生存获益？
+
+生存森林可以作为 T-learner 等框架的结局学习器，但必须明确两种治疗下的反事实预测、混杂调整和效应对比；**不能直接把其预后重要性当作 modifier 重要性。**([PubMed Central (PMC)][11])
+
+#### 生存 DR 方法还多了一层难题
+
+对于删失结局，不能直接把普通 AIPW 公式中的 $Y$ 替换成"观察到的生存时间"，也不能把在时间点 $h$ 之前失访者简单当作未发生事件。需要使用针对删失数据推导的得分或伪结局。
+
+这里的稳健性涉及治疗分配、事件过程和删失过程的 nuisance functions，必须按具体方法的条件解释，不能笼统说"任意一个模型正确就行"。([arXiv][65])
+
+### 7.4 对观察性 OS/PFS 队列最合理的组合
+
+我的优先建议是：
+
+> **以预设时间窗的 RMST 差或生存概率差为主要效应目标；使用 CSF／生存 DR 学习进行探索；通过 BLP、TE-VIM 或低维效应模型解释修饰变量；在独立数据中验证相同的绝对效应目标；另报告 Cox interaction 作为 HR 尺度的补充。**
+
+这里必须避免一个常见表述错误：
+
+**"CSF 发现年龄修饰 RMST 差，随后 Cox 交互作用显著，因此验证了同一个效应修饰"——不够准确。**
+
+两者是不同尺度上的支持证据。对主要发现的直接验证，应仍然针对 RMST 差或生存概率差本身。([GRF Labs][64])
+
+OS、PFS、DFS 可以使用相近的统计框架，但事件定义、评估方式、删失机制及随访支持必须分别处理，不能仅因名称不同就机械共用同一套模型。
+
+---
+
+## 8. 推荐分析流程：从观察性队列到可确认的修饰变量
+
+### 8.1 一套可执行的分析路线
+
+| 步骤                                      | 具体工作                                                | 分析性质              |
+| --------------------------------------- | --------------------------------------------------- | ----------------- |
+| **1. 明确因果问题与时间零点**                      | 定义治疗／暴露对比、入组、随访起点、目标人群和主要效应尺度；先处理治疗定义及时间相关偏倚        | 研究设计              |
+| **2. 明确混杂调整集合**                         | 根据临床知识和因果结构确定 $L$；区分基线混杂、候选修饰变量、治疗后变量               | 研究设计              |
+| **3. 估计整体效应并检查可识别性**                    | 估计 ATE／ATT／overlap 目标等；检查重叠、平衡、权重和删失支持              | 预设估计与诊断           |
+| **4. Causal HTE exploration**           | 用因果森林、DR-learner 或 CSF 学习 CATE；交叉拟合 nuisance models | **探索性**           |
+| **5. Effect modifier screening**        | 综合效应曲线、稳定性、BLP、TE-VIM、稀疏模型，不只看一种 VI 排名              | **探索性**；少数预设指标可推断 |
+| **6. Interpretable subgroup discovery** | 用浅树、治疗参数导向 MOB 或稀疏规则压缩复杂模型；固定变量与切点                  | **探索性**           |
+| **7. 独立确认**                             | 在未参与选择的数据中，检验同一效应尺度的亚组差异或交互作用；控制多重性                 | **确认性推断**         |
+| **8. 内部／外部验证与敏感性分析**                    | 评估效应校准、RATE／政策价值、亚组稳定性；检查其他调整方案和目标人群                | 验证与稳健性评估          |
+
+这个流程综合了 honest subgroup discovery、DR 学习、PATH 的分析规范及真实世界 HTE 的方法学建议。([美国国家科学院院刊][18])
+
+### 8.2 流程中必须守住的几个原则
+
+**整体治疗效应不显著，不是禁止寻找 HTE 的理由。**获益和伤害可能在总体中相互抵消；但这种情况也不能成为无限制事后搜索亚组的理由。([PubMed][4])
+
+**混杂变量不能随 modifier 筛选一起被删除。**例如肿瘤分期对治疗选择和死亡都重要，即便它不解释 CATE 变化，也可能仍需保留在 nuisance models 中。([arXiv][66])
+
+**同一数据上的"探索后再做多因素交互作用回归"，仍然是探索后分析。**把机器学习筛出的变量放进 Cox 模型，并不会自动恢复预设检验的错误率。([Wiley Online Library][2])
+
+**验证应评价治疗效应预测，而不只是结局预测。**C-index、AUC 或普通预测误差改善，不足以证明 CATE 学得更好；可使用适当的效应校准、独立亚组效应和 RATE 等工具。([arXiv][67])
+
+**自动发现的 modifier 不是已确认的生物机制。**它可能是其他特征的代理，或只在当前目标人群、治疗选择机制与随访窗口下具有预测价值。([arXiv][21])
+
+---
+
+### 8.3 最终推荐：最值得优先考虑的 5 类方法
+
+以下是基于证据与软件可用性的**场景化建议，不是所有数据集上的性能排名**。
+
+| 推荐类别                                          | 最适合的场景                         | 推荐实现／组合                                             | 主要限制                          |
+| --------------------------------------------- | ------------------------------ | --------------------------------------------------- | ----------------------------- |
+| **1. 正交化 causal forest／GRF**                  | 中等到较丰富的观察性数据；怀疑非线性、高阶交互；需要全面探索 | `grf::causal_forest()`＋BLP＋校准／RATE＋独立验证             | VI 不是正式 modifier 检验；依赖重叠与因果识别 |
+| **2. Cross-fitted DR-learner＋可解释第二阶段**        | 核心目标是"识别哪些变量修饰效应"，并希望调整与解释分离   | `tidyhte`，或 AIPW 伪结局＋样条／稀疏回归／浅树；进一步结合 TE-VIM        | 第二阶段与后选择推断需要设计                |
+| **3. Causal survival forest／DR survival HTE** | OS/PFS/DFS，特别是关注绝对生存获益         | `grf::causal_survival_forest()`；RMST／生存率差；生存 TE-VIM | 必须处理删失、时间窗和晚期随访支持             |
+| **4. 治疗参数导向 MOB／正交化 model-based forest**      | 临床解释和连续变量切点十分重要；希望获得少量规则       | `partykit`、`model4you`，并借鉴观察性正交扩展                   | 默认所有参数分割可能混入预后分组；不能默认 DR      |
+| **5. 稀疏治疗交互作用／治疗 benefit-score 方法**           | 候选变量较多，但希望最终保留少量可解释变量；可能存在稀疏结构 | `personalized`；或治疗交互项设计＋`glmnet`／层级惩罚               | 要保留混杂控制；惩罚选择后不能使用普通 P 值作确认    |
+
+这些建议分别对应因果森林、DR-learner、生存因果森林、观察性模型森林及治疗评分方法的原始依据。([arXiv][5])
+
+**BCF／BART**是有价值的替代或敏感性分析方法，尤其适合希望灵活区分预后与治疗效应、并进行贝叶斯建模的研究；但它们本身不解决"自动筛选后哪些 modifier 可以正式宣布成立"的全部问题。([CRAN][37])
+
+**TMLE／DML**则更适合放在"对明确目标进行稳健估计与推断"的位置，而不是简单当作自动 modifier 搜索引擎。([CRAN][38])
+
+---
+
+## 最终结论
+
+**对于"在观察性医学数据中，经过混杂校正后，自动寻找某个核心治疗／暴露变量的效应修饰变量"，最合理的思路不是选一个包完成全部工作，而是明确分工：**
+
+$$
+\boxed{
+\text{因果识别与混杂控制}
+\;\rightarrow\;
+\text{CATE 学习}
+\;\rightarrow\;
+\text{治疗效应专用的变量筛选／解释}
+\;\rightarrow\;
+\text{独立验证}
+}
+$$
+
+对一般结局，优先考虑 **causal forest 或 DR-learner**；对 OS/PFS，优先考虑 **causal survival forest 或 RMST／生存概率尺度的 DR 方法**；需要临床切点时，再用**治疗参数导向的 MOB 或浅树**压缩解释。
+
+而你最关心的"到底哪些变量在修饰治疗效应"，应当特别关注 **Hines 2025 的 TE-VIM、Bénard 2025 的因果森林专用变量重要性，以及 Ziersen 2025 的生存 TE-VIM**。它们比普通随机森林重要性，甚至比因果森林默认的分裂频率排名，都更直接对应这个科学问题。([arXiv][21])
+
+[1]: https://academic.oup.com/jrsssb/article-abstract/85/2/179/7058918 "https://academic.oup.com/jrsssb/article-abstract/85/2/179/7058918"
+[2]: https://onlinelibrary.wiley.com/doi/full/10.1002/sim.10167 "https://onlinelibrary.wiley.com/doi/full/10.1002/sim.10167"
+[3]: https://pubmed.ncbi.nlm.nih.gov/41643894/ "https://pubmed.ncbi.nlm.nih.gov/41643894/"
+[4]: https://pubmed.ncbi.nlm.nih.gov/31711134/ "https://pubmed.ncbi.nlm.nih.gov/31711134/"
+[5]: https://arxiv.org/abs/1510.04342 "https://arxiv.org/abs/1510.04342"
+[6]: https://cran.r-project.org/web/packages/partykit/refman/partykit.html "https://cran.r-project.org/web/packages/partykit/refman/partykit.html"
+[7]: https://grf-labs.github.io/grf/reference/variable_importance.html "https://grf-labs.github.io/grf/reference/variable_importance.html"
+[8]: https://pubmed.ncbi.nlm.nih.gov/31711094/ "https://pubmed.ncbi.nlm.nih.gov/31711094/"
+[9]: https://projecteuclid.org/ "https://projecteuclid.org/"
+[10]: https://pubmed.ncbi.nlm.nih.gov/22253321/ "https://pubmed.ncbi.nlm.nih.gov/22253321/"
+[11]: https://pmc.ncbi.nlm.nih.gov/articles/PMC10981193/ "https://pmc.ncbi.nlm.nih.gov/articles/PMC10981193/"
+[12]: https://www.degruyterbrill.com/document/doi/10.2202/1557-4679.1043/html?srsltid=AU7gw4UzO1bnZ4OyRuuhQzcboNkCbBOK0ZukdH2CSjUsnHfBjUQtvJkZ "https://www.degruyterbrill.com/document/doi/10.2202/1557-4679.1043/html?srsltid=AU7gw4UzO1bnZ4OyRuuhQzcboNkCbBOK0ZukdH2CSjUsnHfBjUQtvJkZ"
+[13]: https://pmc.ncbi.nlm.nih.gov/articles/PMC3324457/ "https://pmc.ncbi.nlm.nih.gov/articles/PMC3324457/"
+[14]: https://pmc.ncbi.nlm.nih.gov/articles/PMC1125071/ "https://pmc.ncbi.nlm.nih.gov/articles/PMC1125071/"
+[15]: https://www.bmj.com/content/326/7382/219 "https://www.bmj.com/content/326/7382/219"
+[16]: https://pubmed.ncbi.nlm.nih.gov/ "https://pubmed.ncbi.nlm.nih.gov/"
+[17]: https://arxiv.org/abs/1605.04078 "https://arxiv.org/abs/1605.04078"
+[18]: https://www.pnas.org/doi/10.1073/pnas.1510489113 "https://www.pnas.org/doi/10.1073/pnas.1510489113"
+[19]: https://cran.r-project.org/web/packages/model4you/refman/model4you.html "https://cran.r-project.org/web/packages/model4you/refman/model4you.html"
+[20]: https://grf-labs.github.io/grf/reference/best_linear_projection.html "https://grf-labs.github.io/grf/reference/best_linear_projection.html"
+[21]: https://arxiv.org/abs/2204.06030 "https://arxiv.org/abs/2204.06030"
+[22]: https://arxiv.org/html/2204.06030v4 "https://arxiv.org/html/2204.06030v4"
+[23]: https://www.pnas.org/doi/10.1073/pnas.1804597116 "https://www.pnas.org/doi/10.1073/pnas.1804597116"
+[24]: https://cran.r-project.org/package%3Dpartykit "https://cran.r-project.org/package%3Dpartykit"
+[25]: https://cran.r-project.org/package%3Dmodel4you "https://cran.r-project.org/package%3Dmodel4you"
+[26]: https://cran.r-project.org/package%3DStratifiedMedicine "https://cran.r-project.org/package%3DStratifiedMedicine"
+[27]: https://cran.r-project.org/package%3Dgrf "https://cran.r-project.org/package%3Dgrf"
+[28]: https://cran.r-project.org/package%3Dtidyhte "https://cran.r-project.org/package%3Dtidyhte"
+[29]: https://cran.r-project.org/package%3Dpersonalized "https://cran.r-project.org/package%3Dpersonalized"
+[30]: https://cran.r-project.org/package%3DPublish "https://cran.r-project.org/package%3DPublish"
+[31]: https://cran.r-project.org/package%3DFindIt "https://cran.r-project.org/package%3DFindIt"
+[32]: https://cran.r-project.org/package%3Dglmnet "https://cran.r-project.org/package%3Dglmnet"
+[33]: https://cran.r-project.org/package%3Dglinternet "https://cran.r-project.org/package%3Dglinternet"
+[34]: https://cran.r-project.org/package%3DhierNet "https://cran.r-project.org/package%3DhierNet"
+[35]: https://github.com/susanathey/causalTree/blob/master/DESCRIPTION "https://github.com/susanathey/causalTree/blob/master/DESCRIPTION"
+[36]: https://cran.r-project.org/package%3DbartCause "https://cran.r-project.org/package%3DbartCause"
+[37]: https://cran.r-project.org/package%3Dbcf "https://cran.r-project.org/package%3Dbcf"
+[38]: https://cran.r-project.org/package%3DDoubleML "https://cran.r-project.org/package%3DDoubleML"
+[39]: https://cran.r-project.org/package%3Dtmle "https://cran.r-project.org/package%3Dtmle"
+[40]: https://github.com/tlverse/tmle3/blob/master/DESCRIPTION "https://github.com/tlverse/tmle3/blob/master/DESCRIPTION"
+[41]: https://grf-labs.github.io/grf/reference/index.html "Function reference • grf"
+[42]: https://cran.r-project.org/web/packages/Publish/refman/Publish.html "https://cran.r-project.org/web/packages/Publish/refman/Publish.html"
+[43]: https://cran.r-project.org/web/packages/DoubleML/refman/DoubleML.html "https://cran.r-project.org/web/packages/DoubleML/refman/DoubleML.html"
+[44]: https://cran.r-project.org/web/packages/personalized/refman/personalized.html "https://cran.r-project.org/web/packages/personalized/refman/personalized.html"
+[45]: https://cran.r-project.org/web/packages/StratifiedMedicine/vignettes/SM_PRISM.html "https://cran.r-project.org/web/packages/StratifiedMedicine/vignettes/SM_PRISM.html"
+[46]: https://www.tandfonline.com/doi/abs/10.1198/106186008X319331 "https://www.tandfonline.com/doi/abs/10.1198/106186008X319331"
+[47]: https://onlinelibrary.wiley.com/doi/10.1002/sim.4289 "https://onlinelibrary.wiley.com/doi/10.1002/sim.4289"
+[48]: https://pmc.ncbi.nlm.nih.gov/articles/PMC4338439/ "https://pmc.ncbi.nlm.nih.gov/articles/PMC4338439/"
+[49]: https://onlinelibrary.wiley.com/doi/10.1002/sim.5933 "https://onlinelibrary.wiley.com/doi/10.1002/sim.5933"
+[50]: https://openresearchsoftware.metajnl.com/articles/10.5334/jors.219 "model4you: An R Package for Personalised Treatment Effect ..."
+[51]: https://www.jstatsoft.org/article/view/v098i05 "https://www.jstatsoft.org/article/view/v098i05"
+[52]: https://pubmed.ncbi.nlm.nih.gov/39184837/ "https://pubmed.ncbi.nlm.nih.gov/39184837/"
+[53]: https://onlinelibrary.wiley.com/doi/10.1111/sjos.70001 "https://onlinelibrary.wiley.com/doi/10.1111/sjos.70001"
+[54]: https://www.tandfonline.com/doi/full/10.1080/01621459.2023.2205060 "https://www.tandfonline.com/doi/full/10.1080/01621459.2023.2205060"
+[55]: https://projecteuclid.org/journals/annals-of-applied-statistics/volume-18/issue-1/What-makes-forest-based-heterogeneous-treatment-effect-estimators-work/10.1214/23-AOAS1799.full "https://projecteuclid.org/journals/annals-of-applied-statistics/volume-18/issue-1/What-makes-forest-based-heterogeneous-treatment-effect-estimators-work/10.1214/23-AOAS1799.full"
+[56]: https://pubmed.ncbi.nlm.nih.gov/39054669/ "https://pubmed.ncbi.nlm.nih.gov/39054669/"
+[57]: https://pubmed.ncbi.nlm.nih.gov/39305940/ "https://pubmed.ncbi.nlm.nih.gov/39305940/"
+[58]: https://pubmed.ncbi.nlm.nih.gov/40047339/ "https://pubmed.ncbi.nlm.nih.gov/40047339/"
+[59]: https://pmc.ncbi.nlm.nih.gov/articles/PMC12284745/ "https://pmc.ncbi.nlm.nih.gov/articles/PMC12284745/"
+[60]: https://www.degruyterbrill.com/document/doi/10.1515/jci-2023-0062/html?srsltid=AU7gw4V5fY71elG58B4p4o09w1rQUok_dGmHXg6q-2Ws_Bxmt-hoDH4R "https://www.degruyterbrill.com/document/doi/10.1515/jci-2023-0062/html?srsltid=AU7gw4V5fY71elG58B4p4o09w1rQUok_dGmHXg6q-2Ws_Bxmt-hoDH4R"
+[61]: https://www.tandfonline.com/doi/full/10.1080/01621459.2024.2393466 "https://www.tandfonline.com/doi/full/10.1080/01621459.2024.2393466"
+[62]: https://arxiv.org/abs/2505.13072 "https://arxiv.org/abs/2505.13072"
+[63]: https://arxiv.org/abs/2604.10398 "https://arxiv.org/abs/2604.10398"
+[64]: https://grf-labs.github.io/grf/reference/causal_survival_forest.html "https://grf-labs.github.io/grf/reference/causal_survival_forest.html"
+[65]: https://arxiv.org/abs/2106.06602 "https://arxiv.org/abs/2106.06602"
+[66]: https://arxiv.org/abs/2308.03369 "https://arxiv.org/abs/2308.03369"
+[67]: https://arxiv.org/abs/2111.07966 "https://arxiv.org/abs/2111.07966"
