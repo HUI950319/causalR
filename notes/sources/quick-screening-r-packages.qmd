@@ -1,0 +1,1273 @@
+---
+title: "快速筛选效应修饰变量的 R 包"
+subtitle: "四条技术路线、筛选指标分类与两阶段流程"
+lang: zh
+---
+
+全面检索后可以把"**快速筛选某个治疗/暴露 $A$ 的效应修饰变量**"的 R 方法归成 **4 条路线**。其中一些在[上一篇](effect-modifier-discovery.qmd)没有提到，尤其值得加入的是 **`BioPred`、`SubgrpID`、`CRE`、`tehtuner`、`subscreen`、`SIDES/rsides`、`samTEMsel`**。
+
+先给结论：如果你的目标是**先从几十个变量快速筛出候选 effect modifiers，再进入正式验证**，我最关注的不是单一方法，而是下面三类指标：
+
+$$
+\boxed{\text{effect-modifier-specific VIM}}
+$$
+
+$$
+\boxed{\text{CATE/HTE model variable importance}}
+$$
+
+$$
+\boxed{\text{treatment}\times X\text{ regularized selection}}
+$$
+
+---
+
+## 一、最值得关注的"快速筛选"R 包
+
+| 包 / 函数                                         | 筛选机制                                                              | 最终得到什么                                          |             是否直接针对效应修饰 |                      混杂校正 |               生存结局 | 适合作为快速初筛 |
+| ---------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------- | ---------------------: | ------------------------: | -----------------: | -------: |
+| **`unihtee::unihtee()`**                       | **TEM-VIP**，半参数 causal ML variable importance                     | 每变量 TEM-VIP、SE、P 值                              |              **✅ 很直接** |                     **✅** |              **✅** |    ⭐⭐⭐⭐⭐ |
+| **`uniCATE::unicate()` / `sunicate()`**        | 单变量 CATE slope VIM                                                | modifier strength、SE、P                          |                  **✅** |                    RCT 为主 | **✅ `sunicate()`** |    ⭐⭐⭐⭐⭐ |
+| **`tidyhte::calculate_vimp()` / `add_vimp()`** | 删除某 modifier 后 **HTE $R^2$** 损失                                   | VIMP + inference                                |                  **✅** |          **✅ DR learner** |                 ⚠️ |    ⭐⭐⭐⭐⭐ |
+| **`grf::variable_importance()`**               | causal forest **split-frequency/depth VIM**                       | 变量重要性排名                                         |  ⚠️ algorithm-specific |   **✅ orthogonalization** |              **✅** |    ⭐⭐⭐⭐⭐ |
+| **`grf::best_linear_projection()`**            | CATE 对候选变量的最佳线性投影                                                 | modifier coefficient + SE/P                     |             **✅ 推断更强** |                         ✅ |                  ✅ |    ⭐⭐⭐⭐⭐ |
+| **`BioPred::predictive_biomarker_imp()`**      | XGBoost modified-loss importance                                  | predictive biomarker ranking                    |             **✅ 偏预测型** | ✅ propensity / A-learning |              **✅** |    ⭐⭐⭐⭐⭐ |
+| **`model4you::varimp(pmforest)`**              | permutation VIM / mean decrease in objective performance          | 变量重要性排名                                         |               ⚠️ 参数异质性 |                     取决于模型 |            Weibull |     ⭐⭐⭐⭐ |
+| **`StratifiedMedicine::filter_train()`**       | Elastic Net 或 RF-VIM；可强制 $A\times X$                              | 过滤后的变量集                                         | ✅可设置 predictive filter |             ✅可进入 PRISM/DR |              **✅** |    ⭐⭐⭐⭐⭐ |
+| **`SubgrpID::SubgrpID()`**                     | Sequential BATTing + bootstrap + threshold aggregation            | predictive biomarker signature                  |                  **✅** |                RCT 为主/需设计 |              **✅** |     ⭐⭐⭐⭐ |
+| **`FindIt::FindIt()`**                         | SVM + separate LASSO penalty for causal heterogeneity             | 被选中的 treatment×X                                |                  **✅** | 可含 main-effect adjustment |                ❌主力 |    ⭐⭐⭐⭐⭐ |
+| **`samTEMsel`**                                | Sparse additive model +结构化稀疏选择                                    | nonlinear treatment modifiers                   |                  **✅** |                  RCT/模型依赖 |                  ❌ |     ⭐⭐⭐⭐ |
+| **`personalized::fit.subgroup()`**             | modified covariate / weighting / A-learning + lasso               | benefit score + selected variables              |                      ✅ |              ✅ propensity |          **✅ Cox** |     ⭐⭐⭐⭐ |
+| **`CRE::cre()`**                               | ITE pseudo-outcome → tree rules → **stability selection + LASSO** | 稳定 HTE rules                                    |                      ✅ |       **✅ AIPW/CF/BART等** |     当前主要非 survival |     ⭐⭐⭐⭐ |
+| **`tehtuner::tunevt()`**                       | Virtual Twins + permutation-calibrated Step-2 selection           | CATE modifiers / subgroups                      |                      ✅ |                    主要 RCT |         依赖 learner |     ⭐⭐⭐⭐ |
+| **`subscreen::subscreenvi()`**                 | 不同治疗组 RF importance 差异                                            | VIM ranking + thousands subgroups visualization |                  ⚠️探索性 |                  ❌不是因果 DR |              **✅** |     ⭐⭐⭐⭐ |
+| **`SIDES::SIDES()` / `rsides`**                | Differential Effect Search recursive partitioning                 | 亚组规则                                            |                      ✅ |                    主要 RCT |              **✅** |      ⭐⭐⭐ |
+| **`TSDT::TSDT()`**                             | bootstrap tree + treatment-effect scoring                         | superior subgroup rules                         |                      ✅ |                    主要 RCT |        **✅ RMST等** |      ⭐⭐⭐ |
+| **`quint::quint()`**                           | qualitative interaction tree                                      | treatment reversal subgroups                    |       ✅仅定性 interaction |                       RCT |              ❌主要连续 |      ⭐⭐⭐ |
+
+---
+
+## 二、第一类：真正的"效应修饰变量重要性"
+
+这是我认为**最符合你问题本身**的一类。
+
+### 1. `unihtee::unihtee()`
+
+目前很值得重点关注。
+
+它不是问：
+
+> 这个变量是否预测 Y？
+
+而是直接定义：
+
+> **这个变量对于 treatment-effect modification 有多重要？**
+
+其核心 estimand 是：
+
+#### TEM-VIP
+
+Treatment Effect Modifier Variable Importance Parameter。
+
+`unihtee()` 会针对每个候选变量做 TEM-VIP inference，可以用于：
+
+* continuous outcome
+* binary outcome
+* **time-to-event**
+* observational data
+* binary exposure/treatment
+
+并且有 absolute 和 relative effect scale。官方示例就是在观察性数据里，从多个 pretreatment covariates 中识别真正的 treatment effect modifiers。([GitHub][1])
+
+所以：
+
+```text
+20–100个候选变量
+        ↓
+unihtee()
+        ↓
+TEM-VIP
+SE
+Z
+P
+        ↓
+排序
+```
+
+非常符合"快速筛选"。
+
+#### 与普通 RF importance 最大区别
+
+普通 RF importance：
+
+$$
+X_j \rightarrow Y
+$$
+
+而 TEM-VIP：
+
+$$
+X_j \rightarrow
+\text{heterogeneity of }A\rightarrow Y
+$$
+
+因此概念更加干净。
+
+---
+
+## 三、`uniCATE`：单变量快速筛 modifier 很强
+
+### `uniCATE::unicate()`
+
+核心 VIM 是：
+
+$$
+\beta_j
+$$
+
+即用变量 $X_j$ 对 CATE 做一维线性近似，其 slope 的绝对值反映 treatment-effect modification strength。
+
+官方定义就是：
+
+> variable importance parameter = univariate CATE linear approximation slope。
+
+并给出 formal hypothesis tests。([Insights Engineering][2])
+
+因此非常适合：
+
+```text
+age
+BMI
+HE4
+CA125
+stage
+...
+ ↓
+逐个计算 modifier strength
+ ↓
+Estimate / SE / P
+```
+
+#### 生存结局
+
+直接有：
+
+```r
+sunicate()
+```
+
+专门针对：
+
+> right-censored time-to-event outcome
+
+可以筛选 survival treatment-effect modifiers。([GitHub][3])
+
+这对 **OS/PFS** 非常有吸引力。
+
+但需要注意：
+
+> `uniCATE` 的主要设计背景是 RCT。
+
+如果是观察性数据，我会更倾向 **`unihtee`**。
+
+---
+
+## 四、`tidyhte`：R²-loss VIMP
+
+这个也是非常标准的"变量重要性"思路。
+
+核心：
+
+```r
+add_vimp()
+```
+
+底层：
+
+```r
+calculate_vimp()
+```
+
+定义大体是：
+
+$$
+VIMP_j
+=
+R^2_{\text{full}}
+-
+R^2_{\text{without }X_j}
+$$
+
+即：
+
+> 删除 $X_j$ 后，解释 treatment-effect heterogeneity 的能力下降多少？
+
+官方就是这样定义的。([Rdrr.io][4])
+
+因此：
+
+$$
+VIMP_j\gg0
+$$
+
+提示：
+
+$$
+X_j
+$$
+
+很可能是重要 modifier。
+
+更重要的是它基于 Kennedy 的 **doubly robust learner**：
+
+$$
+Outcome\ model
++
+Propensity\ model
+\rightarrow
+DR\ pseudo-outcome
+$$
+
+然后再计算 HTE VIMP。`tidyhte` 明确支持 experimental 和 observational data。([Cran][5])
+
+### 优点
+
+相对于 GRF：
+
+> VIMP 有明确 population quantity 的解释。
+
+因此做论文方法会比单纯 `grf::variable_importance()` 更漂亮。
+
+---
+
+## 五、GRF：最快、最成熟的 CATE screening 方法之一
+
+基本：
+
+```r
+cf <- causal_forest(X, Y, W)
+
+variable_importance(cf)
+```
+
+### `variable_importance()`
+
+需要特别注意定义。
+
+它实际上是：
+
+> 每个变量在 forest 不同深度被用于 split 的加权频率。
+
+不是 permutation importance，也不是 TE-VIM。([GRF Labs][6])
+
+所以：
+
+$$
+VI_j
+$$
+
+高表示这个变量在：
+
+$$
+\tau(X)
+$$
+
+的 tree splitting 中经常很重要。
+
+### 优点
+
+特别快、方便：
+
+```text
+50 variables
+    ↓
+causal_forest
+    ↓
+variable_importance
+    ↓
+排名
+```
+
+### 缺点
+
+不能直接解释：
+
+> VI = 0.25 就意味着 effect modification = 0.25。
+
+也没有一个正式的：
+
+$$
+H_0:VIM_j=0
+$$
+
+P 值。
+
+---
+
+## 六、GRF 中更适合"正式检验 modifier"的是 `best_linear_projection()`
+
+GRF 官方把：
+
+```r
+best_linear_projection()
+```
+
+作为 CATE analysis tool。([GRF Labs][7])
+
+基本思想：
+
+先通过 causal forest 得到：
+
+$$
+\tau(X)
+$$
+
+然后研究：
+
+$$
+\tau(X)
+\approx
+\beta_0+
+\beta_1X_1+
+\cdots+
+\beta_pX_p
+$$
+
+可以得到：
+
+* coefficient
+* standard error
+* CI
+* P value
+
+所以很适合：
+
+```text
+variable_importance()
+       ↓
+快速排名
+       ↓
+选 Top 5–10
+       ↓
+best_linear_projection()
+       ↓
+正式检查 modifier
+```
+
+我认为这是 GRF 很合理的使用方式。
+
+---
+
+## 七、OS/PFS：GRF 有独立 survival 版本
+
+```r
+causal_survival_forest()
+```
+
+支持：
+
+### RMST CATE
+
+$$
+E[\min(T(1),h)-\min(T(0),h)\mid X]
+$$
+
+或者：
+
+### survival probability CATE
+
+$$
+P(T(1)>h\mid X)-P(T(0)>h\mid X)
+$$
+
+并且可以输入/自动估计 treatment propensity `W.hat`。([GRF Labs][8])
+
+训练以后同样可以：
+
+```r
+variable_importance(csf)
+```
+
+快速看 modifier ranking。
+
+所以对你的 **OS/PFS**：
+
+$$
+\boxed{
+causal\_survival\_forest
++
+variable\_importance
+}
+$$
+
+是目前非常实用的一条初筛路线。
+
+---
+
+## 八、一个我这次检索中特别建议加入的包：`BioPred`
+
+这个包很符合你说的：
+
+> **快速寻找 predictive biomarker / effect modifier**
+
+主要函数：
+
+```r
+XGBoostSub_con()
+XGBoostSub_bin()
+XGBoostSub_sur()
+```
+
+分别适合：
+
+* continuous
+* binary
+* **survival**
+
+其方法是：
+
+$$
+\boxed{
+A\text{-learning / Weight-learning}
++
+XGBoost
+}
+$$
+
+BioPred 将 modified-loss framework 与 XGBoost 结合，用于 individualized treatment rule 和 predictive biomarker discovery。([PubMed Central (PMC)][9])
+
+### 直接有一个你想要的函数
+
+```r
+predictive_biomarker_imp()
+```
+
+它会输出：
+
+> **predictive biomarker importance ranking**
+
+底层使用：
+
+```r
+xgboost::xgb.importance()
+```
+
+计算 importance。([PubMed Central (PMC)][9])
+
+例如：
+
+```text
+HE4       0.38
+Stage     0.27
+BMI       0.16
+CA125     0.11
+Age       0.08
+```
+
+这就特别适合初筛。
+
+而且有：
+
+```r
+XGBoostSub_sur()
+```
+
+所以对 **PFS/OS** 相当友好。([布里斯托大学统计网站][10])
+
+---
+
+## 九、`model4you` 其实也有你要的 VIM
+
+我们前面更多讨论：
+
+```r
+pmtree()
+```
+
+但实际上还有：
+
+```r
+pmforest()
+```
+
+以及：
+
+```r
+varimp()
+```
+
+即：
+
+### `varimp.pmforest()`
+
+其 variable importance 是 **permutation VIM**。
+
+算法会扰乱某一个变量，然后检查模型 performance/objective function 下降多少。
+
+默认使用类似 mean decrease in accuracy 的 importance；还支持 conditional permutation importance。([Rdrr.io][11])
+
+所以：
+
+```text
+pmforest
+   ↓
+varimp()
+   ↓
+潜在 effect modifier ranking
+```
+
+这比只看一棵 MOB tree 更适合**快速筛选**。
+
+---
+
+## 十、`StratifiedMedicine` 其实专门有"过滤变量"函数
+
+这个之前容易忽略。
+
+### `filter_train()`
+
+直接就是：
+
+> Identify variables of interest.
+
+支持：
+
+#### Elastic Net
+
+```r
+filter = "glmnet"
+```
+
+以及：
+
+#### Random Forest importance
+
+```r
+filter = "ranger"
+```
+
+([Rdrr.io][12])
+
+更重要的是，它可以强制加入：
+
+$$
+Treatment\times X
+$$
+
+例如：
+
+$$
+Y\sim X+A\times X
+$$
+
+然后用 Elastic Net 筛掉：
+
+$$
+\beta_{A\times X}=0
+$$
+
+的变量。
+
+官方 vignette 就展示了通过 treatment interaction 识别 prognostic + predictive variables。([CRAN镜像][13])
+
+### 所以可以很简单地：
+
+```r
+filter_train(
+    Y,
+    A,
+    X,
+    family = "survival",
+    filter = "glmnet",
+    hyper = list(
+        interaction = TRUE
+    )
+)
+```
+
+它支持：
+
+```text
+gaussian
+binomial
+survival
+```
+
+生存结局内部可以用 Cox elastic net。([Rdrr.io][12])
+
+这一点对你非常实用。
+
+---
+
+## 十一、`SubgrpID`：被低估的 clinical subgroup screening 包
+
+最新版已经到：
+
+**0.14，2026-03-10**。([CRAN镜像][14])
+
+它直接实现：
+
+### Sequential BATTing
+
+即：
+
+> bootstrapping + aggregating thresholds from trees。
+
+而且：
+
+> **variable selection automatically built-in**
+
+并最终得到 multivariate predictive biomarker signature。([CRAN镜像][14])
+
+主函数：
+
+```r
+SubgrpID()
+```
+
+其中可以直接指定：
+
+```r
+pre.filter
+filter.method
+```
+
+过滤方法包括：
+
+```text
+univariate
+glmnet
+unicart
+```
+
+而且支持：
+
+```text
+continuous
+binary
+survival
+```
+
+。([R 搜索][15])
+
+因此对于：
+
+> 从 30–100 个 clinical variables 中先缩小到几个 predictive biomarkers
+
+很好用。
+
+---
+
+## 十二、`FindIt`：非常纯粹的 treatment×variable selection
+
+主函数：
+
+```r
+FindIt()
+```
+
+可以指定：
+
+```r
+model.main
+```
+
+作为 main/prognostic variables，
+
+和：
+
+```r
+model.int
+```
+
+作为 treatment interaction candidates。([R 搜索][16])
+
+其方法特点是：
+
+### Adapted SVM + separate LASSO penalties
+
+分别惩罚：
+
+* baseline/prognostic parameters
+* causal heterogeneity parameters
+
+因此：
+
+$$
+\beta_X
+$$
+
+和：
+
+$$
+\beta_{A\times X}
+$$
+
+不会混为一谈。([今井浩介的主页][17])
+
+这点其实非常适合你：
+
+> **我只想找谁修饰 A 的效应，而不是谁预测 Y。**
+
+---
+
+## 十三、`samTEMsel`：高维 + 非线性 modifier selection
+
+这个更方法学化。
+
+全称：
+
+> Sparse Additive Models for Treatment Effect-Modifier Selection
+
+它直接建立：
+
+$$
+\tau(X)
+=
+\sum_j f_j(X_j)
+$$
+
+通过 sparse additive structure 让不重要的：
+
+$$
+f_j(X_j)
+$$
+
+变成 0。
+
+因此既能：
+
+### 变量选择
+
+又能：
+
+### 非线性 modifier modelling
+
+比如真实关系可能不是：
+
+$$
+A\times Age
+$$
+
+线性，而是：
+
+$$
+A\times f(Age)
+$$
+
+该方法采用 back-fitting + sparsity constraints 选择 treatment effect modifiers。作者提供 `samTEMsel` R 代码。([OUP Academic][18])
+
+---
+
+## 十四、`CRE`：不是变量排名，而是"规则重要性"
+
+主函数：
+
+```r
+CRE::cre()
+```
+
+特别有意思。
+
+第一步先估计 ITE/pseudo-outcome，可选择：
+
+* AIPW
+* causal forest
+* BART
+* S-learner
+* T-learner
+* X-learner
+
+。([R 搜索][19])
+
+然后：
+
+```text
+很多 trees
+   ↓
+产生大量 candidate rules
+   ↓
+Stability Selection
+   +
+LASSO
+   ↓
+选稳定 HTE rules
+```
+
+例如：
+
+```text
+Age < 63
+HE4 > 500
+Stage III/IV & BMI < 24
+```
+
+CRE 专门把 discovery 和 inference 分开，并使用 honest splitting。([PubMed Central (PMC)][20])
+
+因此它不是：
+
+> "Age importance = 0.3"
+
+而是：
+
+> **哪些临床规则稳定解释 HTE？**
+
+对于临床解释非常好。
+
+---
+
+## 十五、`tehtuner`：Virtual Twins + Type-I error control
+
+这是另一个值得加入的方法。
+
+主函数：
+
+```r
+tunevt()
+```
+
+### Step 1
+
+先估计每个人：
+
+$$
+\widehat{CATE}_i
+$$
+
+可以使用：
+
+* LASSO
+* MARS
+* random forest
+* SuperLearner
+
+### Step 2
+
+再用：
+
+* LASSO
+* regression tree
+* classification tree
+* conditional inference tree
+
+解释：
+
+$$
+\widehat{CATE}_i
+$$
+
+。([R 搜索][21])
+
+特别的是：
+
+> 它通过 permutation 选择 tuning parameter，控制"错误发现 HTE"的 Type-I error。
+
+([镜像克拉克森大学][22])
+
+因此比普通：
+
+```text
+CATE → CART
+```
+
+更稳妥一些。
+
+---
+
+## 十六、`subscreen`：真正意义上的"快速扫一遍所有 subgroup"
+
+这个包名字就非常符合你的要求：
+
+### Systematic Screening of Study Data for Subgroup Effects
+
+主要：
+
+```r
+subscreencalc()
+```
+
+可以一次生成大量 candidate subgroups。
+
+然后：
+
+```r
+subscreenvi()
+```
+
+计算 variable importance。
+
+它的 VIM 很特别：
+
+> 对每个 treatment arm 分别做 random forest importance，然后看 **不同 treatment arms 之间变量重要性的差异/变异**。
+
+如果某变量：
+
+* treatment A 中重要；
+* treatment B 中不重要；
+
+那么它可能是一个潜在 treatment-effect modifier。([GitHub][23])
+
+最新版本：
+
+**4.0.1，2025-03-18**。([镜像站][24])
+
+### 优点
+
+特别适合：
+
+> exploratory screening。
+
+### 缺点
+
+这不是严格的 causal VIM。
+
+因此适合作为：
+
+$$
+\text{hypothesis generation}
+$$
+
+不能单独作为正式因果结论。
+
+---
+
+## 十七、树/亚组型快速搜索方法
+
+这些不是典型"变量重要性"，而是看**变量是否反复进入 subgroup rules**。
+
+### `SIDES::SIDES()`
+
+Differential Effect Search。
+
+递归搜索：
+
+> 哪些分割能够最大化 treatment difference。
+
+支持 continuous、binary、survival、count 等 outcome。([Rdrr.io][25])
+
+现在还有较新的：
+
+```r
+rsides
+```
+
+2024 年发布的 SIDES-based subgroup search 实现。([沈阳航空航天大学开源镜像站][26])
+
+### `TSDT::TSDT()`
+
+Treatment-Specific Subgroup Detection Tool。
+
+做很多 bootstrap trees：
+
+```text
+Bootstrap
+   ↓
+tree
+   ↓
+每个 split → subgroup
+   ↓
+比较 treatment-effect scoring function
+   ↓
+保留 superior subgroups
+```
+
+还可以自定义 scoring function，包括：
+
+* mean treatment difference
+* median difference
+* survival / RMST 等。
+
+([R 搜索][27])
+
+### `quint::quint()`
+
+QUalitative INteraction Trees。
+
+它特别寻找：
+
+$$
+Treatment\ A > B
+$$
+
+在一组患者，
+
+但：
+
+$$
+Treatment\ B > A
+$$
+
+在另一组患者。
+
+也就是：
+
+> **qualitative / crossover interaction**
+
+。([PubMed Central (PMC)][28])
+
+这个比较严格，但适用场景窄，主要 RCT + continuous outcome。
+
+---
+
+## 十八、哪些"普通 VIM 包"不能直接当 effect-modifier screening？
+
+这一点非常关键。
+
+比如：
+
+```r
+randomForest::importance()
+randomForestSRC::vimp()
+caret::varImp()
+ranger::importance()
+vimp::vim()
+```
+
+本身通常估计：
+
+$$
+X_j\rightarrow Y
+$$
+
+的重要性。
+
+例如 Random Forest permutation importance 本质上是：
+
+> permute $X_j$ 后预测 Y 的误差增加多少。
+
+([R 搜索][29])
+
+这通常表示：
+
+$$
+\boxed{\text{prognostic importance}}
+$$
+
+而不是：
+
+$$
+\boxed{\text{effect modifier importance}}
+$$
+
+除非你先把 outcome 换成：
+
+### CATE
+
+或者：
+
+### DR pseudo-outcome
+
+或者：
+
+### treatment-effect score
+
+然后再计算 VIM。
+
+---
+
+## 十九、因此可以把所有方法按"筛选指标"重新分类
+
+这是最关键的表。
+
+| 筛选指标                                     | 代表包                            | 数学/统计意义                                                 | 更像什么                         |
+| ---------------------------------------- | ------------------------------ | ------------------------------------------------------- | ---------------------------- |
+| **TEM-VIP**                              | `unihtee`                      | treatment-effect modifier-specific population parameter | **最直接**                      |
+| **uniCATE slope**                        | `uniCATE`                      | $X_j$ 与 CATE 的单变量 slope                                 | 快速 formal screening          |
+| **TE-VIM**                               | Hines code                     | 删除 $X_j$ 后 CATE prediction MSE 增量                       | 理论最纯                         |
+| **HTE $R^2$ loss**                       | `tidyhte`                      | 去掉变量后解释 CATE 的 $R^2$ 下降                                 | algorithm-agnostic VIM       |
+| **Forest split importance**              | `grf`                          | HTE forest 中变量被 split 的频率/深度                            | 快速 ranking                   |
+| **Permutation importance**               | `model4you`                    | permute $X_j$ 后 personalized model performance下降        | model-based VIM              |
+| **XGBoost importance**                   | `BioPred`                      | modified-loss XGBoost split/gain importance             | 快速 biomarker rank            |
+| **RF treatment-arm difference VIM**      | `subscreen`                    | 各 treatment arm 中 VIM 差异                                | exploratory modifier signal  |
+| **Elastic-net interaction coefficients** | `StratifiedMedicine`, `FindIt` | $A\times X_j$ 是否被 shrink 到 0                            | direct interaction selection |
+| **Sparse additive functions**            | `samTEMsel`                    | $f_j(X_j)$ 是否非零                                         | nonlinear modifier selection |
+| **CATE → LASSO/tree**                    | `tehtuner`                     | 哪些 X 可解释 estimated CATE                                 | Virtual Twins                |
+| **Stability-selected rules**             | `CRE`                          | 哪些 subgroup rules 稳定解释 ITE                              | interpretable HTE            |
+| **Bootstrap threshold frequency**        | `SubgrpID`                     | 哪些变量/threshold 经 bootstrap 稳定出现                         | biomarker signature          |
+| **Recursive differential effect**        | `SIDES/TSDT/QUINT/MOB`         | 哪些 split 最大化 treatment-effect difference                | subgroup discovery           |
+
+---
+
+## 二十、如果目标是"快速初筛 30–100 个变量"，我会这样选
+
+### 场景 A：观察性研究 + 普通连续/二分类结局
+
+第一梯队：
+
+$$
+\boxed{\texttt{unihtee}}
+$$
+
+$$
+\boxed{\texttt{tidyhte}}
+$$
+
+$$
+\boxed{\texttt{grf}}
+$$
+
+理由：
+
+* 都围绕 causal HTE；
+* 可以考虑 treatment assignment；
+* 不只是普通 outcome prediction。
+
+### 场景 B：观察性研究 + OS/PFS
+
+我会重点比较：
+
+#### ① `unihtee()`
+
+直接 TEM-VIP + survival。
+
+#### ② `grf::causal_survival_forest()`
+
+然后：
+
+```r
+variable_importance()
+```
+
+进行快速 ranking。
+
+#### ③ `BioPred`
+
+```r
+XGBoostSub_sur()
+predictive_biomarker_imp()
+```
+
+做非线性 ML screening。
+
+#### ④ `StratifiedMedicine::filter_train()`
+
+```r
+family = "survival"
+filter = "glmnet"
+interaction = TRUE
+```
+
+做 interaction Elastic Net 初筛。
+
+#### ⑤ `SubgrpID`
+
+做 threshold/signature discovery。
+
+---
+
+## 二十一、我更建议你建立"两阶段筛选"
+
+如果你有例如：
+
+```text
+Age
+BMI
+Stage
+HE4
+CA125
+CEA
+AFP
+P53
+Ascites
+Tumor reduction
+NACT
+...
+```
+
+不要直接跑几十个 Cox：
+
+$$
+Treatment\times X_j
+$$
+
+然后看谁 $P<0.05$。
+
+更合理的是：
+
+```text
+                  所有候选变量
+                       │
+        ┌──────────────┼──────────────┐
+        ↓              ↓              ↓
+     TEM-VIP        Causal Forest   Interaction
+     unihtee           GRF           LASSO
+        │              │              │
+        ↓              ↓              ↓
+       rank           rank          selected
+        └──────────────┼──────────────┘
+                       ↓
+                 候选modifier
+                    3–8个
+                       ↓
+          adjusted interaction model
+                       ↓
+               A × modifier
+                       ↓
+              P-interaction + CI
+                       ↓
+             subgroup effect estimates
+```
+
+### 对你的研究方向，我最推荐的组合
+
+如果是**肿瘤观察性队列 + OS/PFS**：
+
+$$
+\boxed{
+\texttt{unihtee}
++
+\texttt{causal\_survival\_forest}
++
+\texttt{BioPred}
+}
+$$
+
+作为三种不同机制的**探索性 screening**：
+
+* `unihtee`：**因果 estimand / TEM-VIP**
+* `grf`：**CATE tree-based importance**
+* `BioPred`：**modified-loss XGBoost importance**
+
+如果三个方法都把例如 **stage、age、HE4** 排在前面，那么候选 modifier 的可信度明显强于单一算法。
+
+然后再用：
+
+$$
+\boxed{
+\text{adjusted Cox } Treatment\times Modifier
+}
+$$
+
+做正式的 **P for interaction**。
+
+这比只用 `MOB` 或只用 `grf::variable_importance()` 更完整，因为它把"**筛选**"和"**确认性推断**"分开了。
+
+[1]: https://github.com/insightsengineering/unihtee "GitHub - insightsengineering/unihtee: Tools for uncovering treatment effect modifiers in high-dimensional data."
+[2]: https://insightsengineering.github.io/uniCATE/main/reference/unicate.html "Univariate Conditional Average Treatment Effect Estimation — unicate • uniCATE"
+[3]: https://github.com/insightsengineering/uniCATE "GitHub - insightsengineering/uniCATE: Univariate conditional average treatment effect estimation for predictive biomarker discovery"
+[4]: https://rdrr.io/cran/tidyhte/man/add_vimp.html "add_vimp: Adds variable importance information in tidyhte: Tidy Estimation of Heterogeneous Treatment Effects"
+[5]: https://cran.nics.utk.edu/cran/web/packages/tidyhte/index.html "CRAN: Package tidyhte"
+[6]: https://grf-labs.github.io/grf/reference/variable_importance.html "Calculate a simple measure of 'importance' for each feature. — variable_importance • grf"
+[7]: https://grf-labs.github.io/grf/reference/index.html "Function reference • grf"
+[8]: https://grf-labs.github.io/grf/reference/causal_survival_forest.html "Causal survival forest — causal_survival_forest • grf"
+[9]: https://pmc.ncbi.nlm.nih.gov/articles/PMC11483108/ "BioPred: an R package for biomarkers analysis in precision medicine - PMC"
+[10]: https://www.stats.bris.ac.uk/R/web/packages/BioPred/readme/README.html "BioPred README"
+[11]: https://rdrr.io/cran/model4you/man/varimp.pmforest.html "varimp.pmforest: Variable Importance for pmforest in model4you"
+[12]: https://rdrr.io/cran/StratifiedMedicine/man/filter_train.html "filter_train: Identify variables of interest in StratifiedMedicine"
+[13]: https://cran.mirror.garr.it/mirrors/CRAN/web/packages/StratifiedMedicine/vignettes/SM_PRISM.html "An Introduction to StratifiedMedicine"
+[14]: https://cran.mirror.garr.it/CRAN/web/packages/SubgrpID/index.html "CRAN: Package SubgrpID"
+[15]: https://search.r-project.org/CRAN/refmans/SubgrpID/html/SubgrpID.html "R: SubgrpID"
+[16]: https://search.r-project.org/CRAN/refmans/FindIt/html/FindIt.html "R: FindIt for Estimating Heterogeneous Treatment Effects"
+[17]: https://imai.fas.harvard.edu/software/FindIt.html "FindIt: Finding Heterogeneous Treatment Effects"
+[18]: https://academic.oup.com/biostatistics/article/23/2/412/5893762 "sparse additive model for treatment effect-modifier selection | Biostatistics | Oxford Academic"
+[19]: https://search.r-project.org/CRAN/refmans/CRE/html/cre.html "R: Causal rule ensemble"
+[20]: https://pmc.ncbi.nlm.nih.gov/articles/PMC12306571/ "CRE: An R package for interpretable discovery and inference of heterogeneous treatment effects - PMC"
+[21]: https://search.r-project.org/CRAN/refmans/tehtuner/html/tunevt.html "R: Fit a tuned Virtual Twins model"
+[22]: https://mirror.clarkson.edu/cran/web/packages/tehtuner/index.html "CRAN: Package tehtuner"
+[23]: https://github.com/cran/subscreen "GitHub - cran/subscreen: subscreen — Systematic Screening of Study Data for Subgroup Effects"
+[24]: https://mirror.clientvps.com/CRAN/web/packages/subscreen/index.html "subscreen: Systematic Screening of Study Data for Subgroup Effects"
+[25]: https://rdrr.io/cran/SIDES/src/R/SIDES_MAIN.R "SIDES source: R/SIDES_MAIN.R"
+[26]: https://mirrors4.sau.edu.cn/CRAN/web/packages/rsides/index.html "CRAN: Package rsides"
+[27]: https://search.r-project.org/CRAN/refmans/TSDT/html/TSDT.html "R: Treatment-Specific Subgroup Detection Tool"
+[28]: https://pmc.ncbi.nlm.nih.gov/articles/PMC4891398/ "Quint: An R package for the identification of subgroups of clients who differ in which treatment alternative is best for them - PMC"
+[29]: https://search.r-project.org/CRAN/refmans/randomForest/html/importance.html "R: Extract variable importance measure"
