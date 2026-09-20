@@ -1,0 +1,302 @@
+---
+title: "5. varimp() 与 pmtest()"
+subtitle: "置换重要性到底在测什么，以及一个把它拉回治疗效应的办法"
+lang: zh
+---
+
+森林建好之后有两个问题要回答：**"参数真的不一样吗"**（`pmtest()`）
+和**"哪些变量让它们不一样"**（`varimp()`）。本页的核心结论是：
+`varimp()` 回答的不是"哪些变量修饰了治疗效应"，
+它按**整个模型的参数异质性**排序，纯预后变量会排在最前面。
+
+## `varimp()`
+
+```r
+## S3 method for class 'pmforest'
+varimp(object,
+       nperm       = 1L,
+       OOB         = TRUE,
+       risk        = function(x, ...) -objfun(x, sum = TRUE, ...),
+       conditional = FALSE,
+       threshold   = 0.2,
+       ...)
+```
+
+它只是 `partykit::varimp.cforest()` 的薄封装，唯一的定制是 `risk`。
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `nperm` | `1L` | 每棵树每个变量的置换次数。加大能降方差，成本线性增长 |
+| `OOB` | `TRUE` | 用袋外样本评估。`FALSE` 不建议 |
+| `risk` | `-objfun(x, sum = TRUE)` | **要最小化**的风险。默认是负对数似然 |
+| `conditional` | `FALSE` | 条件重要性，处理相关变量 |
+| `threshold` | `0.2` | 仅 `conditional = TRUE` 时用：进入条件集的关联强度门槛 |
+
+返回一个具名向量，是 `mean decrease in accuracy` 型的重要性：
+把变量 $j$ 在袋外样本里置换后，风险平均上升多少。**值越大越重要，量纲是目标函数的单位**
+（对数似然、或 `lm` 的平方误差），因此**不同数据集之间不可比**。
+
+### 它排序的是"参数异质性"，不是"效应修饰" {#sec-what-it-measures}
+
+默认 `risk` 是整棵树的负对数似然，而树的对数似然同时包含
+**截距（基线水平）**和**治疗系数**的拟合优度。
+置换一个强预后变量会让每个节点的截距估计错位，似然大幅下降——
+于是它的"重要性"很高，哪怕它完全不修饰治疗效应。
+
+用一份构造数据可以把这件事看得很清楚
+（$n = 800$，随机化治疗，`lm` 基模型，50 棵树，加了两臂 > 20 的约束）：
+
+$$
+y = 1 + 2 x_{\text{prog}} + 0.5\,\mathbb{1}(A) + 1.5\,\mathbb{1}(A)\,x_{\text{mod}} + \varepsilon
+$$
+
+`x_prog` 是**纯预后**（强主效应、零交互），`x_mod` 是**纯修饰**（零主效应、强交互），
+`x_noise` 与任何东西都无关。三个种子的 `varimp()`：
+
+| 种子 | `x_prog`（纯预后） | `x_mod`（纯修饰） | `x_noise` |
+|---|---|---|---|
+| 1 | **1668.66** | 357.92 | 7.86 |
+| 2 | **1503.57** | 355.21 | 7.36 |
+| 3 | **1657.76** | 379.47 | 7.75 |
+
+同一份数据上，交互回归给出的是正确答案：
+
+```text
+             Estimate Pr(>|t|)
+trtA:x_prog   -0.0395   0.5758     ← 无交互
+trtA:x_mod     1.5594   0.0000     ← 有交互
+trtA:x_noise  -0.0333   0.6401
+```
+
+::: {.callout-important}
+## 结论：不能把 `varimp(pmforest)` 当作 effect-modifier 筛选器
+
+在这个例子里，纯预后变量的重要性是真修饰变量的 **4.7 倍**。
+如果按 `varimp()` 的排序取前 k 个变量当"候选效应修饰变量"，
+拿到的会是**预后变量排行榜**。
+
+这与本书[筛选软件与方法核查](../sources/modifier-screening-audit.qmd)
+一页的判断一致，此处给出了可复现的实证。
+真正针对效应修饰定义重要性的方法（TEM-VIP 等）见
+[快速筛选效应修饰变量的 R 包](../sources/quick-screening-r-packages.qmd)。
+:::
+
+### 把重要性拉回治疗效应：用 offset 固定预后成分 {#sec-offset-trick}
+
+`model4you` 没有提供"只检验治疗系数"的开关
+（内部 `.modelfit()` 的 `parm` 参数没有被 `pmtree()`/`pmforest()` 暴露，
+见[第 1 页](01-pmtree.qmd#sec-dots)）。但可以从**基模型**这一侧解决：
+把预后成分作为 `offset` 固定住，截距就不再随预后变量变化，
+剩下能让目标函数变化的只有治疗系数。
+
+```r
+## 1. 只在对照臂上拟合预后模型（避免把治疗效应吸收进去）
+prog_fit <- lm(y ~ x_prog + x_mod + x_noise, data = dat[dat$trt == "C", ])
+dat$prog_hat <- predict(prog_fit, newdata = dat)
+
+## 2. 基模型：预后部分作为 offset，只留治疗一个自由参数
+bm_off <- lm(y ~ trt + offset(prog_hat), data = dat)
+coef(bm_off)
+#> (Intercept)        trtA
+#>       0.000       0.567
+
+## 3. 森林：zformula 里不要放 prog_hat 自己
+frst_off <- pmforest(bm_off, data = dat,
+                     zformula = ~ x_prog + x_mod + x_noise,
+                     ntree = 50, control = ctrl)
+varimp(frst_off)
+```
+
+同样三个种子，同样的数据：
+
+| 种子 | `x_prog`（纯预后） | `x_mod`（纯修饰） | `x_noise` |
+|---|---|---|---|
+| 1 | 4.15 | **515.82** | 8.23 |
+| 2 | 3.11 | **529.70** | 4.78 |
+| 3 | 12.86 | **508.56** | 3.87 |
+
+排序完全反转：预后变量掉到噪声水平，修饰变量的重要性还提高了。
+
+::: {.callout-warning}
+## 这个技巧的三个前提
+
+1. **`prog_hat` 要用独立的数据或交叉拟合得到。** 上例为了演示直接在同一份数据的
+   对照臂上拟合，会有过拟合；正式分析应做样本分割或 K 折交叉拟合。
+2. **只在对照臂拟合**，否则预后模型会把治疗效应吸收进 offset。
+3. **`zformula` 里不要包含 `prog_hat`**，否则森林会拿它自己去分割。
+
+同样的思路对 `glm`（`offset(log(...))` 等）和 `survreg` 都适用，
+本质上是让基模型只剩一个待估参数。这也是 `model4you` 里最接近
+"正交化"的做法，但它**不等于** `grf` 那套双重稳健的正交化——
+这里只处理了结局侧，没有处理处理分配侧的混杂。
+:::
+
+### `nperm`、`conditional` 与 `threshold`
+
+小规模实测（同上数据，20 棵树）：
+
+| 设置 | `x_prog` | `x_mod` | `x_noise` | 耗时 |
+|---|---|---|---|---|
+| 默认（`nperm = 1`） | 1557.84 | 327.58 | 14.99 | 0.7 秒 |
+| `conditional = TRUE` | 1591.02 | 284.67 | 12.51 | 0.7 秒 |
+| `nperm = 5` | 1593.57 | 305.24 | 3.51 | —— |
+
+这个例子里三个协变量互相独立，所以条件重要性与非条件重要性几乎没差别；
+`conditional = TRUE` 的意义在协变量**高度相关**时——
+它只在与目标变量关联超过 `threshold` 的那些变量的分层内做置换，
+避免把相关变量的信号重复计入。代价是计算量随相关变量数量急增
+（在真实数据上可能慢几十倍，本机未做大规模计时）。
+
+`nperm = 5` 把噪声变量的重要性从 15.0 压到 3.5，
+说明**噪声变量上的正值主要是置换的随机波动**。
+要判断"重要性多大才算大"，加大 `nperm` 比看绝对值更有用。
+
+### 自定义 `risk` 的空间很小
+
+`risk` 接收一棵树、返回要最小化的标量，看起来可以随意替换。
+实际上 `partykit::varimp.cforest()` 是这样调用它的：
+
+```r
+oobw <- as.integer(object$weights[[b]] == 0)
+vi   <- varimp(tree, nperm = nperm, risk = risk, conditions = conditions,
+               weights = oobw, ...)
+```
+
+`risk` 会被沿着 `varimp.constparty` 的内部路径调用，并带上 `weights` 与置换后的数据。
+写一个只依赖 `x` 的函数很容易在这条路径上失败：实测把 `coxph` 森林的 `risk` 换成
+`function(x, ...) -as.numeric(logLik(x))`，在内部报 `replacement has length zero`。
+
+需要换目标量时，**更稳妥的做法是换基模型**（例如前面的 offset 写法），
+而不是换 `risk`。
+
+### 什么时候它直接不可用
+
+| 基模型 | `varimp()` |
+|---|---|
+| `lm` / `glm` / `survreg` | ✅ 可用（但默认 `control` 下不稳定，见[第 3 页](03-pmforest.qmd#sec-control)） |
+| `coxph` | ❌ 默认 `risk` 报 `no applicable method for 'objfun' applied to an object of class "coxph"`；换 `risk` 也没走通 |
+
+回顾[第 3 页](03-pmforest.qmd#sec-control)的另一个结论：
+在 `pmforest()` 的默认 `control` 下，`varimp()` 会**间歇性报错**
+（GBSG2 上 5 个种子里 1 个失败），而且噪声变量的重要性被系统性抬高。
+**跑 `varimp()` 之前先设好 `control$converged`**。
+
+## `pmtest()`：个体化模型是否优于基模型 {#sec-pmtest}
+
+```r
+pmtest(forest, pmodels = NULL, data = NULL, B = 100)
+
+## S3 method for class 'heterogeneity_test'
+plot(x, ...)
+```
+
+| 参数 | 说明 |
+|---|---|
+| `forest` | `pmforest` 对象 |
+| `pmodels` | **必须**是 `pmodel(..., fun = identity)` 的结果 |
+| `data` | 数据；`NULL` 时从基模型取 |
+| `B` | 参数自助重复次数，默认 100（帮助页示例用 10，只为演示） |
+
+### 检验逻辑
+
+零假设是**基模型就是正确模型**（没有参数异质性）。检验统计量是
+
+$$
+D = \sum_i \ell(\hat\theta_i;\, y_i) - \sum_i \ell(\hat\theta_{\text{base}};\, y_i)
+$$
+
+即个体化模型与基模型的目标函数之差。零分布用**参数自助法**构造：
+从基模型 `simulate()` 出 B 套新结局，每套都重新拟合基模型、
+重建森林、重算个体化模型，得到 B 个 $D$ 值。$p$ 值是原始 $D$ 小于
+自助 $D$ 的比例。
+
+因为每次自助都要**重建整片森林**，成本是 $B+1$ 倍的建森林时间。
+
+### 两个实测对照
+
+**（a）真的没有异质性**（$y = 4 + \mathbb{1}(A) + \varepsilon$，$n = 160$，两个纯噪声协变量）：
+
+```r
+mod   <- lm(y ~ trt, data = dat)
+frst  <- pmforest(mod, data = dat, ntree = 20)
+pmods <- pmodel(frst, fun = identity)
+tst   <- pmtest(forest = frst, pmodels = pmods, B = 10)
+tst$pvalue
+#> [1] 0.5
+```
+
+```text
+      base_model personalised_models   sim hypothesis      diff
+1      -138.2518           -157.7453 FALSE       H[1] -19.49350
+sim_1  -119.7984           -135.8442  TRUE       H[0] -16.04579
+sim_2  -141.8681           -161.0152  TRUE       H[0] -19.14711
+sim_3  -130.7937           -151.9570  TRUE       H[0] -21.16328
+```
+
+观测到的 `diff = -19.49` 落在自助分布（−16 到 −22）正中间，$p = 0.5$。
+注意 **`diff` 是负的**：没有异质性时，袋外的个体化模型比基模型**更差**，
+这是正常的——它们用更少的有效样本估计同样的参数。
+
+**（b）真的有异质性**（$y = 4 + \mathbb{1}(A)\,[1 + 2\cdot\mathbb{1}(x_1 > 0)] + \varepsilon$，$n = 300$）：
+
+```text
+      base_model personalised_models hypothesis      diff
+1      -491.0769           -334.8367       H[1]  156.24020
+sim_1  -432.0459           -514.6932       H[0]  -82.64726
+sim_2  -526.1925           -603.0212       H[0]  -76.82872
+```
+
+```r
+tst2$pvalue
+#> [1] 0
+```
+
+观测到的 `diff = +156` 与自助分布（约 −77 到 −83）完全分离。
+**判读时看的是 `diff` 与自助分布的位置关系，不是 `diff` 的正负本身。**
+
+### 返回值与绘图
+
+```r
+names(tst)
+#> [1] "pvalue" "objfun"
+str(tst$objfun)
+#> 'data.frame': 11 obs. of 5 variables:
+#>  $ base_model         : num
+#>  $ personalised_models: num
+#>  $ sim                : logi
+#>  $ hypothesis         : chr  "H[1]" "H[0]" ...
+#>  $ diff               : num
+```
+
+`plot(tst)` 返回一个 `ggplot` 对象，把 $H_0$ 的自助分布与观测值画在一起，
+可以像普通 ggplot 一样继续加图层。
+
+::: {.callout-important}
+## `pmtest()` 对生存结局不可用
+
+零分布靠 `simulate(model, nsim = B)` 生成，而 **`survival` 没有提供
+`simulate.survreg`，也没有 `simulate.coxph`**。实测：
+
+```r
+bmod <- survreg(Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE)
+pmtest(forest = frst, pmodels = pm, B = 5)
+#> Error: no applicable method for 'simulate' applied to an object of class "survreg"
+```
+
+这不是配置问题，在 0.9-9 + `survival` 3.8-12 下无解，除非自己写一个
+`simulate.survreg`（从拟合的 Weibull 分布抽时间、再按原删失机制截断）。
+**能用 `pmtest()` 的基模型实际上只有 `lm` 和 `glm`。**
+:::
+
+::: {.callout-caution}
+## 另外两个使用条件
+
+1. **`pmodels` 必须来自 `fun = identity`**，否则 `sum(objfun(pmodels))` 无从算起。
+2. **$p$ 值的分辨率是 $1/B$。** `B = 10` 时最小非零 $p$ 是 0.1，
+   得到 `pvalue = 0` 只说明"比 10 次自助都极端"。报告结果至少用 `B = 100`，
+   并记住这要跑 101 次建森林。
+:::
+
+`pmtest()` 检验的同样是**整体参数异质性**（含截距），
+不是"治疗效应异质性"。想把它专门对准治疗效应，
+用上文 [offset 的办法](#sec-offset-trick)重建基模型再检验。

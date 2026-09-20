@@ -1,0 +1,274 @@
+---
+title: "7. objfun 家族、rss 与三个内部函数"
+subtitle: "目标函数的符号约定、pmodel_identity 的三种命运，以及包的行为边界在哪写着"
+lang: zh
+---
+
+本页覆盖剩下的 9 个帮助主题：`objfun` 泛型与它的五个方法、
+`logLik.pmodel_identity`、`rss`、`one_factor`，
+以及三个以 `.` 开头的内部函数。
+读懂这三个内部函数，就知道这个包为什么支持这些模型、为什么在别的地方失败。
+
+## `objfun()` 泛型
+
+```r
+objfun(x, ...)
+
+## S3 method for class 'lm'
+objfun(x, newdata = NULL, weights = NULL, ...)
+## S3 method for class 'glm'
+objfun(x, newdata = NULL, weights = NULL, log = TRUE, ...)
+## S3 method for class 'survreg'
+objfun(x, newdata = NULL, weights = NULL, ...)
+```
+
+返回**每个观测**对目标函数的贡献，`newdata` 让它可以在新数据上评估
+（模型比较、袋外评估都靠这个）。
+
+### 各方法的口径不同
+
+| 方法 | 返回的是什么 | 与 `logLik()` 的关系 |
+|---|---|---|
+| `objfun.glm` | （加权）对数似然贡献 | `sum(objfun(x)) == logLik(x)` |
+| `objfun.survreg` | 对数似然贡献 | `sum(objfun(x)) == x$loglik[2]` |
+| `objfun.lm` | **负的平方误差**，不是对数似然 | 两者**不相等** |
+
+实测（`?lm` 的经典例子）：
+
+```r
+lm.D9 <- lm(weight ~ group)
+sum(objfun(lm.D9))        #> -8.72925     ← -RSS
+-sum(residuals(lm.D9)^2)  #> -8.72925
+as.numeric(logLik(lm.D9)) #> -20.08824    ← 对数似然，完全不同的数
+```
+
+`glm` 的验证：
+
+```r
+glm.D93 <- glm(counts ~ outcome + treatment, family = poisson())
+sum(objfun(glm.D93))       #> -23.38066
+as.numeric(logLik(glm.D93))#> -23.38066   ← 一致
+```
+
+::: {.callout-important}
+## `lm` 的这个口径会传染到整棵树
+
+因为 `objfun.pmtree()` 逐节点调用 `objfun()`，
+`lm` 基模型下 `objfun(tr, sum = TRUE)` 得到的是负平方误差之和，
+**不能**和 `logLik(tr)` 混用，也不能和 `glm` 路径的数值比较。
+
+包里为此埋了两个显式的 `stop()`：
+
+- `logLik.pmtree()` 在 `newdata`/`perm`/`weights` 非空时遇到 `lm` 基模型：
+  `logLik not yet implemented for lm. Try objfun(..., sum = TRUE).`
+- `logLik.pmodel_identity()` 遇到 `lm`：
+  `logLik not yet implemented for pesonalised lm().`（拼写为原文）
+:::
+
+`objfun.glm` 独有一个 `log` 参数，`log = FALSE` 返回似然而非对数似然：
+
+```r
+head(objfun(glm.D93, log = FALSE), 3)
+#> [1] 0.07472 0.06058 0.10100
+```
+
+### `objfun.pmtree()`
+
+见[第 2 页](02-pmtree-methods.qmd)，此处不重复。
+唯一要记住的是 `sum = TRUE` 比 `sum(objfun(...))` 快得多。
+
+### `objfun()` / `logLik()` 作用在 `pmodel_identity` 上 {#sec-pmodel-identity}
+
+```r
+## S3 method for class 'pmodel_identity'
+objfun(x, ...)
+## S3 method for class 'pmodel_identity'
+logLik(object, add_df = 0, ...)
+```
+
+`pmodel(..., fun = identity)` 返回的是一串模型对象，
+`objfun()` 对**第 $i$ 个模型在第 $i$ 行数据上**求目标函数：
+
+```r
+pmi <- pmodel(frst, newdata = GBSG2[1:20, ], fun = identity)
+of  <- objfun(pmi)
+sum(of)                                    #> -95.44454
+sum(objfun(bmod, newdata = GBSG2[1:20, ])) #> -103.7537   ← 基模型更差
+```
+
+这个比较就是 [`pmtest()`](05-varimp-pmtest.qmd#sec-pmtest) 的检验统计量。
+它要求 `x` 带着 `data` 属性，所以**不能**用
+`pmodel(..., return_attr = character(0))`，否则报
+`Object pmodel_identity has to have a data attribute for objfun()`。
+
+`logLik()` 的命运则按基模型分三种，实测如下：
+
+| 基模型 | `logLik(pmodel(..., fun = identity))` |
+|---|---|
+| `glm` | ✅ 可用。例：20 个个体化模型 → `'log Lik.' -12.16288 (df=60)` |
+| `lm` | ❌ 明确 `stop("logLik not yet implemented for pesonalised lm().")` |
+| `survreg` | ❌ 实测报 `invalid 'type' (list) of argument` |
+
+`survreg` 那条不是设计如此，而是实现里的一处问题：
+`logLik.pmodel_identity()` 用 `sum(attr(of, "df"))` 算自由度，
+而 `objfun.survreg` 的返回值不带 `df` 属性，
+`sapply(ofl, attr, "df")` 于是收集到一串 `NULL`，`sum()` 对 list 报错。
+`objfun()` 本身在同一个对象上是正常的——**要数值就用 `sum(objfun(pmi))`，别走 `logLik()`。**
+
+`add_df` 用来手工调整自由度。帮助页很坦白：
+
+> it is not very clear what the degrees of freedom are in personalised models.
+
+默认把所有个体模型的自由度直接相加（上例 20 个模型 × 3 = 60），
+这个数字**不应该**拿去算 AIC/BIC——个体化模型之间高度重叠，
+它们的"有效参数个数"远小于相加的结果。
+
+## `rss()`
+
+```r
+rss(object, ...)
+## Default S3 method:
+rss(object, ...)
+```
+
+只有一个 `rss.default`，实现就是残差平方和：
+
+```r
+rss(lm.D9)     #> 8.72925      与 -sum(objfun(lm.D9)) 一致
+```
+
+它对 `glm`、`survreg` 也能算出数（用各自的 `residuals()`），
+但意义完全不同——`rss(survreg_model)` 得到的是**时间残差**的平方和，
+量纲是天的平方，没有任何解释价值。这个函数是为 `lm` 路径准备的内部工具，
+被导出只是顺带。
+
+## `one_factor()`
+
+```r
+one_factor(object)
+```
+
+判断模型是否**恰好只有一个因子协变量**，是 `.prepare_args()` 里发警告的依据。
+实测（GBSG2）：
+
+| 模型 | 返回 |
+|---|---|
+| `survreg(Surv(time, cens) ~ horTh)` | `TRUE` |
+| `survreg(Surv(time, cens) ~ horTh + age)` | `FALSE` |
+| `lm(time ~ age)`（连续变量） | `FALSE` |
+| `lm(time ~ tgrade)`（**有序**因子） | `TRUE` |
+| `lm(time ~ 1)`（无协变量） | `FALSE` |
+
+有序因子也算——包支持多于两个水平的治疗变量
+（`NEWS` 0.9-6 为 Cox 模型加过多组绘图）。
+
+::: {.callout-note}
+## 它有帮助页，但没有被导出
+
+`one_factor` 在 `INDEX` 和参考手册里都有条目，
+`NAMESPACE` 里却没有 `export(one_factor)`。要调用只能写
+`model4you:::one_factor(mod)`。这对使用没影响，
+但如果照着参考手册的目录去 `library(model4you); one_factor(m)`，会得到
+`could not find function "one_factor"`。
+:::
+
+## 三个内部函数
+
+这三个不该直接调用，但它们决定了包的行为边界，看懂能省很多调试时间。
+
+### `.prepare_args(model, data, zformula, control, ...)`
+
+把 `pmtree`/`pmforest` 的输入翻译成 `ctree`/`cforest` 的输入。它负责：
+
+1. 调 `one_factor()`，不满足就发"in beta"警告；
+2. 取 `getCall(model)`，取不到就 `stop`；
+3. `data = NULL` 时从模型或 `parent.frame()` 取数据（并 `message`）；
+4. 把模型变量与 `zformula` 拼成 `ctree` 的公式；
+5. **删除模型变量上有 `NA` 的整行**并警告。
+
+第 4 步解释了一个常见困惑：为什么 `zformula = ~ .` 会把
+数据框里所有非模型列都当成分割变量——公式就是这么拼出来的。
+
+### `.modelfit(model, data, coeffun, weights, control, parm = NULL)`
+
+返回一个 `fitfun`，`ctree` 在**每个候选节点**上调用它。核心三步：
+
+```r
+mod <- tryCatch(update(object = model, data = di, weights = wi),
+                warning = function(w) list(converged = FALSE),
+                error   = function(e) list(converged = FALSE))
+...
+ret <- list(coefficients = coeffun(mod), objfun = -logLik(mod),
+            object = ..., converged = conv)
+if (estfun) {
+  ef <- if (is(mod, "coxph")) cbind(mod$residuals, mod$residuals * model.matrix(mod))
+        else estfun(mod)
+  ...
+  if (!is.null(parm)) ret$estfun <- ret$estfun[, parm]
+}
+```
+
+从这段能读出四件事：
+
+1. **整个包靠 `update()` 工作。** 基模型必须能被 `update(model, data = ...)`
+   正确重拟合，这是对基模型的真正约束；
+2. **拟合出的 warning 一律当作"未收敛"**，该节点被丢弃。
+   `survreg` 的 `Ran out of iterations and did not converge` 就是这样被吞掉的，
+   建森林时看到这条警告说明有节点被拒；
+3. **`objfun = -logLik(mod)`**，存进节点的是**负**对数似然——
+   [第 1 页](01-pmtree.qmd)提到的符号问题源头在这里；
+4. **`parm` 在这里，而且只影响 `estfun` 的列**。
+   传入 `parm` 就只用这些参数的得分做不稳定性检验，
+   这正是"只针对治疗系数"所需要的开关——
+   但 `pmtree()`/`pmforest()` 都没有把它传下来（[第 1 页](01-pmtree.qmd#sec-dots)有实测）。
+   `partykit::mob()` 的同名参数则是公开的。
+
+### `.add_modelinfo(x, nodeids, data, model, coeffun)`
+
+给一棵已经长好的树补上每个终末节点的模型信息：
+`estfun`、`coefficients`、`objfun`、`object`。
+
+```r
+di   <- data[subsi, ]
+umod <- update(model, data = di, model = TRUE)
+```
+
+`pmtree(control$saveinfo = TRUE)` 时建完树就调它；
+`pmforest()` 因为 `saveinfo = FALSE` 不调，
+但 `gettree()` 和 `varimp()` 会**事后**调它。
+
+这就是[第 3 页](03-pmforest.qmd#sec-control)那些间歇性错误的爆发点：
+`update(model, data = di)` 遇到治疗变量只剩一个水平的节点就会失败，
+而失败发生在 `varimp()` 阶段，traceback 指向 `varimp`，根因却在建森林阶段。
+
+它对 `lm` 的 `objfun` 还做了特判
+（`ifelse(class(umod)[[1]] == "lm", sum(objfun(umod)), -logLik(umod))`），
+再次印证 `lm` 走的是平方误差口径。
+
+## 缺一个 `objfun.coxph`，以及为什么不好补 {#sec-coxph-gap}
+
+`objfun` 只有 `lm`、`glm`、`survreg` 三个模型方法。缺 `coxph` 的后果是
+[第 2 页](02-pmtree-methods.qmd#sec-coxph)列出的那一串失败。
+
+补一个方法看似简单，实际不成立：**Cox 偏似然没有逐观测贡献的自然定义。**
+它的每一项是一个风险集内部的比值
+
+$$
+\ell(\beta) = \sum_{i:\,\delta_i=1} \left[ \eta_i - \log \sum_{j \in R(t_i)} e^{\eta_j} \right],
+$$
+
+第 $i$ 项依赖整个风险集 $R(t_i)$ 里所有人的信息。
+把它拆给单个观测、再在**任意子集或置换后的新数据**上重算，
+得到的不是同一个量。`objfun()` 的全部用途——袋外评估、置换重要性、
+节点间求和——都要求可加可拆，Cox 不满足。
+
+所以这不是包作者漏写了一个方法，而是这条路本身不通。
+实测也印证了绕不过去：把 `varimp()` 的 `risk` 换成
+`function(x, ...) -as.numeric(logLik(x))`（整树偏似然，不拆）
+仍在 `varimp.cforest` 内部报 `replacement has length zero`。
+
+**生存结局要用森林层面的工具时，把基模型换成
+`survreg(..., dist = "weibull")`。** 代价是从 log HR 换到 log 时间比，
+两者的方向相反，比例风险假定换成了加速失效时间假定。
+若必须做比例风险 + 变量重要性，`grf` 的生存森林是更合适的工具，
+见[grf 包官方教程中译](../grf/04-survival.qmd)。

@@ -1,0 +1,273 @@
+---
+title: "model4you 包函数手册"
+subtitle: "基于 0.9-9 的逐函数用法说明与本机实测"
+lang: zh
+---
+
+`model4you` 把一个**已经拟合好的参数模型**当作输入，用 model-based recursive
+partitioning（MOB）的思路去找"这个模型的参数在哪些人群里不一样"，
+从而得到**分层模型**（树）和**个体化模型**（森林）。
+它的典型用途是临床试验的亚组分析与个体化治疗效应估计。
+
+本部分是该包的**函数用法手册**，逐个覆盖 CRAN 参考手册
+（[refman](https://cran.r-project.org/web/packages/model4you/refman/model4you.html)）
+里的全部 22 个帮助主题，包括三个以 `.` 开头的内部函数。
+每页给出参数逐项说明、可直接运行的代码、返回对象的结构，
+以及**本机实际运行后发现的默认值陷阱与失效路径**。
+
+## 核对环境与证据边界
+
+本手册核对截止 **2026 年 9 月 20 日**，环境为：
+
+| 项目 | 值 |
+|---|---|
+| 包版本 | `model4you` 0.9-9（2026-02-12 发布，2026-02-05 打包） |
+| R | Windows R 4.4.3 |
+| 关键依赖 | `partykit` 1.3.0、`survival` 3.8-12、`sandwich` 3.1-3、`ggplot2` 4.0.2 |
+| 示例数据 | `TH.data::GBSG2`（n = 686，299 个事件）、模拟数据 |
+
+证据分三级，正文中逐处标明：
+
+1. **文档**——包自带帮助页与 `DESCRIPTION`/`NEWS` 的原文；
+2. **源码**——本机已安装包的函数体（`model4you:::` 可复核）；
+3. **实测**——在上述环境下实际运行的输出。
+
+本手册**不在本站渲染时执行代码**：所有代码块都是静态的，
+展示的输出是在上述环境中单独运行后粘贴回来的。
+因此页面里的数字可以按种子复现，但森林类结果存在随机性，
+本手册对每处随机结果都标注了种子与 `ntree`。
+
+::: {.callout-important}
+## 三处与官方文档不一致的实测结论
+
+在展开之前先给出结论，它们影响所有使用者：
+
+1. **`pmtree()` 的 `...` 不会传给模型拟合。** 帮助页写的是
+   "additional parameters passed on to model fit such as weights"，
+   但函数体里 `...` 从未被使用，`pmtree(mod, weights = w)` 既不报错也不生效。
+   见[第 1 页](model4you/01-pmtree.qmd#sec-dots)。
+2. **`pmodel(x = <权重矩阵>)` 这条文档明确支持的路径是坏的**，
+   必定抛出 `$ operator is invalid for atomic vectors`。
+   见[第 4 页](model4you/04-pmodel.qmd#sec-matrix-input)。
+3. **`pmforest()` 的默认 `control` 不适合直接拿去做 `varimp()`**：
+   默认 `mincriterion = 0` 接受任何分裂，终末节点可能只剩单一治疗组，
+   `varimp()` 会**间歇性**报错（同一份数据 5 个种子里 1 个失败），
+   且噪声变量的重要性被系统性抬高。包作者自己的论文复现脚本用的是
+   `mincriterion = 0.95, minsplit = 40, minbucket = 30`，不是这个默认值。
+   见[第 5 页](model4you/05-varimp-pmtest.qmd)。
+:::
+
+## 这个包在做什么
+
+用一句话概括：**把"模型参数是否随协变量变化"这个问题，交给递归分割来回答。**
+
+给定基模型 $M$（例如 `survreg(Surv(time, cens) ~ horTh)`），
+它只有一个二值协变量——治疗 $A$。这个模型假设**所有人的治疗效应相同**：
+
+$$
+\log T = \beta_0 + \beta_1 \cdot \mathbb{1}(A = 1) + \sigma \varepsilon
+$$
+
+`model4you` 用其余变量 $Z$（`zformula`）去检验 $(\beta_0, \beta_1)$ 是否稳定：
+
+- **`pmtree()`**：按 $Z$ 递归分割，每个终末节点重新拟合 $M$，
+  得到少数几个亚组和各自的 $\hat\beta_1$ —— 这是**分层模型**（stratified model）；
+- **`pmforest()` + `pmodel()`**：建很多棵这样的树，
+  用森林的共现频率定义"谁和谁相似"，对每个个体用其邻居加权重新拟合 $M$，
+  得到 **每人一个 $\hat\beta_1$** —— 这是**个体化模型**（personalised model）。
+
+三个层次的关系：
+
+```text
+基模型 M                 全体共用一组参数
+   │  pmtree()
+   ▼
+分层模型（树）            少数亚组，每组一组参数，规则可读
+   │  pmforest() + pmodel()
+   ▼
+个体化模型（森林）        每人一组参数，无规则，可做依赖图与变量重要性
+```
+
+::: {.callout-warning}
+## 参数异质性 ≠ 因果的治疗效应异质性
+
+`model4you` 检验的是**基模型参数的不稳定性**。默认情况下，
+不稳定性检验同时针对**截距和治疗系数**（源码 `.modelfit()` 的 `parm` 参数
+控制这一点，但 `pmtree()` / `pmforest()` **都没有把它暴露出来**）。
+因此树可能仅仅因为**基线风险**不同（纯预后变量）就切一刀，
+这不是效应修饰。同一问题在本书
+[效应修饰的效应尺度](sources/effect-modifier-effect-scale.qmd)
+一页里有实证：GBSG2 上的纯预后变量 `pnodes` 在相乘尺度上照样"显著"。
+
+此外，`model4you` 不做任何混杂校正。在观察性数据上，
+基模型必须自己带上校正（或用加权数据），否则得到的是关联的异质性。
+:::
+
+## 函数地图
+
+22 个帮助主题按角色归类如下，每行给出所在页面。
+
+### 建模主函数
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `pmtree()` | 由基模型生成模型基础树（分层模型） | [1. pmtree](model4you/01-pmtree.qmd) |
+| `pmforest()` | 由基模型生成模型基础森林 | [3. pmforest](model4you/03-pmforest.qmd) |
+| `gettree()`（`pmforest` 方法） | 从森林里取出第 $k$ 棵树 | [3. pmforest](model4you/03-pmforest.qmd) |
+| `pmodel()` | 由森林计算个体化模型／系数 | [4. pmodel](model4you/04-pmodel.qmd) |
+
+### 推断与评价
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `varimp()`（`pmforest` 方法） | 置换变量重要性 | [5. varimp 与 pmtest](model4you/05-varimp-pmtest.qmd) |
+| `pmtest()` | 个体化模型是否优于基模型（参数异质性检验） | [5. varimp 与 pmtest](model4you/05-varimp-pmtest.qmd) |
+| `plot()`（`heterogeneity_test` 方法） | `pmtest` 结果的可视化 | [5. varimp 与 pmtest](model4you/05-varimp-pmtest.qmd) |
+
+### `pmtree` 的方法
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `print()` / `summary()` / `print.summary` | 打印树与节点参数表 | [2. pmtree 的方法](model4you/02-pmtree-methods.qmd) |
+| `coef()` | 提取各节点系数 | [2. pmtree 的方法](model4you/02-pmtree-methods.qmd) |
+| `predict()` | 预测节点号／系数／模型响应 | [2. pmtree 的方法](model4you/02-pmtree-methods.qmd) |
+| `logLik()` | 各终末节点对数似然之和 | [2. pmtree 的方法](model4you/02-pmtree-methods.qmd) |
+| `objfun()` | 目标函数贡献或其和 | [2. pmtree 的方法](model4you/02-pmtree-methods.qmd) |
+
+### 可视化
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `node_pmterminal()` | 终末节点面板生成器 | [6. 可视化](model4you/06-plots.qmd) |
+| `lm_plot()` | `lm` 的密度图 | [6. 可视化](model4you/06-plots.qmd) |
+| `binomial_glm_plot()` | 二项 `glm` 的比例图 | [6. 可视化](model4you/06-plots.qmd) |
+| `survreg_plot()` | Weibull AFT 的生存曲线 | [6. 可视化](model4you/06-plots.qmd) |
+| `coxph_plot()` | Cox 模型的生存曲线 | [6. 可视化](model4you/06-plots.qmd) |
+| `coeftable.survreg()` | 含 scale 参数的系数表 | [6. 可视化](model4you/06-plots.qmd) |
+
+### 目标函数与工具
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `objfun()` 泛型 + `lm`／`glm`／`survreg` 方法 | 单个模型的目标函数贡献 | [7. objfun 与内部函数](model4you/07-objfun-internals.qmd) |
+| `objfun()` / `logLik()`（`pmodel_identity` 方法） | 个体化模型集合的目标函数 | [7. objfun 与内部函数](model4you/07-objfun-internals.qmd) |
+| `rss()` | 残差平方和 | [7. objfun 与内部函数](model4you/07-objfun-internals.qmd) |
+| `one_factor()` | 检查基模型是否只有一个因子协变量 | [7. objfun 与内部函数](model4you/07-objfun-internals.qmd) |
+| `.prepare_args()` / `.modelfit()` / `.add_modelinfo()` | 三个内部函数，决定了包的行为边界 | [7. objfun 与内部函数](model4you/07-objfun-internals.qmd) |
+
+最后一页[8. 实测清单与工作流](model4you/08-pitfalls.qmd)汇总所有默认值陷阱、
+失效路径与一套可照抄的生存结局工作流。
+
+## 支持哪些基模型
+
+`DESCRIPTION` 只承诺 `lm()`、`glm()`、`survreg()`。实测与源码补充如下：
+
+| 基模型 | 建树 | `coef`/`logLik` | `objfun` | `varimp` | `pmtest` | 说明 |
+|---|---|---|---|---|---|---|
+| `lm()` | ✅ | `logLik` ✅ | ✅（**负平方误差**，不是对数似然） | ✅ | ✅ | `logLik.pmodel_identity` 对 `lm` 明确 `stop()` |
+| `glm()` | ✅ | ✅ | ✅（对数似然贡献） | ✅ | ✅ | 最顺畅的一条路径 |
+| `survreg()` | ✅ | ✅ | ✅ | ✅（但不稳定，见第 5 页） | ❌ 无 `simulate.survreg` | 官方生存示例都走这条 |
+| `coxph()` | ✅ | ✅ | ❌ **无 `objfun.coxph` 方法** | ❌ 默认 `risk` 依赖 `objfun`，会报错 | ❌ 无 `simulate.coxph` | `.modelfit()` 里有 coxph 的 score 特判，`NEWS` 0.9-6 也为它改过代码，属于**半支持** |
+
+最右两列合起来是一个值得先知道的限制：**生存结局上，`model4you` 能建树、
+能给个体化系数，但两个推断工具（变量重要性、异质性检验）都用不了**
+——`varimp()` 只在 `survreg` 上可用且不稳定，`pmtest()` 两种生存模型都不可用。
+
+`coxph()` 这一栏是本手册的实测补充：它能建树、能取系数、能算 `logLik`，
+但 `objfun(tr, sum = TRUE)` 会报
+`no applicable method for 'objfun' applied to an object of class "coxph"`，
+连带 `varimp()` 的默认 `risk` 也不可用。详见
+[2. pmtree 的方法](model4you/02-pmtree-methods.qmd#sec-coxph) 与
+[7. objfun](model4you/07-objfun-internals.qmd#sec-coxph-gap)。
+
+## 最小可运行例子
+
+```r
+library("model4you")
+library("survival")
+data("GBSG2", package = "TH.data")
+
+## 1. 基模型：只有治疗一个协变量，必须 model = TRUE
+bmod <- survreg(Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE)
+
+## 2. 分层模型
+tr <- pmtree(bmod, data = GBSG2)
+print(tr)
+
+## 3. 个体化模型（ntree 实际使用时应更大）
+set.seed(123)
+frst <- pmforest(bmod, data = GBSG2, ntree = 50)
+pm   <- pmodel(frst)          # 686 × 2 的系数矩阵
+summary(pm[, "horThyes"])     # 每人一个 AFT 治疗效应
+```
+
+`print(tr)` 的实际输出（本机实测）：
+
+```text
+[1] root
+|   [2] pnodes <= 3: n = 376
+|       (Intercept)    horThyes
+|         7.8590259   0.4001011
+|   [3] pnodes > 3
+|   |   [4] tgrade <= II: n = 223
+|   |       (Intercept)    horThyes
+|   |         7.2936454   0.3038557
+|   |   [5] tgrade > II: n = 87
+|   |       (Intercept)    horThyes
+|   |         6.9808753   0.1630104
+
+Number of inner nodes:    2
+Number of terminal nodes: 3
+Number of parameters per node: 2
+Objective function: 2588.953
+```
+
+读法：三个亚组的 `horThyes` 分别是 0.400、0.304、0.163。
+基模型是 Weibull AFT，系数在 **log 时间尺度**上，
+所以激素治疗把中位生存时间分别乘以 $e^{0.400} = 1.49$、1.36、1.18 倍。
+
+## 官方资料
+
+| 资源 | 位置 |
+|---|---|
+| CRAN 页面与参考手册 | <https://cran.r-project.org/package=model4you> |
+| 软件论文 | Seibold, Zeileis & Hothorn (2019), *Journal of Open Research Software*, [10.5334/jors.219](https://doi.org/10.5334/jors.219) |
+| 方法论文（子组分析树） | Seibold, Zeileis & Hothorn (2016), *Int J Biostat*, [10.1515/ijb-2015-0032](https://doi.org/10.1515/ijb-2015-0032) |
+| 方法论文（个体化治疗效应森林） | Seibold, Zeileis & Hothorn (2017), *Stat Methods Med Res*, [10.1177/0962280217693034](https://doi.org/10.1177/0962280217693034) |
+| 论文复现脚本 | 安装目录下 `reproducing_papers/`，两个 `.Rmd`（2016 IJB 子组分析、2017 SMMR ALS 个体化治疗效应） |
+
+本机查看复现脚本：
+
+```r
+list.files(system.file("reproducing_papers", package = "model4you"))
+#> [1] "2016_subgroup_analyses_ijb.Rmd"
+#> [2] "2017_individual_treatment_effect_als_smmr.Rmd"
+```
+
+::: {.callout-note}
+## 复现脚本比帮助页更能说明"该怎么设参数"
+
+2017 年那份脚本里，作者建森林用的是
+
+```r
+pmforest(bm, ntree = 100,
+         control = ctree_control(teststat = "max", testtype = "Univ",
+                                 mincriterion = 0.95, minsplit = 40,
+                                 minbucket = 30, lookahead = TRUE))
+```
+
+而 `pmforest()` 的**默认值**是 `teststat = "quad"`、`mincriterion = 0`、
+没有 `minsplit`/`minbucket` 约束。作者自己不用默认值这件事，
+本身就是对默认值的一个提示。
+:::
+
+## 与本书其它页面的关系
+
+- [观察性研究中的效应修饰变量识别](sources/effect-modifier-discovery.qmd)——
+  `model4you` 在整个方法谱系中的位置；
+- [快速筛选效应修饰变量的 R 包](sources/quick-screening-r-packages.qmd)——
+  `varimp(pmforest)` 与其它 17 个包的能力对照；
+- [筛选软件与方法核查](sources/modifier-screening-audit.qmd)——
+  `varimp()` 究竟在测什么参数；
+- [效应修饰的效应尺度](sources/effect-modifier-effect-scale.qmd)——
+  `pmtree`/`pmforest` 的目标量随基模型而变（`survreg` → 时间比，`coxph` → log HR）。

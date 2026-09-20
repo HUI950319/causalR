@@ -12355,5 +12355,635 @@
       "sources",
       "<span class='chapter-number'>191</span>  <span class='chapter-title'>效应修饰的效应尺度</span>"
     ]
+  },
+  {
+    "objectID": "notes/model4you.html",
+    "href": "notes/model4you.html",
+    "title": "model4you 包函数手册",
+    "section": "",
+    "text": "核对环境与证据边界\nmodel4you 把一个已经拟合好的参数模型当作输入，用 model-based recursive partitioning（MOB）的思路去找”这个模型的参数在哪些人群里不一样”， 从而得到分层模型（树）和个体化模型（森林）。 它的典型用途是临床试验的亚组分析与个体化治疗效应估计。\n本部分是该包的函数用法手册，逐个覆盖 CRAN 参考手册 （refman） 里的全部 22 个帮助主题，包括三个以 . 开头的内部函数。 每页给出参数逐项说明、可直接运行的代码、返回对象的结构， 以及本机实际运行后发现的默认值陷阱与失效路径。\n本手册核对截止 2026 年 9 月 20 日，环境为：\n证据分三级，正文中逐处标明：\n本手册不在本站渲染时执行代码：所有代码块都是静态的， 展示的输出是在上述环境中单独运行后粘贴回来的。 因此页面里的数字可以按种子复现，但森林类结果存在随机性， 本手册对每处随机结果都标注了种子与 ntree。",
+    "crumbs": [
+      "model4you 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/model4you.html#核对环境与证据边界",
+    "href": "notes/model4you.html#核对环境与证据边界",
+    "title": "model4you 包函数手册",
+    "section": "",
+    "text": "项目\n值\n\n\n\n\n包版本\nmodel4you 0.9-9（2026-02-12 发布，2026-02-05 打包）\n\n\nR\nWindows R 4.4.3\n\n\n关键依赖\npartykit 1.3.0、survival 3.8-12、sandwich 3.1-3、ggplot2 4.0.2\n\n\n示例数据\nTH.data::GBSG2（n = 686，299 个事件）、模拟数据\n\n\n\n\n\n文档——包自带帮助页与 DESCRIPTION/NEWS 的原文；\n源码——本机已安装包的函数体（model4you::: 可复核）；\n实测——在上述环境下实际运行的输出。\n\n\n\n\n\n\n\n\n重要三处与官方文档不一致的实测结论\n\n\n\n在展开之前先给出结论，它们影响所有使用者：\n\npmtree() 的 ... 不会传给模型拟合。 帮助页写的是 “additional parameters passed on to model fit such as weights”， 但函数体里 ... 从未被使用，pmtree(mod, weights = w) 既不报错也不生效。 见第 1 页。\npmodel(x = &lt;权重矩阵&gt;) 这条文档明确支持的路径是坏的， 必定抛出 $ operator is invalid for atomic vectors。 见第 4 页。\npmforest() 的默认 control 不适合直接拿去做 varimp()： 默认 mincriterion = 0 接受任何分裂，终末节点可能只剩单一治疗组， varimp() 会间歇性报错（同一份数据 5 个种子里 1 个失败）， 且噪声变量的重要性被系统性抬高。包作者自己的论文复现脚本用的是 mincriterion = 0.95, minsplit = 40, minbucket = 30，不是这个默认值。 见第 5 页。",
+    "crumbs": [
+      "model4you 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/model4you.html#这个包在做什么",
+    "href": "notes/model4you.html#这个包在做什么",
+    "title": "model4you 包函数手册",
+    "section": "这个包在做什么",
+    "text": "这个包在做什么\n用一句话概括：把”模型参数是否随协变量变化”这个问题，交给递归分割来回答。\n给定基模型 \\(M\\)（例如 survreg(Surv(time, cens) ~ horTh)）， 它只有一个二值协变量——治疗 \\(A\\)。这个模型假设所有人的治疗效应相同：\n\\[\n\\log T = \\beta_0 + \\beta_1 \\cdot \\mathbb{1}(A = 1) + \\sigma \\varepsilon\n\\]\nmodel4you 用其余变量 \\(Z\\)（zformula）去检验 \\((\\beta_0, \\beta_1)\\) 是否稳定：\n\npmtree()：按 \\(Z\\) 递归分割，每个终末节点重新拟合 \\(M\\)， 得到少数几个亚组和各自的 \\(\\hat\\beta_1\\) —— 这是分层模型（stratified model）；\npmforest() + pmodel()：建很多棵这样的树， 用森林的共现频率定义”谁和谁相似”，对每个个体用其邻居加权重新拟合 \\(M\\)， 得到 每人一个 \\(\\hat\\beta_1\\) —— 这是个体化模型（personalised model）。\n\n三个层次的关系：\n基模型 M                 全体共用一组参数\n   │  pmtree()\n   ▼\n分层模型（树）            少数亚组，每组一组参数，规则可读\n   │  pmforest() + pmodel()\n   ▼\n个体化模型（森林）        每人一组参数，无规则，可做依赖图与变量重要性\n\n\n\n\n\n\n警告参数异质性 ≠ 因果的治疗效应异质性\n\n\n\nmodel4you 检验的是基模型参数的不稳定性。默认情况下， 不稳定性检验同时针对截距和治疗系数（源码 .modelfit() 的 parm 参数 控制这一点，但 pmtree() / pmforest() 都没有把它暴露出来）。 因此树可能仅仅因为基线风险不同（纯预后变量）就切一刀， 这不是效应修饰。同一问题在本书 效应修饰的效应尺度 一页里有实证：GBSG2 上的纯预后变量 pnodes 在相乘尺度上照样”显著”。\n此外，model4you 不做任何混杂校正。在观察性数据上， 基模型必须自己带上校正（或用加权数据），否则得到的是关联的异质性。",
+    "crumbs": [
+      "model4you 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/model4you.html#函数地图",
+    "href": "notes/model4you.html#函数地图",
+    "title": "model4you 包函数手册",
+    "section": "函数地图",
+    "text": "函数地图\n22 个帮助主题按角色归类如下，每行给出所在页面。\n\n建模主函数\n\n\n\n函数\n作用\n页面\n\n\n\n\npmtree()\n由基模型生成模型基础树（分层模型）\n1. pmtree\n\n\npmforest()\n由基模型生成模型基础森林\n3. pmforest\n\n\ngettree()（pmforest 方法）\n从森林里取出第 \\(k\\) 棵树\n3. pmforest\n\n\npmodel()\n由森林计算个体化模型／系数\n4. pmodel\n\n\n\n\n\n推断与评价\n\n\n\n函数\n作用\n页面\n\n\n\n\nvarimp()（pmforest 方法）\n置换变量重要性\n5. varimp 与 pmtest\n\n\npmtest()\n个体化模型是否优于基模型（参数异质性检验）\n5. varimp 与 pmtest\n\n\nplot()（heterogeneity_test 方法）\npmtest 结果的可视化\n5. varimp 与 pmtest\n\n\n\n\n\npmtree 的方法\n\n\n\n函数\n作用\n页面\n\n\n\n\nprint() / summary() / print.summary\n打印树与节点参数表\n2. pmtree 的方法\n\n\ncoef()\n提取各节点系数\n2. pmtree 的方法\n\n\npredict()\n预测节点号／系数／模型响应\n2. pmtree 的方法\n\n\nlogLik()\n各终末节点对数似然之和\n2. pmtree 的方法\n\n\nobjfun()\n目标函数贡献或其和\n2. pmtree 的方法\n\n\n\n\n\n可视化\n\n\n\n函数\n作用\n页面\n\n\n\n\nnode_pmterminal()\n终末节点面板生成器\n6. 可视化\n\n\nlm_plot()\nlm 的密度图\n6. 可视化\n\n\nbinomial_glm_plot()\n二项 glm 的比例图\n6. 可视化\n\n\nsurvreg_plot()\nWeibull AFT 的生存曲线\n6. 可视化\n\n\ncoxph_plot()\nCox 模型的生存曲线\n6. 可视化\n\n\ncoeftable.survreg()\n含 scale 参数的系数表\n6. 可视化\n\n\n\n\n\n目标函数与工具\n\n\n\n函数\n作用\n页面\n\n\n\n\nobjfun() 泛型 + lm／glm／survreg 方法\n单个模型的目标函数贡献\n7. objfun 与内部函数\n\n\nobjfun() / logLik()（pmodel_identity 方法）\n个体化模型集合的目标函数\n7. objfun 与内部函数\n\n\nrss()\n残差平方和\n7. objfun 与内部函数\n\n\none_factor()\n检查基模型是否只有一个因子协变量\n7. objfun 与内部函数\n\n\n.prepare_args() / .modelfit() / .add_modelinfo()\n三个内部函数，决定了包的行为边界\n7. objfun 与内部函数\n\n\n\n最后一页8. 实测清单与工作流汇总所有默认值陷阱、 失效路径与一套可照抄的生存结局工作流。",
+    "crumbs": [
+      "model4you 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/model4you.html#支持哪些基模型",
+    "href": "notes/model4you.html#支持哪些基模型",
+    "title": "model4you 包函数手册",
+    "section": "支持哪些基模型",
+    "text": "支持哪些基模型\nDESCRIPTION 只承诺 lm()、glm()、survreg()。实测与源码补充如下：\n\n\n\n\n\n\n\n\n\n\n\n\n基模型\n建树\ncoef/logLik\nobjfun\nvarimp\npmtest\n说明\n\n\n\n\nlm()\n✅\nlogLik ✅\n✅（负平方误差，不是对数似然）\n✅\n✅\nlogLik.pmodel_identity 对 lm 明确 stop()\n\n\nglm()\n✅\n✅\n✅（对数似然贡献）\n✅\n✅\n最顺畅的一条路径\n\n\nsurvreg()\n✅\n✅\n✅\n✅（但不稳定，见第 5 页）\n❌ 无 simulate.survreg\n官方生存示例都走这条\n\n\ncoxph()\n✅\n✅\n❌ 无 objfun.coxph 方法\n❌ 默认 risk 依赖 objfun，会报错\n❌ 无 simulate.coxph\n.modelfit() 里有 coxph 的 score 特判，NEWS 0.9-6 也为它改过代码，属于半支持\n\n\n\n最右两列合起来是一个值得先知道的限制：生存结局上，model4you 能建树、 能给个体化系数，但两个推断工具（变量重要性、异质性检验）都用不了 ——varimp() 只在 survreg 上可用且不稳定，pmtest() 两种生存模型都不可用。\ncoxph() 这一栏是本手册的实测补充：它能建树、能取系数、能算 logLik， 但 objfun(tr, sum = TRUE) 会报 no applicable method for 'objfun' applied to an object of class \"coxph\"， 连带 varimp() 的默认 risk 也不可用。详见 2. pmtree 的方法 与 7. objfun。",
+    "crumbs": [
+      "model4you 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/model4you.html#最小可运行例子",
+    "href": "notes/model4you.html#最小可运行例子",
+    "title": "model4you 包函数手册",
+    "section": "最小可运行例子",
+    "text": "最小可运行例子\nlibrary(\"model4you\")\nlibrary(\"survival\")\ndata(\"GBSG2\", package = \"TH.data\")\n\n## 1. 基模型：只有治疗一个协变量，必须 model = TRUE\nbmod &lt;- survreg(Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE)\n\n## 2. 分层模型\ntr &lt;- pmtree(bmod, data = GBSG2)\nprint(tr)\n\n## 3. 个体化模型（ntree 实际使用时应更大）\nset.seed(123)\nfrst &lt;- pmforest(bmod, data = GBSG2, ntree = 50)\npm   &lt;- pmodel(frst)          # 686 × 2 的系数矩阵\nsummary(pm[, \"horThyes\"])     # 每人一个 AFT 治疗效应\nprint(tr) 的实际输出（本机实测）：\n[1] root\n|   [2] pnodes &lt;= 3: n = 376\n|       (Intercept)    horThyes\n|         7.8590259   0.4001011\n|   [3] pnodes &gt; 3\n|   |   [4] tgrade &lt;= II: n = 223\n|   |       (Intercept)    horThyes\n|   |         7.2936454   0.3038557\n|   |   [5] tgrade &gt; II: n = 87\n|   |       (Intercept)    horThyes\n|   |         6.9808753   0.1630104\n\nNumber of inner nodes:    2\nNumber of terminal nodes: 3\nNumber of parameters per node: 2\nObjective function: 2588.953\n读法：三个亚组的 horThyes 分别是 0.400、0.304、0.163。 基模型是 Weibull AFT，系数在 log 时间尺度上， 所以激素治疗把中位生存时间分别乘以 \\(e^{0.400} = 1.49\\)、1.36、1.18 倍。",
+    "crumbs": [
+      "model4you 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/model4you.html#官方资料",
+    "href": "notes/model4you.html#官方资料",
+    "title": "model4you 包函数手册",
+    "section": "官方资料",
+    "text": "官方资料\n\n\n\n资源\n位置\n\n\n\n\nCRAN 页面与参考手册\nhttps://cran.r-project.org/package=model4you\n\n\n软件论文\nSeibold, Zeileis & Hothorn (2019), Journal of Open Research Software, 10.5334/jors.219\n\n\n方法论文（子组分析树）\nSeibold, Zeileis & Hothorn (2016), Int J Biostat, 10.1515/ijb-2015-0032\n\n\n方法论文（个体化治疗效应森林）\nSeibold, Zeileis & Hothorn (2017), Stat Methods Med Res, 10.1177/0962280217693034\n\n\n论文复现脚本\n安装目录下 reproducing_papers/，两个 .Rmd（2016 IJB 子组分析、2017 SMMR ALS 个体化治疗效应）\n\n\n\n本机查看复现脚本：\nlist.files(system.file(\"reproducing_papers\", package = \"model4you\"))\n#&gt; [1] \"2016_subgroup_analyses_ijb.Rmd\"\n#&gt; [2] \"2017_individual_treatment_effect_als_smmr.Rmd\"\n\n\n\n\n\n\n注记复现脚本比帮助页更能说明”该怎么设参数”\n\n\n\n2017 年那份脚本里，作者建森林用的是\npmforest(bm, ntree = 100,\n         control = ctree_control(teststat = \"max\", testtype = \"Univ\",\n                                 mincriterion = 0.95, minsplit = 40,\n                                 minbucket = 30, lookahead = TRUE))\n而 pmforest() 的默认值是 teststat = \"quad\"、mincriterion = 0、 没有 minsplit/minbucket 约束。作者自己不用默认值这件事， 本身就是对默认值的一个提示。",
+    "crumbs": [
+      "model4you 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/model4you.html#与本书其它页面的关系",
+    "href": "notes/model4you.html#与本书其它页面的关系",
+    "title": "model4you 包函数手册",
+    "section": "与本书其它页面的关系",
+    "text": "与本书其它页面的关系\n\n观察性研究中的效应修饰变量识别—— model4you 在整个方法谱系中的位置；\n快速筛选效应修饰变量的 R 包—— varimp(pmforest) 与其它 17 个包的能力对照；\n筛选软件与方法核查—— varimp() 究竟在测什么参数；\n效应修饰的效应尺度—— pmtree/pmforest 的目标量随基模型而变（survreg → 时间比，coxph → log HR）。",
+    "crumbs": [
+      "model4you 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/01-pmtree.html",
+    "href": "notes/model4you/01-pmtree.html",
+    "title": "1. pmtree()：模型基础树",
+    "section": "",
+    "text": "签名\npmtree() 接收一个已经拟合好的参数模型，用其余变量递归分割样本， 在每个终末节点重新拟合同一个模型，得到分层模型（stratified model）。 这是 model4you 里最常用、也最容易正确使用的函数。\n返回一个 ctree 对象，类为 c(\"pmtree\", \"constparty\", \"party\")。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>192</span>  <span class='chapter-title'>1. pmtree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/01-pmtree.html#签名",
+    "href": "notes/model4you/01-pmtree.html#签名",
+    "title": "1. pmtree()：模型基础树",
+    "section": "",
+    "text": "pmtree(\n  model,                        # 基模型对象\n  data = NULL,                  # 数据；NULL 时从模型里取\n  zformula = ~ .,               # 哪些变量用于分割\n  control = ctree_control(),    # 分割控制\n  coeffun = coef,               # 如何从节点模型提取系数\n  ...                           # 见下文：实际上被忽略\n)",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>192</span>  <span class='chapter-title'>1. pmtree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/01-pmtree.html#参数逐项",
+    "href": "notes/model4you/01-pmtree.html#参数逐项",
+    "title": "1. pmtree()：模型基础树",
+    "section": "参数逐项",
+    "text": "参数逐项\n\nmodel——基模型\n这是整个包的入口，约束也最多：\n\n\n\n\n\n\n\n\n要求\n原因\n不满足时\n\n\n\n\n必须有 call 组件（getCall() 能取到）\n内部靠 update() 在每个节点重新拟合\nstop(\"Need a model with call component, see getCall\")\n\n\n只应有一个因子协变量（通常就是治疗）\none_factor() 检查\n只警告，不阻止：Models with anything but single factor covariates are in beta.\n\n\nsurvreg() 建议加 model = TRUE\n让模型自带数据框，省去 data=\n不加则依赖 .get_model_data() 回溯环境\n\n\n\n只有一个因子协变量的要求来自方法本身：树的每个节点要估计 “这一组人的治疗效应”，参数越少越稳。\n多协变量基模型能跑，但每个节点会估计全部系数， 而且参数不稳定性检验同时针对所有这些系数。实测：\nbmod2 &lt;- survreg(Surv(time, cens) ~ horTh + age, data = GBSG2, model = TRUE)\nt5 &lt;- pmtree(bmod2, data = GBSG2)\n#&gt; Warning: Models with anything but single factor covariates are in beta.\n#&gt;          Please check if this is what you want!\ncoef(t5)\n  (Intercept)  horThyes          age\n2    7.994947 0.4146172 -0.002633350\n4    7.357562 0.3070674 -0.001232948\n5    6.808313 0.1504581  0.003325577\n\n\n\n\n\n\n警告分割可能只反映截距的异质性\n\n\n\n.modelfit()（内部函数）支持一个 parm 参数，用来只针对部分参数做不稳定性检验。 但 pmtree() 和 pmforest() 都没有把它暴露出来（见下节 ... 的实测）， 所以默认行为是：截距和治疗系数一起参与检验。\n后果是：一个只改变基线风险、完全不改变治疗效应的纯预后变量， 也足以让树切一刀。GBSG2 的第一刀切在 pnodes ≤ 3， 而 pnodes 在本书效应修饰的效应尺度 一页里被实证为典型的纯预后变量。\n若目标是只找效应修饰变量，model4you 本身没有提供开关， 需要改用 partykit::mob(..., parm = )，或在基模型里把预后成分作为 offset 固定住。\n\n\n\n\ndata——数据\nNULL 时走内部的 .get_model_data(model)，它会先看模型对象里存的数据， 取不到就去 parent.frame() 找同名对象，并打印提醒：\nNo data given. I'm using data set GBSG2 from the current environment\nparent.frame(). Please check if that is what you want.\n这条提示不是警告（warning()），只是 message()，很容易被忽略。 写进脚本或 qmd 的调用一律显式传 data =，否则一旦环境里有同名对象被修改， 结果会静默改变。\n模型变量里如有 NA，.prepare_args() 会整行删除并警告：\nWarning: NAs in model variables (time, cens, horTh). Omitting rows with NAs.\n注意它只按模型变量判断缺失，分割变量 z 的缺失交给 ctree 的代理分割处理。\n\n\nzformula——分割变量\n默认 ~ .，即”数据里除模型变量以外的所有列”。 内部把它和模型变量拼成 ctree 的公式：\n## .prepare_args() 实际构造的公式，等价于\nctree(time + cens + horTh ~ age + menostat + tsize + tgrade + pnodes + progrec + estrec, ...)\n限定候选分割变量：\ntr_z &lt;- pmtree(bmod, data = GBSG2, zformula = ~ age + tsize + pnodes)\n[1] root\n|   [2] pnodes &lt;= 3: n = 376\n|       (Intercept)    horThyes\n|         7.8590259   0.4001011\n|   [3] pnodes &gt; 3\n|   |   [4] pnodes &lt;= 10: n = 226\n|   |       (Intercept)    horThyes\n|   |         7.3285974   0.3750277\n|   |   [5] pnodes &gt; 10: n = 84\n|   |       (Intercept)    horThyes\n|   |         6.8843383   0.1002537\n\n\n\n\n\n\n提示zformula 是唯一的”不要用这个变量分割”的开关\n\n\n\n数据框里多余的列（ID、随访日期、由结局派生的变量）会自动进入候选分割变量。 本手册在准备配图时就踩过一次：给 GBSG2 临时加了一列 resp &lt;- as.numeric(time &gt; 1000) 用于演示 binomial_glm_plot， 随后建的森林里这一列的变量重要性是 579，其余变量全在 50 以下—— 它当然”重要”，因为它是结局的函数。\n建森林或建树前，先确认 names(data) 里没有不该参与分割的列， 或者显式写出 zformula。\n\n\n\n\ncontrol——分割控制\n直接传给 partykit::ctree_control()，默认就是 ctree_control() 的默认值 （teststat = \"quad\"、testtype = \"Bonferroni\"、mincriterion = 0.95、 minsplit = 20、minbucket = 7）。\n常用的几项：\n\n\n\n参数\n含义\n在这里的作用\n\n\n\n\nmincriterion\n分裂所需的 \\(1-p\\) 阈值\n建树时保持 0.95；建森林时 pmforest() 默认改成 0，见第 3 页\n\n\nmaxdepth\n最大深度\n控制亚组数量，做子组分析时常设 2\n\n\nminsplit / minbucket\n节点与叶最小样本量\n保证每个节点的模型能拟合\n\n\nlookahead\n分裂前先试算子节点能否收敛\n配合 converged 使用\n\n\nconverged\n自定义收敛判据，见下\n限定每个节点两臂的样本量\n\n\nnmax\n分箱上限\n不能用：pmtree() 开头有 stopifnot(all(!is.finite(control$nmax)))\n\n\n\nnmax 的实测：\npmtree(bmod, data = GBSG2, control = ctree_control(nmax = 20))\n#&gt; Error: all(!is.finite(control$nmax)) is not TRUE\n\n\ncontrol$converged——限定每臂样本量\n这是本包最重要的一个技巧，帮助页在 Details 里提了一句，但没有说清它有多关键。\nctree_control() 返回的是一个 list，converged 不是它的形式参数， 而是事后赋值的钩子。签名为 function(mod, data, subset)， 返回 FALSE 表示”这个节点不算收敛”，于是该分裂被拒绝。\nctrl &lt;- ctree_control(lookahead = TRUE)\nctrl$converged &lt;- function(mod, data, subset) {\n  all(table(data$horTh[subset]) &gt; 33)      # 每个治疗组都要超过 33 人\n}\ntr2 &lt;- pmtree(bmod, data = GBSG2, control = ctrl)\n加约束前后的树完全不同（本机实测，GBSG2）：\n\n\n\n\n\n\n\n\n\n设置\n第一刀\n第二刀\n终末节点两臂人数\n\n\n\n\n默认\npnodes ≤ 3\ntgrade ≤ II\n未检查\n\n\nconverged（两臂 &gt; 33）\npnodes ≤ 3\nprogrec ≤ 20\n248/128、91/53、101/65\n\n\n\n[1] root\n|   [2] pnodes &lt;= 3: n = 376\n|       (Intercept)    horThyes\n|         7.8590259   0.4001011\n|   [3] pnodes &gt; 3\n|   |   [4] progrec &lt;= 20: n = 144\n|   |       (Intercept)    horThyes\n|   |         6.9124816   0.1084537\n|   |   [5] progrec &gt; 20: n = 166\n|   |       (Intercept)    horThyes\n|   |         7.4434079   0.3965108\n\n\n\n\n\n\n重要自己传 control 时必须把默认值抄全\n\n\n\nconverged 只能通过”先构造再赋值”的方式加进去。 对 pmtree() 影响不大（默认就是 ctree_control()）， 但对 pmforest() 是陷阱：它的默认 control 是 ctree_control(teststat = \"quad\", testtype = \"Univ\", mincriterion = 0, saveinfo = FALSE, lookahead = TRUE)， 只要你自己传了 control，这五项就都回到 ctree_control() 的默认值， 等于悄悄换掉了森林的算法。正确写法见第 3 页。\n\n\n\n\ncoeffun——系数提取函数\n默认 coef。当 coef() 不返回全部参数时需要替换， 典型是 survreg() 的 scale 参数：\ncoeffun &lt;- function(model) c(coef(model), scale = model$scale)\ntr &lt;- pmtree(bmod, data = GBSG2, coeffun = coeffun)\ncoeffun 只影响存进节点 info$coefficients 的内容（以及 coef()、 summary()、print() 的显示），不影响分裂本身—— 分裂用的是 estfun() 给出的得分矩阵。\npmodel() 里的 fun 参数用法类似但更自由，见第 4 页。\n\n\n...——文档说会传给模型拟合，实际不会\n帮助页对 ... 的说明是：\n\nadditional parameters passed on to model fit such as weights.\n\n这在 0.9-9 里不成立。 函数体中 ... 从未被使用：\npmtree &lt;- function(model, data = NULL, zformula = ~., control = ctree_control(),\n                   coeffun = coef, ...) {\n  stopifnot(all(!is.finite(control$nmax)))\n  args &lt;- .prepare_args(model = model, data = data,\n                        zformula = zformula, control = control)   # 没有 ...\n  ...\n}\n实测（GBSG2，与不传参数的树逐项比较）：\nw  &lt;- rep(c(1, 3), length.out = nrow(GBSG2))\nt3 &lt;- pmtree(bmod, data = GBSG2, weights = w)   # 不报错\nall.equal(coef(t3), coef(tr))\n#&gt; [1] TRUE                                     # 权重完全没起作用\n\nt4 &lt;- pmtree(bmod, data = GBSG2, parm = 2)      # 不报错\nall.equal(coef(t4), coef(tr))\n#&gt; [1] TRUE                                     # parm 也没起作用\n两个都是静默忽略：不报错、不警告、结果和不传一模一样。 这是最危险的一类行为——写了 weights = 的人会以为加权生效了。\n\n\n\n\n\n\n注记需要加权时怎么办\n\n\n\n把权重写进基模型，update() 会带着它在每个节点重新拟合：\nGBSG2$w &lt;- w\nbmod_w &lt;- survreg(Surv(time, cens) ~ horTh, data = GBSG2,\n                  weights = w, model = TRUE)\ntr_w &lt;- pmtree(bmod_w, data = GBSG2)\n观察性数据的 IPTW 就应该走这条路：先用倾向评分算权重、 把权重放进基模型，再交给 pmtree() 分割。 model4you 自己不做任何混杂校正。\n顺带一提，pmforest() 的 ... 同样不传给模型拟合， 但它会通过默认参数的惰性求值传进 ctree_control()—— 两个函数的 ... 行为并不一致，见第 3 页。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>192</span>  <span class='chapter-title'>1. pmtree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/01-pmtree.html#返回对象的结构",
+    "href": "notes/model4you/01-pmtree.html#返回对象的结构",
+    "title": "1. pmtree()：模型基础树",
+    "section": "返回对象的结构",
+    "text": "返回对象的结构\ntr &lt;- pmtree(bmod, data = GBSG2)\nclass(tr)\n#&gt; [1] \"pmtree\"     \"constparty\" \"party\"\nnames(tr$info)\n#&gt; [1] \"call\"     \"control\"  \"model\"    \"zformula\"\n关键部件：\n\n\n\n\n\n\n\n位置\n内容\n\n\n\n\ntr$info$model\n基模型对象本身（predict、objfun 都会用 update() 复用它）\n\n\ntr$info$zformula\n实际使用的分割公式\n\n\ntr$data\n建树用的数据框\n\n\ntr$nobs\n终末节点样本量之和\n\n\ntr[[i]]$info$coefficients\n节点 i 的系数（coeffun 的结果）\n\n\ntr[[i]]$info$objfun\n节点 i 的负对数似然，见下\n\n\ntr[[i]]$info$object\n节点 i 重新拟合后的模型对象（仅当 control$saveinfo = TRUE）\n\n\n\n\n\n\n\n\n\n警告info$objfun 的符号与 objfun() 相反\n\n\n\n节点里存的是 -logLik(mod)（正数）， 而泛型 objfun() 返回的是对数似然贡献（负数）。 于是同一棵树上：\nprint(tr)  尾部 →  Objective function: 2588.953\nlogLik(tr)      →  'log Lik.' -2588.953 (df=9)\nobjfun(tr, sum = TRUE) → -2588.953\n打印出来的”Objective function”是要最小化的量， logLik/objfun 是要最大化的量。比较两棵树时别把符号弄反。\n\n\n节点模型可以直接取出来做常规分析：\nmod_node4 &lt;- tr[[4]]$info$object\nsummary(mod_node4)\ntr[[4]]$data            # 该节点的数据子集\ntable(tr[[4]]$data$horTh)",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>192</span>  <span class='chapter-title'>1. pmtree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/01-pmtree.html#一个完整例子gbsg2-子组分析",
+    "href": "notes/model4you/01-pmtree.html#一个完整例子gbsg2-子组分析",
+    "title": "1. pmtree()：模型基础树",
+    "section": "一个完整例子：GBSG2 子组分析",
+    "text": "一个完整例子：GBSG2 子组分析\nlibrary(\"model4you\")\nlibrary(\"survival\")\ndata(\"GBSG2\", package = \"TH.data\")\n\n## 基模型：Weibull AFT，只含治疗\nbmod &lt;- survreg(Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE)\n\n## 每个亚组两臂各至少 34 人，深度不超过 2\nctrl &lt;- ctree_control(maxdepth = 2, lookahead = TRUE)\nctrl$converged &lt;- function(mod, data, subset) all(table(data$horTh[subset]) &gt; 33)\n\ntr &lt;- pmtree(bmod, data = GBSG2, control = ctrl)\n\n## 看结构与系数\nprint(tr)\nsummary(tr)\ncoef(tr)\n\n## 画出来（含 scale 参数的系数表 + 生存曲线）\nplot(tr, terminal_panel = node_pmterminal(tr, plotfun = survreg_plot,\n                                          confint = TRUE,\n                                          coeftable = coeftable.survreg))\n\n\n\n\n\n\n图 192.1: GBSG2 上的 pmtree()（默认 control），终末面板由 node_pmterminal(plotfun = survreg_plot, coeftable = coeftable.survreg) 生成。 每个节点给出三个参数的点估计与 95% 区间，以及两臂的拟合生存曲线。\n\n\n\n图 192.1 的读法：horThyes 从 0.40（pnodes ≤ 3）降到 0.16（pnodes &gt; 3 且 tgrade &gt; II）， 换算成中位生存时间的倍数是 1.49 → 1.18。但第三个节点的 95% 区间是 [−0.32, 0.64]， 包含 0——树给出的切点没有附带多重比较校正，节点越小区间越宽。 pmtree() 本身不提供后选择推断，把树当作假设生成工具， 验证要另找数据或另做设计。\n绘图细节见第 6 页，树的各种方法见下一页。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>192</span>  <span class='chapter-title'>1. pmtree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/02-pmtree-methods.html",
+    "href": "notes/model4you/02-pmtree-methods.html",
+    "title": "2. pmtree 的方法",
+    "section": "",
+    "text": "print()\npmtree 对象同时是 constparty，因此 partykit 的全套工具 （nodeids()、nodeapply()、width()、depth()、[[）都能用。 本页只讲 model4you 自己定义的方法。本页所有输出都来自同一棵树：\n不带 node 时打印整棵树：\nfooter 里的 Objective function 是各节点 -logLik 之和， 是要最小化的量；logLik(tr) 给出的是相反数。\n指定 node 时打印的内容完全不同——它会给出参数不稳定性检验的结果， 这是判断”这一刀切得有多硬”的直接依据：\n每个候选分割变量一列，这就是 ctree 的参数不稳定性检验。 根节点上 pnodes 的 \\(p = 2.1\\times10^{-13}\\) 远小于其余变量，所以第一刀切在它上面； age 与 menostat 的 \\(p\\) 接近 0.5，完全没有证据。 criterion 行是 ctree 内部用的尺度（log(1 - p) 一类的单调变换），排序与 \\(p\\) 值一致。\n换个内部节点看，会发现候选变量的排序完全变了：\n在 pnodes &gt; 3 这一支里，tgrade（\\(p = 0.0037\\)）压过了 progrec（\\(p = 0.016\\)）。 两者差距不大，这正是树结构不稳定的来源——第 1 页里 只要加上”两臂各 &gt; 33 人”的约束，这一刀就改切 progrec 了。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>193</span>  <span class='chapter-title'>2. pmtree 的方法</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/02-pmtree-methods.html#print",
+    "href": "notes/model4you/02-pmtree-methods.html#print",
+    "title": "2. pmtree 的方法",
+    "section": "",
+    "text": "print(tr, node = NULL, FUN = NULL, digits = getOption(\"digits\") - 4L,\n      footer = TRUE, ...)\n\n[1] root\n|   [2] pnodes &lt;= 3: n = 376\n|       (Intercept)    horThyes\n|         7.8590259   0.4001011\n|   [3] pnodes &gt; 3\n|   |   [4] tgrade &lt;= II: n = 223\n|   |       (Intercept)    horThyes\n|   |         7.2936454   0.3038557\n|   |   [5] tgrade &gt; II: n = 87\n|   |       (Intercept)    horThyes\n|   |         6.9808753   0.1630104\n\nNumber of inner nodes:    2\nNumber of terminal nodes: 3\nNumber of parameters per node: 2\nObjective function: 2588.953\n\n\nprint(tr, node = 1)\nPartitioned model:\n survreg(formula = Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE)\nPartitioning variables: ~.\n-- Node 1 --\n\nEstimated parameters:\n(Intercept)    horThyes\n  7.6084486   0.3059506\n\nObjective function:\n2632.096\n\nParameter instability tests:\n                 age   menostat        tsize        tgrade        pnodes       progrec\nstatistic  6.4963868  6.5410358 19.567796549  2.911335e+01  6.607655e+01 24.0458901830\np.value    0.4824638  0.4754703  0.001459297  1.483931e-05  2.066099e-13  0.0001710320\ncriterion -0.6586757 -0.6452532 -0.001460363 -1.483942e-05 -2.066099e-13 -0.0001710466\n              estrec\nstatistic  7.2794468\np.value    0.3682583\ncriterion -0.4592747\n\n\nprint(tr, node = 3)\nParameter instability tests:\n                 age   menostat      tsize       tgrade      pnodes     progrec     estrec\nstatistic  3.2716489  5.2206817  2.5850916 17.608148579 11.80984413 14.48423487  6.4064500\np.value    0.9518204  0.6957728  0.9866297  0.003702417  0.05509907  0.01609234  0.4967040\n\n\n\n\n\n\n\n警告这些 \\(p\\) 值是选择前的\n\n\n\n它们衡量的是”在这个节点上，该变量与参数不稳定性的关联”， 默认 testtype = \"Bonferroni\" 只对同一节点内的候选变量个数做了校正， 没有对递归分割这个过程本身做任何校正。 不能把 \\(p = 0.0037\\) 当作”这个亚组真实存在”的证据。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>193</span>  <span class='chapter-title'>2. pmtree 的方法</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/02-pmtree-methods.html#summary-与-print.summary",
+    "href": "notes/model4you/02-pmtree-methods.html#summary-与-print.summary",
+    "title": "2. pmtree 的方法",
+    "section": "summary() 与 print.summary()",
+    "text": "summary() 与 print.summary()\nsummary(object, node = NULL, ...)\nStratified model for node(s) 2, 4, 5\n\nModel call:\nsurvreg(formula = Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE)\n\nCoefficients:\n            node 2 node 4 node 5\n(Intercept) 7.8590 7.2936  6.981\nhorThyes    0.4001 0.3039  0.163\n\nNumber of obervations:\nnode 2 node 4 node 5\n   376    223     87\n\nObjective function:\n(1093.18) + (1037.81) + (457.96) = 2588.95\nsummary(tr, node = ...) 可以只看指定节点，包括内部节点—— 节点 1 就是没有分割时的基模型，很适合和终末节点并排看：\nsummary(tr, node = 1:2)\nCoefficients:\n            node 1 node 2\n(Intercept)  7.608 7.8590\nhorThyes     0.306 0.4001\n\nNumber of obervations:\nnode 1 node 2\n   686    376\n\nObjective function:\n  node 1   node 2\n2632.096 1093.182\n注意指定 node 时 Objective function 改成逐节点列出，不再显示求和式。 （输出里的 Number of obervations 是包内的拼写，原样如此。）",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>193</span>  <span class='chapter-title'>2. pmtree 的方法</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/02-pmtree-methods.html#coef",
+    "href": "notes/model4you/02-pmtree-methods.html#coef",
+    "title": "2. pmtree 的方法",
+    "section": "coef()",
+    "text": "coef()\ncoef(object, node = NULL, ...)\n返回节点 × 参数的矩阵，行名是节点号：\n  (Intercept)  horThyes\n2    7.859026 0.4001011\n4    7.293645 0.3038557\n5    6.980875 0.1630104\n\n\n\n\n\n\n注意单参数模型下返回的形状会变\n\n\n\ncoef.pmtree() 的实现是 t(sapply(info, function(x) x$coefficients))。 当每个节点只有一个系数时（例如 coxph 基模型），sapply 退化成向量， t() 把它变成 1 × 节点数的矩阵，列名还带上了节点号前缀：\n     2.horThyes 4.horThyes 5.horThyes\n[1,] -0.5611397 -0.1004515 -0.5612125\n写自动化脚本时不要假定 coef(tr) 的行是节点—— 用 nodeapply(tr, ids = nodeids(tr, terminal = TRUE), function(n) n$info$coefficients) 更稳。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>193</span>  <span class='chapter-title'>2. pmtree 的方法</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/02-pmtree-methods.html#predict",
+    "href": "notes/model4you/02-pmtree-methods.html#predict",
+    "title": "2. pmtree 的方法",
+    "section": "predict()",
+    "text": "predict()\npredict(object, newdata = NULL, type = \"node\", predict_args = list(),\n        perm = NULL, ...)\n三种 type：\n\n\n\ntype\n返回\n说明\n\n\n\n\n\"node\"（默认）\n终末节点号\n最常用，用来给新病人分组\n\n\n\"coef\"\n该节点模型的系数\n每行一个观测\n\n\n\"pass\"\n调用基模型的 predict()\n参数经 predict_args 传入\n\n\n\nnd &lt;- GBSG2[1:5, ]\npredict(tr, type = \"node\", newdata = nd)\n#&gt; 1 2 3 4 5\n#&gt; 2 4 4 4 2\n\npredict(tr, type = \"coef\", newdata = nd)\n#&gt;   (Intercept)  horThyes\n#&gt; 1    7.859026 0.4001011\n#&gt; 3    7.293645 0.3038557\n#&gt; 4    7.293645 0.3038557\n#&gt; 5    7.293645 0.3038557\n#&gt; 2    7.859026 0.4001011\n\npredict(tr, type = \"pass\", newdata = nd)\n#&gt;       pred\n#&gt; 1 2588.997\n#&gt; 2 1993.209\n#&gt; 3 1993.209\n#&gt; 4 1993.209\n#&gt; 5 2588.997\n\n## 传给 predict.survreg 的参数：中位生存时间\npredict(tr, type = \"pass\", newdata = nd,\n        predict_args = list(type = \"quantile\", p = 0.5))\n#&gt;       pred\n#&gt; 1 2019.683\n#&gt; 2 1526.692\n#&gt; ...\n\n\n\n\n\n\n注意type = \"coef\" 返回的行名不可信\n\n\n\n上面第二个输出的行名是 1, 3, 4, 5, 2，而 newdata 的行名是 1..5。 数值的顺序是对的（内部按 .id 排过序），错的只是行名： 实现里按节点分组构造 data.frame 再 rbind，行名在这个过程中被重新生成。\n所以 cbind(newdata, predict(tr, type = \"coef\", newdata = newdata)) 是安全的 （按位置对齐），但 merge() 或任何按行名对齐的操作都会错。\n\n\nperm 用来把指定变量的分割随机置换，是 varimp() 的底层机制， 也可以单独用来看某个变量对分组的影响有多大：\npredict(tr, type = \"node\", newdata = GBSG2[1:8, ], perm = \"pnodes\")\n#&gt; 1 2 3 4 5 6 7 8\n#&gt; 4 4 2 2 2 5 2 4      # 与未置换的分组不同",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>193</span>  <span class='chapter-title'>2. pmtree 的方法</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/02-pmtree-methods.html#loglik",
+    "href": "notes/model4you/02-pmtree-methods.html#loglik",
+    "title": "2. pmtree 的方法",
+    "section": "logLik()",
+    "text": "logLik()\nlogLik(object, dfsplit = 0, newdata = NULL, weights = NULL, perm = NULL, ...)\n各终末节点 logLik() 之和：\nlogLik(bmod)   #&gt; 'log Lik.' -2632.096 (df=3)\nlogLik(tr)     #&gt; 'log Lik.' -2588.953 (df=9)\ndf 默认是各节点模型自由度之和（3 个节点 × 3 个参数 = 9）， 不计入分裂本身消耗的自由度。dfsplit 就是用来补这一块的：\nlogLik(tr, dfsplit = 1)     # 每个分裂算 1 个自由度\n用它做模型比较时要清楚：树是选出来的， 即便按 dfsplit 罚过，logLik 之差也不服从常规的 \\(\\chi^2\\) 分布。 要检验”是否真有异质性”，用 pmtest()， 它靠参数自助法构造零分布。\n当 newdata、weights 或 perm 任一非空时，函数改走 objfun() 通道， 此时 df 记为 NA；而 lm 基模型在这条通道上会直接 stop()：\nError: logLik not yet implemented for lm. Try objfun(..., sum = TRUE).",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>193</span>  <span class='chapter-title'>2. pmtree 的方法</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/02-pmtree-methods.html#objfun",
+    "href": "notes/model4you/02-pmtree-methods.html#objfun",
+    "title": "2. pmtree 的方法",
+    "section": "objfun()",
+    "text": "objfun()\nobjfun(x, newdata = NULL, weights = NULL, perm = NULL, sum = FALSE, ...)\n默认返回每个观测的目标函数贡献，sum = TRUE 返回其和：\nobjfun(tr, sum = TRUE)\n#&gt; [1] -2588.953\n\nhead(objfun(tr), 3)                                  # 每人一个贡献值\n#&gt;         1         2         3\n#&gt; -8.230585 -8.291882 -7.907872\n\nobjfun(tr, newdata = GBSG2[1:50, ], sum = TRUE)      # 在新数据上评估\n帮助页里的一句话值得照做：\n\nNote that objfun.pmtree(x, sum = TRUE) is much faster than sum(objfun.pmtree(x))。\n\n两者都对，但 sum = TRUE 是按节点批量算的，逐观测那条路径要对每一行单独调用一次。\nobjfun 与 logLik 对 glm、survreg 数值相同，对 lm 不同： objfun.lm 返回的是负平方误差，不是对数似然。详见 第 7 页。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>193</span>  <span class='chapter-title'>2. pmtree 的方法</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/02-pmtree-methods.html#sec-coxph",
+    "href": "notes/model4you/02-pmtree-methods.html#sec-coxph",
+    "title": "2. pmtree 的方法",
+    "section": "coxph 基模型：能建树，但目标函数缺一块",
+    "text": "coxph 基模型：能建树，但目标函数缺一块\nDESCRIPTION 只承诺 lm/glm/survreg，但内部对 coxph 有专门处理： .modelfit() 里为 coxph 单独构造 score（cbind(mod$residuals, mod$residuals * model.matrix(mod))）， NEWS 在 0.9-6 还为它改过这段代码并支持了多治疗组绘图。\n实测（GBSG2）：\ncmod &lt;- coxph(Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE, x = TRUE)\ntrc  &lt;- pmtree(cmod, data = GBSG2)\nprint(trc)\n[1] root\n|   [2] pnodes &lt;= 3: n = 376\n|         horThyes\n|       -0.5611397\n|   [3] pnodes &gt; 3\n|   |   [4] progrec &lt;= 20: n = 144\n|   |         horThyes\n|   |       -0.1004515\n|   |   [5] progrec &gt; 20: n = 166\n|   |         horThyes\n|   |       -0.5612125\n\nNumber of terminal nodes: 3\nObjective function: 1420.879\n可用与不可用的清单：\n\n\n\n\n\n\n\n操作\n结果\n\n\n\n\npmtree() 建树\n✅\n\n\ncoef(trc)\n✅（但形状是 1 × 3，见上文）\n\n\nlogLik(trc)\n✅ -1420.879 (df=3)\n\n\npredict(trc, type = \"node\")\n✅\n\n\nobjfun(trc, sum = TRUE)\n❌ no applicable method for 'objfun' applied to an object of class \"coxph\"\n\n\nvarimp()（森林上）\n❌ 默认 risk 依赖 objfun，同样报错\n\n\n\n\n\n\n\n\n\n重要用 Cox 之前先想清楚要不要 varimp\n\n\n\nobjfun 只有 lm、glm、survreg 三个方法（外加 pmtree、pmodel_identity）。 缺 objfun.coxph 的直接后果是：Cox 森林的变量重要性走不通， 换成 risk = function(x, ...) -as.numeric(logLik(x)) 也不行—— 实测在 varimp.cforest 内部报 replacement has length zero。\n需要生存结局 + 变量重要性时，把基模型换成 survreg(..., dist = \"weibull\")（AFT，系数是 log 时间比）， 或者自己补一个 objfun.coxph 方法。补方法的写法见 第 7 页。\n两个模型的目标量不同：coxph 的系数是 log HR，survreg 的是 log 时间比， 方向相反（治疗有益时前者为负、后者为正）。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>193</span>  <span class='chapter-title'>2. pmtree 的方法</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/03-pmforest.html",
+    "href": "notes/model4you/03-pmforest.html",
+    "title": "3. pmforest() 与 gettree()",
+    "section": "",
+    "text": "签名\npmforest() 把第 1 页的树重复很多次，得到一片森林。 森林本身不直接给出结论——它的产物是相似性权重， 供 pmodel() 算个体化模型、供 varimp() 算变量重要性。\n返回 cforest 对象，类为 c(\"pmforest\", \"cforest\", \"constparties\", \"parties\")。\nmodel、data、zformula 的行为与 pmtree() 完全一致，本页不重复， 只讲森林特有的部分。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>194</span>  <span class='chapter-title'>3. pmforest() 与 gettree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/03-pmforest.html#签名",
+    "href": "notes/model4you/03-pmforest.html#签名",
+    "title": "3. pmforest() 与 gettree()",
+    "section": "",
+    "text": "pmforest(\n  model,\n  data     = NULL,\n  zformula = ~ .,\n  ntree    = 500L,\n  perturb  = list(replace = FALSE, fraction = 0.632),\n  mtry     = NULL,\n  applyfun = NULL,\n  cores    = NULL,\n  control  = ctree_control(teststat = \"quad\", testtype = \"Univ\",\n                           mincriterion = 0, saveinfo = FALSE,\n                           lookahead = TRUE, ...),\n  trace    = FALSE,\n  ...\n)",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>194</span>  <span class='chapter-title'>3. pmforest() 与 gettree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/03-pmforest.html#perturb重采样方式",
+    "href": "notes/model4you/03-pmforest.html#perturb重采样方式",
+    "title": "3. pmforest() 与 gettree()",
+    "section": "perturb——重采样方式",
+    "text": "perturb——重采样方式\nperturb = list(replace = FALSE, fraction = 0.632)\n\n\n\n\n\n\n\n设置\n含义\n\n\n\n\nreplace = FALSE（默认）\n子采样（subsampling），每棵树抽 fraction 比例、不放回\n\n\nreplace = TRUE\nn-out-of-n 自助法\n\n\nfraction\n不放回时抽取的比例，默认 0.632\n\n\n\n默认用子采样而不是自助法，是因为自助法会让变量重要性偏向高基数变量 （Strobl 等人的经典结果，cforest 系列一贯如此）。 除非有特别理由，不要改成 replace = TRUE。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>194</span>  <span class='chapter-title'>3. pmforest() 与 gettree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/03-pmforest.html#mtry每次分裂的候选变量数",
+    "href": "notes/model4you/03-pmforest.html#mtry每次分裂的候选变量数",
+    "title": "3. pmforest() 与 gettree()",
+    "section": "mtry——每次分裂的候选变量数",
+    "text": "mtry——每次分裂的候选变量数\n默认 NULL，对应 ceiling(sqrt(nvar))。 mtry = Inf 或等于变量总数时退化为 bagging（不做随机变量抽样）。\n变量很少时（例如 GBSG2 只有 7 个候选变量），sqrt(7) ≈ 3， 每次分裂只看 3 个变量，相关变量之间的重要性会被摊薄。 做变量重要性排序时可以把 mtry 调大一些看排序是否稳定。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>194</span>  <span class='chapter-title'>3. pmforest() 与 gettree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/03-pmforest.html#ntreecorestrace",
+    "href": "notes/model4you/03-pmforest.html#ntreecorestrace",
+    "title": "3. pmforest() 与 gettree()",
+    "section": "ntree、cores、trace",
+    "text": "ntree、cores、trace\n\nntree 默认 500。演示可以用 20–50，报告结果不要低于 500： pmodel() 的权重来自树的共现频率，树太少时个别观测的权重全为 0， 会退回基模型系数并警告 The weights for one observation are all 0, return base coefficients.\napplyfun / cores 直接传给 cforest，并行见其文档。 NEWS 记载 0.9-6 修过多核计算的问题。\ntrace = TRUE 显示进度条。\n\n本机耗时参考（GBSG2，n = 686，survreg 基模型，单核 Windows R 4.4.3）：\n\n\n\n操作\nntree\n耗时\n\n\n\n\npmforest()\n25\n≈ 6 秒\n\n\npmforest()\n50\n≈ 13 秒\n\n\npmodel()（686 人全体）\n50\n≈ 1.5 秒\n\n\nvarimp()\n25\n≈ 11 秒\n\n\n\nvarimp() 的成本随 ntree × 变量数增长，500 棵树的森林算一次重要性是分钟级。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>194</span>  <span class='chapter-title'>3. pmforest() 与 gettree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/03-pmforest.html#sec-control",
+    "href": "notes/model4you/03-pmforest.html#sec-control",
+    "title": "3. pmforest() 与 gettree()",
+    "section": "control——默认值与它的代价",
+    "text": "control——默认值与它的代价\n这是本页的核心。pmforest() 的默认 control 不是 ctree_control() 的默认值：\n\n\n\n参数\nctree_control() 默认\npmforest() 默认\n含义\n\n\n\n\nteststat\n\"quad\"\n\"quad\"\n二次型统计量\n\n\ntesttype\n\"Bonferroni\"\n\"Univ\"\n不做多重比较校正\n\n\nmincriterion\n0.95\n0\n任何分裂都被接受\n\n\nsaveinfo\nTRUE\nFALSE\n不在节点里存模型，省内存\n\n\nlookahead\nFALSE\nTRUE\n分裂前先试算子节点\n\n\n\ntesttype = \"Univ\" + mincriterion = 0 是随机森林的标准做法—— 单棵树要长满、靠平均去噪。但在 model4you 里有一个别处没有的后果：\n\n\n\n\n\n\n重要长满的树会切出”只剩一个治疗组”的节点\n\n\n\n每个节点都要重新拟合含治疗变量的模型。 当某个终末节点里治疗变量只剩一个水平时，update() 会失败。\n这不是小概率事件。GBSG2 有 686 人，默认设置下每棵树长出 32–33 个终末节点（实测前三棵：33、32、32）， 平均每节点 21 人；而治疗分配是 440 : 246， 所以典型节点里少数臂只有 7–8 人，切到只剩 0 人并不罕见。\n建森林阶段这种树被 converged = FALSE 挡掉或留下，通常看不出问题； 但 varimp() 要对每棵树调用 gettree() → .add_modelinfo() → update(model, data = di) 重新拟合每个终末节点，这时就炸了。\n本机实测（GBSG2，survreg 基模型，ntree = 25，5 个种子）：\n\n\n\n\n\n\n\n种子\nvarimp() 结果\n\n\n\n\n1\n❌ 'names' attribute [3] must be the same length as the vector [2]\n\n\n2\n✅\n\n\n3\n✅\n\n\n42\n✅\n\n\n123\n✅\n\n\n\n在另一次会话（同版本、同数据、ntree = 100）里失败形态是 contrasts can be applied only to factors with 2 or more levels， 5 个种子里失败 3 个。同样的代码，成功与否取决于种子， 这很容易被误判成”我的用法写错了”或”varimp 有 bug”—— 根因在建森林阶段，不在 varimp 里。\n\n\n\n正确的写法\n用 control$converged 钩子强制每个节点两臂都有足够人数。 关键是：一旦自己传 control，上面那五项默认值就全部丢失，必须手工抄全。\nctrl &lt;- ctree_control(teststat = \"quad\", testtype = \"Univ\",\n                      mincriterion = 0, saveinfo = FALSE,\n                      lookahead = TRUE)            # ← 抄全 pmforest 的默认值\nctrl$converged &lt;- function(mod, data, subset) {\n  all(table(data$horTh[subset]) &gt; 20)              # ← 两臂各至少 21 人\n}\n\nset.seed(2)\nfrst &lt;- pmforest(bmod, data = GBSG2, ntree = 25, control = ctrl)\n效果不只是”不再报错”，而是结果的量级都变了（GBSG2，seed = 2，ntree = 25）：\n\n\n\n变量\n默认 control\n加 converged 后\n\n\n\n\npnodes\n73.43\n19.43\n\n\nprogrec\n47.00\n14.99\n\n\nmenostat\n27.45\n2.13\n\n\nage\n27.11\n0.04\n\n\nestrec\n22.74\n5.66\n\n\ntsize\n18.55\n6.35\n\n\ntgrade\n16.17\n4.40\n\n\n\n\n\n\n\n\n\n图 194.1: 同一份数据、同一个种子，只改了 control。 左：pmforest() 的默认设置，age 与 menostat 的重要性和 pnodes 同量级； 右：加上”两臂各 &gt; 20”的约束后，age 掉到 0.04，pnodes / progrec 与其余变量拉开差距。 注意两幅图的横轴刻度不同。\n\n\n\n图 194.1 左边那种”所有变量都很重要”的形态，是退化节点的产物： 两臂人数悬殊的节点上治疗系数会剧烈摆动，置换任何变量都会让目标函数明显变化。\n个体化治疗效应也一样（同一对森林）：\n\n\n\n设置\n最小值\n中位数\n最大值\n与 progrec 的 Spearman\n\n\n\n\n默认 control\n−1.205\n0.366\n21.326\n0.281\n\n\nconverged 两臂 &gt; 20\n−0.041\n0.332\n0.741\n0.730\n\n\n\n默认设置下最大值 21.3 出现在 log 时间比尺度上， 意味着”该病人用药后生存时间乘以 \\(e^{21.3}\\)“——显然是某个退化节点的产物。 加约束后不但范围回到合理区间，与真实修饰变量 progrec 的相关也从 0.28 升到 0.73。\n\n\n\n\n\n\n提示作者自己不用这个默认值\n\n\n\n包自带的论文复现脚本（system.file(\"reproducing_papers\", package = \"model4you\")） 里，2017 年 SMMR 那篇的森林是这样建的：\npmforest(bm, ntree = 100,\n         control = ctree_control(teststat = \"max\", testtype = \"Univ\",\n                                 mincriterion = 0.95, minsplit = 40,\n                                 minbucket = 30, lookahead = TRUE))\nmincriterion = 0.95、minsplit = 40、minbucket = 30—— 三项都比默认值保守得多。用 minsplit/minbucket 限制样本量是 converged 之外的另一条路，区别是它按节点总人数限制， 不保证两臂各自够人；治疗分配不均衡时（GBSG2 是 440 : 246）仍可能出问题。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>194</span>  <span class='chapter-title'>3. pmforest() 与 gettree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/03-pmforest.html#sec-dots-forest",
+    "href": "notes/model4you/03-pmforest.html#sec-dots-forest",
+    "title": "3. pmforest() 与 gettree()",
+    "section": "... 的行为与 pmtree() 不同",
+    "text": "... 的行为与 pmtree() 不同\n帮助页对两个函数的 ... 写的是同一句话 （“additional parameters passed on to model fit such as weights”）， 但实现不一样：\n\npmtree()：... 完全不用（见第 1 页）；\npmforest()：... 出现在 control 的默认值表达式里 ctree_control(..., ...)。R 的惰性求值让它在用户不传 control 时 被传进 ctree_control()。\n\n实测确认了这个差别（GBSG2，ntree = 25，seed = 2）：\n## 不传 control：... 进了 ctree_control()，生效\nfa &lt;- pmforest(bmod, data = GBSG2, ntree = 25, minsplit = 200, minbucket = 100)\nfa$info$control$minsplit    #&gt; 200\n## 树的规模随之改变：前三棵的终末节点数 33/32/32 → 4/3/3\n\n## 同时传 control：... 被丢弃，不报错也不警告\nfb &lt;- pmforest(bmod, data = GBSG2, ntree = 25, control = ctrl, minsplit = 200)\nfb$info$control$minsplit    #&gt; 20      ← ctree_control() 的默认值\n同一个参数写在同一个函数里，给不给 control 决定它生效与否， 而且失效时没有任何提示。\n两条建议：\n\n需要改分割控制时，显式构造 ctree_control() 传给 control，不要依赖 ...；\n需要加权时，把权重放进基模型，不要指望 ...。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>194</span>  <span class='chapter-title'>3. pmforest() 与 gettree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/03-pmforest.html#gettree取出森林里的一棵树",
+    "href": "notes/model4you/03-pmforest.html#gettree取出森林里的一棵树",
+    "title": "3. pmforest() 与 gettree()",
+    "section": "gettree()：取出森林里的一棵树",
+    "text": "gettree()：取出森林里的一棵树\ngettree(object, tree = 1L, saveinfo = TRUE, coeffun = coef, ...)\n返回的是 pmtree 对象，可以用第 2 页的全部方法：\ntr1 &lt;- gettree(frst, tree = 1)\nclass(tr1)\n#&gt; [1] \"pmtree\"     \"constparty\" \"party\"\nprint(tr1)\n因为森林建树时 saveinfo = FALSE（不存模型信息）， gettree(saveinfo = TRUE)（默认）会调用 .add_modelinfo() 当场对每个终末节点重新拟合模型。这既是它慢的原因， 也是上面那些退化节点错误的爆发点——同一条链路正是 varimp() 内部走的。\n\n\n\n\n\n\n注记两条无害的噪声信息\n\n\n\ngettree() 在 partykit 1.3.0 下会打印两行东西，都可以忽略：\nError in get(x, envir = ns, inherits = FALSE) : invalid first argument\nWarning: calling partykit methods directly is deprecated, please use the generic\n那行 Error 来自 partykit 自己的弃用检查（它在生成警告时内部调用 get() 失败），不会中断计算，函数照常返回结果。 varimp() 会对每棵树重复打印一次，ntree = 500 时刷屏但无害。 用 suppressWarnings() 挡不住那行 Error——它是被打印出来的，不是被抛出的。\n\n\n森林层面的产物看第 4 页（pmodel）与 第 5 页（varimp、pmtest）。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>194</span>  <span class='chapter-title'>3. pmforest() 与 gettree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/04-pmodel.html",
+    "href": "notes/model4you/04-pmodel.html",
+    "title": "4. pmodel()：个体化模型",
+    "section": "",
+    "text": "机制：森林只用来定义”谁和谁相似”\npmodel() 是 model4you 区别于普通子组分析的地方： 它不给出”亚组 A 的治疗效应是 0.4”，而是给出每个人各自的一组模型参数。\n理解这个函数只需要一句话：森林不预测任何东西，它只产生权重。\n对目标个体 \\(i\\)，森林给出一列权重 \\(w_i = (w_{i1}, \\dots, w_{in})\\)， \\(w_{ij}\\) 是训练样本 \\(j\\) 与 \\(i\\) 落在同一终末节点的（加权）次数。 然后用训练数据按这列权重重新拟合基模型：\n\\[\n\\hat\\theta_i = \\arg\\max_\\theta \\sum_{j=1}^{n} w_{ij} \\, \\ell(\\theta; \\text{训练数据}_j)\n\\]\n源码里就是一行 update(model, weights = w, subset = w &gt; 0, data = dat)， 其中 dat &lt;- x$data 是森林的训练数据。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>195</span>  <span class='chapter-title'>4. pmodel()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/04-pmodel.html#机制森林只用来定义谁和谁相似",
+    "href": "notes/model4you/04-pmodel.html#机制森林只用来定义谁和谁相似",
+    "title": "4. pmodel()：个体化模型",
+    "section": "",
+    "text": "重要newdata 不参与拟合\n\n\n\n这是最容易误解的一点：newdata 只用来算权重 （predict(x, type = \"weights\", newdata = newdata)）， 拟合用的始终是训练数据。所以：\n\nnewdata 里不需要有结局变量的真实值——只要分割变量齐全就行；\n新样本的信息不会进入参数估计，它只是在问”训练集里谁和我像”；\n因此 pmodel() 可以直接用于未随访的新病人。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>195</span>  <span class='chapter-title'>4. pmodel()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/04-pmodel.html#签名",
+    "href": "notes/model4you/04-pmodel.html#签名",
+    "title": "4. pmodel()：个体化模型",
+    "section": "签名",
+    "text": "签名\npmodel(\n  x           = NULL,   # pmforest 对象，或权重矩阵（后者是坏的，见下）\n  model       = NULL,   # 基模型；NULL 时取 x$info$model\n  newdata     = NULL,   # 目标个体；NULL 时用训练数据\n  OOB         = TRUE,   # 用训练数据时是否用袋外相似性\n  fun         = coef,   # 对每个个体化模型施加的函数\n  return_attr = c(\"modelcall\", \"data\", \"similarity\")\n)",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>195</span>  <span class='chapter-title'>4. pmodel()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/04-pmodel.html#sec-fun",
+    "href": "notes/model4you/04-pmodel.html#sec-fun",
+    "title": "4. pmodel()：个体化模型",
+    "section": "fun——决定返回什么",
+    "text": "fun——决定返回什么\n\n\n\n\n\n\n\n\nfun\n返回\n用途\n\n\n\n\ncoef（默认）\n个体 × 参数的矩阵\n最常用\n\n\nidentity\n模型对象的 list，类为 pmodel_identity\n要做 objfun()/logLik()/pmtest() 时必须用它\n\n\n自定义函数\n任意\n把参数换算成临床量纲\n\n\n\n## (1) 系数矩阵\ncoefs &lt;- pmodel(frst)\ndim(coefs)                    #&gt; [1] 686   2\nhead(coefs, 3)\n#&gt;   (Intercept)   horThyes\n#&gt; 1    7.669825  0.2510374\n#&gt; 2    7.968228 -0.1671617\n#&gt; 3    7.402913  0.1152114\n\n## (2) 模型对象\npmods &lt;- pmodel(frst, fun = identity)\nclass(pmods)                  #&gt; \"pmodel\" \"pmodel_identity\" \"list\"\nclass(pmods[[1]])             #&gt; \"survreg\"\n\n把 AFT 系数换算成中位生存时间差\nWeibull AFT 的 horThyes 是 log 时间比，临床上不好读。 包作者在 2017 年论文的复现脚本里给出了这个 fun， 把它换算成中位生存时间的绝对差（天）：\ncoeffun &lt;- function(model) {\n  coefs &lt;- c(coef(model), scale = model$scale)\n  p &lt;- 0.5\n  coefs[\"median_s0\"] &lt;- qweibull(p, shape = 1/coefs[\"scale\"],\n                                 scale = exp(coefs[\"(Intercept)\"]))\n  coefs[\"median_s1\"] &lt;- qweibull(p, shape = 1/coefs[\"scale\"],\n                                 scale = exp(coefs[\"(Intercept)\"] + coefs[\"horThyes\"]))\n  coefs[\"median_sdiff\"] &lt;- coefs[\"median_s1\"] - coefs[\"median_s0\"]\n  coefs\n}\n\npm_med &lt;- pmodel(frst, fun = coeffun)\n前 6 个病人（GBSG2，加了 converged 约束的 25 棵树森林，seed = 2）：\n  (Intercept) horThyes scale median_s0 median_s1 median_sdiff\n1       7.758    0.228 0.673  1829.212  2296.640      467.428\n2       7.444    0.348 0.728  1308.686  1852.701      544.015\n3       7.392    0.330 0.747  1234.886  1717.551      482.665\n4       7.582    0.276 0.707  1514.659  1996.923      482.263\n5       7.685    0.411 0.671  1701.405  2565.591      864.186\n6       7.230    0.118 0.835  1015.924  1142.701      126.777\n全体分布：\n中位生存时间差（天）\n   Min. 1st Qu.  Median    Mean 3rd Qu.    Max.\n  -42.8   335.7   600.1   649.8   908.7  2280.5\n这个尺度比 log 时间比好沟通得多，而且换尺度会改变异质性的样子： 即使 horThyes 恒定，基线风险不同的人中位生存差也不同。 关于尺度依赖的完整讨论见本书 效应修饰的效应尺度。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>195</span>  <span class='chapter-title'>4. pmodel()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/04-pmodel.html#oob袋外相似性",
+    "href": "notes/model4you/04-pmodel.html#oob袋外相似性",
+    "title": "4. pmodel()：个体化模型",
+    "section": "OOB——袋外相似性",
+    "text": "OOB——袋外相似性\n只在 newdata = NULL（对训练数据本身算个体化模型）时起作用。 OOB = TRUE（默认）时，每个观测的相似性只从没有用到它的那些树里统计， 避免”自己和自己相似”造成的过拟合。\n实测差别（GBSG2，ntree = 25）：\n\n\n\n\n最小\n中位\n最大\n\n\n\n\nOOB = TRUE\n−0.041\n0.332\n0.741\n\n\nOOB = FALSE\n0.059\n0.326\n0.563\n\n\n\n两者相关 0.854。OOB = FALSE 的范围更窄—— 每个人的模型里都混进了自己这一行，估计被拉向”所有人都差不多”。 帮助页对 OOB = FALSE 的评价是 not suggested，照办即可。\n\n\n\n\n\n\n注意ntree 太小时会静默退回基模型\n\n\n\n若某个观测的权重全为 0（没有一棵树把它和别人分到一起）， 函数返回基模型的系数并警告：\nWarning: The weights for one observation are all 0, return base coefficients.\n         A solution may be increasing ntree.\nntree = 2 时这条警告刷屏。问题在于 R 默认只显示前 50 条警告， ntree 中等时可能只有少数几个观测受影响，混在一堆 gettree 弃用警告里很容易漏掉，而这些人的”个体化”效应其实是全体平均。\n检查办法：\nsum(rowSums(predict(frst, type = \"weights\", OOB = TRUE)) == 0)",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>195</span>  <span class='chapter-title'>4. pmodel()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/04-pmodel.html#return_attr控制返回的附加属性",
+    "href": "notes/model4you/04-pmodel.html#return_attr控制返回的附加属性",
+    "title": "4. pmodel()：个体化模型",
+    "section": "return_attr——控制返回的附加属性",
+    "text": "return_attr——控制返回的附加属性\n默认 c(\"modelcall\", \"data\", \"similarity\")，三样都带上：\n\n\n\n\n\n\n\n\n属性\n内容\n大小\n\n\n\n\nmodelcall\n基模型的 call\n很小\n\n\ndata\nnewdata 或训练数据\n一份数据框\n\n\nsimilarity\n相似性权重矩阵\n\\(n_{\\text{train}} \\times n_{\\text{new}}\\)\n\n\n\n\n\n\n\n\n\n警告直接 print() 会把权重矩阵整个打出来\n\n\n\npmodel 对象没有自己的 print 方法，打印时会连同属性一起输出。 在 GBSG2 上 similarity 是 686 × 686， print(pmodel(frst)) 会刷出几十万个数字。\n要么加 unclass()/head() 只看系数，要么在调用时就关掉属性：\npm &lt;- pmodel(frst, return_attr = character(0))   # 只要系数矩阵\nobjfun(pmodel(..., fun = identity)) 需要 data 属性， 不能在那条路径上关掉它（否则报 Object pmodel_identity has to have a data attribute for objfun()）。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>195</span>  <span class='chapter-title'>4. pmodel()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/04-pmodel.html#sec-matrix-input",
+    "href": "notes/model4you/04-pmodel.html#sec-matrix-input",
+    "title": "4. pmodel()：个体化模型",
+    "section": "x 传权重矩阵：文档支持，实际不可用",
+    "text": "x 传权重矩阵：文档支持，实际不可用\n帮助页写：\n\nx: cforest object or matrix of weights.\nmodel: model object. If NULL the model in x$info$model is used.\n\n并且函数开头确实为矩阵准备了分支。但后面计算每个个体模型时写的是：\nget_pmod &lt;- function(w) {\n  ...\n  dat &lt;- x$data          # ← x 是矩阵时，这里必然失败\n  dat$w &lt;- w\n  pmod &lt;- update(model, weights = w, subset = w &gt; 0, data = dat)\n  fun(pmod)\n}\n实测：\nW &lt;- predict(frst, type = \"weights\", OOB = TRUE)\ndim(W)                              #&gt; [1] 686 686\npmodel(x = W, model = bmod)\n#&gt; Error in x$data : $ operator is invalid for atomic vectors\n这条路径在 0.9-9 下必定失败，与权重矩阵的内容无关。\n需要用自定义权重（例如自己构造的相似性、或来自另一片森林的权重）时， 绕过办法是自己写那三行：\nfit_one &lt;- function(w, model, data) {\n  if (sum(w) == 0) return(coef(model))\n  coef(update(model, weights = w, subset = w &gt; 0, data = data))\n}\nres &lt;- t(apply(W, 2, fit_one, model = bmod, data = GBSG2))",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>195</span>  <span class='chapter-title'>4. pmodel()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/04-pmodel.html#依赖图个体化效应随协变量怎么变",
+    "href": "notes/model4you/04-pmodel.html#依赖图个体化效应随协变量怎么变",
+    "title": "4. pmodel()：个体化模型",
+    "section": "依赖图：个体化效应随协变量怎么变",
+    "text": "依赖图：个体化效应随协变量怎么变\n个体化系数最常见的用法是画依赖图（dependence plot）—— 把 \\(\\hat\\beta_{1i}\\) 对候选修饰变量作散点：\nlibrary(\"ggplot2\")\ndp &lt;- data.frame(eff = pmodel(frst)[, \"horThyes\"], progrec = GBSG2$progrec)\nggplot(dp, aes(x = progrec, y = eff)) +\n  geom_point(alpha = .35, size = .9) +\n  geom_smooth(method = \"loess\", formula = y ~ x, se = FALSE, colour = \"firebrick\") +\n  scale_x_continuous(trans = \"log1p\") +\n  labs(x = \"progrec\", y = \"个体化 horThyes 系数（log 时间比）\") +\n  theme_classic()\n\n\n\n\n\n\n图 195.1: 左：pmforest() 默认设置下的依赖图，纵轴被几个极端值撑开 （最大值 21.3，即”生存时间乘以 \\(e^{21.3}\\)“），趋势被淹没； 右：加上”两臂各 &gt; 20”约束后，与 progrec 的单调关系清楚显现。 两幅图的纵轴刻度不同。\n\n\n\n图 195.1 两侧用的是同一个种子、同一份数据， 差别只在 control。 与 progrec 的 Spearman 相关从 0.281 升到 0.730； 把系数换算成中位生存时间差之后，这个相关是 0.735。\n\n\n\n\n\n\n注记依赖图不是因果的 CATE 曲线\n\n\n\n图上的趋势来自 \\(\\hat\\beta_{1i}\\) 与 progrec 的关联。 model4you 不做正交化、不做倾向评分加权， 所以在观察性数据上这条曲线混杂了预后效应与选择效应。 和 grf::causal_forest() 那套正交化框架的区别，见 grf 包官方教程中译。\n即便在随机试验里，也要记住森林的权重来自参数不稳定性检验， 默认同时针对截距——纯预后变量同样会让权重发生变化。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>195</span>  <span class='chapter-title'>4. pmodel()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/04-pmodel.html#后续",
+    "href": "notes/model4you/04-pmodel.html#后续",
+    "title": "4. pmodel()：个体化模型",
+    "section": "后续",
+    "text": "后续\n\n想知道”这些个体差异是不是噪声”：pmtest()\n想知道”哪些变量驱动了这些差异”：varimp()\nobjfun() / logLik() 作用在 pmodel_identity 上的行为： 第 7 页",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>195</span>  <span class='chapter-title'>4. pmodel()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/05-varimp-pmtest.html",
+    "href": "notes/model4you/05-varimp-pmtest.html",
+    "title": "5. varimp() 与 pmtest()",
+    "section": "",
+    "text": "varimp()\n森林建好之后有两个问题要回答：“参数真的不一样吗”（pmtest()） 和“哪些变量让它们不一样”（varimp()）。本页的核心结论是： varimp() 回答的不是”哪些变量修饰了治疗效应”， 它按整个模型的参数异质性排序，纯预后变量会排在最前面。\n它只是 partykit::varimp.cforest() 的薄封装，唯一的定制是 risk。\n返回一个具名向量，是 mean decrease in accuracy 型的重要性： 把变量 \\(j\\) 在袋外样本里置换后，风险平均上升多少。值越大越重要，量纲是目标函数的单位 （对数似然、或 lm 的平方误差），因此不同数据集之间不可比。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>196</span>  <span class='chapter-title'>5. varimp() 与 pmtest()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/05-varimp-pmtest.html#varimp",
+    "href": "notes/model4you/05-varimp-pmtest.html#varimp",
+    "title": "5. varimp() 与 pmtest()",
+    "section": "",
+    "text": "## S3 method for class 'pmforest'\nvarimp(object,\n       nperm       = 1L,\n       OOB         = TRUE,\n       risk        = function(x, ...) -objfun(x, sum = TRUE, ...),\n       conditional = FALSE,\n       threshold   = 0.2,\n       ...)\n\n\n\n\n\n\n\n\n\n参数\n默认\n说明\n\n\n\n\nnperm\n1L\n每棵树每个变量的置换次数。加大能降方差，成本线性增长\n\n\nOOB\nTRUE\n用袋外样本评估。FALSE 不建议\n\n\nrisk\n-objfun(x, sum = TRUE)\n要最小化的风险。默认是负对数似然\n\n\nconditional\nFALSE\n条件重要性，处理相关变量\n\n\nthreshold\n0.2\n仅 conditional = TRUE 时用：进入条件集的关联强度门槛\n\n\n\n\n\n它排序的是”参数异质性”，不是”效应修饰”\n默认 risk 是整棵树的负对数似然，而树的对数似然同时包含 截距（基线水平）和治疗系数的拟合优度。 置换一个强预后变量会让每个节点的截距估计错位，似然大幅下降—— 于是它的”重要性”很高，哪怕它完全不修饰治疗效应。\n用一份构造数据可以把这件事看得很清楚 （\\(n = 800\\)，随机化治疗，lm 基模型，50 棵树，加了两臂 &gt; 20 的约束）：\n\\[\ny = 1 + 2 x_{\\text{prog}} + 0.5\\,\\mathbb{1}(A) + 1.5\\,\\mathbb{1}(A)\\,x_{\\text{mod}} + \\varepsilon\n\\]\nx_prog 是纯预后（强主效应、零交互），x_mod 是纯修饰（零主效应、强交互）， x_noise 与任何东西都无关。三个种子的 varimp()：\n\n\n\n种子\nx_prog（纯预后）\nx_mod（纯修饰）\nx_noise\n\n\n\n\n1\n1668.66\n357.92\n7.86\n\n\n2\n1503.57\n355.21\n7.36\n\n\n3\n1657.76\n379.47\n7.75\n\n\n\n同一份数据上，交互回归给出的是正确答案：\n             Estimate Pr(&gt;|t|)\ntrtA:x_prog   -0.0395   0.5758     ← 无交互\ntrtA:x_mod     1.5594   0.0000     ← 有交互\ntrtA:x_noise  -0.0333   0.6401\n\n\n\n\n\n\n重要结论：不能把 varimp(pmforest) 当作 effect-modifier 筛选器\n\n\n\n在这个例子里，纯预后变量的重要性是真修饰变量的 4.7 倍。 如果按 varimp() 的排序取前 k 个变量当”候选效应修饰变量”， 拿到的会是预后变量排行榜。\n这与本书筛选软件与方法核查 一页的判断一致，此处给出了可复现的实证。 真正针对效应修饰定义重要性的方法（TEM-VIP 等）见 快速筛选效应修饰变量的 R 包。\n\n\n\n\n把重要性拉回治疗效应：用 offset 固定预后成分\nmodel4you 没有提供”只检验治疗系数”的开关 （内部 .modelfit() 的 parm 参数没有被 pmtree()/pmforest() 暴露， 见第 1 页）。但可以从基模型这一侧解决： 把预后成分作为 offset 固定住，截距就不再随预后变量变化， 剩下能让目标函数变化的只有治疗系数。\n## 1. 只在对照臂上拟合预后模型（避免把治疗效应吸收进去）\nprog_fit &lt;- lm(y ~ x_prog + x_mod + x_noise, data = dat[dat$trt == \"C\", ])\ndat$prog_hat &lt;- predict(prog_fit, newdata = dat)\n\n## 2. 基模型：预后部分作为 offset，只留治疗一个自由参数\nbm_off &lt;- lm(y ~ trt + offset(prog_hat), data = dat)\ncoef(bm_off)\n#&gt; (Intercept)        trtA\n#&gt;       0.000       0.567\n\n## 3. 森林：zformula 里不要放 prog_hat 自己\nfrst_off &lt;- pmforest(bm_off, data = dat,\n                     zformula = ~ x_prog + x_mod + x_noise,\n                     ntree = 50, control = ctrl)\nvarimp(frst_off)\n同样三个种子，同样的数据：\n\n\n\n种子\nx_prog（纯预后）\nx_mod（纯修饰）\nx_noise\n\n\n\n\n1\n4.15\n515.82\n8.23\n\n\n2\n3.11\n529.70\n4.78\n\n\n3\n12.86\n508.56\n3.87\n\n\n\n排序完全反转：预后变量掉到噪声水平，修饰变量的重要性还提高了。\n\n\n\n\n\n\n警告这个技巧的三个前提\n\n\n\n\nprog_hat 要用独立的数据或交叉拟合得到。 上例为了演示直接在同一份数据的 对照臂上拟合，会有过拟合；正式分析应做样本分割或 K 折交叉拟合。\n只在对照臂拟合，否则预后模型会把治疗效应吸收进 offset。\nzformula 里不要包含 prog_hat，否则森林会拿它自己去分割。\n\n同样的思路对 glm（offset(log(...)) 等）和 survreg 都适用， 本质上是让基模型只剩一个待估参数。这也是 model4you 里最接近 “正交化”的做法，但它不等于 grf 那套双重稳健的正交化—— 这里只处理了结局侧，没有处理处理分配侧的混杂。\n\n\n\n\nnperm、conditional 与 threshold\n小规模实测（同上数据，20 棵树）：\n\n\n\n设置\nx_prog\nx_mod\nx_noise\n耗时\n\n\n\n\n默认（nperm = 1）\n1557.84\n327.58\n14.99\n0.7 秒\n\n\nconditional = TRUE\n1591.02\n284.67\n12.51\n0.7 秒\n\n\nnperm = 5\n1593.57\n305.24\n3.51\n——\n\n\n\n这个例子里三个协变量互相独立，所以条件重要性与非条件重要性几乎没差别； conditional = TRUE 的意义在协变量高度相关时—— 它只在与目标变量关联超过 threshold 的那些变量的分层内做置换， 避免把相关变量的信号重复计入。代价是计算量随相关变量数量急增 （在真实数据上可能慢几十倍，本机未做大规模计时）。\nnperm = 5 把噪声变量的重要性从 15.0 压到 3.5， 说明噪声变量上的正值主要是置换的随机波动。 要判断”重要性多大才算大”，加大 nperm 比看绝对值更有用。\n\n\n自定义 risk 的空间很小\nrisk 接收一棵树、返回要最小化的标量，看起来可以随意替换。 实际上 partykit::varimp.cforest() 是这样调用它的：\noobw &lt;- as.integer(object$weights[[b]] == 0)\nvi   &lt;- varimp(tree, nperm = nperm, risk = risk, conditions = conditions,\n               weights = oobw, ...)\nrisk 会被沿着 varimp.constparty 的内部路径调用，并带上 weights 与置换后的数据。 写一个只依赖 x 的函数很容易在这条路径上失败：实测把 coxph 森林的 risk 换成 function(x, ...) -as.numeric(logLik(x))，在内部报 replacement has length zero。\n需要换目标量时，更稳妥的做法是换基模型（例如前面的 offset 写法）， 而不是换 risk。\n\n\n什么时候它直接不可用\n\n\n\n基模型\nvarimp()\n\n\n\n\nlm / glm / survreg\n✅ 可用（但默认 control 下不稳定，见第 3 页）\n\n\ncoxph\n❌ 默认 risk 报 no applicable method for 'objfun' applied to an object of class \"coxph\"；换 risk 也没走通\n\n\n\n回顾第 3 页的另一个结论： 在 pmforest() 的默认 control 下，varimp() 会间歇性报错 （GBSG2 上 5 个种子里 1 个失败），而且噪声变量的重要性被系统性抬高。 跑 varimp() 之前先设好 control$converged。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>196</span>  <span class='chapter-title'>5. varimp() 与 pmtest()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/05-varimp-pmtest.html#sec-pmtest",
+    "href": "notes/model4you/05-varimp-pmtest.html#sec-pmtest",
+    "title": "5. varimp() 与 pmtest()",
+    "section": "pmtest()：个体化模型是否优于基模型",
+    "text": "pmtest()：个体化模型是否优于基模型\npmtest(forest, pmodels = NULL, data = NULL, B = 100)\n\n## S3 method for class 'heterogeneity_test'\nplot(x, ...)\n\n\n\n参数\n说明\n\n\n\n\nforest\npmforest 对象\n\n\npmodels\n必须是 pmodel(..., fun = identity) 的结果\n\n\ndata\n数据；NULL 时从基模型取\n\n\nB\n参数自助重复次数，默认 100（帮助页示例用 10，只为演示）\n\n\n\n\n检验逻辑\n零假设是基模型就是正确模型（没有参数异质性）。检验统计量是\n\\[\nD = \\sum_i \\ell(\\hat\\theta_i;\\, y_i) - \\sum_i \\ell(\\hat\\theta_{\\text{base}};\\, y_i)\n\\]\n即个体化模型与基模型的目标函数之差。零分布用参数自助法构造： 从基模型 simulate() 出 B 套新结局，每套都重新拟合基模型、 重建森林、重算个体化模型，得到 B 个 \\(D\\) 值。\\(p\\) 值是原始 \\(D\\) 小于 自助 \\(D\\) 的比例。\n因为每次自助都要重建整片森林，成本是 \\(B+1\\) 倍的建森林时间。\n\n\n两个实测对照\n（a）真的没有异质性（\\(y = 4 + \\mathbb{1}(A) + \\varepsilon\\)，\\(n = 160\\)，两个纯噪声协变量）：\nmod   &lt;- lm(y ~ trt, data = dat)\nfrst  &lt;- pmforest(mod, data = dat, ntree = 20)\npmods &lt;- pmodel(frst, fun = identity)\ntst   &lt;- pmtest(forest = frst, pmodels = pmods, B = 10)\ntst$pvalue\n#&gt; [1] 0.5\n      base_model personalised_models   sim hypothesis      diff\n1      -138.2518           -157.7453 FALSE       H[1] -19.49350\nsim_1  -119.7984           -135.8442  TRUE       H[0] -16.04579\nsim_2  -141.8681           -161.0152  TRUE       H[0] -19.14711\nsim_3  -130.7937           -151.9570  TRUE       H[0] -21.16328\n观测到的 diff = -19.49 落在自助分布（−16 到 −22）正中间，\\(p = 0.5\\)。 注意 diff 是负的：没有异质性时，袋外的个体化模型比基模型更差， 这是正常的——它们用更少的有效样本估计同样的参数。\n（b）真的有异质性（\\(y = 4 + \\mathbb{1}(A)\\,[1 + 2\\cdot\\mathbb{1}(x_1 &gt; 0)] + \\varepsilon\\)，\\(n = 300\\)）：\n      base_model personalised_models hypothesis      diff\n1      -491.0769           -334.8367       H[1]  156.24020\nsim_1  -432.0459           -514.6932       H[0]  -82.64726\nsim_2  -526.1925           -603.0212       H[0]  -76.82872\ntst2$pvalue\n#&gt; [1] 0\n观测到的 diff = +156 与自助分布（约 −77 到 −83）完全分离。 判读时看的是 diff 与自助分布的位置关系，不是 diff 的正负本身。\n\n\n返回值与绘图\nnames(tst)\n#&gt; [1] \"pvalue\" \"objfun\"\nstr(tst$objfun)\n#&gt; 'data.frame': 11 obs. of 5 variables:\n#&gt;  $ base_model         : num\n#&gt;  $ personalised_models: num\n#&gt;  $ sim                : logi\n#&gt;  $ hypothesis         : chr  \"H[1]\" \"H[0]\" ...\n#&gt;  $ diff               : num\nplot(tst) 返回一个 ggplot 对象，把 \\(H_0\\) 的自助分布与观测值画在一起， 可以像普通 ggplot 一样继续加图层。\n\n\n\n\n\n\n重要pmtest() 对生存结局不可用\n\n\n\n零分布靠 simulate(model, nsim = B) 生成，而 survival 没有提供 simulate.survreg，也没有 simulate.coxph。实测：\nbmod &lt;- survreg(Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE)\npmtest(forest = frst, pmodels = pm, B = 5)\n#&gt; Error: no applicable method for 'simulate' applied to an object of class \"survreg\"\n这不是配置问题，在 0.9-9 + survival 3.8-12 下无解，除非自己写一个 simulate.survreg（从拟合的 Weibull 分布抽时间、再按原删失机制截断）。 能用 pmtest() 的基模型实际上只有 lm 和 glm。\n\n\n\n\n\n\n\n\n注意另外两个使用条件\n\n\n\n\npmodels 必须来自 fun = identity，否则 sum(objfun(pmodels)) 无从算起。\n\\(p\\) 值的分辨率是 \\(1/B\\)。 B = 10 时最小非零 \\(p\\) 是 0.1， 得到 pvalue = 0 只说明”比 10 次自助都极端”。报告结果至少用 B = 100， 并记住这要跑 101 次建森林。\n\n\n\npmtest() 检验的同样是整体参数异质性（含截距）， 不是”治疗效应异质性”。想把它专门对准治疗效应， 用上文 offset 的办法重建基模型再检验。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>196</span>  <span class='chapter-title'>5. varimp() 与 pmtest()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/06-plots.html",
+    "href": "notes/model4you/06-plots.html",
+    "title": "6. 可视化",
+    "section": "",
+    "text": "node_pmterminal()\nmodel4you 的可视化是它相对 partykit::mob() 最明显的增值： 终末节点里不只放系数，还能放模型拟合出来的曲线和带置信区间的系数表。\n整套机制只有一个入口——node_pmterminal()， 它是 partykit 的 plot.party() 所要求的 terminal_panel 生成器。\n典型调用：",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>197</span>  <span class='chapter-title'>6. 可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/06-plots.html#node_pmterminal",
+    "href": "notes/model4you/06-plots.html#node_pmterminal",
+    "title": "6. 可视化",
+    "section": "",
+    "text": "node_pmterminal(\n  obj,                     # pmtree 对象\n  coeftable = TRUE,        # 逻辑值，或一个自定义的表格函数\n  digits    = 2,\n  confint   = TRUE,        # 是否在表里给置信区间\n  plotfun,                 # 画什么图，function(mod, data)\n  nid = function(node) paste0(nam[id_node(node)], \", n = \", node$info$nobs),\n  ...                      # 传给 plotfun\n)\n\nplot(tr, terminal_panel = node_pmterminal(tr, plotfun = survreg_plot,\n                                          confint   = TRUE,\n                                          coeftable = coeftable.survreg))\n\n\n\n\n\n\n图 197.1: node_pmterminal() 生成的终末面板：上半是系数表（含 Log(scale) 与 95% 区间）， 下半是 survreg_plot() 画的两臂拟合生存曲线。\n\n\n\n\ncoeftable 的两种形态\n\n\n\n传入\n效果\n\n\n\n\nTRUE（默认）\n用内置逻辑列出 coef() 能取到的系数\n\n\nFALSE\n不画表，只画 plotfun\n\n\n函数\n自定义表格，签名照 coeftable.survreg()\n\n\n\nsurvreg 的 coef() 不包含 scale 参数，所以默认表里看不到它。 coeftable.survreg() 就是为此提供的：\ncoeftable.survreg(model, confint = TRUE, digits = 2, intree = FALSE)\n\n\n\n\n\n\n\n参数\n说明\n\n\n\n\nmodel\nsurvreg 对象\n\n\nconfint\n是否算置信区间，默认 TRUE\n\n\ndigits\n数字格式，默认 2\n\n\nintree\n是否画在树里面，默认 FALSE。树内部由 node_pmterminal() 自动设为 TRUE\n\n\n\n它是纯副作用函数（返回 NULL），直接用要先开一页 grid 画布：\ngrid.newpage()\ncoeftable.survreg(bmod)\n\n\nnid——节点标签\n默认打印 节点号, n = 样本量。想换成中文或加别的信息：\nplot(tr, terminal_panel = node_pmterminal(\n  tr, plotfun = survreg_plot, confint = TRUE,\n  nid = function(node) paste0(\"节点 \", partykit::id_node(node),\n                              \"（n = \", node$info$nobs, \"）\")))\n\n\n...——传给 plotfun 的参数\nnode_pmterminal() 的 ... 会原样转给 plotfun：\nplot(trg, terminal_panel = node_pmterminal(trg, plotfun = binomial_glm_plot,\n                                           confint = TRUE,\n                                           plot_data = TRUE))   # ← 给 binomial_glm_plot",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>197</span>  <span class='chapter-title'>6. 可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/06-plots.html#四个内置-plotfun",
+    "href": "notes/model4you/06-plots.html#四个内置-plotfun",
+    "title": "6. 可视化",
+    "section": "四个内置 plotfun",
+    "text": "四个内置 plotfun\n四个都可以单独使用，返回的都是 ggplot 对象，可以继续加图层。\n\n\n\n\n\n\n\n\n\n函数\n基模型\n画什么\n特有参数\n\n\n\n\nlm_plot()\nlm\n两组的拟合正态密度\ndensest（叠加核密度）、yrange\n\n\nbinomial_glm_plot()\nglm(family = binomial)\n两组的拟合概率\nplot_data（叠加马赛克式数据图）\n\n\nsurvreg_plot()\nsurvreg\n两组的拟合生存曲线\nyrange\n\n\ncoxph_plot()\ncoxph\n两组的生存曲线\nyrange\n\n\n\n公共参数都是 (mod, data = NULL, theme = theme_classic(), ...)： data = NULL 时用模型自带的数据；theme 换 ggplot2 主题。\n## 单独使用\nsurvreg_plot(bmod)\nsurvreg_plot(bmod, yrange = c(0, 3000))\nlm_plot(lm.D9, densest = TRUE)\nbinomial_glm_plot(glm_mod, plot_data = TRUE)\ncoxph_plot(coxph(Surv(futime, fustat) ~ factor(rx), ovarian))\n\n## 加图层\nsurvreg_plot(bmod) + ggplot2::labs(title = \"GBSG2 基模型\")\n几个实测细节：\n\nlm_plot() 在模型含 offset 时，会把 offset 变量固定在数据中位数上再画 （帮助页 Details 有说明）；\nbinomial_glm_plot() 在树里画置信区间时会走 confint.glm() 的 profile 似然， 控制台出现 Waiting for profiling to be done...，节点多时明显变慢；\ncoxph_plot() 自 0.9-6 起支持两组以上的治疗变量，其余三个仍假定二分类；\n四个函数都要求基模型只有一个因子协变量，这与 pmtree() 的假设一致。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>197</span>  <span class='chapter-title'>6. 可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/06-plots.html#写自己的-plotfun",
+    "href": "notes/model4you/06-plots.html#写自己的-plotfun",
+    "title": "6. 可视化",
+    "section": "写自己的 plotfun",
+    "text": "写自己的 plotfun\n约定只有一条：签名形如 function(mod, data, ...)，返回 ggplot 对象。 mod 是该节点重新拟合后的模型，data 是该节点的数据。\n下面这个把每个节点画成一条森林图式的效应线（实测可用）：\nlibrary(\"ggplot2\")\n\nmy_plot &lt;- function(mod, data = NULL, ...) {\n  ci &lt;- confint(mod)[\"horThyes\", ]\n  d  &lt;- data.frame(est = coef(mod)[\"horThyes\"], lo = ci[1], hi = ci[2])\n  ggplot(d, aes(x = est, y = 1)) +\n    geom_vline(xintercept = 0, linetype = 2, colour = \"grey60\") +\n    geom_errorbar(aes(xmin = lo, xmax = hi), orientation = \"y\", width = .12) +\n    geom_point(size = 2) +\n    xlim(-1, 1.2) +\n    labs(x = \"log 时间比\", y = NULL) +\n    theme_classic() +\n    theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())\n}\n\nplot(tr, terminal_panel = node_pmterminal(tr, plotfun = my_plot,\n                                          confint = FALSE, coeftable = FALSE))\n\n\n\n\n\n\n提示三个实用约定\n\n\n\n\n所有节点用同一套坐标轴（上例的 xlim(-1, 1.2)）。 plotfun 对每个节点独立调用，不固定范围的话各节点刻度不同， 视觉上完全没法比较——这是自写面板最常见的错误。\nconfint = FALSE 与 coeftable = FALSE 一起用， 否则表格会和自己画的区间重复。\n节点小时 confint() 可能失败或给出极宽区间， 自写函数里最好包一层 tryCatch()。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>197</span>  <span class='chapter-title'>6. 可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/06-plots.html#导出",
+    "href": "notes/model4you/06-plots.html#导出",
+    "title": "6. 可视化",
+    "section": "导出",
+    "text": "导出\n树图是 grid 图形，不是 ggplot，所以 ggsave() 不适用，用设备函数：\npng(\"tree.png\", width = 1600, height = 1000, res = 150)\nplot(tr, terminal_panel = node_pmterminal(tr, plotfun = survreg_plot,\n                                          confint = TRUE,\n                                          coeftable = coeftable.survreg))\ndev.off()\n节点数多时宽度要跟着加大，否则终末面板会挤成一团； 超过 6–8 个终末节点时，树图基本上就不适合放进正文了， 这时更适合用第 4 页的依赖图。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>197</span>  <span class='chapter-title'>6. 可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/07-objfun-internals.html",
+    "href": "notes/model4you/07-objfun-internals.html",
+    "title": "7. objfun 家族、rss 与三个内部函数",
+    "section": "",
+    "text": "objfun() 泛型\n本页覆盖剩下的 9 个帮助主题：objfun 泛型与它的五个方法、 logLik.pmodel_identity、rss、one_factor， 以及三个以 . 开头的内部函数。 读懂这三个内部函数，就知道这个包为什么支持这些模型、为什么在别的地方失败。\n返回每个观测对目标函数的贡献，newdata 让它可以在新数据上评估 （模型比较、袋外评估都靠这个）。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>198</span>  <span class='chapter-title'>7. objfun 与内部函数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/07-objfun-internals.html#objfun-泛型",
+    "href": "notes/model4you/07-objfun-internals.html#objfun-泛型",
+    "title": "7. objfun 家族、rss 与三个内部函数",
+    "section": "",
+    "text": "objfun(x, ...)\n\n## S3 method for class 'lm'\nobjfun(x, newdata = NULL, weights = NULL, ...)\n## S3 method for class 'glm'\nobjfun(x, newdata = NULL, weights = NULL, log = TRUE, ...)\n## S3 method for class 'survreg'\nobjfun(x, newdata = NULL, weights = NULL, ...)\n\n\n各方法的口径不同\n\n\n\n方法\n返回的是什么\n与 logLik() 的关系\n\n\n\n\nobjfun.glm\n（加权）对数似然贡献\nsum(objfun(x)) == logLik(x)\n\n\nobjfun.survreg\n对数似然贡献\nsum(objfun(x)) == x$loglik[2]\n\n\nobjfun.lm\n负的平方误差，不是对数似然\n两者不相等\n\n\n\n实测（?lm 的经典例子）：\nlm.D9 &lt;- lm(weight ~ group)\nsum(objfun(lm.D9))        #&gt; -8.72925     ← -RSS\n-sum(residuals(lm.D9)^2)  #&gt; -8.72925\nas.numeric(logLik(lm.D9)) #&gt; -20.08824    ← 对数似然，完全不同的数\nglm 的验证：\nglm.D93 &lt;- glm(counts ~ outcome + treatment, family = poisson())\nsum(objfun(glm.D93))       #&gt; -23.38066\nas.numeric(logLik(glm.D93))#&gt; -23.38066   ← 一致\n\n\n\n\n\n\n重要lm 的这个口径会传染到整棵树\n\n\n\n因为 objfun.pmtree() 逐节点调用 objfun()， lm 基模型下 objfun(tr, sum = TRUE) 得到的是负平方误差之和， 不能和 logLik(tr) 混用，也不能和 glm 路径的数值比较。\n包里为此埋了两个显式的 stop()：\n\nlogLik.pmtree() 在 newdata/perm/weights 非空时遇到 lm 基模型： logLik not yet implemented for lm. Try objfun(..., sum = TRUE).\nlogLik.pmodel_identity() 遇到 lm： logLik not yet implemented for pesonalised lm().（拼写为原文）\n\n\n\nobjfun.glm 独有一个 log 参数，log = FALSE 返回似然而非对数似然：\nhead(objfun(glm.D93, log = FALSE), 3)\n#&gt; [1] 0.07472 0.06058 0.10100\n\n\nobjfun.pmtree()\n见第 2 页，此处不重复。 唯一要记住的是 sum = TRUE 比 sum(objfun(...)) 快得多。\n\n\nobjfun() / logLik() 作用在 pmodel_identity 上\n## S3 method for class 'pmodel_identity'\nobjfun(x, ...)\n## S3 method for class 'pmodel_identity'\nlogLik(object, add_df = 0, ...)\npmodel(..., fun = identity) 返回的是一串模型对象， objfun() 对第 \\(i\\) 个模型在第 \\(i\\) 行数据上求目标函数：\npmi &lt;- pmodel(frst, newdata = GBSG2[1:20, ], fun = identity)\nof  &lt;- objfun(pmi)\nsum(of)                                    #&gt; -95.44454\nsum(objfun(bmod, newdata = GBSG2[1:20, ])) #&gt; -103.7537   ← 基模型更差\n这个比较就是 pmtest() 的检验统计量。 它要求 x 带着 data 属性，所以不能用 pmodel(..., return_attr = character(0))，否则报 Object pmodel_identity has to have a data attribute for objfun()。\nlogLik() 的命运则按基模型分三种，实测如下：\n\n\n\n\n\n\n\n基模型\nlogLik(pmodel(..., fun = identity))\n\n\n\n\nglm\n✅ 可用。例：20 个个体化模型 → 'log Lik.' -12.16288 (df=60)\n\n\nlm\n❌ 明确 stop(\"logLik not yet implemented for pesonalised lm().\")\n\n\nsurvreg\n❌ 实测报 invalid 'type' (list) of argument\n\n\n\nsurvreg 那条不是设计如此，而是实现里的一处问题： logLik.pmodel_identity() 用 sum(attr(of, \"df\")) 算自由度， 而 objfun.survreg 的返回值不带 df 属性， sapply(ofl, attr, \"df\") 于是收集到一串 NULL，sum() 对 list 报错。 objfun() 本身在同一个对象上是正常的——要数值就用 sum(objfun(pmi))，别走 logLik()。\nadd_df 用来手工调整自由度。帮助页很坦白：\n\nit is not very clear what the degrees of freedom are in personalised models.\n\n默认把所有个体模型的自由度直接相加（上例 20 个模型 × 3 = 60）， 这个数字不应该拿去算 AIC/BIC——个体化模型之间高度重叠， 它们的”有效参数个数”远小于相加的结果。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>198</span>  <span class='chapter-title'>7. objfun 与内部函数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/07-objfun-internals.html#rss",
+    "href": "notes/model4you/07-objfun-internals.html#rss",
+    "title": "7. objfun 家族、rss 与三个内部函数",
+    "section": "rss()",
+    "text": "rss()\nrss(object, ...)\n## Default S3 method:\nrss(object, ...)\n只有一个 rss.default，实现就是残差平方和：\nrss(lm.D9)     #&gt; 8.72925      与 -sum(objfun(lm.D9)) 一致\n它对 glm、survreg 也能算出数（用各自的 residuals()）， 但意义完全不同——rss(survreg_model) 得到的是时间残差的平方和， 量纲是天的平方，没有任何解释价值。这个函数是为 lm 路径准备的内部工具， 被导出只是顺带。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>198</span>  <span class='chapter-title'>7. objfun 与内部函数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/07-objfun-internals.html#one_factor",
+    "href": "notes/model4you/07-objfun-internals.html#one_factor",
+    "title": "7. objfun 家族、rss 与三个内部函数",
+    "section": "one_factor()",
+    "text": "one_factor()\none_factor(object)\n判断模型是否恰好只有一个因子协变量，是 .prepare_args() 里发警告的依据。 实测（GBSG2）：\n\n\n\n模型\n返回\n\n\n\n\nsurvreg(Surv(time, cens) ~ horTh)\nTRUE\n\n\nsurvreg(Surv(time, cens) ~ horTh + age)\nFALSE\n\n\nlm(time ~ age)（连续变量）\nFALSE\n\n\nlm(time ~ tgrade)（有序因子）\nTRUE\n\n\nlm(time ~ 1)（无协变量）\nFALSE\n\n\n\n有序因子也算——包支持多于两个水平的治疗变量 （NEWS 0.9-6 为 Cox 模型加过多组绘图）。\n\n\n\n\n\n\n注记它有帮助页，但没有被导出\n\n\n\none_factor 在 INDEX 和参考手册里都有条目， NAMESPACE 里却没有 export(one_factor)。要调用只能写 model4you:::one_factor(mod)。这对使用没影响， 但如果照着参考手册的目录去 library(model4you); one_factor(m)，会得到 could not find function \"one_factor\"。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>198</span>  <span class='chapter-title'>7. objfun 与内部函数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/07-objfun-internals.html#三个内部函数",
+    "href": "notes/model4you/07-objfun-internals.html#三个内部函数",
+    "title": "7. objfun 家族、rss 与三个内部函数",
+    "section": "三个内部函数",
+    "text": "三个内部函数\n这三个不该直接调用，但它们决定了包的行为边界，看懂能省很多调试时间。\n\n.prepare_args(model, data, zformula, control, ...)\n把 pmtree/pmforest 的输入翻译成 ctree/cforest 的输入。它负责：\n\n调 one_factor()，不满足就发”in beta”警告；\n取 getCall(model)，取不到就 stop；\ndata = NULL 时从模型或 parent.frame() 取数据（并 message）；\n把模型变量与 zformula 拼成 ctree 的公式；\n删除模型变量上有 NA 的整行并警告。\n\n第 4 步解释了一个常见困惑：为什么 zformula = ~ . 会把 数据框里所有非模型列都当成分割变量——公式就是这么拼出来的。\n\n\n.modelfit(model, data, coeffun, weights, control, parm = NULL)\n返回一个 fitfun，ctree 在每个候选节点上调用它。核心三步：\nmod &lt;- tryCatch(update(object = model, data = di, weights = wi),\n                warning = function(w) list(converged = FALSE),\n                error   = function(e) list(converged = FALSE))\n...\nret &lt;- list(coefficients = coeffun(mod), objfun = -logLik(mod),\n            object = ..., converged = conv)\nif (estfun) {\n  ef &lt;- if (is(mod, \"coxph\")) cbind(mod$residuals, mod$residuals * model.matrix(mod))\n        else estfun(mod)\n  ...\n  if (!is.null(parm)) ret$estfun &lt;- ret$estfun[, parm]\n}\n从这段能读出四件事：\n\n整个包靠 update() 工作。 基模型必须能被 update(model, data = ...) 正确重拟合，这是对基模型的真正约束；\n拟合出的 warning 一律当作”未收敛”，该节点被丢弃。 survreg 的 Ran out of iterations and did not converge 就是这样被吞掉的， 建森林时看到这条警告说明有节点被拒；\nobjfun = -logLik(mod)，存进节点的是负对数似然—— 第 1 页提到的符号问题源头在这里；\nparm 在这里，而且只影响 estfun 的列。 传入 parm 就只用这些参数的得分做不稳定性检验， 这正是”只针对治疗系数”所需要的开关—— 但 pmtree()/pmforest() 都没有把它传下来（第 1 页有实测）。 partykit::mob() 的同名参数则是公开的。\n\n\n\n.add_modelinfo(x, nodeids, data, model, coeffun)\n给一棵已经长好的树补上每个终末节点的模型信息： estfun、coefficients、objfun、object。\ndi   &lt;- data[subsi, ]\numod &lt;- update(model, data = di, model = TRUE)\npmtree(control$saveinfo = TRUE) 时建完树就调它； pmforest() 因为 saveinfo = FALSE 不调， 但 gettree() 和 varimp() 会事后调它。\n这就是第 3 页那些间歇性错误的爆发点： update(model, data = di) 遇到治疗变量只剩一个水平的节点就会失败， 而失败发生在 varimp() 阶段，traceback 指向 varimp，根因却在建森林阶段。\n它对 lm 的 objfun 还做了特判 （ifelse(class(umod)[[1]] == \"lm\", sum(objfun(umod)), -logLik(umod))）， 再次印证 lm 走的是平方误差口径。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>198</span>  <span class='chapter-title'>7. objfun 与内部函数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/07-objfun-internals.html#sec-coxph-gap",
+    "href": "notes/model4you/07-objfun-internals.html#sec-coxph-gap",
+    "title": "7. objfun 家族、rss 与三个内部函数",
+    "section": "缺一个 objfun.coxph，以及为什么不好补",
+    "text": "缺一个 objfun.coxph，以及为什么不好补\nobjfun 只有 lm、glm、survreg 三个模型方法。缺 coxph 的后果是 第 2 页列出的那一串失败。\n补一个方法看似简单，实际不成立：Cox 偏似然没有逐观测贡献的自然定义。 它的每一项是一个风险集内部的比值\n\\[\n\\ell(\\beta) = \\sum_{i:\\,\\delta_i=1} \\left[ \\eta_i - \\log \\sum_{j \\in R(t_i)} e^{\\eta_j} \\right],\n\\]\n第 \\(i\\) 项依赖整个风险集 \\(R(t_i)\\) 里所有人的信息。 把它拆给单个观测、再在任意子集或置换后的新数据上重算， 得到的不是同一个量。objfun() 的全部用途——袋外评估、置换重要性、 节点间求和——都要求可加可拆，Cox 不满足。\n所以这不是包作者漏写了一个方法，而是这条路本身不通。 实测也印证了绕不过去：把 varimp() 的 risk 换成 function(x, ...) -as.numeric(logLik(x))（整树偏似然，不拆） 仍在 varimp.cforest 内部报 replacement has length zero。\n生存结局要用森林层面的工具时，把基模型换成 survreg(..., dist = \"weibull\")。 代价是从 log HR 换到 log 时间比， 两者的方向相反，比例风险假定换成了加速失效时间假定。 若必须做比例风险 + 变量重要性，grf 的生存森林是更合适的工具， 见grf 包官方教程中译。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>198</span>  <span class='chapter-title'>7. objfun 与内部函数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/08-pitfalls.html",
+    "href": "notes/model4you/08-pitfalls.html",
+    "title": "8. 实测清单与推荐工作流",
+    "section": "",
+    "text": "陷阱总表\n本页把前七页的实测结论收拢成一张表，再给一套端到端跑通过的流程。 最后用 GBSG2 演示一件事：同一个包、同一份数据，两种合理的设置会给出相反的结论， 所以报告时必须连设置一起写出来。\n证据列的含义：文档=帮助页原文，源码=本机安装包的函数体， 实测=在 Windows R 4.4.3 + model4you 0.9-9 下实际运行。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>199</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/08-pitfalls.html#陷阱总表",
+    "href": "notes/model4you/08-pitfalls.html#陷阱总表",
+    "title": "8. 实测清单与推荐工作流",
+    "section": "",
+    "text": "#\n现象\n后果\n怎么办\n证据\n\n\n\n\n1\npmtree() 的 ... 不传给模型拟合\nweights=、parm= 静默失效\n权重写进基模型\n源码 + 实测\n\n\n2\npmforest() 的 ... 只在不传 control 时进 ctree_control()\n同一参数时灵时不灵\n显式构造 control\n源码 + 实测\n\n\n3\npmforest() 默认 mincriterion = 0\n终末节点可能只剩单一治疗组，varimp() 间歇性报错\ncontrol$converged 限定两臂人数\n实测\n\n\n4\n自己传 control 会丢掉 pmforest() 的 5 项默认值\n悄悄换掉森林算法\n抄全 teststat/testtype/mincriterion/saveinfo/lookahead\n源码\n\n\n5\nvarimp() 排的是整体参数异质性\n纯预后变量排第一（实测为真修饰变量的 4.7 倍）\noffset 固定预后成分\n实测\n\n\n6\npmodel(x = &lt;权重矩阵&gt;)\n必定报 $ operator is invalid for atomic vectors\n自己写三行 update()\n源码 + 实测\n\n\n7\npmtest() 需要 simulate()\nsurvreg/coxph 都没有该方法，生存结局不可用\n只在 lm/glm 上用\n实测\n\n\n8\n没有 objfun.coxph\nCox 森林的 varimp() 走不通\n换 survreg AFT，或换 grf\n实测\n\n\n9\n节点 info$objfun 是 负对数似然\n与 logLik()、objfun() 符号相反\n比较前先确认方向\n源码 + 实测\n\n\n10\nobjfun.lm 是负平方误差不是对数似然\n与 glm 路径数值不可比\nlm 路径只用 objfun，不用 logLik\n实测\n\n\n11\nlogLik(pmodel(..., fun = identity)) 对 survreg 报错\ninvalid 'type' (list) of argument\n用 sum(objfun(...))\n实测\n\n\n12\npmodel() 打印会输出整个相似性矩阵\n686×686 刷屏\nreturn_attr = character(0)\n实测\n\n\n13\nntree 太小时权重全 0 的观测退回基模型\n“个体化”效应其实是全体平均\n查 rowSums(weights) == 0\n源码 + 实测\n\n\n14\ndata 省略时从 parent.frame() 抓同名对象\n只 message 不警告，结果可能静默改变\n一律显式传 data =\n实测\n\n\n15\nzformula = ~ . 把所有非模型列当分割变量\n由结局派生的列会拿到极高重要性\n显式写 zformula\n实测\n\n\n16\npredict(type = \"coef\") 行名与 newdata 不对应\n按行名对齐会错位（值的顺序是对的）\n按位置 cbind()\n实测\n\n\n17\n单参数模型下 coef(tr) 退化成 1 行矩阵\n下游代码假定”行 = 节点”时出错\n用 nodeapply() 取\n实测\n\n\n18\none_factor() 有帮助页但未导出\n直接调用报 could not find function\nmodel4you:::one_factor()\n实测\n\n\n19\ngettree() 打印 Error in get(...)\n看着像报错，其实是 partykit 弃用检查的噪声\n忽略；suppressWarnings() 挡不住\n实测\n\n\n20\nctree_control(nmax = ...)\nstopifnot 直接报错\n不要设 nmax\n实测",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>199</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/08-pitfalls.html#端到端工作流生存结局",
+    "href": "notes/model4you/08-pitfalls.html#端到端工作流生存结局",
+    "title": "8. 实测清单与推荐工作流",
+    "section": "端到端工作流（生存结局）",
+    "text": "端到端工作流（生存结局）\n下面这段在本机完整跑过，输出如实粘贴。数据 GBSG2（n = 686，299 个事件）， ntree = 100，耗时合计约 30 秒。\nlibrary(\"model4you\"); library(\"survival\"); library(\"partykit\")\ndata(\"GBSG2\", package = \"TH.data\")\n\n## ── 1. 基模型：只含治疗，model = TRUE ──────────────────────────\nbmod &lt;- survreg(Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE)\n\n## ── 2. control：抄全 pmforest 的默认值，再加两臂样本量下限 ─────\nctrl &lt;- ctree_control(teststat = \"quad\", testtype = \"Univ\", mincriterion = 0,\n                      saveinfo = FALSE, lookahead = TRUE)\nctrl$converged &lt;- function(mod, data, subset) all(table(data$horTh[subset]) &gt; 20)\n\n## ── 3. 先看一棵浅树，确认分割变量说得通 ───────────────────────\nctrl_tree &lt;- ctree_control(maxdepth = 2, lookahead = TRUE)\nctrl_tree$converged &lt;- ctrl$converged\ntr &lt;- pmtree(bmod, data = GBSG2, control = ctrl_tree)\nprint(tr)\n\n## ── 4. 森林 + 健康检查 ────────────────────────────────────────\nset.seed(2024)\nfrst &lt;- pmforest(bmod, data = GBSG2, ntree = 100, control = ctrl)\nsum(rowSums(predict(frst, type = \"weights\", OOB = TRUE)) == 0)   # 应为 0\n\n## ── 5. 变量重要性，换一个种子复核排序 ─────────────────────────\nsort(varimp(frst), decreasing = TRUE)\n\n## ── 6. 个体化效应，换算成中位生存时间差（天）──────────────────\ncoeffun &lt;- function(model) {\n  cf &lt;- c(coef(model), scale = model$scale)\n  s0 &lt;- qweibull(0.5, shape = 1/cf[\"scale\"], scale = exp(cf[\"(Intercept)\"]))\n  s1 &lt;- qweibull(0.5, shape = 1/cf[\"scale\"],\n                 scale = exp(cf[\"(Intercept)\"] + cf[\"horThyes\"]))\n  c(cf, median_s0 = unname(s0), median_s1 = unname(s1),\n    median_sdiff = unname(s1 - s0))\n}\npm &lt;- pmodel(frst, fun = coeffun, return_attr = character(0))\nsummary(pm[, \"median_sdiff\"])\n\n## ── 7. 与常规交互检验对照 ─────────────────────────────────────\nsapply(c(\"age\",\"tsize\",\"pnodes\",\"progrec\",\"estrec\"), function(v)\n  anova(coxph(as.formula(paste(\"Surv(time, cens) ~ horTh *\", v)),\n              data = GBSG2))[[\"Pr(&gt;|Chi|)\"]][3])\n实际输出：\n=== 树 ===\n[1] root\n|   [2] pnodes &lt;= 3: n = 376\n|       (Intercept)    horThyes\n|         7.8590259   0.4001011\n|   [3] pnodes &gt; 3\n|   |   [4] tgrade &lt;= II: n = 223\n|   |       (Intercept)    horThyes\n|   |         7.2936454   0.3038557\n|   |   [5] tgrade &gt; II: n = 87\n|   |       (Intercept)    horThyes\n|   |         6.9808753   0.1630104\n\npmforest ntree=100: 7.1 秒          权重全 0 的观测数: 0\n\n=== varimp（seed 2024，5.3 秒）===\n  pnodes  progrec   estrec   tgrade    tsize menostat      age\n   21.79    10.74     4.73     4.53     2.93     1.80    -1.03\n=== varimp（seed 99）===\n  pnodes  progrec   tgrade   estrec    tsize menostat      age\n   20.52    13.29     6.19     4.61     3.31     2.42     0.99\n\n=== 个体化中位生存时间差（天）===\n   Min. 1st Qu.  Median    Mean 3rd Qu.    Max.\n  103.5   308.5   495.9   654.9   850.3  2300.4\n负值（治疗有害）人数: 0 / 686\n\n=== 个体化效应与候选变量的 Spearman ===\n    age   tsize  pnodes progrec  estrec\n -0.003  -0.284  -0.594   0.765   0.471\n\n=== 对照：Cox 交互检验 p 值 ===\n    age   tsize  pnodes progrec  estrec\n 0.9326  0.0001  0.0000  0.0000  0.0627\n两个种子的重要性排序基本一致（pnodes ≫ progrec &gt; 其余， 只有第三、四名互换），age 在 0 附近摆动——这是加了 converged 约束之后才有的稳定性，第 3 页 展示了不加约束时 age 会冲到 27。\n\n\n\n\n\n\n提示约束不只更稳，还更快\n\n\n\n加 converged 之后，100 棵树只要 7.1 秒、varimp() 5.3 秒； 而默认设置下 25 棵树的 varimp() 就要 11 秒。 原因是默认设置把树长到 32–33 个终末节点， 而 varimp() 的成本随终末节点数增长—— 每个终末节点都要 update() 重拟合一次模型。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>199</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/08-pitfalls.html#同一份数据的两种结论",
+    "href": "notes/model4you/08-pitfalls.html#同一份数据的两种结论",
+    "title": "8. 实测清单与推荐工作流",
+    "section": "同一份数据的两种结论",
+    "text": "同一份数据的两种结论\n上面的流程把 pnodes 排在第一。但 pnodes（阳性淋巴结数） 在本书效应修饰的效应尺度 一页里被实证为纯预后变量——它的”修饰效应”来自基线风险移动。\n按第 5 页的 offset 办法重做一遍， 把预后成分固定住（只用对照臂拟合预后 AFT 模型，取线性预测子作 offset）：\nprog_fit &lt;- survreg(Surv(time, cens) ~ age + menostat + tsize + tgrade +\n                      pnodes + progrec + estrec,\n                    data = GBSG2[GBSG2$horTh == \"no\", ], model = TRUE)\nGBSG2$prog_lp &lt;- as.numeric(predict(prog_fit, newdata = GBSG2, type = \"lp\"))\n\nbm_off &lt;- survreg(Surv(time, cens) ~ horTh + offset(prog_lp),\n                  data = GBSG2, model = TRUE)\ncoef(bm_off)\n#&gt; (Intercept)    horThyes\n#&gt;     -0.0101      0.2701\n\nfrst_off &lt;- pmforest(bm_off, data = GBSG2,\n                     zformula = ~ age + menostat + tsize + tgrade +\n                                  pnodes + progrec + estrec,\n                     ntree = 100, control = ctrl)\nsort(varimp(frst_off), decreasing = TRUE)\nseed 2024:\n  estrec    tsize   pnodes menostat      age   tgrade  progrec\n    0.67     0.53     0.33     0.23     0.00    -0.20    -0.55\nseed 99:\n  estrec menostat   pnodes    tsize  progrec   tgrade      age\n    0.39     0.35     0.09    -0.16    -0.23    -0.44    -0.94\n全部变量的重要性都掉到 ±1 以内，两个种子的排序毫无共同点， progrec 甚至变成负值。 换句话说：扣掉预后成分之后， 这套方法在 GBSG2 上检测不到任何效应修饰。\n\n\n\n\n\n\n重要两个结论都要如实报告\n\n\n\n\n不加 offset：pnodes 与 progrec 重要，排序在种子间稳定；\n加 offset：没有任何变量重要，排序纯属噪声。\n\n这不是矛盾，而是两个不同的问题： 前者问”基模型的参数（含基线）在哪些人群里不一样”， 后者问”治疗系数在哪些人群里不一样”。 varimp(pmforest) 默认回答的是前者。\n同样的对照在构造数据上有真信号时会给出不同结果： 第 5 页那份模拟里有明确的 trt × x_mod 交互，offset 之后 x_mod 的重要性反而从 358 升到 516。 所以 GBSG2 上的”检测不到”是数据的性质，不是方法失灵。\n两点保留：offset 用的预后模型是在同一份数据的对照臂上拟合的（未做交叉拟合）， 且 AFT 的 offset 作用在 log 时间尺度上——换成风险差或 RMST 差尺度， 结论可能不同。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>199</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/08-pitfalls.html#什么时候不该用这个包",
+    "href": "notes/model4you/08-pitfalls.html#什么时候不该用这个包",
+    "title": "8. 实测清单与推荐工作流",
+    "section": "什么时候不该用这个包",
+    "text": "什么时候不该用这个包\n\n\n\n场景\n更合适的工具\n\n\n\n\n要因果的 CATE，数据是观察性的\ngrf::causal_forest()（正交化 + 双重稳健），见grf 教程\n\n\n要 Cox 比例风险 + 变量重要性\ngrf 的生存森林，见grf 生存章\n\n\n要效应修饰特异的重要性与推断\nTEM-VIP 类方法，见快速筛选的 R 包\n\n\n要少量可读的亚组规则、且只关心治疗参数\npartykit::mob(..., parm = )——parm 在那里是公开参数\n\n\n结局是生存、还想做异质性检验\npmtest() 用不了；换置换检验或 grf 的 RATE\n\n\n\nmodel4you 最合适的位置是：有一个你信得过的参数基模型 （随机试验、或已经做过混杂校正的观察性分析）， 想看这个模型的参数在人群里是否稳定，并且希望结果仍然是同一个参数模型的形式 ——系数可解释、可换算成临床量纲、可以画出拟合曲线。 这件事上它的可视化和 pmodel() 的灵活性没有替代品。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>199</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/model4you/08-pitfalls.html#复核信息",
+    "href": "notes/model4you/08-pitfalls.html#复核信息",
+    "title": "8. 实测清单与推荐工作流",
+    "section": "复核信息",
+    "text": "复核信息\n\n\n\n项目\n值\n\n\n\n\n核对日期\n2026-09-20\n\n\nmodel4you\n0.9-9（2026-02-12）\n\n\nR\n4.4.3（Windows）\n\n\npartykit / survival / ggplot2\n1.3.0 / 3.8-12 / 4.0.2\n\n\n数据\nTH.data::GBSG2 1.1-3；其余为文中给出种子的模拟数据\n\n\n\n本手册的代码不在本站渲染时执行，所有输出都是在上述环境单独运行后粘贴的。 森林类结果给出了种子与 ntree，可按同样设置复现； 换版本或换平台后数值可能不同，结构性结论（哪些路径报错、 默认值造成什么后果）预期不变，除非上游修复。",
+    "crumbs": [
+      "model4you 包函数手册",
+      "<span class='chapter-number'>199</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
   }
 ]

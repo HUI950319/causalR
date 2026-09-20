@@ -1,0 +1,177 @@
+---
+title: "6. 可视化"
+subtitle: "node_pmterminal 与四个 plotfun，以及怎么写自己的"
+lang: zh
+---
+
+`model4you` 的可视化是它相对 `partykit::mob()` 最明显的增值：
+终末节点里不只放系数，还能放**模型拟合出来的曲线**和**带置信区间的系数表**。
+
+整套机制只有一个入口——`node_pmterminal()`，
+它是 `partykit` 的 `plot.party()` 所要求的 `terminal_panel` 生成器。
+
+## `node_pmterminal()`
+
+```r
+node_pmterminal(
+  obj,                     # pmtree 对象
+  coeftable = TRUE,        # 逻辑值，或一个自定义的表格函数
+  digits    = 2,
+  confint   = TRUE,        # 是否在表里给置信区间
+  plotfun,                 # 画什么图，function(mod, data)
+  nid = function(node) paste0(nam[id_node(node)], ", n = ", node$info$nobs),
+  ...                      # 传给 plotfun
+)
+```
+
+典型调用：
+
+```r
+plot(tr, terminal_panel = node_pmterminal(tr, plotfun = survreg_plot,
+                                          confint   = TRUE,
+                                          coeftable = coeftable.survreg))
+```
+
+![`node_pmterminal()` 生成的终末面板：上半是系数表（含 `Log(scale)` 与 95% 区间），
+下半是 `survreg_plot()` 画的两臂拟合生存曲线。
+](../../images/model4you-pmtree-gbsg2.png){#fig-terminal}
+
+### `coeftable` 的两种形态
+
+| 传入 | 效果 |
+|---|---|
+| `TRUE`（默认） | 用内置逻辑列出 `coef()` 能取到的系数 |
+| `FALSE` | 不画表，只画 `plotfun` |
+| 函数 | 自定义表格，签名照 `coeftable.survreg()` |
+
+`survreg` 的 `coef()` **不包含 scale 参数**，所以默认表里看不到它。
+`coeftable.survreg()` 就是为此提供的：
+
+```r
+coeftable.survreg(model, confint = TRUE, digits = 2, intree = FALSE)
+```
+
+| 参数 | 说明 |
+|---|---|
+| `model` | `survreg` 对象 |
+| `confint` | 是否算置信区间，默认 `TRUE` |
+| `digits` | 数字格式，默认 2 |
+| `intree` | 是否画在树里面，默认 `FALSE`。树内部由 `node_pmterminal()` 自动设为 `TRUE` |
+
+它是**纯副作用函数**（返回 `NULL`），直接用要先开一页 grid 画布：
+
+```r
+grid.newpage()
+coeftable.survreg(bmod)
+```
+
+### `nid`——节点标签
+
+默认打印 `节点号, n = 样本量`。想换成中文或加别的信息：
+
+```r
+plot(tr, terminal_panel = node_pmterminal(
+  tr, plotfun = survreg_plot, confint = TRUE,
+  nid = function(node) paste0("节点 ", partykit::id_node(node),
+                              "（n = ", node$info$nobs, "）")))
+```
+
+### `...`——传给 `plotfun` 的参数
+
+`node_pmterminal()` 的 `...` 会原样转给 `plotfun`：
+
+```r
+plot(trg, terminal_panel = node_pmterminal(trg, plotfun = binomial_glm_plot,
+                                           confint = TRUE,
+                                           plot_data = TRUE))   # ← 给 binomial_glm_plot
+```
+
+## 四个内置 `plotfun`
+
+四个都可以**单独使用**，返回的都是 `ggplot` 对象，可以继续加图层。
+
+| 函数 | 基模型 | 画什么 | 特有参数 |
+|---|---|---|---|
+| `lm_plot()` | `lm` | 两组的拟合正态密度 | `densest`（叠加核密度）、`yrange` |
+| `binomial_glm_plot()` | `glm(family = binomial)` | 两组的拟合概率 | `plot_data`（叠加马赛克式数据图） |
+| `survreg_plot()` | `survreg` | 两组的拟合生存曲线 | `yrange` |
+| `coxph_plot()` | `coxph` | 两组的生存曲线 | `yrange` |
+
+公共参数都是 `(mod, data = NULL, theme = theme_classic(), ...)`：
+`data = NULL` 时用模型自带的数据；`theme` 换 ggplot2 主题。
+
+```r
+## 单独使用
+survreg_plot(bmod)
+survreg_plot(bmod, yrange = c(0, 3000))
+lm_plot(lm.D9, densest = TRUE)
+binomial_glm_plot(glm_mod, plot_data = TRUE)
+coxph_plot(coxph(Surv(futime, fustat) ~ factor(rx), ovarian))
+
+## 加图层
+survreg_plot(bmod) + ggplot2::labs(title = "GBSG2 基模型")
+```
+
+几个实测细节：
+
+- `lm_plot()` 在模型含 `offset` 时，会把 offset 变量固定在**数据中位数**上再画
+  （帮助页 `Details` 有说明）；
+- `binomial_glm_plot()` 在树里画置信区间时会走 `confint.glm()` 的 profile 似然，
+  控制台出现 `Waiting for profiling to be done...`，节点多时明显变慢；
+- `coxph_plot()` 自 0.9-6 起支持**两组以上**的治疗变量，其余三个仍假定二分类；
+- 四个函数都要求基模型**只有一个因子协变量**，这与 `pmtree()` 的假设一致。
+
+## 写自己的 `plotfun`
+
+约定只有一条：签名形如 `function(mod, data, ...)`，返回 ggplot 对象。
+`mod` 是该节点重新拟合后的模型，`data` 是该节点的数据。
+
+下面这个把每个节点画成一条森林图式的效应线（实测可用）：
+
+```r
+library("ggplot2")
+
+my_plot <- function(mod, data = NULL, ...) {
+  ci <- confint(mod)["horThyes", ]
+  d  <- data.frame(est = coef(mod)["horThyes"], lo = ci[1], hi = ci[2])
+  ggplot(d, aes(x = est, y = 1)) +
+    geom_vline(xintercept = 0, linetype = 2, colour = "grey60") +
+    geom_errorbar(aes(xmin = lo, xmax = hi), orientation = "y", width = .12) +
+    geom_point(size = 2) +
+    xlim(-1, 1.2) +
+    labs(x = "log 时间比", y = NULL) +
+    theme_classic() +
+    theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+}
+
+plot(tr, terminal_panel = node_pmterminal(tr, plotfun = my_plot,
+                                          confint = FALSE, coeftable = FALSE))
+```
+
+::: {.callout-tip}
+## 三个实用约定
+
+1. **所有节点用同一套坐标轴**（上例的 `xlim(-1, 1.2)`）。
+   `plotfun` 对每个节点独立调用，不固定范围的话各节点刻度不同，
+   视觉上完全没法比较——这是自写面板最常见的错误。
+2. **`confint = FALSE` 与 `coeftable = FALSE` 一起用**，
+   否则表格会和自己画的区间重复。
+3. 节点小时 `confint()` 可能失败或给出极宽区间，
+   自写函数里最好包一层 `tryCatch()`。
+:::
+
+## 导出
+
+树图是 grid 图形，不是 ggplot，所以 `ggsave()` 不适用，用设备函数：
+
+```r
+png("tree.png", width = 1600, height = 1000, res = 150)
+plot(tr, terminal_panel = node_pmterminal(tr, plotfun = survreg_plot,
+                                          confint = TRUE,
+                                          coeftable = coeftable.survreg))
+dev.off()
+```
+
+节点数多时宽度要跟着加大，否则终末面板会挤成一团；
+超过 6–8 个终末节点时，树图基本上就不适合放进正文了，
+这时更适合用[第 4 页](04-pmodel.qmd)的依赖图。

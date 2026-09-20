@@ -1,0 +1,233 @@
+---
+title: "8. 实测清单与推荐工作流"
+subtitle: "所有陷阱的汇总、一套可照抄的生存结局流程，以及它给出的两种相反结论"
+lang: zh
+---
+
+本页把前七页的实测结论收拢成一张表，再给一套端到端跑通过的流程。
+最后用 GBSG2 演示一件事：**同一个包、同一份数据，两种合理的设置会给出相反的结论**，
+所以报告时必须连设置一起写出来。
+
+## 陷阱总表
+
+证据列的含义：**文档**=帮助页原文，**源码**=本机安装包的函数体，
+**实测**=在 Windows R 4.4.3 + `model4you` 0.9-9 下实际运行。
+
+| # | 现象 | 后果 | 怎么办 | 证据 |
+|---|---|---|---|---|
+| 1 | `pmtree()` 的 `...` 不传给模型拟合 | `weights=`、`parm=` 静默失效 | 权重写进基模型 | 源码 + [实测](01-pmtree.qmd#sec-dots) |
+| 2 | `pmforest()` 的 `...` 只在不传 `control` 时进 `ctree_control()` | 同一参数时灵时不灵 | 显式构造 `control` | 源码 + [实测](03-pmforest.qmd#sec-dots-forest) |
+| 3 | `pmforest()` 默认 `mincriterion = 0` | 终末节点可能只剩单一治疗组，`varimp()` 间歇性报错 | `control$converged` 限定两臂人数 | [实测](03-pmforest.qmd#sec-control) |
+| 4 | 自己传 `control` 会丢掉 `pmforest()` 的 5 项默认值 | 悄悄换掉森林算法 | 抄全 `teststat`/`testtype`/`mincriterion`/`saveinfo`/`lookahead` | 源码 |
+| 5 | `varimp()` 排的是整体参数异质性 | 纯预后变量排第一（实测为真修饰变量的 4.7 倍） | offset 固定预后成分 | [实测](05-varimp-pmtest.qmd#sec-what-it-measures) |
+| 6 | `pmodel(x = <权重矩阵>)` | 必定报 `$ operator is invalid for atomic vectors` | 自己写三行 `update()` | 源码 + [实测](04-pmodel.qmd#sec-matrix-input) |
+| 7 | `pmtest()` 需要 `simulate()` | `survreg`/`coxph` 都没有该方法，生存结局不可用 | 只在 `lm`/`glm` 上用 | [实测](05-varimp-pmtest.qmd#sec-pmtest) |
+| 8 | 没有 `objfun.coxph` | Cox 森林的 `varimp()` 走不通 | 换 `survreg` AFT，或换 `grf` | [实测](07-objfun-internals.qmd#sec-coxph-gap) |
+| 9 | 节点 `info$objfun` 是 **负**对数似然 | 与 `logLik()`、`objfun()` 符号相反 | 比较前先确认方向 | 源码 + 实测 |
+| 10 | `objfun.lm` 是负平方误差不是对数似然 | 与 `glm` 路径数值不可比 | `lm` 路径只用 `objfun`，不用 `logLik` | [实测](07-objfun-internals.qmd) |
+| 11 | `logLik(pmodel(..., fun = identity))` 对 `survreg` 报错 | `invalid 'type' (list) of argument` | 用 `sum(objfun(...))` | [实测](07-objfun-internals.qmd#sec-pmodel-identity) |
+| 12 | `pmodel()` 打印会输出整个相似性矩阵 | 686×686 刷屏 | `return_attr = character(0)` | [实测](04-pmodel.qmd) |
+| 13 | `ntree` 太小时权重全 0 的观测退回基模型 | "个体化"效应其实是全体平均 | 查 `rowSums(weights) == 0` | 源码 + 实测 |
+| 14 | `data` 省略时从 `parent.frame()` 抓同名对象 | 只 `message` 不警告，结果可能静默改变 | 一律显式传 `data =` | 实测 |
+| 15 | `zformula = ~ .` 把所有非模型列当分割变量 | 由结局派生的列会拿到极高重要性 | 显式写 `zformula` | 实测 |
+| 16 | `predict(type = "coef")` 行名与 `newdata` 不对应 | 按行名对齐会错位（值的顺序是对的） | 按位置 `cbind()` | [实测](02-pmtree-methods.qmd) |
+| 17 | 单参数模型下 `coef(tr)` 退化成 1 行矩阵 | 下游代码假定"行 = 节点"时出错 | 用 `nodeapply()` 取 | [实测](02-pmtree-methods.qmd) |
+| 18 | `one_factor()` 有帮助页但未导出 | 直接调用报 `could not find function` | `model4you:::one_factor()` | 实测 |
+| 19 | `gettree()` 打印 `Error in get(...)` | 看着像报错，其实是 `partykit` 弃用检查的噪声 | 忽略；`suppressWarnings()` 挡不住 | [实测](03-pmforest.qmd) |
+| 20 | `ctree_control(nmax = ...)` | `stopifnot` 直接报错 | 不要设 `nmax` | 实测 |
+
+## 端到端工作流（生存结局）
+
+下面这段在本机完整跑过，输出如实粘贴。数据 GBSG2（n = 686，299 个事件），
+`ntree = 100`，耗时合计约 30 秒。
+
+```r
+library("model4you"); library("survival"); library("partykit")
+data("GBSG2", package = "TH.data")
+
+## ── 1. 基模型：只含治疗，model = TRUE ──────────────────────────
+bmod <- survreg(Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE)
+
+## ── 2. control：抄全 pmforest 的默认值，再加两臂样本量下限 ─────
+ctrl <- ctree_control(teststat = "quad", testtype = "Univ", mincriterion = 0,
+                      saveinfo = FALSE, lookahead = TRUE)
+ctrl$converged <- function(mod, data, subset) all(table(data$horTh[subset]) > 20)
+
+## ── 3. 先看一棵浅树，确认分割变量说得通 ───────────────────────
+ctrl_tree <- ctree_control(maxdepth = 2, lookahead = TRUE)
+ctrl_tree$converged <- ctrl$converged
+tr <- pmtree(bmod, data = GBSG2, control = ctrl_tree)
+print(tr)
+
+## ── 4. 森林 + 健康检查 ────────────────────────────────────────
+set.seed(2024)
+frst <- pmforest(bmod, data = GBSG2, ntree = 100, control = ctrl)
+sum(rowSums(predict(frst, type = "weights", OOB = TRUE)) == 0)   # 应为 0
+
+## ── 5. 变量重要性，换一个种子复核排序 ─────────────────────────
+sort(varimp(frst), decreasing = TRUE)
+
+## ── 6. 个体化效应，换算成中位生存时间差（天）──────────────────
+coeffun <- function(model) {
+  cf <- c(coef(model), scale = model$scale)
+  s0 <- qweibull(0.5, shape = 1/cf["scale"], scale = exp(cf["(Intercept)"]))
+  s1 <- qweibull(0.5, shape = 1/cf["scale"],
+                 scale = exp(cf["(Intercept)"] + cf["horThyes"]))
+  c(cf, median_s0 = unname(s0), median_s1 = unname(s1),
+    median_sdiff = unname(s1 - s0))
+}
+pm <- pmodel(frst, fun = coeffun, return_attr = character(0))
+summary(pm[, "median_sdiff"])
+
+## ── 7. 与常规交互检验对照 ─────────────────────────────────────
+sapply(c("age","tsize","pnodes","progrec","estrec"), function(v)
+  anova(coxph(as.formula(paste("Surv(time, cens) ~ horTh *", v)),
+              data = GBSG2))[["Pr(>|Chi|)"]][3])
+```
+
+实际输出：
+
+```text
+=== 树 ===
+[1] root
+|   [2] pnodes <= 3: n = 376
+|       (Intercept)    horThyes
+|         7.8590259   0.4001011
+|   [3] pnodes > 3
+|   |   [4] tgrade <= II: n = 223
+|   |       (Intercept)    horThyes
+|   |         7.2936454   0.3038557
+|   |   [5] tgrade > II: n = 87
+|   |       (Intercept)    horThyes
+|   |         6.9808753   0.1630104
+
+pmforest ntree=100: 7.1 秒          权重全 0 的观测数: 0
+
+=== varimp（seed 2024，5.3 秒）===
+  pnodes  progrec   estrec   tgrade    tsize menostat      age
+   21.79    10.74     4.73     4.53     2.93     1.80    -1.03
+=== varimp（seed 99）===
+  pnodes  progrec   tgrade   estrec    tsize menostat      age
+   20.52    13.29     6.19     4.61     3.31     2.42     0.99
+
+=== 个体化中位生存时间差（天）===
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max.
+  103.5   308.5   495.9   654.9   850.3  2300.4
+负值（治疗有害）人数: 0 / 686
+
+=== 个体化效应与候选变量的 Spearman ===
+    age   tsize  pnodes progrec  estrec
+ -0.003  -0.284  -0.594   0.765   0.471
+
+=== 对照：Cox 交互检验 p 值 ===
+    age   tsize  pnodes progrec  estrec
+ 0.9326  0.0001  0.0000  0.0000  0.0627
+```
+
+两个种子的重要性排序基本一致（`pnodes` ≫ `progrec` > 其余，
+只有第三、四名互换），`age` 在 0 附近摆动——这是加了
+`converged` 约束之后才有的稳定性，[第 3 页](03-pmforest.qmd#sec-control)
+展示了不加约束时 `age` 会冲到 27。
+
+::: {.callout-tip}
+## 约束不只更稳，还更快
+
+加 `converged` 之后，100 棵树只要 7.1 秒、`varimp()` 5.3 秒；
+而默认设置下 25 棵树的 `varimp()` 就要 11 秒。
+原因是默认设置把树长到 32–33 个终末节点，
+而 `varimp()` 的成本随终末节点数增长——
+每个终末节点都要 `update()` 重拟合一次模型。
+:::
+
+## 同一份数据的两种结论
+
+上面的流程把 `pnodes` 排在第一。但 `pnodes`（阳性淋巴结数）
+在本书[效应修饰的效应尺度](../sources/effect-modifier-effect-scale.qmd)
+一页里被实证为**纯预后变量**——它的"修饰效应"来自基线风险移动。
+
+按[第 5 页的 offset 办法](05-varimp-pmtest.qmd#sec-offset-trick)重做一遍，
+把预后成分固定住（只用对照臂拟合预后 AFT 模型，取线性预测子作 offset）：
+
+```r
+prog_fit <- survreg(Surv(time, cens) ~ age + menostat + tsize + tgrade +
+                      pnodes + progrec + estrec,
+                    data = GBSG2[GBSG2$horTh == "no", ], model = TRUE)
+GBSG2$prog_lp <- as.numeric(predict(prog_fit, newdata = GBSG2, type = "lp"))
+
+bm_off <- survreg(Surv(time, cens) ~ horTh + offset(prog_lp),
+                  data = GBSG2, model = TRUE)
+coef(bm_off)
+#> (Intercept)    horThyes
+#>     -0.0101      0.2701
+
+frst_off <- pmforest(bm_off, data = GBSG2,
+                     zformula = ~ age + menostat + tsize + tgrade +
+                                  pnodes + progrec + estrec,
+                     ntree = 100, control = ctrl)
+sort(varimp(frst_off), decreasing = TRUE)
+```
+
+```text
+seed 2024:
+  estrec    tsize   pnodes menostat      age   tgrade  progrec
+    0.67     0.53     0.33     0.23     0.00    -0.20    -0.55
+seed 99:
+  estrec menostat   pnodes    tsize  progrec   tgrade      age
+    0.39     0.35     0.09    -0.16    -0.23    -0.44    -0.94
+```
+
+**全部变量的重要性都掉到 ±1 以内，两个种子的排序毫无共同点，
+`progrec` 甚至变成负值。** 换句话说：扣掉预后成分之后，
+这套方法在 GBSG2 上**检测不到任何效应修饰**。
+
+::: {.callout-important}
+## 两个结论都要如实报告
+
+- **不加 offset**：`pnodes` 与 `progrec` 重要，排序在种子间稳定；
+- **加 offset**：没有任何变量重要，排序纯属噪声。
+
+这不是矛盾，而是两个不同的问题：
+前者问"基模型的参数（含基线）在哪些人群里不一样"，
+后者问"治疗系数在哪些人群里不一样"。
+`varimp(pmforest)` 默认回答的是**前者**。
+
+同样的对照在构造数据上有真信号时会给出不同结果：
+[第 5 页](05-varimp-pmtest.qmd#sec-offset-trick)那份模拟里有明确的
+`trt × x_mod` 交互，offset 之后 `x_mod` 的重要性反而从 358 升到 516。
+所以 GBSG2 上的"检测不到"是数据的性质，不是方法失灵。
+
+两点保留：offset 用的预后模型是在同一份数据的对照臂上拟合的（未做交叉拟合），
+且 AFT 的 offset 作用在 log 时间尺度上——换成风险差或 RMST 差尺度，
+结论可能不同。
+:::
+
+## 什么时候不该用这个包
+
+| 场景 | 更合适的工具 |
+|---|---|
+| 要**因果的** CATE，数据是观察性的 | `grf::causal_forest()`（正交化 + 双重稳健），见[grf 教程](../grf/01-grf-guide.qmd) |
+| 要 Cox 比例风险 + 变量重要性 | `grf` 的生存森林，见[grf 生存章](../grf/04-survival.qmd) |
+| 要**效应修饰特异**的重要性与推断 | TEM-VIP 类方法，见[快速筛选的 R 包](../sources/quick-screening-r-packages.qmd) |
+| 要少量可读的亚组规则、且只关心治疗参数 | `partykit::mob(..., parm = )`——`parm` 在那里是公开参数 |
+| 结局是生存、还想做异质性检验 | `pmtest()` 用不了；换置换检验或 `grf` 的 RATE |
+
+`model4you` 最合适的位置是：**有一个你信得过的参数基模型**
+（随机试验、或已经做过混杂校正的观察性分析），
+想看这个模型的参数在人群里是否稳定，并且希望结果仍然是**同一个参数模型**的形式
+——系数可解释、可换算成临床量纲、可以画出拟合曲线。
+这件事上它的可视化和 `pmodel()` 的灵活性没有替代品。
+
+## 复核信息
+
+| 项目 | 值 |
+|---|---|
+| 核对日期 | 2026-09-20 |
+| `model4you` | 0.9-9（2026-02-12） |
+| R | 4.4.3（Windows） |
+| `partykit` / `survival` / `ggplot2` | 1.3.0 / 3.8-12 / 4.0.2 |
+| 数据 | `TH.data::GBSG2` 1.1-3；其余为文中给出种子的模拟数据 |
+
+本手册的代码**不在本站渲染时执行**，所有输出都是在上述环境单独运行后粘贴的。
+森林类结果给出了种子与 `ntree`，可按同样设置复现；
+换版本或换平台后数值可能不同，结构性结论（哪些路径报错、
+默认值造成什么后果）预期不变，除非上游修复。

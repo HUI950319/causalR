@@ -1,0 +1,369 @@
+---
+title: "1. pmtree()：模型基础树"
+subtitle: "参数逐项、control$converged 的正确写法，以及被静默忽略的 ..."
+lang: zh
+---
+
+`pmtree()` 接收一个**已经拟合好的参数模型**，用其余变量递归分割样本，
+在每个终末节点重新拟合同一个模型，得到**分层模型**（stratified model）。
+这是 `model4you` 里最常用、也最容易正确使用的函数。
+
+## 签名
+
+```r
+pmtree(
+  model,                        # 基模型对象
+  data = NULL,                  # 数据；NULL 时从模型里取
+  zformula = ~ .,               # 哪些变量用于分割
+  control = ctree_control(),    # 分割控制
+  coeffun = coef,               # 如何从节点模型提取系数
+  ...                           # 见下文：实际上被忽略
+)
+```
+
+返回一个 `ctree` 对象，类为 `c("pmtree", "constparty", "party")`。
+
+## 参数逐项
+
+### `model`——基模型
+
+这是整个包的入口，约束也最多：
+
+| 要求 | 原因 | 不满足时 |
+|---|---|---|
+| 必须有 `call` 组件（`getCall()` 能取到） | 内部靠 `update()` 在每个节点重新拟合 | `stop("Need a model with call component, see getCall")` |
+| **只应有一个因子协变量**（通常就是治疗） | `one_factor()` 检查 | 只警告，不阻止：`Models with anything but single factor covariates are in beta.` |
+| `survreg()` 建议加 `model = TRUE` | 让模型自带数据框，省去 `data=` | 不加则依赖 `.get_model_data()` 回溯环境 |
+
+只有一个因子协变量的要求来自方法本身：树的每个节点要估计
+"这一组人的治疗效应"，参数越少越稳。
+
+多协变量基模型**能跑**，但每个节点会估计**全部**系数，
+而且参数不稳定性检验同时针对所有这些系数。实测：
+
+```r
+bmod2 <- survreg(Surv(time, cens) ~ horTh + age, data = GBSG2, model = TRUE)
+t5 <- pmtree(bmod2, data = GBSG2)
+#> Warning: Models with anything but single factor covariates are in beta.
+#>          Please check if this is what you want!
+coef(t5)
+```
+
+```text
+  (Intercept)  horThyes          age
+2    7.994947 0.4146172 -0.002633350
+4    7.357562 0.3070674 -0.001232948
+5    6.808313 0.1504581  0.003325577
+```
+
+::: {.callout-warning}
+## 分割可能只反映截距的异质性
+
+`.modelfit()`（内部函数）支持一个 `parm` 参数，用来**只针对部分参数**做不稳定性检验。
+但 `pmtree()` 和 `pmforest()` **都没有把它暴露出来**（见下节 `...` 的实测），
+所以默认行为是：截距和治疗系数**一起**参与检验。
+
+后果是：一个只改变基线风险、完全不改变治疗效应的**纯预后变量**，
+也足以让树切一刀。GBSG2 的第一刀切在 `pnodes ≤ 3`，
+而 `pnodes` 在本书[效应修饰的效应尺度](../sources/effect-modifier-effect-scale.qmd)
+一页里被实证为典型的纯预后变量。
+
+若目标是**只找效应修饰变量**，`model4you` 本身没有提供开关，
+需要改用 `partykit::mob(..., parm = )`，或在基模型里把预后成分作为 offset 固定住。
+:::
+
+### `data`——数据
+
+`NULL` 时走内部的 `.get_model_data(model)`，它会先看模型对象里存的数据，
+取不到就去 `parent.frame()` 找同名对象，并打印提醒：
+
+```text
+No data given. I'm using data set GBSG2 from the current environment
+parent.frame(). Please check if that is what you want.
+```
+
+这条提示不是警告（`warning()`），只是 `message()`，很容易被忽略。
+**写进脚本或 qmd 的调用一律显式传 `data =`**，否则一旦环境里有同名对象被修改，
+结果会静默改变。
+
+模型变量里如有 `NA`，`.prepare_args()` 会**整行删除**并警告：
+
+```text
+Warning: NAs in model variables (time, cens, horTh). Omitting rows with NAs.
+```
+
+注意它只按**模型变量**判断缺失，分割变量 `z` 的缺失交给 `ctree` 的代理分割处理。
+
+### `zformula`——分割变量
+
+默认 `~ .`，即"数据里除模型变量以外的所有列"。
+内部把它和模型变量拼成 `ctree` 的公式：
+
+```r
+## .prepare_args() 实际构造的公式，等价于
+ctree(time + cens + horTh ~ age + menostat + tsize + tgrade + pnodes + progrec + estrec, ...)
+```
+
+限定候选分割变量：
+
+```r
+tr_z <- pmtree(bmod, data = GBSG2, zformula = ~ age + tsize + pnodes)
+```
+
+```text
+[1] root
+|   [2] pnodes <= 3: n = 376
+|       (Intercept)    horThyes
+|         7.8590259   0.4001011
+|   [3] pnodes > 3
+|   |   [4] pnodes <= 10: n = 226
+|   |       (Intercept)    horThyes
+|   |         7.3285974   0.3750277
+|   |   [5] pnodes > 10: n = 84
+|   |       (Intercept)    horThyes
+|   |         6.8843383   0.1002537
+```
+
+::: {.callout-tip}
+## `zformula` 是唯一的"不要用这个变量分割"的开关
+
+数据框里多余的列（ID、随访日期、由结局派生的变量）会**自动进入候选分割变量**。
+本手册在准备配图时就踩过一次：给 `GBSG2` 临时加了一列
+`resp <- as.numeric(time > 1000)` 用于演示 `binomial_glm_plot`，
+随后建的森林里这一列的变量重要性是 579，其余变量全在 50 以下——
+它当然"重要"，因为它是结局的函数。
+
+**建森林或建树前，先确认 `names(data)` 里没有不该参与分割的列**，
+或者显式写出 `zformula`。
+:::
+
+### `control`——分割控制
+
+直接传给 `partykit::ctree_control()`，默认就是 `ctree_control()` 的默认值
+（`teststat = "quad"`、`testtype = "Bonferroni"`、`mincriterion = 0.95`、
+`minsplit = 20`、`minbucket = 7`）。
+
+常用的几项：
+
+| 参数 | 含义 | 在这里的作用 |
+|---|---|---|
+| `mincriterion` | 分裂所需的 $1-p$ 阈值 | 建**树**时保持 0.95；建**森林**时 `pmforest()` 默认改成 0，见[第 3 页](03-pmforest.qmd) |
+| `maxdepth` | 最大深度 | 控制亚组数量，做子组分析时常设 2 |
+| `minsplit` / `minbucket` | 节点与叶最小样本量 | 保证每个节点的模型能拟合 |
+| `lookahead` | 分裂前先试算子节点能否收敛 | 配合 `converged` 使用 |
+| `converged` | **自定义收敛判据**，见下 | 限定每个节点两臂的样本量 |
+| `nmax` | 分箱上限 | **不能用**：`pmtree()` 开头有 `stopifnot(all(!is.finite(control$nmax)))` |
+
+`nmax` 的实测：
+
+```r
+pmtree(bmod, data = GBSG2, control = ctree_control(nmax = 20))
+#> Error: all(!is.finite(control$nmax)) is not TRUE
+```
+
+### `control$converged`——限定每臂样本量 {#sec-converged}
+
+这是本包最重要的一个技巧，帮助页在 `Details` 里提了一句，但没有说清它有多关键。
+
+`ctree_control()` 返回的是一个 list，`converged` 不是它的形式参数，
+而是**事后赋值**的钩子。签名为 `function(mod, data, subset)`，
+返回 `FALSE` 表示"这个节点不算收敛"，于是该分裂被拒绝。
+
+```r
+ctrl <- ctree_control(lookahead = TRUE)
+ctrl$converged <- function(mod, data, subset) {
+  all(table(data$horTh[subset]) > 33)      # 每个治疗组都要超过 33 人
+}
+tr2 <- pmtree(bmod, data = GBSG2, control = ctrl)
+```
+
+加约束前后的树完全不同（本机实测，GBSG2）：
+
+| 设置 | 第一刀 | 第二刀 | 终末节点两臂人数 |
+|---|---|---|---|
+| 默认 | `pnodes ≤ 3` | `tgrade ≤ II` | 未检查 |
+| `converged`（两臂 > 33） | `pnodes ≤ 3` | `progrec ≤ 20` | 248/128、91/53、101/65 |
+
+```text
+[1] root
+|   [2] pnodes <= 3: n = 376
+|       (Intercept)    horThyes
+|         7.8590259   0.4001011
+|   [3] pnodes > 3
+|   |   [4] progrec <= 20: n = 144
+|   |       (Intercept)    horThyes
+|   |         6.9124816   0.1084537
+|   |   [5] progrec > 20: n = 166
+|   |       (Intercept)    horThyes
+|   |         7.4434079   0.3965108
+```
+
+::: {.callout-important}
+## 自己传 `control` 时必须把默认值抄全
+
+`converged` 只能通过"先构造再赋值"的方式加进去。
+对 `pmtree()` 影响不大（默认就是 `ctree_control()`），
+但对 `pmforest()` 是**陷阱**：它的默认 control 是
+`ctree_control(teststat = "quad", testtype = "Univ", mincriterion = 0, saveinfo = FALSE, lookahead = TRUE)`，
+只要你自己传了 `control`，这五项就都回到 `ctree_control()` 的默认值，
+等于悄悄换掉了森林的算法。正确写法见[第 3 页](03-pmforest.qmd#sec-control)。
+:::
+
+### `coeffun`——系数提取函数
+
+默认 `coef`。当 `coef()` 不返回全部参数时需要替换，
+典型是 `survreg()` 的 scale 参数：
+
+```r
+coeffun <- function(model) c(coef(model), scale = model$scale)
+tr <- pmtree(bmod, data = GBSG2, coeffun = coeffun)
+```
+
+`coeffun` 只影响**存进节点 `info$coefficients` 的内容**（以及 `coef()`、
+`summary()`、`print()` 的显示），不影响分裂本身——
+分裂用的是 `estfun()` 给出的得分矩阵。
+
+`pmodel()` 里的 `fun` 参数用法类似但更自由，见[第 4 页](04-pmodel.qmd#sec-fun)。
+
+### `...`——文档说会传给模型拟合，实际不会 {#sec-dots}
+
+帮助页对 `...` 的说明是：
+
+> additional parameters passed on to model fit such as weights.
+
+**这在 0.9-9 里不成立。** 函数体中 `...` 从未被使用：
+
+```r
+pmtree <- function(model, data = NULL, zformula = ~., control = ctree_control(),
+                   coeffun = coef, ...) {
+  stopifnot(all(!is.finite(control$nmax)))
+  args <- .prepare_args(model = model, data = data,
+                        zformula = zformula, control = control)   # 没有 ...
+  ...
+}
+```
+
+实测（GBSG2，与不传参数的树逐项比较）：
+
+```r
+w  <- rep(c(1, 3), length.out = nrow(GBSG2))
+t3 <- pmtree(bmod, data = GBSG2, weights = w)   # 不报错
+all.equal(coef(t3), coef(tr))
+#> [1] TRUE                                     # 权重完全没起作用
+
+t4 <- pmtree(bmod, data = GBSG2, parm = 2)      # 不报错
+all.equal(coef(t4), coef(tr))
+#> [1] TRUE                                     # parm 也没起作用
+```
+
+两个都是**静默忽略**：不报错、不警告、结果和不传一模一样。
+这是最危险的一类行为——写了 `weights =` 的人会以为加权生效了。
+
+::: {.callout-note}
+## 需要加权时怎么办
+
+把权重写进**基模型**，`update()` 会带着它在每个节点重新拟合：
+
+```r
+GBSG2$w <- w
+bmod_w <- survreg(Surv(time, cens) ~ horTh, data = GBSG2,
+                  weights = w, model = TRUE)
+tr_w <- pmtree(bmod_w, data = GBSG2)
+```
+
+观察性数据的 IPTW 就应该走这条路：先用倾向评分算权重、
+把权重放进基模型，再交给 `pmtree()` 分割。
+`model4you` 自己不做任何混杂校正。
+
+顺带一提，`pmforest()` 的 `...` 同样不传给模型拟合，
+但它**会**通过默认参数的惰性求值传进 `ctree_control()`——
+两个函数的 `...` 行为并不一致，见[第 3 页](03-pmforest.qmd#sec-dots-forest)。
+:::
+
+## 返回对象的结构
+
+```r
+tr <- pmtree(bmod, data = GBSG2)
+class(tr)
+#> [1] "pmtree"     "constparty" "party"
+names(tr$info)
+#> [1] "call"     "control"  "model"    "zformula"
+```
+
+关键部件：
+
+| 位置 | 内容 |
+|---|---|
+| `tr$info$model` | 基模型对象本身（`predict`、`objfun` 都会用 `update()` 复用它） |
+| `tr$info$zformula` | 实际使用的分割公式 |
+| `tr$data` | 建树用的数据框 |
+| `tr$nobs` | 终末节点样本量之和 |
+| `tr[[i]]$info$coefficients` | 节点 `i` 的系数（`coeffun` 的结果） |
+| `tr[[i]]$info$objfun` | 节点 `i` 的**负**对数似然，见下 |
+| `tr[[i]]$info$object` | 节点 `i` 重新拟合后的模型对象（仅当 `control$saveinfo = TRUE`） |
+
+::: {.callout-warning}
+## `info$objfun` 的符号与 `objfun()` 相反
+
+节点里存的是 `-logLik(mod)`（正数），
+而泛型 `objfun()` 返回的是对数似然**贡献**（负数）。
+于是同一棵树上：
+
+```text
+print(tr)  尾部 →  Objective function: 2588.953
+logLik(tr)      →  'log Lik.' -2588.953 (df=9)
+objfun(tr, sum = TRUE) → -2588.953
+```
+
+打印出来的"Objective function"是要**最小化**的量，
+`logLik`/`objfun` 是要**最大化**的量。比较两棵树时别把符号弄反。
+:::
+
+节点模型可以直接取出来做常规分析：
+
+```r
+mod_node4 <- tr[[4]]$info$object
+summary(mod_node4)
+tr[[4]]$data            # 该节点的数据子集
+table(tr[[4]]$data$horTh)
+```
+
+## 一个完整例子：GBSG2 子组分析
+
+```r
+library("model4you")
+library("survival")
+data("GBSG2", package = "TH.data")
+
+## 基模型：Weibull AFT，只含治疗
+bmod <- survreg(Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE)
+
+## 每个亚组两臂各至少 34 人，深度不超过 2
+ctrl <- ctree_control(maxdepth = 2, lookahead = TRUE)
+ctrl$converged <- function(mod, data, subset) all(table(data$horTh[subset]) > 33)
+
+tr <- pmtree(bmod, data = GBSG2, control = ctrl)
+
+## 看结构与系数
+print(tr)
+summary(tr)
+coef(tr)
+
+## 画出来（含 scale 参数的系数表 + 生存曲线）
+plot(tr, terminal_panel = node_pmterminal(tr, plotfun = survreg_plot,
+                                          confint = TRUE,
+                                          coeftable = coeftable.survreg))
+```
+
+![GBSG2 上的 `pmtree()`（默认 control），终末面板由
+`node_pmterminal(plotfun = survreg_plot, coeftable = coeftable.survreg)` 生成。
+每个节点给出三个参数的点估计与 95% 区间，以及两臂的拟合生存曲线。
+](../../images/model4you-pmtree-gbsg2.png){#fig-pmtree}
+
+@fig-pmtree 的读法：`horThyes` 从 0.40（`pnodes ≤ 3`）降到 0.16（`pnodes > 3` 且 `tgrade > II`），
+换算成中位生存时间的倍数是 1.49 → 1.18。但第三个节点的 95% 区间是 [−0.32, 0.64]，
+包含 0——**树给出的切点没有附带多重比较校正**，节点越小区间越宽。
+`pmtree()` 本身不提供后选择推断，把树当作**假设生成**工具，
+验证要另找数据或另做设计。
+
+绘图细节见[第 6 页](06-plots.qmd)，树的各种方法见[下一页](02-pmtree-methods.qmd)。

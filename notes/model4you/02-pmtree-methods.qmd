@@ -1,0 +1,377 @@
+---
+title: "2. pmtree 的方法"
+subtitle: "print / summary / coef / predict / logLik / objfun 与 coxph 的缺口"
+lang: zh
+---
+
+`pmtree` 对象同时是 `constparty`，因此 `partykit` 的全套工具
+（`nodeids()`、`nodeapply()`、`width()`、`depth()`、`[[`）都能用。
+本页只讲 `model4you` 自己定义的方法。本页所有输出都来自同一棵树：
+
+```r
+library("model4you"); library("survival")
+data("GBSG2", package = "TH.data")
+bmod <- survreg(Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE)
+tr   <- pmtree(bmod, data = GBSG2)
+```
+
+## `print()`
+
+```r
+print(tr, node = NULL, FUN = NULL, digits = getOption("digits") - 4L,
+      footer = TRUE, ...)
+```
+
+不带 `node` 时打印整棵树：
+
+```text
+[1] root
+|   [2] pnodes <= 3: n = 376
+|       (Intercept)    horThyes
+|         7.8590259   0.4001011
+|   [3] pnodes > 3
+|   |   [4] tgrade <= II: n = 223
+|   |       (Intercept)    horThyes
+|   |         7.2936454   0.3038557
+|   |   [5] tgrade > II: n = 87
+|   |       (Intercept)    horThyes
+|   |         6.9808753   0.1630104
+
+Number of inner nodes:    2
+Number of terminal nodes: 3
+Number of parameters per node: 2
+Objective function: 2588.953
+```
+
+`footer` 里的 `Objective function` 是各节点 `-logLik` 之和，
+是**要最小化**的量；`logLik(tr)` 给出的是相反数。
+
+指定 `node` 时打印的内容完全不同——它会给出**参数不稳定性检验**的结果，
+这是判断"这一刀切得有多硬"的直接依据：
+
+```r
+print(tr, node = 1)
+```
+
+```text
+Partitioned model:
+ survreg(formula = Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE)
+Partitioning variables: ~.
+-- Node 1 --
+
+Estimated parameters:
+(Intercept)    horThyes
+  7.6084486   0.3059506
+
+Objective function:
+2632.096
+
+Parameter instability tests:
+                 age   menostat        tsize        tgrade        pnodes       progrec
+statistic  6.4963868  6.5410358 19.567796549  2.911335e+01  6.607655e+01 24.0458901830
+p.value    0.4824638  0.4754703  0.001459297  1.483931e-05  2.066099e-13  0.0001710320
+criterion -0.6586757 -0.6452532 -0.001460363 -1.483942e-05 -2.066099e-13 -0.0001710466
+              estrec
+statistic  7.2794468
+p.value    0.3682583
+criterion -0.4592747
+```
+
+每个候选分割变量一列，这就是 `ctree` 的参数不稳定性检验。
+根节点上 `pnodes` 的 $p = 2.1\times10^{-13}$ 远小于其余变量，所以第一刀切在它上面；
+`age` 与 `menostat` 的 $p$ 接近 0.5，完全没有证据。
+`criterion` 行是 `ctree` 内部用的尺度（`log(1 - p)` 一类的单调变换），排序与 $p$ 值一致。
+
+换个内部节点看，会发现候选变量的排序完全变了：
+
+```r
+print(tr, node = 3)
+```
+
+```text
+Parameter instability tests:
+                 age   menostat      tsize       tgrade      pnodes     progrec     estrec
+statistic  3.2716489  5.2206817  2.5850916 17.608148579 11.80984413 14.48423487  6.4064500
+p.value    0.9518204  0.6957728  0.9866297  0.003702417  0.05509907  0.01609234  0.4967040
+```
+
+在 `pnodes > 3` 这一支里，`tgrade`（$p = 0.0037$）压过了 `progrec`（$p = 0.016$）。
+两者差距不大，这正是树结构不稳定的来源——[第 1 页](01-pmtree.qmd#sec-converged)里
+只要加上"两臂各 > 33 人"的约束，这一刀就改切 `progrec` 了。
+
+::: {.callout-warning}
+## 这些 $p$ 值是选择**前**的
+
+它们衡量的是"在这个节点上，该变量与参数不稳定性的关联"，
+默认 `testtype = "Bonferroni"` 只对**同一节点内的候选变量个数**做了校正，
+没有对**递归分割这个过程本身**做任何校正。
+不能把 $p = 0.0037$ 当作"这个亚组真实存在"的证据。
+:::
+
+## `summary()` 与 `print.summary()`
+
+```r
+summary(object, node = NULL, ...)
+```
+
+```text
+Stratified model for node(s) 2, 4, 5
+
+Model call:
+survreg(formula = Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE)
+
+Coefficients:
+            node 2 node 4 node 5
+(Intercept) 7.8590 7.2936  6.981
+horThyes    0.4001 0.3039  0.163
+
+Number of obervations:
+node 2 node 4 node 5
+   376    223     87
+
+Objective function:
+(1093.18) + (1037.81) + (457.96) = 2588.95
+```
+
+`summary(tr, node = ...)` 可以只看指定节点，**包括内部节点**——
+节点 1 就是没有分割时的基模型，很适合和终末节点并排看：
+
+```r
+summary(tr, node = 1:2)
+```
+
+```text
+Coefficients:
+            node 1 node 2
+(Intercept)  7.608 7.8590
+horThyes     0.306 0.4001
+
+Number of obervations:
+node 1 node 2
+   686    376
+
+Objective function:
+  node 1   node 2
+2632.096 1093.182
+```
+
+注意指定 `node` 时 `Objective function` 改成逐节点列出，不再显示求和式。
+（输出里的 `Number of obervations` 是包内的拼写，原样如此。）
+
+## `coef()`
+
+```r
+coef(object, node = NULL, ...)
+```
+
+返回**节点 × 参数**的矩阵，行名是节点号：
+
+```text
+  (Intercept)  horThyes
+2    7.859026 0.4001011
+4    7.293645 0.3038557
+5    6.980875 0.1630104
+```
+
+::: {.callout-caution}
+## 单参数模型下返回的形状会变
+
+`coef.pmtree()` 的实现是 `t(sapply(info, function(x) x$coefficients))`。
+当每个节点只有**一个**系数时（例如 `coxph` 基模型），`sapply` 退化成向量，
+`t()` 把它变成 **1 × 节点数**的矩阵，列名还带上了节点号前缀：
+
+```text
+     2.horThyes 4.horThyes 5.horThyes
+[1,] -0.5611397 -0.1004515 -0.5612125
+```
+
+写自动化脚本时不要假定 `coef(tr)` 的行是节点——
+用 `nodeapply(tr, ids = nodeids(tr, terminal = TRUE), function(n) n$info$coefficients)`
+更稳。
+:::
+
+## `predict()`
+
+```r
+predict(object, newdata = NULL, type = "node", predict_args = list(),
+        perm = NULL, ...)
+```
+
+三种 `type`：
+
+| `type` | 返回 | 说明 |
+|---|---|---|
+| `"node"`（默认） | 终末节点号 | 最常用，用来给新病人分组 |
+| `"coef"` | 该节点模型的系数 | 每行一个观测 |
+| `"pass"` | 调用基模型的 `predict()` | 参数经 `predict_args` 传入 |
+
+```r
+nd <- GBSG2[1:5, ]
+predict(tr, type = "node", newdata = nd)
+#> 1 2 3 4 5
+#> 2 4 4 4 2
+
+predict(tr, type = "coef", newdata = nd)
+#>   (Intercept)  horThyes
+#> 1    7.859026 0.4001011
+#> 3    7.293645 0.3038557
+#> 4    7.293645 0.3038557
+#> 5    7.293645 0.3038557
+#> 2    7.859026 0.4001011
+
+predict(tr, type = "pass", newdata = nd)
+#>       pred
+#> 1 2588.997
+#> 2 1993.209
+#> 3 1993.209
+#> 4 1993.209
+#> 5 2588.997
+
+## 传给 predict.survreg 的参数：中位生存时间
+predict(tr, type = "pass", newdata = nd,
+        predict_args = list(type = "quantile", p = 0.5))
+#>       pred
+#> 1 2019.683
+#> 2 1526.692
+#> ...
+```
+
+::: {.callout-caution}
+## `type = "coef"` 返回的行名不可信
+
+上面第二个输出的行名是 `1, 3, 4, 5, 2`，而 `newdata` 的行名是 `1..5`。
+**数值的顺序是对的**（内部按 `.id` 排过序），错的只是行名：
+实现里按节点分组构造 `data.frame` 再 `rbind`，行名在这个过程中被重新生成。
+
+所以 `cbind(newdata, predict(tr, type = "coef", newdata = newdata))` 是安全的
+（按位置对齐），但 `merge()` 或任何按行名对齐的操作都会错。
+:::
+
+`perm` 用来把指定变量的分割**随机置换**，是 `varimp()` 的底层机制，
+也可以单独用来看某个变量对分组的影响有多大：
+
+```r
+predict(tr, type = "node", newdata = GBSG2[1:8, ], perm = "pnodes")
+#> 1 2 3 4 5 6 7 8
+#> 4 4 2 2 2 5 2 4      # 与未置换的分组不同
+```
+
+## `logLik()`
+
+```r
+logLik(object, dfsplit = 0, newdata = NULL, weights = NULL, perm = NULL, ...)
+```
+
+各终末节点 `logLik()` 之和：
+
+```r
+logLik(bmod)   #> 'log Lik.' -2632.096 (df=3)
+logLik(tr)     #> 'log Lik.' -2588.953 (df=9)
+```
+
+`df` 默认是各节点模型自由度之和（3 个节点 × 3 个参数 = 9），
+**不计入分裂本身消耗的自由度**。`dfsplit` 就是用来补这一块的：
+
+```r
+logLik(tr, dfsplit = 1)     # 每个分裂算 1 个自由度
+```
+
+用它做模型比较时要清楚：树是**选出来**的，
+即便按 `dfsplit` 罚过，`logLik` 之差也不服从常规的 $\chi^2$ 分布。
+要检验"是否真有异质性"，用 [`pmtest()`](05-varimp-pmtest.qmd#sec-pmtest)，
+它靠参数自助法构造零分布。
+
+当 `newdata`、`weights` 或 `perm` 任一非空时，函数改走 `objfun()` 通道，
+此时 `df` 记为 `NA`；而 `lm` 基模型在这条通道上会直接 `stop()`：
+
+```text
+Error: logLik not yet implemented for lm. Try objfun(..., sum = TRUE).
+```
+
+## `objfun()`
+
+```r
+objfun(x, newdata = NULL, weights = NULL, perm = NULL, sum = FALSE, ...)
+```
+
+默认返回**每个观测**的目标函数贡献，`sum = TRUE` 返回其和：
+
+```r
+objfun(tr, sum = TRUE)
+#> [1] -2588.953
+
+head(objfun(tr), 3)                                  # 每人一个贡献值
+#>         1         2         3
+#> -8.230585 -8.291882 -7.907872
+
+objfun(tr, newdata = GBSG2[1:50, ], sum = TRUE)      # 在新数据上评估
+```
+
+帮助页里的一句话值得照做：
+
+> Note that `objfun.pmtree(x, sum = TRUE)` is much faster than `sum(objfun.pmtree(x))`。
+
+两者都对，但 `sum = TRUE` 是按节点批量算的，逐观测那条路径要对每一行单独调用一次。
+
+`objfun` 与 `logLik` 对 `glm`、`survreg` 数值相同，对 `lm` **不同**：
+`objfun.lm` 返回的是负平方误差，不是对数似然。详见
+[第 7 页](07-objfun-internals.qmd)。
+
+## `coxph` 基模型：能建树，但目标函数缺一块 {#sec-coxph}
+
+`DESCRIPTION` 只承诺 `lm`/`glm`/`survreg`，但内部对 `coxph` 有专门处理：
+`.modelfit()` 里为 coxph 单独构造 score（`cbind(mod$residuals, mod$residuals * model.matrix(mod))`），
+`NEWS` 在 0.9-6 还为它改过这段代码并支持了多治疗组绘图。
+
+实测（GBSG2）：
+
+```r
+cmod <- coxph(Surv(time, cens) ~ horTh, data = GBSG2, model = TRUE, x = TRUE)
+trc  <- pmtree(cmod, data = GBSG2)
+print(trc)
+```
+
+```text
+[1] root
+|   [2] pnodes <= 3: n = 376
+|         horThyes
+|       -0.5611397
+|   [3] pnodes > 3
+|   |   [4] progrec <= 20: n = 144
+|   |         horThyes
+|   |       -0.1004515
+|   |   [5] progrec > 20: n = 166
+|   |         horThyes
+|   |       -0.5612125
+
+Number of terminal nodes: 3
+Objective function: 1420.879
+```
+
+可用与不可用的清单：
+
+| 操作 | 结果 |
+|---|---|
+| `pmtree()` 建树 | ✅ |
+| `coef(trc)` | ✅（但形状是 1 × 3，见上文） |
+| `logLik(trc)` | ✅ `-1420.879 (df=3)` |
+| `predict(trc, type = "node")` | ✅ |
+| `objfun(trc, sum = TRUE)` | ❌ `no applicable method for 'objfun' applied to an object of class "coxph"` |
+| `varimp()`（森林上） | ❌ 默认 `risk` 依赖 `objfun`，同样报错 |
+
+::: {.callout-important}
+## 用 Cox 之前先想清楚要不要 `varimp`
+
+`objfun` 只有 `lm`、`glm`、`survreg` 三个方法（外加 `pmtree`、`pmodel_identity`）。
+缺 `objfun.coxph` 的直接后果是：**Cox 森林的变量重要性走不通**，
+换成 `risk = function(x, ...) -as.numeric(logLik(x))` 也不行——
+实测在 `varimp.cforest` 内部报 `replacement has length zero`。
+
+需要生存结局 + 变量重要性时，把基模型换成
+`survreg(..., dist = "weibull")`（AFT，系数是 log 时间比），
+或者自己补一个 `objfun.coxph` 方法。补方法的写法见
+[第 7 页](07-objfun-internals.qmd#sec-coxph-gap)。
+
+两个模型的目标量不同：`coxph` 的系数是 log HR，`survreg` 的是 log 时间比，
+方向相反（治疗有益时前者为负、后者为正）。
+:::
