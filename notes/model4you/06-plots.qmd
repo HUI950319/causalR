@@ -65,6 +65,11 @@ grid.newpage()
 coeftable.survreg(bmod)
 ```
 
+![`coeftable.survreg(bmod)` 单独使用的输出：除 `coef()` 能取到的两个系数外，
+还多出一行 `Log(scale)`，三行都带 95% 区间。
+@fig-terminal 每个节点上半部分的表就是它画的。
+](../../images/model4you-coeftable.png){#fig-coeftable width=62%}
+
 ### `nid`——节点标签
 
 默认打印 `节点号, n = 样本量`。想换成中文或加别的信息：
@@ -102,15 +107,33 @@ plot(trg, terminal_panel = node_pmterminal(trg, plotfun = binomial_glm_plot,
 
 ```r
 ## 单独使用
-survreg_plot(bmod)
-survreg_plot(bmod, yrange = c(0, 3000))
-lm_plot(lm.D9, densest = TRUE)
-binomial_glm_plot(glm_mod, plot_data = TRUE)
-coxph_plot(coxph(Surv(futime, fustat) ~ factor(rx), ovarian))
+survreg_plot(bmod)                                                  # GBSG2，Weibull AFT
+coxph_plot(coxph(Surv(futime, fustat) ~ factor(rx), ovarian))       # ovarian，Cox
+
+data(anorexia, package = "MASS")
+anorexia$treatment <- factor(anorexia$Treat != "Cont", labels = c("Cont", "Treat"))
+lm_plot(lm(Postwt ~ treatment, data = anorexia), densest = TRUE)
+
+GBSG2$resp <- factor(as.numeric(GBSG2$time > 1000))                 # 仅为演示构造
+binomial_glm_plot(glm(resp ~ horTh, data = GBSG2, family = binomial),
+                  plot_data = TRUE)
 
 ## 加图层
 survreg_plot(bmod) + ggplot2::labs(title = "GBSG2 基模型")
 ```
+
+![四个内置 `plotfun` 单独使用的实际输出（标题与副标题是后加的图层）。
+左上 `survreg_plot()`：Weibull AFT 的两条拟合生存曲线；
+右上 `coxph_plot()`：Cox 模型的阶梯形生存曲线；
+左下 `lm_plot(densest = TRUE)`：实线是模型的拟合正态密度、虚线是核密度估计；
+右下 `binomial_glm_plot(plot_data = TRUE)`：柱高是拟合概率、误差条是置信区间，
+淡色背景块是各组的样本占比。
+](../../images/model4you-plotfun-gallery.png){#fig-gallery}
+
+@fig-gallery 右下角那张顺带展示了一个陷阱：为了演示需要给 `GBSG2` 加了一列
+`resp <- time > 1000`。**这列一旦留在数据框里再去建树或建森林，就会被当成分割变量**，
+而它是结局的函数——本手册准备配图时就踩过，那次它的变量重要性是 579、其余变量全在 50 以下。
+详见[第 1 页](01-pmtree.qmd)关于 `zformula` 的说明。
 
 几个实测细节：
 
@@ -147,6 +170,12 @@ my_plot <- function(mod, data = NULL, ...) {
 plot(tr, terminal_panel = node_pmterminal(tr, plotfun = my_plot,
                                           confint = FALSE, coeftable = FALSE))
 ```
+
+![用自写 `plotfun` 画出的同一棵树：每个节点只画 `horThyes` 的点估计与 95% 区间，
+虚线是 0。三个节点共用 `xlim(-1, 1.2)`，所以效应的衰减（0.40 → 0.30 → 0.16）
+和区间随样本量变宽（n = 376 → 223 → 87）都能直接比较。
+与 @fig-terminal 对照可以看出：内置面板信息全，自写面板专注于一个参数。
+](../../images/model4you-custom-plotfun.png){#fig-custom}
 
 ::: {.callout-tip}
 ## 三个实用约定
