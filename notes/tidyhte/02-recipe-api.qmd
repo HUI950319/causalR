@@ -1,0 +1,389 @@
+---
+title: "2. 配方 API：basic_config() 与 11 个 add_*"
+subtitle: "tidyhte 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(tidyhte)
+library(dplyr)
+```
+
+配方 API（Recipe API）是 `tidyhte` 面向使用者的主入口：
+从 `basic_config()` 起手，用一串 `%>%` 把模型、调节变量、诊断、变量重要性
+一层层加上去，最后得到一个 `HTE_cfg` 对象。
+本页逐个说明这 12 个函数，并给出三处**签名与行为不符**的实测结果。
+
+::: {.callout-important}
+## 先记住一件事：`HTE_cfg` 是 R6 对象，管道不复制它
+
+```{r}
+#| label: r6-semantics
+base    <- basic_config() %>% add_outcome_model("SL.glm.interaction")
+variant <- base %>% add_outcome_model("SL.ranger")
+
+base$outcome$SL.library      # 只往 variant 加过 SL.ranger
+identical(base, variant)     # 两个名字指向同一个对象
+```
+
+`add_*()` 全部是**原地修改**并 `invisible(hte_cfg)` 返回同一个引用。
+写成管道的样子容易让人以为是值语义，实际上**任何后续修改都会回溯影响之前的名字**，
+连数据框上已经 `attach_config()` 挂好的那份也一起变（挂的是引用，不是副本）。
+
+而且**浅拷贝不够**——`HTE_cfg` 的字段本身又是 R6 对象：
+
+```{r}
+#| label: r6-clone
+b2 <- basic_config()
+s  <- b2$clone() %>% add_outcome_model("SL.mean")   # 浅拷贝
+b2$outcome$SL.library                                # 仍被改了
+
+b3 <- basic_config()
+d  <- b3$clone(deep = TRUE) %>% add_outcome_model("SL.mean")  # 深拷贝
+b3$outcome$SL.library                                # 这次才没动
+```
+
+**要从同一个基线派生多份配方，必须 `$clone(deep = TRUE)`。**
+这一点包的文档里没有提到，而"同一份数据跑多个结局 / 多个对比"
+恰恰是作者在 vignette 里宣传的主要用法。
+:::
+
+## `basic_config()`：默认配方到底是什么 {#sec-basic}
+
+```{r}
+#| label: basic-def
+tidyhte::basic_config
+```
+
+展开成表就是：
+
+| 位置 | 默认值 | 含义 |
+|---|---|---|
+| `$treatment` | `SLEnsemble_cfg$new()` → 只含 `SL.glm`，`family = gaussian()` | 倾向得分用**线性概率模型** |
+| `$outcome` | `SLEnsemble_cfg$new()` → 只含 `SL.glm` | T-learner 的两个结局回归 |
+| `$effect` | `SLEnsemble_cfg$new()` → 只含 `SL.glm` | 伪结局的联合模型（只有 VIMP / PCATE 会用） |
+| `$qoi$ate` | `TRUE` | 输出 SATE（有权重时另加 PATE） |
+| `$qoi$mcate` | `NULL` | **默认不输出任何 CATE 曲面**，要靠 `add_moderator()` |
+| `$qoi$pcate` | `NULL` | 偏 CATE，配方 API 没有入口 |
+| `$qoi$vimp` | `VIMP_cfg$new(sample_splitting = TRUE)` | **默认打开**，需要 `vimp` 包、折数为偶数 |
+| `$qoi$predictions` | `FALSE` | 逐单位 CATE 预测 |
+| `$qoi$diag$ps` | `AUC MSE SL_risk SL_coefs` | 倾向模型诊断，`AUC` 需要 `WeightedROC` |
+| `$qoi$diag$outcome` | `MSE SL_risk SL_coefs` | 结局模型诊断 |
+| `$qoi$diag$effect` | `MSE SL_risk SL_coefs` | 效应面诊断，**通常被跳过** |
+| `$verbose` | `FALSE` | 调试输出 |
+
+```{r}
+#| label: basic-inspect
+cfg <- basic_config()
+cfg$outcome$SL.library
+cfg$treatment$family$family
+c(ate = cfg$qoi$ate, predictions = cfg$qoi$predictions)
+c(mcate_is_null = is.null(cfg$qoi$mcate), pcate_is_null = is.null(cfg$qoi$pcate))
+cfg$qoi$diag$ps
+```
+
+::: {.callout-warning}
+## 默认配方**不会**给出任何 CATE
+
+`$qoi$mcate` 是 `NULL`。只写 `basic_config()` 然后跑完整条流水线，
+拿到的只有 SATE 和一堆诊断——想要按调节变量分解效应，
+必须显式 `add_moderator()`。这与"HTE 包"的直觉相反，
+但和它的设计一致：**展示方式（怎么画）和估计（算什么）是分开配置的**。
+:::
+
+## 往三个集成里加学习器 {#sec-models}
+
+三个函数签名完全一样，只是改的字段不同：
+
+| 函数 | 改哪个字段 | 什么时候真的被用到 |
+|---|---|---|
+| `add_propensity_score_model(hte_cfg, model_name, ...)` | `$treatment` | `produce_plugin_estimates()` 估 $\hat\pi$ |
+| `add_outcome_model(hte_cfg, model_name, ...)` | `$outcome` | `produce_plugin_estimates()` 估 $\hat\mu_0,\hat\mu_1$ |
+| `add_effect_model(hte_cfg, model_name, ...)` | `$effect` | 只有 VIMP、PCATE、`predictions` 会用 |
+
+`model_name` 用 SuperLearner 的命名约定（`SuperLearner::listWrappers("SL")`
+可列全），`...` 里写**要网格搜索的超参数**，包会对超参数取笛卡尔积，
+每个组合生成一个独立学习器：
+
+```{r}
+#| label: grid
+cfg <- basic_config() %>%
+  add_outcome_model("SL.glmnet", alpha = c(0, 0.5, 1)) %>%
+  add_outcome_model("SL.ranger", num.trees = c(200, 500), min.node.size = c(5, 20))
+
+cfg$outcome$SL.library
+```
+
+生成的学习器叫 `custom_<模型名>_<超参数值...>`，
+名字按参数在 `...` 里出现的顺序拼接。它们被 `assign` 到配置自带的
+`SL.env` 环境里，本质上是一层薄包装：
+
+```{r}
+#| label: grid-env
+get("custom_SL.ranger_200_5", envir = cfg$outcome$SL.env)
+```
+
+这些名字会原样出现在 `"SL risk"` / `"SL coefficient"` 两个诊断的 `term` 列里，
+所以它是把诊断图上的点对回具体超参数的唯一线索
+（见[第 7 页](07-diagnostics-plots.qmd#sec-slrisk)）。
+
+::: {.callout-note}
+## 不带超参数时会怎样
+
+`add_outcome_model("SL.glm.interaction")` 里 `...` 为空，
+此时**不生成包装**，直接把原名放进 `SL.library`。
+所以库里会混着 `SL.glm`、`SL.glm.interaction` 这样的原名
+和 `custom_SL.glmnet_0.5` 这样的生成名。
+:::
+
+### 效应面集成的实际作用范围 {#sec-effect}
+
+`add_effect_model()` 改的 `$effect` 字段，在默认（只有 MCATE）的流程里
+**完全不会被调用**。`estimate_QoI()` 里用到 `.HTE_cfg$effect` 的地方只有三处：
+`calculate_vimp()`、`calculate_linear_vimp()`、`fit_fx_predictor()`
+（后者服务于 PCATE 和 `predictions`）。
+MCATE 用的是 `add_moderator()` 里登记的**展示模型**，与 `$effect` 无关。
+
+```{r}
+#| label: effect-scope
+body_txt <- paste(deparse(tidyhte::estimate_QoI), collapse = " ")
+# estimate_QoI() 里把 .HTE_cfg$effect 传出去的调用一共只有三处
+regmatches(body_txt, gregexpr("[A-Za-z_.]+(?=[(][^()]{0,300}?HTE_cfg[$]effect)",
+                              body_txt, perl = TRUE))[[1]]
+```
+
+## 已知倾向得分 {#sec-known}
+
+随机试验里倾向得分是设计出来的，不需要估计：
+
+```{r}
+#| label: known
+cfg <- basic_config() %>% add_known_propensity_score("ps")
+class(cfg$treatment)
+cfg$treatment$covariate_name
+```
+
+它把 `$treatment` 整个换成 `Known_cfg`，此后
+`produce_plugin_estimates()` 直接把 `ps` 这一列当作 $\hat\pi$ 用
+（不拟合、不交叉拟合，见[第 5 页](05-plugin-pseudo.qmd#sec-known-path)）。
+
+::: {.callout-important}
+## 它会顺手清空倾向诊断和 `Diagnostics_cfg$params`
+
+函数体第二句是
+`hte_cfg$qoi$diag = Diagnostics_cfg$new(outcome = ..., effect = ...)`，
+**重建**了诊断配置，于是 `ps` 项被丢弃、`params` 也一起没了。
+因此调用顺序会改变结果：
+
+```{r}
+#| label: known-order
+# 先加诊断，再声明已知倾向 —— 诊断被清掉
+c1 <- basic_config() %>% add_propensity_diagnostic("AUC") %>% add_known_propensity_score("ps")
+c1$qoi$diag$ps
+
+# 反过来 —— 诊断留下了
+c2 <- basic_config() %>% add_known_propensity_score("ps") %>% add_propensity_diagnostic("AUC")
+c2$qoi$diag$ps
+
+# params 同样会被清掉
+c3 <- basic_config()
+c3$qoi$diag <- Diagnostics_cfg$new(outcome = c("MSE", "RROC"), params = list(num_bins = 20))
+c3$qoi$diag$params
+c3 <- add_known_propensity_score(c3, "ps")
+c3$qoi$diag$params
+```
+
+对倾向得分是常数的随机试验来说，清掉 `AUC` 是合理的（AUC 恒为 0.5）；
+但**顺序敏感**这件事没写在文档里，而 `params` 被清掉纯属附带损伤——
+`num_bins` 是 RROC 唯一的调节入口（见[第 7 页](07-diagnostics-plots.qmd#sec-rroc)）。
+:::
+
+## 登记调节变量 {#sec-moderator}
+
+```r
+add_moderator(hte_cfg, model_type, ..., .model_arguments = NULL)
+```
+
+| 参数 | 取值 | 说明 |
+|---|---|---|
+| `model_type` | `"Stratified"` / `"KernelSmooth"` | 大小写不敏感（源码里 `tolower()`），其它值报 `` Unknown `model_type`. `` |
+| `...` | **不加引号**的变量名 | 可一次写多个，共用同一个 `model_type` |
+| `.model_arguments` | 命名 list | 传给 `KernelSmooth_cfg$new()`；对 `Stratified` **无效** |
+
+```{r}
+#| label: moderator
+cfg <- basic_config() %>%
+  add_moderator("Stratified", x2, x3) %>%
+  add_moderator("KernelSmooth", x1, x4, .model_arguments = list(neval = 25, eval_min_quantile = 0.1))
+
+names(cfg$qoi$mcate$cfgs)
+vapply(cfg$qoi$mcate$cfgs, \(z) z$model_class, character(1))
+cfg$qoi$mcate$cfgs$x1$neval
+cfg$qoi$mcate$cfgs$x1$eval_min_quantile
+```
+
+```{r}
+#| label: moderator-errors
+#| error: true
+basic_config() %>% add_moderator("rpart", x2)
+```
+
+::: {.callout-warning}
+## 登记与调用必须一一对应，否则报一个看不懂的错
+
+`estimate_QoI(data, ...)` 里出现的每个变量，都要在 `add_moderator()`
+里登记过。少登记一个，`calculate_mcate_quantities()` 取到 `NULL` 配置，
+`predictor_factory()` 抛 `Unknown model class.`——这句话完全没提到是哪个变量。
+
+```{r}
+#| label: moderator-unregistered
+#| error: true
+#| message: false
+#| code-fold: true
+#| code-summary: "完整复现（含数据与流水线）"
+set.seed(20260920)
+n <- 400
+sim <- tibble(uid = seq_len(n), x1 = rnorm(n),
+              x2 = factor(sample(c("a", "b"), n, replace = TRUE))) %>%
+  mutate(ps = 0.5, a = rbinom(n, 1, ps),
+         y = x1 + a * (0.5 + x1) + rnorm(n, sd = 0.5))
+
+cfg <- basic_config() %>%
+  add_known_propensity_score("ps") %>%
+  add_moderator("Stratified", x2) %>%      # 只登记了 x2
+  remove_vimp()
+
+prepped <- sim %>% attach_config(cfg) %>% make_splits(uid, .num_splits = 4) %>%
+  produce_plugin_estimates(y, a, x1, x2) %>% construct_pseudo_outcomes(y, a)
+
+estimate_QoI(prepped, x1, x2)              # 却要了 x1
+```
+
+反过来，**不传任何变量**是合法的：这时包会打印
+`No moderators specified, so pulling list from definitions in QoI.`
+并使用 `add_moderator()` 登记过的全部变量。
+这是比逐个手写更安全的调用方式：
+
+```{r}
+#| label: moderator-empty
+#| message: false
+# 用 withCallingHandlers 把包发出的提示接下来（否则会混进进度条）
+msgs <- character()
+res <- withCallingHandlers(
+  estimate_QoI(prepped),
+  message = function(m) { msgs <<- c(msgs, conditionMessage(m)); invokeRestart("muffleMessage") }
+)
+grep("moderators", msgs, value = TRUE)
+count(res, estimand)
+```
+:::
+
+::: {.callout-note}
+## `.model_arguments` 对 `Stratified` 是静默忽略
+
+源码里离散分支写死 `Stratified_cfg$new(covariate = mod_name)`，
+根本不看 `.model_arguments`。传了也不报错：
+
+```{r}
+#| label: moderator-stratified-args
+ss <- basic_config() %>% add_moderator("Stratified", x2, .model_arguments = list(neval = 25))
+ss$qoi$mcate$cfgs$x2
+```
+
+帮助页写的是"see `Stratified_cfg` and `KernelSmooth_cfg` for more details"，
+容易读成两边都支持。实际上 `Stratified_cfg$new()` 只有 `covariate` 一个参数，
+本来也没有可配的东西。
+:::
+
+## 变量重要性开关 {#sec-vimp}
+
+```r
+add_vimp(hte_cfg, sample_splitting = TRUE, linear_only = FALSE)
+remove_vimp(hte_cfg)
+```
+
+::: {.callout-important}
+## `linear_only` 从未被传下去
+
+```{r}
+#| label: vimp-linear
+tidyhte::add_vimp
+
+cfg <- basic_config() %>% add_vimp(linear_only = TRUE)
+cfg$qoi$vimp$linear      # 期望 TRUE，实际 FALSE
+```
+
+函数体只写了 `VIMP_cfg$new(sample_splitting = sample_splitting)`。
+`linear_only = TRUE` 被收下、然后丢掉，`$linear` 仍是 `FALSE`。
+要真正启用线性 VIMP，只能绕过配方 API 直接赋值：
+
+```{r}
+#| label: vimp-linear-workaround
+cfg <- basic_config()
+cfg$qoi$vimp <- VIMP_cfg$new(sample_splitting = FALSE, linear_only = TRUE)
+cfg$qoi$vimp$linear
+```
+
+两条路算的**不是同一个量**：非参数 VIMP 是 $R^2$ 的下降幅度（无量纲、截断在 0），
+线性 VIMP 是平方残差均值的下降（带结局量纲）。
+数量级对照见[第 6 页](06-estimate-qoi.qmd#sec-vimp)。
+:::
+
+`sample_splitting = TRUE`（默认）会把折再对半分成两组，
+一组拟合全模型、一组拟合缩减模型，这样对**零重要性**的变量也能给出有效推断，
+代价是标准误大得多。`FALSE` 时推断只对真正非零的变量有效。
+
+`remove_vimp()` 把 `$qoi$vimp` 设为 `NULL`，同时也就**取消了折数必须为偶数的约束**
+（见[第 4 页](04-splits.qmd#sec-numsplits)）。
+
+## 三个诊断开关
+
+```r
+add_propensity_diagnostic(hte_cfg, diag)
+add_outcome_diagnostic(hte_cfg, diag)
+add_effect_diagnostic(hte_cfg, diag)
+```
+
+`diag` 可以是字符向量，一次加多个。合法取值：
+倾向模型 `"AUC"`、`"MSE"`、`"SL_risk"`、`"SL_coefs"`；
+结局与效应面把 `"AUC"` 换成 `"RROC"`。
+三者都调用 `Diagnostics_cfg$add()`，它会**统一转小写并去重**：
+
+```{r}
+#| label: diag-add
+c1 <- basic_config()
+c1$qoi$diag$ps                     # 默认（大写）
+c1 <- add_propensity_diagnostic(c1, "AUC")
+c1$qoi$diag$ps                     # 追加一次之后，整列变小写
+```
+
+下游 `estimate_diagnostic()` 用 `tolower()` 比较，所以大小写不影响结果，
+只是打印出来不一致。诊断的具体含义、输出结构和作图见
+[第 7 页](07-diagnostics-plots.qmd)。
+
+## 12 个配方函数速查
+
+| 函数 | 签名 | 返回 | 关键实测 |
+|---|---|---|---|
+| `basic_config()` | — | `HTE_cfg` | 三处模型都只有 `SL.glm`；默认开 VIMP、无 MCATE |
+| `add_propensity_score_model()` | `(cfg, model_name, ...)` | 同一引用 | 不能改 `family`，恒为高斯 |
+| `add_known_propensity_score()` | `(cfg, covariate_name)` | 同一引用 | 清空 `diag$ps` 与 `diag$params` |
+| `add_outcome_model()` | `(cfg, model_name, ...)` | 同一引用 | 超参数取笛卡尔积 |
+| `add_effect_model()` | `(cfg, model_name, ...)` | 同一引用 | 仅 VIMP / PCATE / predictions 用 |
+| `add_propensity_diagnostic()` | `(cfg, diag)` | 同一引用 | 转小写去重 |
+| `add_outcome_diagnostic()` | `(cfg, diag)` | 同一引用 | 同上 |
+| `add_effect_diagnostic()` | `(cfg, diag)` | 同一引用 | 默认流程下不会被计算 |
+| `add_moderator()` | `(cfg, model_type, ..., .model_arguments)` | 同一引用 | `Stratified` 忽略 `.model_arguments` |
+| `add_vimp()` | `(cfg, sample_splitting, linear_only)` | 同一引用 | `linear_only` 无效 |
+| `remove_vimp()` | `(cfg)` | 同一引用 | 同时解除偶数折约束 |
+| `attach_config()` | `(data, .HTE_cfg)` | 数据框 | 挂的是**引用**，不是副本 |
+
+## 本页涉及的帮助主题
+
+`basic_config`、`add_propensity_score_model`、`add_known_propensity_score`、
+`add_outcome_model`、`add_effect_model`、`add_propensity_diagnostic`、
+`add_outcome_diagnostic`、`add_effect_diagnostic`、`add_moderator`、
+`add_vimp`、`remove_vimp`、`attach_config`。

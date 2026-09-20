@@ -1,0 +1,286 @@
+---
+title: "5. 冗余函数与伪结局"
+subtitle: "tidyhte 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(tidyhte)
+library(dplyr)
+```
+
+```{r}
+#| label: sim
+#| include: false
+set.seed(20260920)
+n <- 800
+sim <- tibble(
+  uid = seq_len(n),
+  x1  = rnorm(n),
+  x2  = factor(sample(c("a", "b", "c"), n, replace = TRUE)),
+  x3  = runif(n, -2, 2),
+  x4  = rnorm(n)
+) %>% mutate(
+  ps  = plogis(0.6 * x1 - 0.5 * (x2 == "c") + 0.3 * x3),
+  a   = rbinom(n, 1, ps),
+  tau = 0.5 + 0.8 * x1 + 0.6 * (x2 == "c"),
+  y   = 1 + x1 + 0.5 * x3 + tau * a + rnorm(n, sd = 0.5),
+  w   = 0.2 + rexp(n, 1)
+)
+cfg <- basic_config() %>%
+  add_known_propensity_score("ps") %>%
+  add_outcome_model("SL.glm.interaction") %>%
+  add_moderator("Stratified", x2) %>%
+  add_moderator("KernelSmooth", x1) %>%
+  remove_vimp()
+```
+
+第二、三步把三个冗余函数估出来，再压成一列伪结局。
+这两步决定了后面所有估计的偏倚和方差，
+也是整条流水线里唯一会真正花时间的地方。
+
+## `produce_plugin_estimates()`
+
+```r
+produce_plugin_estimates(data, outcome, treatment, ..., .weights = NULL)
+```
+
+| 参数 | 说明 |
+|---|---|
+| `outcome` | 不加引号的结局列名 |
+| `treatment` | 不加引号的治疗列名，**必须是 0/1** |
+| `...` | 不加引号的协变量名，**三个模型共用同一组** |
+| `.weights` | 不加引号的权重列名；`NULL` 时建一列全 1 的 `.weights` |
+
+新增 `.pi_hat`、`.mu0_hat`、`.mu1_hat` 三列，以及 `SL_coefs`、`weights` 两个 attribute。
+重复调用是安全的——函数开头会先把同名的旧列剔除再 join。
+
+```{r}
+#| label: run
+#| message: false
+prepped <- sim %>% attach_config(cfg) %>% make_splits(uid, .num_splits = 4) %>%
+  produce_plugin_estimates(y, a, x1, x2, x3, x4)
+prepped %>% select(uid, a, y, .split_id, .weights, .pi_hat, .mu0_hat, .mu1_hat) %>% head(4)
+```
+
+### 交叉拟合循环 {#sec-fit}
+
+主循环对每个折 $k$ 做同一件事：在**其余折**上拟合，在**第 $k$ 折**上预测。
+
+```text
+for split_id in 1..K:
+    folds   <- split_data(ok_data, split_id)      # train = 其余折, holdout = 本折
+    a_model <- fit_plugin_A(folds$train, ...)     # 1 个模型：pi
+    y_model <- fit_plugin_Y(folds$train, ...)     # 2 个模型：mu1, mu0
+    记录 SuperLearner 的 coef / cvRisk 到 SL_coefs
+    在 folds$holdout 上预测，写回 pi_hat / mu1_hat / mu0_hat 的对应位置
+```
+
+三个 `fit_*` 函数是薄适配层，都归结到 `fit_plugin()`
+（构造 `Model_data` → `predictor_factory()` → `$fit()`）：
+
+| 函数 | 返回 | 做法 |
+|---|---|---|
+| `fit_plugin_A()` | `list(pi = )` | 用治疗当标签拟合一个模型 |
+| `fit_plugin_Y()` | `list(mu1 = , mu0 = )` | **T-learner**：按 `a == 1` / `a == 0` 把训练集切两半，各拟合一个 |
+| `fit_effect()` | `list(fx = )` | 用伪结局当标签（只在 PCATE / predictions 路径用） |
+
+```{r}
+#| label: fit-plugin-y
+tidyhte:::fit_plugin_Y
+```
+
+T-learner 这个细节有两个直接后果：
+
+1. 每个结局模型只用到**一个臂**的数据，样本量约为 $n \cdot (K-1)/K \cdot P(A=a)$。
+   本例 $n = 800$、$K = 4$、处理比例 `r round(mean(sim$a), 2)`，
+   处理臂模型的训练样本只有 `r round(800 * 0.75 * mean(sim$a))` 行左右。
+2. **治疗变量必须编码成 0/1**。不是 0/1 时 `dplyr::filter(a == 1)`
+   会得到空数据框，报错却发生在 SuperLearner 内部。
+
+```{r}
+#| label: treatment-coding
+#| error: true
+#| message: false
+sim %>% attach_config(cfg) %>% make_splits(uid, .num_splits = 4) %>%
+  mutate(a2 = a * 2) %>%                                  # 0/2 编码
+  produce_plugin_estimates(y, a2, x1, x2, x3, x4)
+```
+
+```{r}
+#| label: treatment-factor
+#| error: true
+#| message: false
+sim %>% attach_config(cfg) %>% make_splits(uid, .num_splits = 4) %>%
+  mutate(a_f = factor(ifelse(a == 1, "trt", "ctl"))) %>%  # 因子编码
+  produce_plugin_estimates(y, a_f, x1, x2, x3, x4)
+```
+
+::: {.callout-note}
+## 三个模型共用同一组协变量
+
+`...` 里的协变量同时喂给倾向模型和两个结局模型，没有分开指定的入口。
+想让倾向模型用一组变量、结局模型用另一组，只能跑两次流水线
+再手工拼 `.pi_hat` / `.mu*_hat` 列。
+:::
+
+### 已知倾向得分时的特殊分支 {#sec-known-path}
+
+`Known_cfg` 下，`.pi_hat` 直接取那一列。为了让 `Model_data`
+能在留出折里取到它，源码临时把该列加进协变量、预测完再还原：
+
+```r
+if (.HTE_cfg$treatment$model_class == "known") {
+    cov  <- rlang::sym(.HTE_cfg$treatment$covariate_name)
+    dots <- c(dots, cov)
+}
+pred_data <- Model_data$new(folds$holdout, NULL, !!!dots)
+pi_hat[folds$in_holdout] <- a_model$pi$predict(pred_data)$estimate
+if (.HTE_cfg$treatment$model_class == "known") {   # 还原，免得污染结局模型
+    dots <- rlang::enexprs(...)
+    pred_data <- Model_data$new(folds$holdout, NULL, !!!dots)
+}
+```
+
+结果是：倾向得分列**不会**被当成结局模型的协变量，
+`SL_coefs` 里也不会有 `pi` 这一项，
+因此 `"SL_risk"` / `"SL_coefs"` 两个倾向诊断在这种配置下无从计算
+（`add_known_propensity_score()` 干脆把它们一起删了，
+见[第 2 页](02-recipe-api.qmd#sec-known)）。
+
+### 权重 {#sec-weights}
+
+`.weights` 一路传到三个地方：SuperLearner 的 `obsWeights`、
+`calculate_ate()` 的加权均值、以及各诊断的加权统计量。
+给了非常数权重，ATE 会多出一行 `PATE`：
+
+```{r}
+#| label: weights
+#| message: false
+cfg_w <- basic_config() %>% add_known_propensity_score("ps") %>%
+  add_outcome_model("SL.glm.interaction") %>%
+  add_moderator("Stratified", x2) %>% remove_vimp()      # 注意：没有连续调节变量
+weighted <- sim %>% attach_config(cfg_w) %>% make_splits(uid, .num_splits = 4) %>%
+  produce_plugin_estimates(y, a, x1, x2, x3, x4, .weights = w) %>%
+  construct_pseudo_outcomes(y, a)
+estimate_QoI(weighted, x2) %>% filter(grepl("ATE", estimand))
+```
+
+真值：SATE `r round(mean(sim$tau), 3)`，加权 PATE `r round(weighted.mean(sim$tau, sim$w), 3)`。
+
+::: {.callout-important}
+## 权重和连续调节变量不能同时用
+
+`KernelSmoothPredictor$fit()` 第一句就是
+`if (any(data$weights != 1)) stop("nprobust does not support the use of weights.")`。
+于是只要有任何一个 `KernelSmooth` 调节变量，`.weights` 就会让
+`estimate_QoI()` 在算 MCATE 时直接报错：
+
+```{r}
+#| label: weights-kernel
+#| error: true
+#| message: false
+cfg_wk <- basic_config() %>% add_known_propensity_score("ps") %>%
+  add_outcome_model("SL.glm.interaction") %>%
+  add_moderator("KernelSmooth", x1) %>% remove_vimp()     # 连续调节变量
+sim %>% attach_config(cfg_wk) %>% make_splits(uid, .num_splits = 4) %>%
+  produce_plugin_estimates(y, a, x1, x2, x3, x4, .weights = w) %>%
+  construct_pseudo_outcomes(y, a) %>%
+  estimate_QoI(x1)
+```
+
+报错发生在**流水线最后一步**，前面的冗余函数已经白算了一遍。
+调查权重 + 连续调节变量的组合时，要么把连续变量离散化后走
+`Stratified`，要么放弃权重。
+:::
+
+### 缺失数据 {#sec-missing}
+
+`produce_plugin_estimates()` 调用 `listwise_deletion()`，
+对**结局、治疗和全部协变量**做成列删除，并打印删了多少：
+
+```{r}
+#| label: missing
+#| message: false
+sim_na <- sim; sim_na$x3[1:60] <- NA
+msgs <- character()
+pna <- withCallingHandlers(
+  sim_na %>% attach_config(cfg) %>% make_splits(uid, .num_splits = 4) %>%
+    produce_plugin_estimates(y, a, x1, x2, x3, x4),
+  message = function(m) { msgs <<- c(msgs, conditionMessage(m)); invokeRestart("muffleMessage") }
+)
+grep("Dropped", msgs, value = TRUE)
+c(总行数 = nrow(pna), pi_hat缺失 = sum(is.na(pna$.pi_hat)))
+```
+
+被删的行**留在返回的数据框里**，只是三个 `_hat` 列为 `NA`；
+`estimate_QoI()` 会再做一次同样的删除。
+包的文档明说"更高级的插补方法尚不支持"。
+
+## `construct_pseudo_outcomes()` {#sec-pseudo}
+
+```r
+construct_pseudo_outcomes(data, outcome, treatment, type = "dr")
+```
+
+三种 `type` 对应三个一行的函数：
+
+| `type` | 公式 | 性质 |
+|---|---|---|
+| `"dr"`（默认） | $\dfrac{A - \hat\pi}{\hat\pi(1-\hat\pi)}(Y - \hat\mu_A) + \hat\mu_1 - \hat\mu_0$ | 双稳健，Kennedy (2023) 的 DR-learner |
+| `"ipw"` | $\dfrac{A - \hat\pi}{\hat\pi(1-\hat\pi)}\,Y$ | 只依赖倾向模型；方差最大 |
+| `"plugin"` | $\hat\mu_1 - \hat\mu_0$ | 纯 T-learner 差值；方差最小、偏倚最大 |
+
+```{r}
+#| label: pseudo-src
+tidyhte:::dr_pseudo_outcome
+tidyhte:::ipw_pseudo_outcome
+tidyhte:::plugin_pseudo_outcome
+```
+
+同一份冗余估计，三种伪结局的差别：
+
+```{r}
+#| label: pseudo-compare
+bind_rows(lapply(c("dr", "ipw", "plugin"), function(ty) {
+  z <- construct_pseudo_outcomes(prepped, y, a, type = ty)$.pseudo_outcome
+  tibble(type = ty, 均值 = mean(z), 标准差 = sd(z), 最小 = min(z), 最大 = max(z))
+})) %>% mutate(across(where(is.numeric), \(v) round(v, 3)))
+```
+
+真 SATE 是 `r round(mean(sim$tau), 3)`。本例倾向得分用的是真值，
+所以三者都无偏；但**标准差差了一个量级**，`ipw` 那一列的样本均值
+因此偏出去约 1.6 个标准误（$4.54/\sqrt{800} \approx 0.16$），
+取值范围也一路拉到 $-36$。`plugin` 方差最小，代价是把两个结局模型的偏倚
+原样带进结果、完全不受倾向得分保护。默认的 `dr` 是二者的折中，
+也是三者中唯一具备双稳健性质的。
+
+```{r}
+#| label: pseudo-bad-type
+#| error: true
+construct_pseudo_outcomes(prepped, y, a, type = "aipw")
+```
+
+::: {.callout-note}
+## 它不检查 `outcome` / `treatment` 是否和上一步一致
+
+`construct_pseudo_outcomes()` 会把传进来的两个名字写进
+`treatment` / `outcome` 两个 attribute，后面的 ATE、诊断全按这两个 attribute 找列。
+但它**不核对**这两列是不是 `produce_plugin_estimates()` 用过的那两列。
+传错了不会报错，只会算出一组无意义的数。
+:::
+
+伪结局这一列的含义值得强调：它**不是**任何单位的个体治疗效应估计，
+单看某一行的值（上表里 `dr` 的取值从 −4.4 到 8.1，倾向得分一旦失准
+还会大得多）没有任何意义；
+它的用途是**条件期望等于 $\tau(x)$**，因此任何对它取平均、做回归、
+算变量重要性的操作，都等价于对真实的 $\tau(x)$ 做同样的事。
+
+## 本页涉及的帮助主题
+
+`produce_plugin_estimates`、`construct_pseudo_outcomes`、`fit_plugin`、
+`fit_plugin_A`、`fit_plugin_Y`、`fit_effect`、`listwise_deletion`、
+`check_nuisance_models`、`check_weights`。

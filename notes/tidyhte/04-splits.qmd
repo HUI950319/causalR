@@ -1,0 +1,321 @@
+---
+title: "4. make_splits() 与三个数据对象"
+subtitle: "tidyhte 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(tidyhte)
+library(dplyr)
+```
+
+```{r}
+#| label: sim
+#| include: false
+set.seed(20260920)
+n <- 800
+sim <- tibble(
+  uid = seq_len(n),
+  x1  = rnorm(n),
+  x2  = factor(sample(c("a", "b", "c"), n, replace = TRUE)),
+  x3  = runif(n, -2, 2),
+  x4  = rnorm(n)
+) %>% mutate(
+  ps  = plogis(0.6 * x1 - 0.5 * (x2 == "c") + 0.3 * x3),
+  a   = rbinom(n, 1, ps),
+  tau = 0.5 + 0.8 * x1 + 0.6 * (x2 == "c"),
+  y   = 1 + x1 + 0.5 * x3 + tau * a + rnorm(n, sd = 0.5),
+  w   = 0.2 + rexp(n, 1)
+)
+```
+
+交叉拟合的折是整条流水线的地基：它同时决定了**聚类稳健标准误的聚类单位**、
+**SuperLearner 内层交叉验证的折数**，以及 **VIMP 能不能算**。
+这一步做错，后面所有数字都跟着错，而且多数情况下不会报错。
+
+## `make_splits()`
+
+```r
+make_splits(data, identifier, ..., .num_splits)
+```
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| `data` | 数据框 | 通常已经 `attach_config()` 过（不是必须，但见下面的偶数折规则） |
+| `identifier` | **不加引号**的列名 | 单位或**聚类**的标识符；同一标识符的所有行进同一折 |
+| `...` | 不加引号的列名 | 分层用的协变量；需要 `quickblock` |
+| `.num_splits` | 整数 | 折数；要算 VIMP 时必须是偶数（会自动向上取偶） |
+
+返回原数据框，加一列 `.split_id`，加两个 attribute（`num_splits`、`identifier`）。
+
+```{r}
+#| label: basic
+cfg <- basic_config() %>% add_known_propensity_score("ps") %>%
+  add_moderator("Stratified", x2) %>% remove_vimp()
+s <- sim %>% attach_config(cfg) %>% make_splits(uid, .num_splits = 4)
+table(s$.split_id)
+c(num_splits = attr(s, "num_splits"), identifier = attr(s, "identifier"))
+```
+
+### 折数不能小于 3 {#sec-numsplits}
+
+SuperLearner 的**内层**交叉验证并不是独立设定的，
+而是直接拿训练集里**剩下的外层折**当内层折用：
+
+```{r}
+#| label: cv-control
+tidyhte::Model_data$public_methods$SL_cv_control
+```
+
+于是内层折数恒等于 `.num_splits - 1`：
+
+```{r}
+#| label: cv-control-table
+vapply(c(2, 3, 4, 6), function(k) {
+  dd   <- make_splits(sim, uid, .num_splits = k)
+  fold <- tidyhte:::split_data(dd, 1)
+  Model_data$new(fold$train, y, x1, x2)$SL_cv_control()$V
+}, numeric(1)) |> setNames(paste0(".num_splits = ", c(2, 3, 4, 6)))
+```
+
+`.num_splits = 2` 时内层 $V = 1$：**唯一那一折全部是验证集，训练集为空**，
+每个学习器都在 0 行数据上拟合失败，SuperLearner 把它们全部剔除后报错：
+
+```{r}
+#| label: two-splits
+#| error: true
+#| message: false
+cfg2 <- basic_config() %>% add_known_propensity_score("ps") %>%
+  add_moderator("Stratified", x2) %>% remove_vimp()
+sim %>% attach_config(cfg2) %>% make_splits(uid, .num_splits = 2) %>%
+  produce_plugin_estimates(y, a, x1, x2, x3, x4)
+```
+
+::: {.callout-important}
+## `All algorithms dropped from library` 的三种成因
+
+这句报错来自 SuperLearner，本身不指向病因。实测下来在 `tidyhte` 里有三种来源：
+
+1. **折数为 2**（上面这种），训练集为空；
+2. **稀有因子水平**：某折的训练集里缺了某个水平，
+   `predict.lm` 抛 `factor x has new levels`，
+   如果库里**只有**一个学习器就会被全部剔除。多放几个
+   （`SL.glmnet` 等基于 `model.matrix` 的）可以让这类错误退化成打印一行、继续跑；
+3. **协变量常数或共线**到 `glm.fit` 不收敛。
+
+三者的共同表现是先在 stderr 上打印一串 `Error in algorithm SL.xxx`
+的警告，然后才抛这句。**看到它先回头数折数和每折的稀有水平频数。**
+:::
+
+### 要算 VIMP 时折数被强制取偶
+
+```{r}
+#| label: even-splits
+#| message: false
+cfg_v <- basic_config() %>% add_moderator("Stratified", x2) %>%
+  add_moderator("KernelSmooth", x1) %>% add_vimp(sample_splitting = FALSE)
+
+msgs <- character()
+sv <- withCallingHandlers(
+  sim %>% attach_config(cfg_v) %>% make_splits(uid, .num_splits = 3),
+  message = function(m) { msgs <<- c(msgs, conditionMessage(m)); invokeRestart("muffleMessage") }
+)
+grep("num_splits", msgs, value = TRUE)
+attr(sv, "num_splits")    # 要的是 3，拿到的是 4
+```
+
+注意这条规则**依赖 `attach_config()` 已经调用过**——`make_splits()`
+先检查数据框上有没有 `HTE_cfg`，没有就当作不需要 VIMP。
+先 `make_splits()` 再 `attach_config()` 的写法能跑，
+但奇数折会一路带到 `estimate_QoI()` 才炸：
+
+```{r}
+#| label: vimp-odd
+#| error: true
+#| message: false
+d_odd <- sim %>% make_splits(uid, .num_splits = 3) %>% attach_config(cfg_v) %>%
+  produce_plugin_estimates(y, a, x1, x2, x3, x4) %>% construct_pseudo_outcomes(y, a)
+estimate_QoI(d_odd, x2)
+```
+
+### 聚类：同一标识符进同一折 {#sec-cluster}
+
+标识符**允许重复**，重复就意味着聚类。`make_splits()` 先按标识符
+`tally()` 再分配折，所以一个聚类的所有行必然落在同一折；
+下游 `Model_data$cluster` 用同一列做聚类稳健标准误。
+
+```{r}
+#| label: cluster
+set.seed(1)
+clustered <- tibble(vid = rep(1:150, each = 4), x1 = rnorm(600))
+cs <- make_splits(clustered, vid, .num_splits = 4)
+# 每个 vid 只出现在一个折里
+all(tapply(cs$.split_id, cs$vid, \(z) length(unique(z))) == 1)
+table(cs$.split_id)
+```
+
+这是把聚类设计告诉 `tidyhte` 的**唯一**入口：
+`calculate_ate()`、`estimate_diagnostic("MSE")`、
+线性 VIMP 都调用 `clustered_se_of_mean(..., data[[id_col]])`，
+聚类层次完全由这一列决定。
+
+### 分层：`quickblock` 区组 {#sec-strata}
+
+`...` 里给协变量就会启用 Higgins, Sävje & Sekhon (2016) 的贪婪阈值区组：
+先把单位聚成大小至少为 `.num_splits` 的区组（欧氏距离），
+再在每个区组内把折号随机置换一遍。效果是各折的协变量分布更接近：
+
+```{r}
+#| label: strata
+set.seed(2)
+plain <- make_splits(sim, uid, .num_splits = 4)
+block <- make_splits(sim, uid, x1, x3, x2, .num_splits = 4)
+rbind(
+  纯随机 = round(tapply(sim$x1, plain$.split_id, mean), 3),
+  分层   = round(tapply(sim$x1, block$.split_id, mean), 3)
+)
+```
+
+::: {.callout-note}
+## 没装 `quickblock` 会静默降级
+
+源码里先 `package_present("quickblock")`，缺了就打印
+`` `quickblock` is not installed, so falling back to un-stratified CV. ``
+然后按纯随机划分继续。这是 message 而不是 warning，
+在 `message = FALSE` 的 Rmd / Quarto 代码块里**完全看不到**——
+分层折悄悄变成了随机折。要确认分层真的生效，
+最稳的办法是像上面那样比一下各折的协变量均值。
+:::
+
+::: {.callout-warning}
+## 分层变量有缺失 → `.split_id` 变成 `NA`，后果取决于它是不是协变量
+
+`make_splits()` 对 `...` 里的变量做 listwise 删除，
+被删掉的行**仍留在返回的数据框里**，只是 `.split_id` 为 `NA`。
+它只打印一句 `Dropped 40 of 800 rows (5%) through listwise deletion.`，
+而这是 message，在 `message = FALSE` 的代码块里看不见。
+
+```{r}
+#| label: strata-na
+#| message: false
+sim_na <- sim; sim_na$x1[1:40] <- NA
+sna <- make_splits(sim_na, uid, x1, x2, .num_splits = 4)
+attr(sna, "HTE_cfg") <- cfg
+table(sna$.split_id, useNA = "ifany")
+```
+
+接下来分两种情况，**都不好**：
+
+**① 那个变量也在模型协变量里**——`produce_plugin_estimates()`
+自己再做一次 listwise 删除，这些行被排除在估计之外，
+返回的数据框里它们的预测是 `NA`（静默）：
+
+```{r}
+#| label: strata-na-covariate
+#| message: false
+z <- produce_plugin_estimates(sna, y, a, x1, x2, x3)
+c(pi_hat缺失 = sum(is.na(z$.pi_hat)), mu1缺失 = sum(is.na(z$.mu1_hat)))
+```
+
+**② 那个变量不在模型协变量里**（"只用来分层"是很自然的做法）——
+这些行通过了 listwise 删除，却带着 `NA` 的折号进入主循环，
+在把预测写回原位置时报一个与病因无关的错：
+
+```{r}
+#| label: strata-na-error
+#| error: true
+#| message: false
+produce_plugin_estimates(sna, y, a, x2, x3)
+```
+
+所以**分层变量的缺失必须在 `make_splits()` 之前自己处理掉**。
+:::
+
+::: {.callout-warning}
+## 缺失把一整折抽空时，VIMP 报 `Number of splits is inconsistent.`
+
+`calculate_vimp()` 会核对"数据里实际出现的折数"与 `num_splits` attribute
+是否一致。如果某一折的单位恰好都因缺失被删掉（分层抽样、按时间段收集的
+数据里并不罕见），两者就对不上：
+
+```{r}
+#| label: split-inconsistent
+#| error: true
+#| message: false
+d3 <- sim %>% attach_config(cfg_v) %>% make_splits(uid, .num_splits = 4)
+d3$x1[d3$.split_id == 3] <- NA          # 第 3 折整折缺失
+d3 <- d3 %>% produce_plugin_estimates(y, a, x1, x2, x3, x4) %>%
+  construct_pseudo_outcomes(y, a)
+estimate_QoI(d3, x1, x2)
+```
+:::
+
+## `split_data()` 与 `HTEFold` {#sec-split-data}
+
+```r
+tidyhte:::split_data(data, split_id)
+```
+
+把数据切成训练 / 留出两半，返回一个 `HTEFold` R6 对象。
+`produce_plugin_estimates()` 的主循环就是在它上面跑的。
+
+```{r}
+#| label: split-data
+fold <- tidyhte:::split_data(s, 2)
+class(fold)
+c(train = nrow(fold$train), holdout = nrow(fold$holdout), in_holdout = sum(fold$in_holdout))
+```
+
+| 字段 | 内容 |
+|---|---|
+| `train` | `.split_id != split_id` 的那部分，用来**拟合** |
+| `holdout` | `.split_id == split_id` 的那部分，用来**预测** |
+| `in_holdout` | 长度为 $n$ 的逻辑向量，方便把预测值写回原位置 |
+
+也就是**留一折做预测、其余折做训练**（K 折交叉拟合），
+和"训练集小、验证集大"的直觉正好相反——
+这解释了为什么 `.num_splits` 越大，每次拟合用的数据越多。
+
+## `Model_data` {#sec-modeldata}
+
+```r
+Model_data$new(data, label_col, ..., .weight_col = NULL)
+```
+
+所有模型拿到的都是这个对象，它把数据框标准化成
+"标签向量 + 设计矩阵 + 折号 + 聚类 + 权重"：
+
+```{r}
+#| label: model-data
+md <- Model_data$new(s, y, x1, x2, x3)
+c(label = length(md$label), 行 = nrow(md$features), 列 = ncol(md$features))
+colnames(md$features)
+c(num_splits = md$num_splits, 权重前三 = head(md$weights, 3), 聚类前三 = head(md$cluster, 3))
+```
+
+| 字段 | 构造方式 | 注意 |
+|---|---|---|
+| `label` | `label_col` 那一列 | 传 `NULL` 表示"只要特征"（预测时用） |
+| `features` | `stats::model.matrix()` | **因子会被拆成哑变量**，列名形如 `x2b`、`x2c` |
+| `model_frame` | `stats::model.frame()` | 保留原始列，VIMP 按**原始列**逐个剔除 |
+| `split_id` | `.split_id` | |
+| `cluster` | 标识符列 | 聚类稳健标准误用 |
+| `weights` | `.weight_col`，缺省全 1 | |
+
+`features` 和 `model_frame` 的区别很重要：
+MCATE / 效应面模型用的是 `features`（哑变量），
+而 **VIMP 用的是 `model_frame`**，所以一个 $k$ 水平的因子在 VIMP 里
+算作**一个**变量整体剔除，而不是 $k-1$ 个哑变量各剔各的。
+
+```{r}
+#| label: model-frame
+names(md$model_frame)
+```
+
+## 本页涉及的帮助主题
+
+`make_splits`、`split_data`、`HTEFold`、`Model_data`、`listwise_deletion`、
+`check_splits`、`check_identifier`。

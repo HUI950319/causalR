@@ -1,0 +1,2568 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hans" xml:lang="zh-Hans"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>7. 诊断与可视化 – 因果推断读书笔记</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../notes/tidyhte/08-pitfalls.html" rel="next">
+<link href="../../notes/tidyhte/06-estimate-qoi.html" rel="prev">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-4571e413af9019dfdcc70175faf53a1f.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-f4ac1763815fd7e6e4ac068bcc624570.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../../site_libs/bootstrap/bootstrap-dark-20ce10291bf0c12c4093354e53c28dd5.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-f4ac1763815fd7e6e4ac068bcc624570.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "没有结果",
+    "search-matching-documents-text": "匹配的文档",
+    "search-copy-link-title": "复制搜索链接",
+    "search-hide-matches-text": "隐藏其它匹配结果",
+    "search-more-match-text": "更多匹配结果",
+    "search-more-matches-text": "更多匹配结果",
+    "search-clear-button-title": "清除",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "取消",
+    "search-submit-button-title": "提交",
+    "search-label": "搜索"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar docked quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../notes/tidyhte.html">tidyhte 包函数手册</a></li><li class="breadcrumb-item"><a href="../../notes/tidyhte/07-diagnostics-plots.html"><span class="chapter-title">7. 诊断与可视化</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="搜索" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header sidebar-header-stacked">
+      <a href="../../index.html" class="sidebar-logo-link">
+      </a>
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../../">因果推断读书笔记</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/HUI950319/causalR" title="源代码" class="quarto-navigation-tool px-1" aria-label="源代码"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="切换深色模式"><i class="bi"></i></a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="搜索"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">关于这份笔记</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">Causal Inference: What If · 原书笔记</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-logic-chain.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">前三章逻辑链</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/notation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">记号与约定</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/identifiability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">三条识别条件</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/formulas.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">公式卡</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-potential-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 1 章 · Zeus 的心脏移植</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-randomized-experiments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 2 章 · 一枚硬币，还是两枚</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-observational-studies.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 3 章 · 一枚硬币也没抛</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-effect-modification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 4 章 · 没有「治疗的因果效应」这种东西</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 5 章 · 两个处理，一起动手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-causal-diagrams.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 6 章 · 先画假设，再下结论</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-confounding.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 7 章 · 后门关上，可交换性才回来</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-selection-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 8 章 · 进了分析的人，未必还能互换</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-measurement-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 9 章 · 带星号的变量，与担不起因果的箭头</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-random-variability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 10 章 · 该不该撤稿</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w03-why-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 11 章 · 数据不会自己说话</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w03-ip-weighting-msm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w04-standardization-gformula.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 13 章 · 把模型挪到结局那一侧</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w04-g-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 14 章 · 猜一个数，直到它与处理无关</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w05-outcome-regression-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 15 章 · 最常用的方法，为什么排在最后</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w05-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 16 章 · 不要求可交换性的那条路</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w06-causal-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 17 章 · 风险比里藏着一个碰撞变量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w06-variable-selection.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 18 章 · 调整得越多，不等于偏倚越小</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w07-time-varying-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 19 章 · 先说清策略，才有效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w07-treatment-confounder-feedback.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 20 章 · 调了混杂，反而更错</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w08-g-methods-time-varying.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 21 章 · 三条路线，同一个 0</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w11-target-trial-emulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 22 章 · 先写协议，再看数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w11-causal-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 23 章 · 把中介问题改写成能做的试验</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">郑老师因果推理课程讲义</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-overview.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">课程讲义总览</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w01.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W01 · 因果推断理论与方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w02.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W02 · DAG 与回归、反事实与 G 计算</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w03.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W03 · 倾向得分方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w04.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W04 · 机器学习与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w05.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W05 · 双重稳健估计与双重机器学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w06.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W06 · TMLE 及其衍生方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w07.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W07 · 缺失数据与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w08.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W08 · 中介分析与因果中介</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w09.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W09 · 处理效应异质性分析</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">Duke STA 640 · 因果推断课程讲义中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">课程讲义总览（21 份）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/01-chapter-1-background-and-potential-outcome-framework.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 1 · Background and Potential Outcome Framework</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/02-chapter-2-1-randomized-experiments-fisher-s-and-neyman-s-mode-of-inference.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 2.1 · Randomized Experiments: Fisher’s and Neyman’s Mode of Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/03-chapter-2-2-randomized-experiments-covariate-balance-and-adjustment.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 2.2 · Randomized Experiments: Covariate Balance and Adjustment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/04-chapter-3-1-observational-studies-outcome-regression.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.1 · Observational Studies: Outcome Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/05-chapter-3-2-observational-studies-propensity-score.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.2 · Observational Studies: Propensity Score</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/06-chapter-3-3-observational-studies-stratification-and-matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.3 · Observational Studies: Stratification and Matching</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/07-chapter-3-4-propensity-score-weighting.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.4 · Propensity Score Weighting</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/08-chapter-3-5-doubly-robust-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.5 · Doubly Robust Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/09-chapter-3-6-non-binary-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.6 · Non-binary Treatments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/10-chapter-4-1-treatment-effect-heterogeneity-causal-subgroup-analysis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 4.1 · Treatment Effect Heterogeneity: Causal Subgroup Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/11-chapter-4-2-treatment-effect-heterogeneity-machine-learning-approaches.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 4.2 · Treatment Effect Heterogeneity: Machine Learning Approaches</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/12-chapter-5-sensitivity-analysis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 5 · Sensitivity Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/13-chapter-6-1-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 6.1 · Instrumental Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/14-chapter-6-2-principal-stratification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 6.2 · Principal Stratification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/15-chapter-7-regression-discontinuity-designs.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 7 · Regression Discontinuity Designs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/16-chapter-8-difference-in-differences-synthetic-control-and-beyond.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 8 · Difference-in-Differences, Synthetic Control, and Beyond</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/17-chapter-9-sequential-and-longitudinal-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 9 · Sequential and Longitudinal Treatments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/18-chapter-10-bayesian-causal-inference.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 10 · Bayesian Causal Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/19-chapter-11-causal-inference-with-survival-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 11 · Causal Inference with Survival Outcomes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/20-lab-2-propensity-score-matching-and-weighting-binary-treatment.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Lab 2 · Propensity Score Matching and Weighting: Binary Treatment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/21-lab-3-propensity-score-weighting-with-multiple-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Lab 3 · Propensity Score Weighting with Multiple Treatments</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">causatr 官方文档中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-introduction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 介绍</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-gcomp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的 G-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-ipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的逆概率加权</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-aipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的增强 IPW（双稳健估计）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的倾向评分匹配</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-snm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的结构嵌套均值模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-interventions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 中的干预类型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-natural-history-mtps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">自然历史修改处理政策（宽限期）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-triangulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">方法论三角：g-computation、IPW、AIPW、匹配和 SNM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-longitudinal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">纵向处理：ICE g-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-transportability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">可转运性和可推广性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-missing-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">处理缺失数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-diagnostics.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的诊断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-validation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">针对参考实现的验证</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果效应的方差估计</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-ipw-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IPW 密度比权重和方差理论</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false">
+ <span class="menu-text">Causal Inference in R · 原书中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/01-casual-to-causal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">从随意推断到因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/02-whole-game.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">完整实践：蚊帐与疟疾</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/03-po-counterfactuals.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">潜在结局与反事实</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/04-dags.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">用 DAG 表达因果问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/05-not-just-a-stats-problem.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果推断不只是统计问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/06-stats-models-ci.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">从问题到答案：分层与结局模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/07-prep-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">准备数据以回答因果问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/08-propensity-scores.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">倾向评分</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/09-evaluating-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">评估倾向评分模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/10-estimands.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果估计目标</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/11-outcome-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">拟合加权结局模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/12-other-exposures.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">连续型与分类暴露</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/13-g-comp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">G 计算</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/14-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">异质性处理效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/15-missingness-and-measurement.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">缺失与测量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/16-sensitivity.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">敏感性分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/17-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果中介分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/18-longitudinal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">跨时间的因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/19-time-to-event.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果生存时间模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/20-doubly-robust.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">双稳健模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/21-machine-learning.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">机器学习与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/22-iv-and-friends.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">工具变量及相关方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/23-diff-in-diff.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">双重差分</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/24-evidence.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">证据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/99-references.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">参考文献</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/appendices/A-bootstrap.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">自助法（Bootstrap）</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false">
+ <span class="menu-text">lmtp 包官方文档中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/00-welcome.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">欢迎！</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/00-instructors.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">讲师介绍</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/01-introduction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1. 引言</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/02-defining-interventions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">2. 定义干预</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/03-estimators.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">3. 估计量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/04-lmtp-package.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4a. lmtp 包</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/05-static.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4b. 静态效应与因果对比</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/06-dtr.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4c. 动态处理方案</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/07-mtp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4d. 修正处理策略</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/08-ipsi.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4e. IPSI</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/09-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4f. 生存分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/10-multivariate.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4g. 多元暴露</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/11-conclusion.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">5. 结语</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false">
+ <span class="menu-text">marginaleffects 官方文档中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/who.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1. 这本书写给谁</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/challenge.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">I·2. 模型与意义</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/framework.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">I·3. 概念框架</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/hypothesis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">II·4. 假设与等价检验</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/predictions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">II·5. 预测</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/comparisons.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">II·6. 反事实比较</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/slopes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">II·7. 斜率</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/gcomputation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">III·8. 使用 G-计算进行因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/experiments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">III·9. 实验</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/interactions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">III·10. 交互作用与多项式</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/categorical.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">III·11. 分类与有序结果</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/mrp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">III·12. 使用后分层的多层回归</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/ml.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">III·13. 机器学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/uncertainty.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">III·14. 不确定性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/get_started.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IV·R+Python 快速上手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/plot.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IV·R+Python 绘图</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/elasticity.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IV·R+Python 弹性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/interrupted_time_series.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IV·R+Python 中断时间序列</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/brms.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 贝叶斯模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/bootstrap.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 自助法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/conjoint.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 联合分析实验</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/gam.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 广义可加模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/grids.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 数据网格</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/heterogeneity.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 异质性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/equivalence.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 等价检验</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/hypothesis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 假设检验</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/ipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 逆概率加权</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/lme4.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 混合效应模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/logit.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R Logit 模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 匹配</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/mlogit.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 多项 Logit</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/multiple_imputation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 缺失数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/power.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 功效分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 生存分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/total_marginal_effect.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 总边际效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/uncertainty.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 不确定性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/sklearn.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VI·Python Scikit-learn</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/numpyro.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VI·Python NumPyro</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/help.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VII·获取帮助</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/alternative_software.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VII·R 同类软件对比</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/extensions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VII·R 扩展支持的模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/faq.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VII·R 常见问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/performance.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VII·R 性能调优</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/svalues.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VII·R S 值</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/tables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VII·R 结果表格</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/functions_r.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Fn·R 函数参考</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/functions_python.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Fn·Python 函数参考</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/news_r.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">News (R)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/citation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">引用与许可</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false">
+ <span class="menu-text">grf 包官方教程中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/00-get-started.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">快速上手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/01-grf-guide.html" class="sidebar-item-text sidebar-link"><span class="chapter-title"><code>grf</code> 简介</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/02-rate.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">用 RATE 评估异质性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/03-categorical-inputs.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">分类协变量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/04-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">事件发生时间数据下的因果森林</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/05-rate-cv.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">异质性的交叉折验证</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/06-ate-transport.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">在新的目标人群上估计 ATE</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/07-muhats.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">估计条件均值</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/08-diagnostics.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">评估因果森林的拟合效果</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/09-llf.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">局部线性森林简介</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/10-policy-learning.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">用最优决策树做策略学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/11-maq.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Qini 曲线：自动化的成本效益分析</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="false">
+ <span class="menu-text">Targeted Learning in R · tlverse 手册中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/00-welcome.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">欢迎</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/01-intro.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">导论</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/02-tlverse.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1-2. 关于 tlverse 与软件配置</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/03-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">3. 示例数据集</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/04-roadmap.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4. 从数据中学习：一份路线图</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/05-origami.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">5. 交叉验证</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/06-sl3.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">6. 超级学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/07-tmle3.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">7. TMLE 框架</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/08-tmle3mopttx.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">8. 动态与最优个体化处理方案</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/09-tmle3shift.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">9. 随机化处理方案</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/10-tmle3mediate.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">10. 因果中介分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/11-tmle3survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">11. 事件发生时间结局的一步 TMLE（上游草稿）</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../../notes/sources.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">sources</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/sources/effect-modifier-discovery.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">观察性研究中的效应修饰变量识别</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/sources/quick-screening-r-packages.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">快速筛选 modifier 的 R 包</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/sources/modifier-screening-audit.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">筛选软件与方法核查</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/sources/effect-modifier-effect-scale.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">效应修饰的效应尺度</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../../notes/model4you.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">model4you 包函数手册</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-11" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/01-pmtree.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1. pmtree()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/02-pmtree-methods.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">2. pmtree 的方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/03-pmforest.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">3. pmforest() 与 gettree()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/04-pmodel.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4. pmodel()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/05-varimp-pmtest.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">5. varimp() 与 pmtest()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/06-plots.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">6. 可视化</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/07-objfun-internals.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">7. objfun 与内部函数</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/08-pitfalls.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">8. 实测清单与工作流</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../../notes/stratifiedmedicine.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">StratifiedMedicine 包函数手册</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-12" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/01-overview.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1. 总览、对象结构与数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/02-filter-train.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">2. filter_train()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/03-ple-train.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">3. ple_train()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/04-submod-train.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4. submod_train()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/05-param-est.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">5. param_est() 与 param_combine()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/06-prism.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">6. PRISM()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/07-plots.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">7. 可视化</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/08-pitfalls.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">8. 实测清单与工作流</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../../notes/tidyhte.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">tidyhte 包函数手册</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="true" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-13" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/01-overview.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1. 总览、对象结构与数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/02-recipe-api.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">2. 配方 API</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/03-model-cfg.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">3. 模型配置类</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/04-splits.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4. make_splits() 与数据对象</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/05-plugin-pseudo.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">5. 冗余函数与伪结局</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/06-estimate-qoi.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">6. estimate_QoI()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/07-diagnostics-plots.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">7. 诊断与可视化</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/08-pitfalls.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">8. 实测清单与工作流</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../../notes/unihtee.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">unihtee 包函数手册</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-14" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/unihtee/01-parameter.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1. TEM-VIP 参数</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/unihtee/02-unihtee.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">2. unihtee()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/unihtee/03-nuisance.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">3. nuisance 与 sl3 学习器</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/unihtee/04-estimators.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4. 三个估计量与推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/unihtee/05-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">5. 生存结局</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/unihtee/06-print-plot.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">6. 结果可视化</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/unihtee/07-pitfalls.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">7. 实测清单与工作流</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">目录</h2>
+   
+  <ul>
+  <li><a href="#sec-cfg" id="toc-sec-cfg" class="nav-link active" data-scroll-target="#sec-cfg"><code>Diagnostics_cfg</code></a></li>
+  <li><a href="#sec-estimate" id="toc-sec-estimate" class="nav-link" data-scroll-target="#sec-estimate"><code>estimate_diagnostic()</code></a></li>
+  <li><a href="#跑一遍完整流水线" id="toc-跑一遍完整流水线" class="nav-link" data-scroll-target="#跑一遍完整流水线">跑一遍完整流水线</a></li>
+  <li><a href="#sec-mcate-plot" id="toc-sec-mcate-plot" class="nav-link" data-scroll-target="#sec-mcate-plot">MCATE 曲线</a></li>
+  <li><a href="#变量重要性" id="toc-变量重要性" class="nav-link" data-scroll-target="#变量重要性">变量重要性</a></li>
+  <li><a href="#sec-slrisk" id="toc-sec-slrisk" class="nav-link" data-scroll-target="#sec-slrisk">SuperLearner 集成诊断</a></li>
+  <li><a href="#sec-rroc" id="toc-sec-rroc" class="nav-link" data-scroll-target="#sec-rroc">RROC</a></li>
+  <li><a href="#auc-与-mse" id="toc-auc-与-mse" class="nav-link" data-scroll-target="#auc-与-mse">AUC 与 MSE</a></li>
+  <li><a href="#逐单位-cate-的分布" id="toc-逐单位-cate-的分布" class="nav-link" data-scroll-target="#逐单位-cate-的分布">逐单位 CATE 的分布</a></li>
+  <li><a href="#本页涉及的帮助主题" id="toc-本页涉及的帮助主题" class="nav-link" data-scroll-target="#本页涉及的帮助主题">本页涉及的帮助主题</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/tidyhte/07-diagnostics-plots.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../notes/tidyhte.html">tidyhte 包函数手册</a></li><li class="breadcrumb-item"><a href="../../notes/tidyhte/07-diagnostics-plots.html"><span class="chapter-title">7. 诊断与可视化</span></a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-title">7. 诊断与可视化</span></h1>
+<p class="subtitle lead">tidyhte 包函数手册</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p><code>tidyhte</code> <strong>不产出任何图形对象</strong>：它只返回一张长格式 tibble， 画图完全交给使用者。这一页先讲诊断怎么配、算的是什么， 再给五张可以直接照抄的 <code>ggplot2</code> 模板。</p>
+<section id="sec-cfg" class="level2">
+<h2 class="anchored" data-anchor-id="sec-cfg"><code>Diagnostics_cfg</code></h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>Diagnostics_cfg<span class="sc">$</span><span class="fu">new</span>(<span class="at">ps =</span> <span class="cn">NULL</span>, <span class="at">outcome =</span> <span class="cn">NULL</span>, <span class="at">effect =</span> <span class="cn">NULL</span>, <span class="at">params =</span> <span class="cn">NULL</span>)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>Diagnostics_cfg<span class="sc">$</span><span class="fu">add</span>(<span class="at">ps =</span> <span class="cn">NULL</span>, <span class="at">outcome =</span> <span class="cn">NULL</span>, <span class="at">effect =</span> <span class="cn">NULL</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>字段</th>
+<th>针对的模型</th>
+<th>预测列</th>
+<th>合法诊断</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>ps</code></td>
+<td>倾向得分</td>
+<td><code>.pi_hat</code></td>
+<td><code>AUC</code>、<code>MSE</code>、<code>SL_risk</code>、<code>SL_coefs</code></td>
+</tr>
+<tr class="even">
+<td><code>outcome</code></td>
+<td>两个结局模型（分臂各算一次）</td>
+<td><code>.mu1_hat</code> / <code>.mu0_hat</code></td>
+<td><code>RROC</code>、<code>MSE</code>、<code>SL_risk</code>、<code>SL_coefs</code></td>
+</tr>
+<tr class="odd">
+<td><code>effect</code></td>
+<td>效应面模型</td>
+<td><code>.pseudo_outcome_hat</code></td>
+<td>同上，但<strong>通常被跳过</strong></td>
+</tr>
+<tr class="even">
+<td><code>params</code></td>
+<td>诊断的额外参数</td>
+<td>—</td>
+<td>目前只有 <code>num_bins</code>（RROC 用）</td>
+</tr>
+</tbody>
+</table>
+<p>输出里的 <code>level</code> 列标明诊断的对象： <code>Propensity Score</code>、<code>Treatment Response</code>、<code>Control Response</code>、<code>Effect Surface</code>。</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">注记</span><code>calculate_diagnostics()</code> 的两个形参是死参数
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>帮助页写的签名是 <code>calculate_diagnostics(data, treatment, outcome, .diag.cfg)</code>， 但函数体里 <code>treatment_name</code>、<code>outcome_name</code> 是从<strong>数据框的 attribute</strong> 取的， 形参 <code>treatment</code> / <code>outcome</code> 从头到尾没有被使用。 <code>estimate_QoI()</code> 自己也是这样调的：<code>calculate_diagnostics(data, .diag.cfg = ...)</code>， 两个位置参数干脆不传。传了也不会有任何效果。</p>
+</div>
+</div>
+</section>
+<section id="sec-estimate" class="level2">
+<h2 class="anchored" data-anchor-id="sec-estimate"><code>estimate_diagnostic()</code></h2>
+<p>这是唯一导出的诊断函数，可以脱离流水线单独用， 但要求数据框带 <code>weights</code> 和 <code>identifier</code> 两个 attribute：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> <span class="fu">tibble</span>(<span class="at">y =</span> <span class="fu">rbinom</span>(<span class="dv">200</span>, <span class="dv">1</span>, <span class="fl">0.4</span>), <span class="at">p =</span> <span class="fu">runif</span>(<span class="dv">200</span>), <span class="at">w =</span> <span class="fu">rexp</span>(<span class="dv">200</span>), <span class="at">u =</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">200</span>)</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">attr</span>(d, <span class="st">"weights"</span>) <span class="ot">&lt;-</span> <span class="st">"w"</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">attr</span>(d, <span class="st">"identifier"</span>) <span class="ot">&lt;-</span> <span class="st">"u"</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="fu">estimate_diagnostic</span>(d, <span class="st">"y"</span>, <span class="st">"p"</span>, <span class="st">"AUC"</span>)</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 1 × 4</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   estimand term  estimate std_error</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;    &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 AUC      y        0.566    0.0565</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="fu">estimate_diagnostic</span>(d, <span class="st">"y"</span>, <span class="st">"p"</span>, <span class="st">"MSE"</span>)</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 1 × 4</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   estimand term  estimate std_error</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;    &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 MSE      y        0.311    0.0352</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>五个诊断的算法：</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>诊断</th>
+<th>算法</th>
+<th>标准误</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>AUC</code></td>
+<td><code>WeightedROC::WeightedAUC()</code>，加权 ROC 曲线下面积</td>
+<td><span class="math inline">\(\tfrac{1}{2}/\sqrt{\min(n_1, n_0)}\)</span>，一个保守的近似</td>
+</tr>
+<tr class="even">
+<td><code>MSE</code></td>
+<td>加权平方误差均值</td>
+<td><strong>聚类稳健</strong></td>
+</tr>
+<tr class="odd">
+<td><code>SL_risk</code></td>
+<td>各折 <code>cvRisk</code> 的均值</td>
+<td>折间标准差 <span class="math inline">\(/\sqrt{K}\)</span></td>
+</tr>
+<tr class="even">
+<td><code>SL_coefs</code></td>
+<td>各折集成权重 <code>coef</code> 的均值</td>
+<td>折间标准差 <span class="math inline">\(/\sqrt{K}\)</span></td>
+</tr>
+<tr class="odd">
+<td><code>RROC</code></td>
+<td>见<a href="#sec-rroc">下文</a></td>
+<td>恒为 <code>NA</code></td>
+</tr>
+</tbody>
+</table>
+<p>三条失败路径都值得知道：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ① 标签不是 0/1 时，AUC 返回 NULL（并发一条 message）</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>msgs <span class="ot">&lt;-</span> <span class="fu">character</span>()</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>r1 <span class="ot">&lt;-</span> <span class="fu">withCallingHandlers</span>(</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">estimate_diagnostic</span>(<span class="fu">mutate</span>(d, <span class="at">y =</span> <span class="fu">rnorm</span>(<span class="dv">200</span>)), <span class="st">"y"</span>, <span class="st">"p"</span>, <span class="st">"AUC"</span>),</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">message =</span> <span class="cf">function</span>(m) { msgs <span class="ot">&lt;&lt;-</span> <span class="fu">c</span>(msgs, <span class="fu">conditionMessage</span>(m)); <span class="fu">invokeRestart</span>(<span class="st">"muffleMessage"</span>) })</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(结果 <span class="ot">=</span> <span class="fu">is.null</span>(r1)); <span class="fu">trimws</span>(msgs)</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 结果 </span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; TRUE</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] "Cannot calculate AUC because labels are not binary."</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ② 模型不是 SuperLearner 时，SL_coefs / SL_risk 返回 NULL</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>msgs <span class="ot">&lt;-</span> <span class="fu">character</span>()</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>r2 <span class="ot">&lt;-</span> <span class="fu">withCallingHandlers</span>(</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">estimate_diagnostic</span>(d, <span class="st">"y"</span>, <span class="st">"p"</span>, <span class="st">"SL_coefs"</span>),</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">message =</span> <span class="cf">function</span>(m) { msgs <span class="ot">&lt;&lt;-</span> <span class="fu">c</span>(msgs, <span class="fu">conditionMessage</span>(m)); <span class="fu">invokeRestart</span>(<span class="st">"muffleMessage"</span>) })</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(结果 <span class="ot">=</span> <span class="fu">is.null</span>(r2)); <span class="fu">trimws</span>(msgs)</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 结果 </span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; TRUE</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [1] "Cannot calculate SL_coefs because the model is not SuperLearner."</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ③ 诊断名拼错：函数没有 else 分支，报一个与病因无关的错</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">estimate_diagnostic</span>(d, <span class="st">"y"</span>, <span class="st">"p"</span>, <span class="st">"R2"</span>)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Error in estimate_diagnostic(d, "y", "p", "R2"): object 'result' not found</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>前两种是”静默返回 <code>NULL</code>“——它们会让某一类诊断<strong>整块消失</strong>在结果表里， 而 message 在 <code>message = FALSE</code> 的代码块里看不见。 第三种的报错信息（<code>object 'result' not found</code>）完全不提是哪个名字写错了。</p>
+</section>
+<section id="跑一遍完整流水线" class="level2">
+<h2 class="anchored" data-anchor-id="跑一遍完整流水线">跑一遍完整流水线</h2>
+<p>下面这份配置把三类诊断都打开，并且<strong>配了 PCATE</strong>， 好让效应面诊断真的算出来（原因见<a href="../../notes/tidyhte/06-estimate-qoi.html#sec-effect-diag">第 6 页</a>）。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>cfg <span class="ot">&lt;-</span> <span class="fu">basic_config</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_propensity_score_model</span>(<span class="st">"SL.glm"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_outcome_model</span>(<span class="st">"SL.glm"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_outcome_model</span>(<span class="st">"SL.glm.interaction"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_effect_model</span>(<span class="st">"SL.glm"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_effect_model</span>(<span class="st">"SL.glm.interaction"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_outcome_diagnostic</span>(<span class="st">"RROC"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_effect_diagnostic</span>(<span class="st">"RROC"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_moderator</span>(<span class="st">"Stratified"</span>, x2) <span class="sc">%&gt;%</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_moderator</span>(<span class="st">"KernelSmooth"</span>, x1, x3, x4) <span class="sc">%&gt;%</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_vimp</span>(<span class="at">sample_splitting =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>cfg<span class="sc">$</span>qoi<span class="sc">$</span>diag<span class="sc">$</span>params <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">num_bins =</span> <span class="dv">60</span>)      <span class="co"># 不然 RROC 会有 n 行</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>cfg<span class="sc">$</span>qoi<span class="sc">$</span>pcate <span class="ot">&lt;-</span> PCATE_cfg<span class="sc">$</span><span class="fu">new</span>(              <span class="co"># 只为了让效应面模型被拟合</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">model_covariates =</span> <span class="fu">c</span>(<span class="st">"x1"</span>, <span class="st">"x2"</span>, <span class="st">"x3"</span>, <span class="st">"x4"</span>),</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">cfgs =</span> <span class="fu">list</span>(),</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>  <span class="at">num_mc_samples =</span> <span class="fu">list</span>(<span class="at">x1 =</span> <span class="dv">15</span>, <span class="at">x2 =</span> <span class="dv">15</span>, <span class="at">x3 =</span> <span class="dv">15</span>, <span class="at">x4 =</span> <span class="dv">15</span>))</span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>prepped <span class="ot">&lt;-</span> sim <span class="sc">%&gt;%</span> <span class="fu">attach_config</span>(cfg) <span class="sc">%&gt;%</span> <span class="fu">make_splits</span>(uid, <span class="at">.num_splits =</span> <span class="dv">4</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">produce_plugin_estimates</span>(y, a, x1, x2, x3, x4) <span class="sc">%&gt;%</span> <span class="fu">construct_pseudo_outcomes</span>(y, a)</span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>results <span class="ot">&lt;-</span> <span class="fu">suppressWarnings</span>(<span class="fu">estimate_QoI</span>(prepped, x1, x2, x3, x4))</span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a><span class="fu">count</span>(results, estimand, level)</span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 26 × 3</span></span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;    estimand level                  n</span></span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;    &lt;chr&gt;    &lt;chr&gt;              &lt;int&gt;</span></span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  1 AUC      Propensity Score       1</span></span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  2 MCATE    a                      1</span></span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  3 MCATE    b                      1</span></span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  4 MCATE    c                      1</span></span>
+<span id="cb6-29"><a href="#cb6-29" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  5 MCATE    &lt;NA&gt;                 300</span></span>
+<span id="cb6-30"><a href="#cb6-30" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  6 MSE      Control Response       1</span></span>
+<span id="cb6-31"><a href="#cb6-31" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  7 MSE      Effect Surface         1</span></span>
+<span id="cb6-32"><a href="#cb6-32" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  8 MSE      Propensity Score       1</span></span>
+<span id="cb6-33"><a href="#cb6-33" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  9 MSE      Treatment Response     1</span></span>
+<span id="cb6-34"><a href="#cb6-34" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 10 PCATE    a                      1</span></span>
+<span id="cb6-35"><a href="#cb6-35" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # ℹ 16 more rows</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="sec-mcate-plot" class="level2">
+<h2 class="anchored" data-anchor-id="sec-mcate-plot">MCATE 曲线</h2>
+<p>连续调节变量：<code>value</code> 是横轴，带真值参照线。 <code>x1</code> 的真效应是 <span class="math inline">\(0.5 + 0.8x_1 + 0.6\Pr(x_2 = c)\)</span>， <code>x3</code>（只影响基线）和 <code>x4</code>（纯噪声）的真效应都是常数。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>truth <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">term =</span> <span class="fu">rep</span>(<span class="fu">c</span>(<span class="st">"x1"</span>, <span class="st">"x3"</span>, <span class="st">"x4"</span>), <span class="at">each =</span> <span class="dv">2</span>),</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">value =</span> <span class="fu">c</span>(<span class="fu">range</span>(sim<span class="sc">$</span>x1), <span class="fu">range</span>(sim<span class="sc">$</span>x3), <span class="fu">range</span>(sim<span class="sc">$</span>x4)),</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">truth =</span> <span class="fu">c</span>(<span class="fl">0.5</span> <span class="sc">+</span> <span class="fl">0.8</span> <span class="sc">*</span> <span class="fu">range</span>(sim<span class="sc">$</span>x1) <span class="sc">+</span> <span class="fl">0.6</span> <span class="sc">*</span> <span class="fu">mean</span>(sim<span class="sc">$</span>x2 <span class="sc">==</span> <span class="st">"c"</span>),</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>            <span class="fu">rep</span>(<span class="fu">mean</span>(sim<span class="sc">$</span>tau), <span class="dv">2</span>), <span class="fu">rep</span>(<span class="fu">mean</span>(sim<span class="sc">$</span>tau), <span class="dv">2</span>))</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>results <span class="sc">%&gt;%</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(estimand <span class="sc">==</span> <span class="st">"MCATE"</span>, term <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"x1"</span>, <span class="st">"x3"</span>, <span class="st">"x4"</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> value)) <span class="sc">+</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_hline</span>(<span class="at">yintercept =</span> <span class="dv">0</span>, <span class="at">linetype =</span> <span class="st">"dotted"</span>, <span class="at">colour =</span> <span class="st">"grey50"</span>) <span class="sc">+</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_ribbon</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> estimate <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> std_error,</span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>                  <span class="at">ymax =</span> estimate <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> std_error), <span class="at">alpha =</span> <span class="fl">0.25</span>) <span class="sc">+</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">y =</span> estimate), <span class="at">linewidth =</span> <span class="fl">0.7</span>) <span class="sc">+</span></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">y =</span> truth), <span class="at">data =</span> truth, <span class="at">linetype =</span> <span class="st">"dashed"</span>, <span class="at">colour =</span> <span class="st">"firebrick"</span>) <span class="sc">+</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span>term, <span class="at">scales =</span> <span class="st">"free_x"</span>) <span class="sc">+</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"协变量取值"</span>, <span class="at">y =</span> <span class="st">"CATE"</span>, <span class="at">title =</span> <span class="st">"边际条件平均治疗效应"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-mcate-continuous" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-mcate-continuous-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="07-diagnostics-plots_files/figure-html/fig-mcate-continuous-1.png" class="img-fluid figure-img" style="width:100.0%">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-mcate-continuous-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;214.1: 连续调节变量的 MCATE（阴影为 ±1.96 SE，虚线为真值）
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>只有 <code>x1</code> 有真实的斜率，另外两个变量的曲线在真值附近水平摆动—— 这正是”用 MCATE 找效应修饰变量”时想看到的对照。 注意曲线只覆盖 5%–95% 分位（<code>KernelSmooth_cfg$eval_min_quantile</code> 的默认值）。</p>
+<p>离散调节变量：<code>level</code> 是横轴。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>truth_x2 <span class="ot">&lt;-</span> <span class="fu">tibble</span>(<span class="at">level =</span> <span class="fu">levels</span>(sim<span class="sc">$</span>x2),</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>                   <span class="at">truth =</span> <span class="fu">as.numeric</span>(<span class="fu">tapply</span>(sim<span class="sc">$</span>tau, sim<span class="sc">$</span>x2, mean)))</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>results <span class="sc">%&gt;%</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(estimand <span class="sc">==</span> <span class="st">"MCATE"</span>, term <span class="sc">==</span> <span class="st">"x2"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> level, <span class="at">y =</span> estimate)) <span class="sc">+</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_hline</span>(<span class="at">yintercept =</span> <span class="dv">0</span>, <span class="at">linetype =</span> <span class="st">"dotted"</span>, <span class="at">colour =</span> <span class="st">"grey50"</span>) <span class="sc">+</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_pointrange</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> estimate <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> std_error,</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>                      <span class="at">ymax =</span> estimate <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> std_error)) <span class="sc">+</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="fu">aes</span>(<span class="at">y =</span> truth), <span class="at">data =</span> truth_x2, <span class="at">colour =</span> <span class="st">"firebrick"</span>, <span class="at">size =</span> <span class="fl">2.5</span>, <span class="at">shape =</span> <span class="dv">4</span>) <span class="sc">+</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"x2 的水平"</span>, <span class="at">y =</span> <span class="st">"CATE"</span>, <span class="at">title =</span> <span class="st">"分层估计的 CATE"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-mcate-discrete" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-mcate-discrete-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="07-diagnostics-plots_files/figure-html/fig-mcate-discrete-1.png" class="img-fluid figure-img" style="width:100.0%">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-mcate-discrete-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;214.2: 离散调节变量的 MCATE（红点为真值）
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="变量重要性" class="level2">
+<h2 class="anchored" data-anchor-id="变量重要性">变量重要性</h2>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>results <span class="sc">%&gt;%</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(estimand <span class="sc">==</span> <span class="st">"VIMP"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> <span class="fu">reorder</span>(term, estimate), <span class="at">y =</span> estimate)) <span class="sc">+</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_hline</span>(<span class="at">yintercept =</span> <span class="dv">0</span>, <span class="at">linetype =</span> <span class="st">"dashed"</span>) <span class="sc">+</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_pointrange</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> estimate <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> std_error,</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>                      <span class="at">ymax =</span> estimate <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> std_error)) <span class="sc">+</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_flip</span>() <span class="sc">+</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"调节变量"</span>, <span class="at">y =</span> <span class="st">"R² 的下降"</span>, <span class="at">title =</span> <span class="st">"VIMP"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-vimp" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-vimp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="07-diagnostics-plots_files/figure-html/fig-vimp-1.png" class="img-fluid figure-img" style="width:100.0%">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-vimp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;214.3: 调节变量重要性（去掉该变量后 R² 的下降）
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p><code>sample_splitting = FALSE</code> 时估计值被截断在 0， 所以 <code>x3</code>、<code>x4</code> 这类零重要性变量会紧贴 0 线，且区间不对称—— <strong>这种设置下的区间不能用来做”重要性是否为 0”的检验</strong> （要检验就用 <code>sample_splitting = TRUE</code>，代价是区间明显变宽）。</p>
+</section>
+<section id="sec-slrisk" class="level2">
+<h2 class="anchored" data-anchor-id="sec-slrisk">SuperLearner 集成诊断</h2>
+<p><code>SL risk</code> 是各折交叉验证风险的均值，<code>SL coefficient</code> 是各折集成权重的均值。 <code>term</code> 列就是<a href="../../notes/tidyhte/02-recipe-api.html#sec-models">第 2 页</a>讲的学习器名。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>results <span class="sc">%&gt;%</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(estimand <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"SL risk"</span>, <span class="st">"SL coefficient"</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">level =</span> <span class="fu">factor</span>(level, <span class="fu">c</span>(<span class="st">"Propensity Score"</span>, <span class="st">"Control Response"</span>,</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>                                 <span class="st">"Treatment Response"</span>, <span class="st">"Effect Surface"</span>))) <span class="sc">%&gt;%</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> term, <span class="at">y =</span> estimate)) <span class="sc">+</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_pointrange</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> estimate <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> std_error,</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>                      <span class="at">ymax =</span> estimate <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> std_error)) <span class="sc">+</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_flip</span>() <span class="sc">+</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_grid</span>(level <span class="sc">~</span> estimand, <span class="at">scales =</span> <span class="st">"free_x"</span>) <span class="sc">+</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="cn">NULL</span>, <span class="at">y =</span> <span class="cn">NULL</span>, <span class="at">title =</span> <span class="st">"集成内部：风险与权重"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-sl" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-sl-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="07-diagnostics-plots_files/figure-html/fig-sl-1.png" class="img-fluid figure-img" style="width:100.0%">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-sl-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;214.4: SuperLearner 子模型的交叉验证风险与集成权重
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>两条读图规则：</p>
+<ul>
+<li><strong>权重全部压在一个子模型上</strong>（本例线性 DGP 下常见）说明其余学习器没有贡献， 可以从库里去掉以省时间；反过来权重分散说明确实需要集成。</li>
+<li><strong>风险的折间标准误很大</strong>说明不同折之间模型表现不稳定， 通常是样本量不足或有稀有水平。</li>
+</ul>
+</section>
+<section id="sec-rroc" class="level2">
+<h2 class="anchored" data-anchor-id="sec-rroc">RROC</h2>
+<p>回归 ROC 曲线（Hernández-Orallo 2013）把预测值整体平移一系列常数， 描出”高估总量”与”低估总量”的权衡曲线。越贴近两条坐标轴越好， 其中<strong>不平移</strong>的那个点代表模型本身的表现。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>rroc <span class="ot">&lt;-</span> <span class="fu">filter</span>(results, estimand <span class="sc">==</span> <span class="st">"RROC"</span>)</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="co"># 不平移的那个点是每组的第一行（level 列里的 observed 标记已被覆盖，见下）</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>observed <span class="ot">&lt;-</span> rroc <span class="sc">%&gt;%</span> <span class="fu">group_by</span>(level) <span class="sc">%&gt;%</span> <span class="fu">slice_head</span>(<span class="at">n =</span> <span class="dv">1</span>) <span class="sc">%&gt;%</span> <span class="fu">ungroup</span>()</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(rroc, <span class="fu">aes</span>(<span class="at">x =</span> value, <span class="at">y =</span> estimate)) <span class="sc">+</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">group =</span> level)) <span class="sc">+</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">data =</span> observed, <span class="at">colour =</span> <span class="st">"firebrick"</span>, <span class="at">size =</span> <span class="dv">2</span>) <span class="sc">+</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span>level, <span class="at">scales =</span> <span class="st">"free"</span>) <span class="sc">+</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"高估总量 / n"</span>, <span class="at">y =</span> <span class="st">"低估总量 / n"</span>, <span class="at">title =</span> <span class="st">"RROC"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-rroc" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-rroc-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="07-diagnostics-plots_files/figure-html/fig-rroc-1.png" class="img-fluid figure-img" style="width:100.0%">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-rroc-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;214.5: 回归 ROC 曲线（点为不平移时的位置）
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">重要</span>进入流水线后，<code>observed</code> / <code>shifted</code> 这个标记会被覆盖掉
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><code>calculate_rroc()</code> 用 <code>level</code> 列区分”不平移”（<code>observed</code>） 和”平移后”（<code>shifted</code>）：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>tidyhte<span class="sc">:::</span><span class="fu">calculate_rroc</span>(<span class="fu">rnorm</span>(<span class="dv">100</span>), <span class="fu">rnorm</span>(<span class="dv">100</span>), <span class="at">nbins =</span> <span class="dv">4</span>)</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 4 × 5</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   estimand value level    estimate std_error</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;    &lt;dbl&gt; &lt;chr&gt;       &lt;dbl&gt;     &lt;dbl&gt;</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 RROC     0.428 observed   -0.710        NA</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 RROC     4.45  shifted     0            NA</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 3 RROC     0.492 shifted    -0.634        NA</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 4 RROC     0     shifted    -3.65         NA</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>但 <code>calculate_diagnostics()</code> 拿到结果后立刻执行 <code>result$level &lt;- "Treatment Response"</code>（或 <code>"Control Response"</code> / <code>"Effect Surface"</code>），把这一列整个盖掉：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>results <span class="sc">%&gt;%</span> <span class="fu">filter</span>(estimand <span class="sc">==</span> <span class="st">"RROC"</span>) <span class="sc">%&gt;%</span> <span class="fu">count</span>(level)</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 3 × 2</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   level                  n</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;              &lt;int&gt;</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 Control Response      60</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 Effect Surface        60</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 3 Treatment Response    60</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>于是<strong>输出里再也找不到哪一行是不平移的那个点</strong>。 官方 vignette 的做法是 <code>group_by(level) %&gt;% slice_head(n = 1)</code>—— 能用是因为 <code>calculate_rroc()</code> 把 <code>observed</code> 那行放在最前面， 属于依赖行序的约定，而不是数据里的标记。</p>
+</div>
+</div>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">警告</span><code>nbins</code> 的默认值是样本量，不是帮助页写的 100
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><code>calculate_rroc(label, prediction, nbins = 100)</code> 的默认值是 100， 但流水线里根本不走这个默认值——<code>estimate_diagnostic()</code> 里写的是</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="st">"num_bins"</span> <span class="sc">%in%</span> <span class="fu">names</span>(params)) nbins <span class="ot">&lt;-</span> params<span class="sc">$</span>num_bins <span class="cf">else</span> nbins <span class="ot">&lt;-</span> <span class="fu">nrow</span>(data)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p>于是<strong>每个模型每次都返回 <span class="math inline">\(n\)</span> 行</strong>。<span class="math inline">\(n = 10^5\)</span> 的数据上， 光 RROC 就能给结果表加几十万行。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>cfg_n <span class="ot">&lt;-</span> <span class="fu">basic_config</span>() <span class="sc">%&gt;%</span> <span class="fu">add_known_propensity_score</span>(<span class="st">"ps"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_outcome_model</span>(<span class="st">"SL.glm"</span>) <span class="sc">%&gt;%</span> <span class="fu">add_moderator</span>(<span class="st">"Stratified"</span>, x2) <span class="sc">%&gt;%</span> <span class="fu">remove_vimp</span>()</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>cfg_n<span class="sc">$</span>qoi<span class="sc">$</span>diag <span class="ot">&lt;-</span> Diagnostics_cfg<span class="sc">$</span><span class="fu">new</span>(<span class="at">outcome =</span> <span class="st">"RROC"</span>)      <span class="co"># 不设 params</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>p2 <span class="ot">&lt;-</span> sim <span class="sc">%&gt;%</span> <span class="fu">attach_config</span>(cfg_n) <span class="sc">%&gt;%</span> <span class="fu">make_splits</span>(uid, <span class="at">.num_splits =</span> <span class="dv">4</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">produce_plugin_estimates</span>(y, a, x1, x2, x3, x4) <span class="sc">%&gt;%</span> <span class="fu">construct_pseudo_outcomes</span>(y, a)</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="fu">estimate_QoI</span>(p2, x2) <span class="sc">%&gt;%</span> <span class="fu">filter</span>(estimand <span class="sc">==</span> <span class="st">"RROC"</span>) <span class="sc">%&gt;%</span> <span class="fu">count</span>(level)</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 2 × 2</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   level                  n</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;              &lt;int&gt;</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 Control Response     455</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 Treatment Response   345</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="fu">table</span>(sim<span class="sc">$</span>a)      <span class="co"># 对照：两臂各自的样本量</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   0   1 </span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 455 345</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>唯一的调节入口是 <code>Diagnostics_cfg$params$num_bins</code>， 而配方 API 里<strong>没有</strong>设置它的函数，<code>add_known_propensity_score()</code> 还会把已经设好的 <code>params</code> 清空（见<a href="../../notes/tidyhte/02-recipe-api.html#sec-known">第 2 页</a>）。</p>
+</div>
+</div>
+</section>
+<section id="auc-与-mse" class="level2">
+<h2 class="anchored" data-anchor-id="auc-与-mse">AUC 与 MSE</h2>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>results <span class="sc">%&gt;%</span> <span class="fu">filter</span>(estimand <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"AUC"</span>, <span class="st">"MSE"</span>))</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 5 × 6</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   estimand term            value level              estimate std_error</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;    &lt;chr&gt;           &lt;dbl&gt; &lt;chr&gt;                 &lt;dbl&gt;     &lt;dbl&gt;</span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 AUC      a                  NA Propensity Score      0.671   0.0269 </span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 MSE      a                  NA Propensity Score      0.225   0.00521</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 3 MSE      y                  NA Control Response      0.272   0.0177 </span></span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 4 MSE      y                  NA Treatment Response    0.276   0.0200 </span></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 5 MSE      .pseudo_outcome    NA Effect Surface       13.1    10.3</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<ul>
+<li><strong>AUC</strong> 只对倾向得分有意义（标签是 0/1 的治疗）。 这里约 0.67， 说明协变量确实预测了治疗分配，也就是确实有混杂。 用<strong>已知</strong>倾向得分时 <code>add_known_propensity_score()</code> 会把它删掉。</li>
+<li><strong>MSE</strong> 三行分别是两个结局模型和效应面模型的均方误差。 注意效应面那一行的标签是 <code>.pseudo_outcome</code>—— 伪结局本身方差就很大，这个数字<strong>不能</strong>和结局模型的 MSE 相比， 只能和同一个效应面模型的不同配置相比。</li>
+</ul>
+</section>
+<section id="逐单位-cate-的分布" class="level2">
+<h2 class="anchored" data-anchor-id="逐单位-cate-的分布">逐单位 CATE 的分布</h2>
+<p>有 PCATE 配置时，<code>.pseudo_outcome_hat</code> 这一列会留在数据里， 可以直接画个体效应的分布——这是回答”有多少人受益”的最直接材料：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>fx <span class="ot">&lt;-</span> tidyhte<span class="sc">:::</span><span class="fu">fit_fx_predictor</span>(prepped, .weights, <span class="st">".pseudo_outcome"</span>, x1, x2, x3, x4,</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>                                 <span class="at">.pcate.cfg =</span> cfg<span class="sc">$</span>qoi<span class="sc">$</span>pcate, <span class="at">.Model_cfg =</span> cfg<span class="sc">$</span>effect)</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="fu">tibble</span>(<span class="at">hat =</span> fx<span class="sc">$</span>data<span class="sc">$</span>.pseudo_outcome_hat, <span class="at">truth =</span> sim<span class="sc">$</span>tau) <span class="sc">%&gt;%</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>() <span class="sc">+</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_density</span>(<span class="fu">aes</span>(<span class="at">x =</span> hat), <span class="at">fill =</span> <span class="st">"grey70"</span>, <span class="at">colour =</span> <span class="cn">NA</span>, <span class="at">alpha =</span> <span class="fl">0.8</span>) <span class="sc">+</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_density</span>(<span class="fu">aes</span>(<span class="at">x =</span> truth), <span class="at">colour =</span> <span class="st">"firebrick"</span>, <span class="at">linewidth =</span> <span class="fl">0.7</span>) <span class="sc">+</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"CATE"</span>, <span class="at">y =</span> <span class="st">"密度"</span>, <span class="at">title =</span> <span class="st">"预测的个体治疗效应 vs 真值"</span>)</span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(相关系数 <span class="ot">=</span> <span class="fu">round</span>(<span class="fu">cor</span>(fx<span class="sc">$</span>data<span class="sc">$</span>.pseudo_outcome_hat, sim<span class="sc">$</span>tau), <span class="dv">3</span>),</span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a>  受益比例_估计 <span class="ot">=</span> <span class="fu">round</span>(<span class="fu">mean</span>(fx<span class="sc">$</span>data<span class="sc">$</span>.pseudo_outcome_hat <span class="sc">&gt;</span> <span class="dv">0</span>), <span class="dv">3</span>),</span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a>  受益比例_真值 <span class="ot">=</span> <span class="fu">round</span>(<span class="fu">mean</span>(sim<span class="sc">$</span>tau <span class="sc">&gt;</span> <span class="dv">0</span>), <span class="dv">3</span>))</span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;      相关系数 受益比例_估计 受益比例_真值 </span></span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;         0.892         0.769         0.810</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-cate-dist" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-cate-dist-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="07-diagnostics-plots_files/figure-html/fig-cate-dist-1.png" class="img-fluid figure-img" style="width:100.0%">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-cate-dist-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;214.6: 逐单位 CATE 预测值的分布（红线为真 CATE 的分布）
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">注记</span>为什么不用 <code>predictions = TRUE</code>
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><code>QoI_cfg$predictions</code> 返回的行里，<code>level</code> 列写的是标识符的<strong>列名</strong>而不是 id （见<a href="../../notes/tidyhte/06-estimate-qoi.html#sec-predictions">第 6 页</a>）， 对不回原数据。直接调 <code>tidyhte:::fit_fx_predictor()</code> 拿 <code>.pseudo_outcome_hat</code> 更可靠，代价是用了未导出的函数。</p>
+</div>
+</div>
+</section>
+<section id="本页涉及的帮助主题" class="level2">
+<h2 class="anchored" data-anchor-id="本页涉及的帮助主题">本页涉及的帮助主题</h2>
+<p><code>Diagnostics_cfg</code>、<code>estimate_diagnostic</code>、<code>calculate_diagnostics</code>、 <code>calculate_rroc</code>、<code>add_propensity_diagnostic</code>、<code>add_outcome_diagnostic</code>、 <code>add_effect_diagnostic</code>。</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "已复制");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "已复制");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/hui950319\.github\.io\/causalR\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../notes/tidyhte/06-estimate-qoi.html" class="pagination-link" aria-label="6. estimate_QoI()">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">6. estimate_QoI()</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../../notes/tidyhte/08-pitfalls.html" class="pagination-link" aria-label="8. 实测清单与工作流">
+        <span class="nav-page-text"><span class="chapter-title">8. 实测清单与工作流</span></span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/tidyhte/07-diagnostics-plots.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></div></div></footer></body></html>

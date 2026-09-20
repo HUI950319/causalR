@@ -1,0 +1,288 @@
+---
+title: "1. 总览、对象结构与示例数据"
+subtitle: "tidyhte 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(tidyhte)
+library(dplyr)
+```
+
+本页先把包的**边界**说清楚：它依赖什么、导出了什么、四步流水线各自往数据框里
+加了什么；再说明后面七页共用的模拟数据——它的**真值是写死的**，
+因此可以用来判断某个方法是估对了还是估错了。
+
+## 包的边界
+
+```{r}
+#| label: pkg-info
+packageVersion("tidyhte")
+length(getNamespaceExports("tidyhte"))
+sort(getNamespaceExports("tidyhte"))
+```
+
+32 个导出对象里，12 个是配方 API 的函数、10 个是 R6 配置类、
+4 个是流水线主函数，剩下的是 `attach_config()`、`Model_data`、
+`estimate_diagnostic()` 和一个 SuperLearner 学习器 `SL.glmnet.interaction()`。
+
+帮助页比导出多得多：
+
+```{r}
+#| label: rd-vs-export
+rd <- sub("[.]Rd$", "", names(tools::Rd_db("tidyhte")))
+ex <- getNamespaceExports("tidyhte")
+length(rd)
+setdiff(rd, c(ex, "tidyhte-package", "predict.SL.glmnet.interaction"))
+```
+
+这 20 个函数**有完整的帮助页（也出现在 pkgdown 的 Reference 里），却没有导出**。
+想调用必须写 `tidyhte:::`。它们分三类：关心量的计算内核
+（`calculate_*`）、模型拟合的适配层（`fit_*`、`FX.Predictor`）、
+以及折划分与前置检查（`split_data`、`HTEFold`、`check_*`、`listwise_deletion`）。
+本手册在用到时一律显式写 `tidyhte:::`，提醒它们不属于稳定接口。
+
+依赖关系决定了哪些功能"装了包才有"：
+
+| 类别 | 包 | 影响什么 |
+|---|---|---|
+| **Imports**（必装） | `SuperLearner` | 全部冗余函数与效应面模型 |
+| | `R6` | 所有配置类 |
+| | `dplyr`、`tibble`、`rlang`、`purrr`、`magrittr` | tidy 语义、非标准求值 |
+| | `checkmate` | `check_*` 前置检查 |
+| | `progress` | 三个进度条 |
+| **Suggests**（可选，缺了就用不了） | `nprobust` | `add_moderator("KernelSmooth", ...)`，即**全部连续调节变量** |
+| | `vimp` + `quadprog` | `add_vimp()`，而 `basic_config()` **默认就打开它** |
+| | `quickblock` | `make_splits()` 的分层区组；缺了会打印提示并退回纯随机划分 |
+| | `WeightedROC` | `"AUC"` 诊断，而 `basic_config()` **默认就要算它** |
+| | `glmnet` | `SL.glmnet`、`SL.glmnet.interaction` |
+| | `estimatr`、`palmerpenguins` | 仅 vignette 与测试用 |
+
+::: {.callout-warning}
+## `basic_config()` 默认依赖两个 Suggests
+
+默认配方里 `vimp = VIMP_cfg$new(sample_splitting = TRUE)`、
+倾向诊断含 `"AUC"`。也就是说，只装了主包和 Imports 的机器上，
+**照着帮助页第一个例子跑就会缺包**。官方帮助页里所有完整示例都要先写
+`remove_vimp()`，原因就在这里。缺 `WeightedROC` 时 `soft_require()`
+会给出可读的提示，缺 `vimp` 同理，但都发生在流水线跑到最后一步之后。
+:::
+
+## 四步流水线各自做了什么 {#sec-pipeline}
+
+每一步都**返回原数据框**（这是 tidy 语义的关键），
+只是多几列、多几个 attribute：
+
+| 步骤 | 新增列 | 新增 / 修改的 attribute |
+|---|---|---|
+| `attach_config(data, cfg)` | 无 | `HTE_cfg` |
+| `make_splits(data, id, ..., .num_splits)` | `.split_id` | `num_splits`、`identifier` |
+| `produce_plugin_estimates(data, y, a, ...)` | `.weights`（未给权重时）、`.pi_hat`、`.mu0_hat`、`.mu1_hat` | `SL_coefs`、`weights` |
+| `construct_pseudo_outcomes(data, y, a)` | `.pseudo_outcome` | `treatment`、`outcome` |
+| `estimate_QoI(data, ...)` | — | 返回的是**结果 tibble**，不再是原数据 |
+
+```{r}
+#| label: pipeline-columns
+#| message: false
+#| code-fold: true
+#| code-summary: "模拟数据的生成代码（与本页最后一节相同）"
+set.seed(20260920)
+n <- 800
+sim <- tibble(
+  uid = seq_len(n),
+  x1  = rnorm(n),
+  x2  = factor(sample(c("a", "b", "c"), n, replace = TRUE)),
+  x3  = runif(n, -2, 2),
+  x4  = rnorm(n)
+) %>% mutate(
+  ps  = plogis(0.6 * x1 - 0.5 * (x2 == "c") + 0.3 * x3),
+  a   = rbinom(n, 1, ps),
+  tau = 0.5 + 0.8 * x1 + 0.6 * (x2 == "c"),
+  y   = 1 + x1 + 0.5 * x3 + tau * a + rnorm(n, sd = 0.5),
+  w   = 0.2 + rexp(n, 1)
+)
+
+cfg <- basic_config() %>%
+  add_known_propensity_score("ps") %>%
+  add_outcome_model("SL.glm.interaction") %>%
+  add_moderator("Stratified", x2) %>%
+  add_moderator("KernelSmooth", x1) %>%
+  remove_vimp()
+
+step0 <- attach_config(sim, cfg)
+step1 <- make_splits(step0, uid, .num_splits = 4)
+step2 <- produce_plugin_estimates(step1, y, a, x1, x2, x3, x4)
+step3 <- construct_pseudo_outcomes(step2, y, a)
+
+setdiff(names(step1), names(step0))
+setdiff(names(step2), names(step1))
+setdiff(names(step3), names(step2))
+```
+
+伪结局那一列就是后面所有估计的输入：
+
+```{r}
+#| label: pipeline-head
+step3 %>% select(uid, a, y, .split_id, .pi_hat, .mu0_hat, .mu1_hat, .pseudo_outcome) %>% head(4)
+```
+
+## 状态全部存在 attribute 里 {#sec-attrs}
+
+这是 `tidyhte` 最容易踩的设计：四步之间靠**数据框的 attribute** 传状态，
+而不是靠一个显式对象。
+
+```{r}
+#| label: attrs
+setdiff(names(attributes(step3)), c("names", "row.names", "class"))
+attr(step3, "identifier")
+attr(step3, "num_splits")
+attr(step3, "weights")
+c(treatment = attr(step3, "treatment"), outcome = attr(step3, "outcome"))
+```
+
+`SL_coefs` 存的是每一折、每个子学习器的集成权重与交叉验证风险，
+`"SL_coefs"` / `"SL_risk"` 两个诊断就是从这里读的（见
+[第 7 页](07-diagnostics-plots.qmd#sec-slrisk)）：
+
+```{r}
+#| label: attrs-slcoefs
+str(attr(step3, "SL_coefs"), max.level = 2)
+```
+
+::: {.callout-important}
+## `group_by()` 会把全部 attribute 丢掉
+
+大多数 dplyr 动词保留自定义 attribute，但**分组会重建对象**。
+下面这段在渲染时真实执行：
+
+```{r}
+#| label: attr-survival
+ops <- list(
+  filter      = \(d) dplyr::filter(d, x1 > -10),
+  mutate      = \(d) dplyr::mutate(d, z = 1),
+  arrange     = \(d) dplyr::arrange(d, x1),
+  select      = \(d) dplyr::select(d, dplyr::everything()),
+  slice       = \(d) dplyr::slice(d, seq_len(nrow(d))),
+  `group_by+ungroup` = \(d) dplyr::ungroup(dplyr::group_by(d, x2)),
+  as_tibble   = \(d) tibble::as_tibble(d),
+  `[ , ]`     = \(d) d[seq_len(nrow(d)), ]
+)
+keys <- c("HTE_cfg", "num_splits", "identifier", "weights", "outcome")
+t(vapply(ops, \(f) keys %in% names(attributes(f(step3))), logical(length(keys)))) |>
+  `colnames<-`(keys)
+```
+
+也就是说，在四步之间插一句 `group_by()`（哪怕随后 `ungroup()`）
+会让下一步报 ``Must attach HTE_cfg with `attach_config`.``。
+要做分组统计，请在 `estimate_QoI()` **之后**对结果 tibble 做。
+:::
+
+## 五个前置检查与它们的报错 {#sec-checks}
+
+包里有五个未导出的检查函数，流水线在每一步开头调用它们。
+把报错原文列出来，便于按错误信息反查是哪一步没做：
+
+| 检查 | 触发条件 | 报错原文 |
+|---|---|---|
+| `check_data_has_hte_cfg()` | 数据框没有 `HTE_cfg` attribute | ``Must attach HTE_cfg with `attach_config`.`` |
+| `check_splits()` | 缺 `.split_id` 列，或缺 `num_splits` / `identifier` attribute | ``You must first construct splits with `tidyhte::make_splits`.`` |
+| `check_identifier()` | 标识符列不存在、含 `NA`、长度不符，或是**非整数型的 double** | `Invalid identifier. Each unit / cluster must have its own unique ID.` |
+| `check_weights()` | 权重列不存在 / 非数值 / 有负值 | `Invalid weight column. Must be ...` |
+| `check_nuisance_models()` | 缺 `.pi_hat` / `.mu0_hat` / `.mu1_hat` | ``You must first estimate plugin models with `tidyhte::produce_plugin_estimates`.`` |
+
+```{r}
+#| label: checks
+#| error: true
+tidyhte:::check_data_has_hte_cfg(tibble(x = 1))
+```
+
+```{r}
+#| label: checks2
+#| error: true
+tidyhte:::check_splits(step0)
+```
+
+::: {.callout-note}
+## `check_identifier()` 的报错文案与它的检查不一致
+
+报错说"每个单位 / 群必须有自己**唯一**的 ID"，但函数体里**没有唯一性检查**——
+它检查的是空值、长度和类型。重复 ID 是**故意允许**的：
+那正是聚类设计（一个村、一个班级多行数据）的表达方式，
+见[第 4 页](04-splits.qmd#sec-cluster)。真正会被这条报错拦下的是
+含 `NA` 的标识符，以及**取值不是整数的 double 列**：
+
+```{r}
+#| label: check-id
+#| error: true
+tidyhte:::check_identifier(tibble(id = c(1.5, 2.5, 3.5)), "id")
+```
+:::
+
+## 示例数据 {#sec-data}
+
+后面各页共用同一份模拟数据。它同时具备四种变量，真值写死，便于核对：
+
+```r
+set.seed(20260920)
+n <- 800
+sim <- tibble(
+  uid = seq_len(n),
+  x1  = rnorm(n),                                             # 效应修饰 + 混杂
+  x2  = factor(sample(c("a", "b", "c"), n, replace = TRUE)),  # 效应修饰 + 混杂（离散）
+  x3  = runif(n, -2, 2),                                      # 只是预后 + 混杂
+  x4  = rnorm(n)                                              # 纯噪声
+) %>% mutate(
+  ps  = plogis(0.6 * x1 - 0.5 * (x2 == "c") + 0.3 * x3),      # 真倾向得分
+  a   = rbinom(n, 1, ps),
+  tau = 0.5 + 0.8 * x1 + 0.6 * (x2 == "c"),                   # 真 CATE
+  y   = 1 + x1 + 0.5 * x3 + tau * a + rnorm(n, sd = 0.5),
+  w   = 0.2 + rexp(n, 1)                                      # 抽样权重
+)
+```
+
+```{r}
+#| label: sim-truth
+c(
+  真SATE      = mean(sim$tau),
+  真PATE_加权 = weighted.mean(sim$tau, sim$w),
+  处理比例    = mean(sim$a),
+  朴素差值    = mean(sim$y[sim$a == 1]) - mean(sim$y[sim$a == 0])
+) |> round(4)
+
+tapply(sim$tau, sim$x2, mean) |> round(3)   # x2 各水平的真 CATE
+```
+
+四个协变量的角色互不相同，这是后面几页反复要用的对照：
+
+| 变量 | 角色 | 进入真模型的方式 |
+|---|---|---|
+| `x1` | **既是混杂又是效应修饰** | 进 `ps`、进基线、进 `tau`（系数 0.8） |
+| `x2` | **既是混杂又是效应修饰**（离散） | 进 `ps`、进 `tau`（`c` 水平 +0.6） |
+| `x3` | **只是混杂 + 预后** | 进 `ps`、进基线，**不进** `tau` |
+| `x4` | **纯噪声** | 哪里都不进 |
+
+朴素差值 `r round(mean(sim$y[sim$a == 1]) - mean(sim$y[sim$a == 0]), 3)`
+远大于真 SATE `r round(mean(sim$tau), 3)`，说明混杂确实存在；
+`ps` 一列存的是**真倾向得分**，因此既可以用
+`add_known_propensity_score("ps")` 模拟"随机试验 / 已知倾向"的情形，
+也可以把它当未知、用 `add_propensity_score_model()` 估计——
+两条路的差别在[第 3 页](03-model-cfg.qmd#sec-family)里有直接对照。
+
+::: {.callout-tip}
+## 一个可复制的检查习惯
+
+`tidyhte` 的输出是长格式 tibble，`estimand` 列区分量的类型。
+做任何一次分析后，先跑一句 `count(results, estimand, level)`
+看看**该有的行是不是都在**——本手册里好几个"静默失效"
+（效应面诊断被跳过、某个调节变量没估出来）都是这样发现的。
+:::
+
+## 本页涉及的帮助主题
+
+`tidyhte-package`、`attach_config`、`check_data_has_hte_cfg`、`check_splits`、
+`check_identifier`、`check_weights`、`check_nuisance_models`、`listwise_deletion`。
+其中 `listwise_deletion()` 的行为在[第 5 页](05-plugin-pseudo.qmd#sec-missing)
+与缺失数据一起讲。

@@ -1,0 +1,237 @@
+---
+title: "8. 实测清单与工作流"
+subtitle: "tidyhte 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 8, fig.height = 4,
+                      dpi = 150, out.width = "100%")
+library(tidyhte)
+library(dplyr)
+library(ggplot2)
+theme_set(theme_minimal(base_size = 12))
+```
+
+前七页的实测结论汇总在这里，外加一套可以照抄的工作流。
+所有条目都在 **tidyhte 1.0.4 / Windows R 4.4.3** 上复现过，
+正文里给出了触发条件、表现和出处。
+
+## 失效路径总表
+
+"静默"一栏是本表最重要的一列：报错至少能让人回头查，
+静默失效会让一份看起来完整的结果表里少掉整块内容。
+
+| # | 触发条件 | 表现 | 静默？ | 出处 |
+|---|---|---|---|---|
+| 1 | 走配方 API 配倾向得分模型 | family 恒为 `gaussian()`，得到线性概率模型，$\hat\pi$ 可以越界 | **是** | [3](03-model-cfg.qmd#sec-family) |
+| 2 | `add_vimp(linear_only = TRUE)` | 参数被丢弃，仍走非参数 VIMP | **是** | [2](02-recipe-api.qmd#sec-vimp) |
+| 3 | 只配 MCATE（默认）时用 `add_effect_model()` / `add_effect_diagnostic()` | 效应面模型只被 VIMP 用；效应面诊断整块跳过 | **是**（只有一条 message） | [6](06-estimate-qoi.qmd#sec-effect-diag) |
+| 4 | 从同一个 `HTE_cfg` 派生多份配方 | R6 引用语义，改一份等于改全部；浅 `clone()` 也不够 | **是** | [2](02-recipe-api.qmd) |
+| 5 | `SLEnsemble_cfg$new(cvControl = ...)` | 字段存下来但无人读取，内层折数恒为 `.num_splits - 1` | **是** | [3](03-model-cfg.qmd#sec-cvcontrol) |
+| 6 | `PCATE_cfg$cfgs` | 展示模型取自 `MCATE_cfg`，这里写的被忽略 | **是** | [6](06-estimate-qoi.qmd#sec-pcate) |
+| 7 | RROC 不设 `params$num_bins` | 每个模型返回 $n$ 行，而非帮助页写的 100 | **是** | [7](07-diagnostics-plots.qmd#sec-rroc) |
+| 8 | RROC 进入流水线 | `observed` / `shifted` 标记被 `level` 列覆盖 | **是** | [7](07-diagnostics-plots.qmd#sec-rroc) |
+| 9 | `Stratified_cfg` 用在连续变量上 | 每个取值一层，标准误全 `NaN` | **是** | [3](03-model-cfg.qmd#sec-display) |
+| 10 | 缺 `quickblock` 而给了分层变量 | 退回纯随机划分 | **是**（message） | [4](04-splits.qmd#sec-strata) |
+| 11 | `HTE_cfg$new(verbose = TRUE)` | 全包无人读取该字段 | **是** | [3](03-model-cfg.qmd#sec-hte) |
+| 12 | `estimate_QoI()` 里出现未登记的调节变量 | `Unknown model class.` | 否 | [2](02-recipe-api.qmd#sec-moderator) |
+| 13 | `.num_splits = 2` | `All algorithms dropped from library` | 否 | [4](04-splits.qmd#sec-numsplits) |
+| 14 | VIMP + 奇数折 | `Number of splits must be even to calculate VIMP.` | 否 | [6](06-estimate-qoi.qmd#sec-vimp) |
+| 15 | 缺失把整折抽空 + VIMP | `Number of splits is inconsistent.` | 否 | [4](04-splits.qmd#sec-strata) |
+| 16 | `.weights` + 任一 `KernelSmooth` 调节变量 | `` `nprobust` does not support the use of weights. `` | 否（但发生在最后一步） | [5](05-plugin-pseudo.qmd#sec-weights) |
+| 17 | 治疗变量不是 0/1（因子、0/2） | SuperLearner 内部报 `id vector must have the same dimension as Y` | 否 | [5](05-plugin-pseudo.qmd) |
+| 18 | `predictions = TRUE` 而 `pcate = NULL` | `'.' in formula and no 'data' argument` | 否 | [6](06-estimate-qoi.qmd#sec-predictions) |
+| 19 | `predictions = TRUE` 且配了 PCATE | 能跑，但 `level` 列是标识符的**列名**，不是 id | **是** | [6](06-estimate-qoi.qmd#sec-predictions) |
+| 20 | `pcate` 非空而 `mcate = NULL` | `Unknown model class.` | 否 | [6](06-estimate-qoi.qmd#sec-pcate) |
+| 21 | PCATE 目标变量不在 `cfgs` 的名字里 | `dplyr::sample_n()` 报缺失值 | 否 | [6](06-estimate-qoi.qmd#sec-pcate) |
+| 22 | `Constant_cfg` + 默认 `std_errors = TRUE` | `Not Implemented` | 否 | [3](03-model-cfg.qmd#sec-display) |
+| 23 | 诊断名拼错 | `object 'result' not found` | 否 | [7](07-diagnostics-plots.qmd#sec-estimate) |
+| 24 | 分层变量有缺失、且不在模型协变量里 | `NAs are not allowed in subscripted assignments` | 否 | [4](04-splits.qmd#sec-strata) |
+| 25 | 四步之间插入 `group_by()` | 全部 attribute 丢失 → `Must attach HTE_cfg` | 否 | [1](01-overview.qmd#sec-attrs) |
+
+## 默认值陷阱
+
+| 位置 | 默认值 | 为什么要改 |
+|---|---|---|
+| `SLEnsemble_cfg$family` | `gaussian()` | 倾向得分应该用 `binomial()`；二值结局同理 |
+| `basic_config()$qoi$vimp` | 打开且 `sample_splitting = TRUE` | 需要 `vimp` 包、折数为偶；不用就 `remove_vimp()` |
+| `basic_config()$qoi$diag$ps` | 含 `"AUC"` | 需要 `WeightedROC` 包 |
+| `basic_config()$qoi$mcate` | `NULL` | **不加 `add_moderator()` 就没有任何 CATE 输出** |
+| 三处模型的 `SL.library` | 只有 `SL.glm` | 名为"机器学习集成"，实为线性回归 |
+| `KernelSmooth_cfg$eval_min_quantile` | `0.05` | 曲线只画 5%–95% 分位，两端是**被裁掉**而不是估不出来 |
+| `MCATE_cfg$std_errors` | `TRUE` | 用 `Constant_cfg` 时必须改成 `FALSE` |
+| RROC 的 `nbins` | 样本量 $n$ | 大样本下结果表会膨胀几十万行 |
+| `construct_pseudo_outcomes(type=)` | `"dr"` | 这个默认值是对的，别改成 `"ipw"` |
+
+## 三件工程上的小事
+
+**① 进度条关不掉，只能靠 chunk 选项。** 三个进度条都是
+`progress_bar$new(..., force = TRUE, show_after = 0)`，
+没有全局开关。在 Rmd / Quarto 里必须给代码块加 `message: false`，
+否则每次调用都会在输出里留下一长串 `[====>-----]`。
+需要显示包发出的**真**消息时，用 `withCallingHandlers()` 接住再筛：
+
+```r
+msgs <- character()
+res <- withCallingHandlers(
+  estimate_QoI(prepped, x1, x2),
+  message = function(m) { msgs <<- c(msgs, conditionMessage(m)); invokeRestart("muffleMessage") }
+)
+grep("moderators", msgs, value = TRUE)
+```
+
+注意 `capture.output(..., type = "message")` 在 knitr 下**拿不到**这些消息
+（knitr 已经接管了 message 流），会返回 `character(0)`。
+
+**② 时间花在哪。** 主要成本是 $K$ 折 × 3 个冗余模型，
+以及 VIMP 的 $1 + p$ 个 `CV.SuperLearner`。
+本手册的例子（$n = 800$、4 折、线性学习器）：
+冗余函数约 2 秒，MCATE 不到 1 秒，VIMP 约 2 秒，
+PCATE 随 `num_mc_samples` × 唯一取值数线性增长。
+换成 `SL.ranger` / `SL.xgboost` 会涨一到两个数量级——
+先用线性学习器把流程跑通，再换模型。
+
+**③ 结果表要先 `count()` 再看数字。** 由于上表里那么多"静默"路径，
+养成习惯：
+
+```r
+count(results, estimand, level)
+```
+
+对照自己配了什么。少了 `Effect Surface`、少了某个 `term`、
+`VIMP` 只有三行而你有四个调节变量——这些都是配置没生效的信号。
+
+## 可照抄的工作流
+
+下面这段把前面所有坑都绕开了：二项族倾向得分、
+深拷贝派生配方、偶数折、显式登记每个调节变量、
+不与权重混用连续调节变量、`num_bins` 明确设定。
+
+```{r}
+#| label: template
+#| message: false
+library(tidyhte); library(dplyr); library(ggplot2)
+
+## 0. 数据：uid 是单位/聚类标识符，a 必须是 0/1
+set.seed(20260920)
+n <- 800
+dat <- tibble(
+  uid = seq_len(n),
+  x1 = rnorm(n), x2 = factor(sample(c("a", "b", "c"), n, replace = TRUE)),
+  x3 = runif(n, -2, 2), x4 = rnorm(n)
+) %>% mutate(
+  ps  = plogis(0.6 * x1 - 0.5 * (x2 == "c") + 0.3 * x3),
+  a   = rbinom(n, 1, ps),
+  tau = 0.5 + 0.8 * x1 + 0.6 * (x2 == "c"),
+  y   = 1 + x1 + 0.5 * x3 + tau * a + rnorm(n, sd = 0.5)
+)
+
+## 1. 配方：配方 API 打底，手工修 family 与诊断参数
+make_recipe <- function() {                     # 用函数，避免 R6 引用语义
+  cfg <- basic_config() %>%
+    add_outcome_model("SL.glm.interaction") %>%
+    add_outcome_model("SL.glmnet", alpha = c(0, 1)) %>%
+    add_effect_model("SL.glm.interaction") %>%
+    add_moderator("Stratified", x2) %>%
+    add_moderator("KernelSmooth", x1, x3, x4) %>%
+    add_vimp(sample_splitting = FALSE) %>%
+    add_outcome_diagnostic("RROC")
+  # 配方 API 够不着的两处
+  cfg$treatment <- SLEnsemble_cfg$new(
+    learner_cfgs = list(SLLearner_cfg$new("SL.glm"),
+                        SLLearner_cfg$new("SL.glmnet", list(alpha = c(0, 1)))),
+    family = stats::binomial())                 # ← 关键：logistic 倾向得分
+  cfg$qoi$diag$params <- list(num_bins = 50)    # ← RROC 不要 n 行
+  cfg
+}
+
+## 2. 四步流水线：折数取偶且 >= 4
+results <- dat %>%
+  attach_config(make_recipe()) %>%
+  make_splits(uid, .num_splits = 4) %>%
+  produce_plugin_estimates(y, a, x1, x2, x3, x4) %>%
+  construct_pseudo_outcomes(y, a) %>%
+  estimate_QoI(x1, x2, x3, x4)                  # 每个变量都登记过
+
+## 3. 先体检，再看数字
+count(results, estimand, level)
+```
+
+```{r}
+#| label: template-checks
+#| message: false
+# 倾向得分是否越界（高斯族的典型症状）
+prepped <- dat %>% attach_config(make_recipe()) %>% make_splits(uid, .num_splits = 4) %>%
+  produce_plugin_estimates(y, a, x1, x2, x3, x4) %>% construct_pseudo_outcomes(y, a)
+c(pi_min = min(prepped$.pi_hat), pi_max = max(prepped$.pi_hat),
+  越界 = sum(prepped$.pi_hat <= 0 | prepped$.pi_hat >= 1)) |> round(4)
+
+# 主结果对照真值
+filter(results, estimand %in% c("SATE", "VIMP"))
+c(真SATE = round(mean(dat$tau), 3))
+```
+
+```{r}
+#| label: fig-template
+#| fig-cap: "模板产出的两张主图"
+#| fig-height: 3.2
+#| message: false
+p1 <- results %>% filter(estimand == "MCATE", term %in% c("x1", "x3", "x4")) %>%
+  ggplot(aes(value, estimate)) +
+  geom_hline(yintercept = 0, linetype = "dotted") +
+  geom_ribbon(aes(ymin = estimate - 1.96 * std_error,
+                  ymax = estimate + 1.96 * std_error), alpha = 0.25) +
+  geom_line() + facet_wrap(~term, scales = "free_x") +
+  labs(x = NULL, y = "CATE")
+
+p2 <- results %>% filter(estimand == "VIMP") %>%
+  ggplot(aes(reorder(term, estimate), estimate)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_pointrange(aes(ymin = estimate - 1.96 * std_error,
+                      ymax = estimate + 1.96 * std_error)) +
+  coord_flip() + labs(x = NULL, y = "VIMP")
+
+patchwork_available <- requireNamespace("patchwork", quietly = TRUE)
+if (patchwork_available) print(p1 + p2) else { print(p1); print(p2) }
+```
+
+## 什么时候该用这个包
+
+放在本站已有的几个异质性效应工具里比较：
+
+| 包 | 找什么 | 输出形态 | 和 `tidyhte` 的区别 |
+|---|---|---|---|
+| **`tidyhte`** | 预先指定的调节变量的效应曲面 + 重要性排序 | 长格式 tibble，自己画图 | **不做变量发现，也不切亚组**；调节变量必须自己列出来 |
+| [`grf`](../grf/01-grf-guide.qmd) | 个体效应 + 自动的变量重要性 | 森林对象、`predict()` | 非参数发现异质性；`tidyhte` 的曲面更易读、推断更直接 |
+| [`StratifiedMedicine`](../stratifiedmedicine.qmd) | **可读的亚组规则** | 树 + 逐亚组效应表 | 目标是"切出亚组"，`tidyhte` 是"给定变量看曲面" |
+| [`model4you`](../model4you.qmd) | 基于模型的递归分割 | 树 | 同上，且以参数模型的参数不稳定性为准则 |
+
+一句话：**`tidyhte` 适合"我已经知道要看哪几个调节变量、
+想要一份带正确标准误的效应曲面和重要性排序"**；
+要从几十个候选变量里**发现**谁是效应修饰变量，
+它的 VIMP 只能做排序，且依赖效应面模型设得够灵活。
+
+它真正的独到之处有三点：**交叉拟合 + 聚类稳健标准误 + 抽样权重**
+这三件在应用研究里必须有的东西，它一次做齐；
+配方对象可以复用到多个结局 / 多个对比上；
+输出是 tidy 的长表，接 `ggplot2` 零摩擦。
+
+## 版本与环境
+
+```{r}
+#| label: session
+c(tidyhte = as.character(packageVersion("tidyhte")),
+  SuperLearner = as.character(packageVersion("SuperLearner")),
+  nprobust = as.character(packageVersion("nprobust")),
+  vimp = as.character(packageVersion("vimp")),
+  quickblock = as.character(packageVersion("quickblock")),
+  WeightedROC = as.character(packageVersion("WeightedROC")),
+  R = paste(R.version$major, R.version$minor, sep = "."))
+```
+
+本手册核对于 2026 年 9 月 20 日。上表里的每一条都可以在当前页面上
+重新执行复现；若日后上游修好了其中任何一条，
+最先变化的会是本页表格里标"静默"的那几行。

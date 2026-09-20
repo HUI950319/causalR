@@ -1,0 +1,470 @@
+---
+title: "6. estimate_QoI()：五类关心量"
+subtitle: "tidyhte 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(tidyhte)
+library(dplyr)
+```
+
+```{r}
+#| label: sim
+#| include: false
+#| message: false
+set.seed(20260920)
+n <- 800
+sim <- tibble(
+  uid = seq_len(n),
+  x1  = rnorm(n),
+  x2  = factor(sample(c("a", "b", "c"), n, replace = TRUE)),
+  x3  = runif(n, -2, 2),
+  x4  = rnorm(n)
+) %>% mutate(
+  ps  = plogis(0.6 * x1 - 0.5 * (x2 == "c") + 0.3 * x3),
+  a   = rbinom(n, 1, ps),
+  tau = 0.5 + 0.8 * x1 + 0.6 * (x2 == "c"),
+  y   = 1 + x1 + 0.5 * x3 + tau * a + rnorm(n, sd = 0.5),
+  w   = 0.2 + rexp(n, 1)
+)
+make_cfg <- function() {
+  basic_config() %>%
+    add_known_propensity_score("ps") %>%
+    add_outcome_model("SL.glm.interaction") %>%
+    add_effect_model("SL.glm.interaction") %>%
+    add_moderator("Stratified", x2) %>%
+    add_moderator("KernelSmooth", x1, x3, x4, .model_arguments = list(neval = 30)) %>%
+    remove_vimp()
+}
+prepped <- sim %>% attach_config(make_cfg()) %>% make_splits(uid, .num_splits = 4) %>%
+  produce_plugin_estimates(y, a, x1, x2, x3, x4) %>% construct_pseudo_outcomes(y, a)
+```
+
+```r
+estimate_QoI(data, ...)
+```
+
+`...` 是**不加引号**的调节变量名，每一个都必须在 `add_moderator()` 里登记过
+（见[第 2 页](02-recipe-api.qmd#sec-moderator)）；一个都不给时，
+自动使用 `MCATE_cfg` 里登记的全部变量。
+本页按 `estimate_QoI()` 内部的执行顺序讲五类关心量。
+
+## 输出的长格式 schema
+
+不管算了哪几类，返回的都是同一张表，最多六列：
+
+| 列 | 含义 | 什么时候是 `NA` |
+|---|---|---|
+| `estimand` | 量的名字：`MCATE`、`PCATE`、`VIMP`、`SATE`、`PATE`、`Predicted CATE`、`MSE`、`AUC`、`RROC`、`SL risk`、`SL coefficient` | 从不 |
+| `term` | 变量名 / 子模型名 | ATE 行为 `NA` |
+| `value` | **连续**取值（连续调节变量的评估点、RROC 的横轴） | 离散量为 `NA` |
+| `level` | **离散**取值（因子水平、`Propensity Score` / `Treatment Response` / `Control Response` / `Effect Surface`） | 连续量为 `NA` |
+| `estimate` | 点估计 | 从不 |
+| `std_error` | 标准误 | RROC、`Predicted CATE` 恒为 `NA` |
+
+```{r}
+#| label: schema
+#| message: false
+res <- estimate_QoI(prepped, x1, x2, x3, x4)
+names(res)
+count(res, estimand, level)
+```
+
+::: {.callout-note}
+## `sample_size` 被最后一行 `select()` 丢掉了
+
+`calculate_ate()` 和 PCATE 的内核都算了 `sample_size` 一列，
+但 `estimate_QoI()` 收尾时写的是
+`select(intersect(col_order, names(.)))`，而 `col_order` 只有上表那六个名字。
+于是 ATE 的样本量（以及 PCATE 每个评估点的有效样本量）在公开输出里拿不到，
+只能自己从数据框数。
+:::
+
+## `QoI_cfg`：开关总表 {#sec-qoicfg}
+
+```r
+QoI_cfg$new(mcate = NULL, pcate = NULL, vimp = NULL, diag = NULL,
+            ate = TRUE, predictions = FALSE)
+```
+
+| 字段 | 类型 | `basic_config()` 的默认值 | 对应内核 |
+|---|---|---|---|
+| `mcate` | `MCATE_cfg` / `NULL` | `NULL`（靠 `add_moderator()` 建） | `calculate_mcate_quantities()` |
+| `pcate` | `PCATE_cfg` / `NULL` | `NULL`（配方 API 无入口） | `fit_fx_predictor()` + `calculate_pcate_quantities()` |
+| `vimp` | `VIMP_cfg` / `NULL` | `VIMP_cfg$new(sample_splitting = TRUE)` | `calculate_vimp()` / `calculate_linear_vimp()` |
+| `diag` | `Diagnostics_cfg` / `NULL` | 三处诊断都有 | `calculate_diagnostics()` |
+| `ate` | 逻辑 | `TRUE` | `calculate_ate()` |
+| `predictions` | 逻辑 | `FALSE` | 与 PCATE 共用 `fit_fx_predictor()` |
+
+执行顺序固定为 **MCATE → （效应面模型）→ PCATE → VIMP → 诊断 → ATE**，
+最后 `bind_rows()`。顺序之所以重要：效应面模型只有在这一步被拟合，
+诊断在它之后才看得到 `.pseudo_outcome_hat`。
+
+注意裸的 `QoI_cfg$new()` 六项里有四项是 `NULL`，
+所以 `HTE_cfg$new()` 直接构造出来的配方**既没有 VIMP 也没有任何诊断**，
+和 `basic_config()` 不是一回事。
+
+## MCATE：边际条件平均治疗效应 {#sec-mcate}
+
+"边际"指的是**其余协变量全部积掉**，只保留一个调节变量。
+这就是文献里通常说的 CATE，也是本包的主力输出。
+
+```r
+MCATE_cfg$new(cfgs, std_errors = TRUE)
+MCATE_cfg$add_moderator(var_name, cfg)
+```
+
+`cfgs` 是"变量名 → 展示模型"的命名列表，`add_moderator()` 配方函数
+帮你填的就是它。对每个变量，内核做的事只有三步：
+用 `.pseudo_outcome` 当标签、该变量当唯一特征建 `Model_data`，
+按展示模型拟合，取 `predict_se()`。
+
+离散变量给每个水平一行（`level` 有值、`value` 为 `NA`）：
+
+```{r}
+#| label: mcate-discrete
+res %>% filter(estimand == "MCATE", term == "x2") %>% arrange(level) %>%
+  mutate(真值 = round(as.numeric(tapply(sim$tau, sim$x2, mean)), 3))
+```
+
+连续变量给 `neval` 行（`value` 有值、`level` 为 `NA`）：
+
+```{r}
+#| label: mcate-continuous
+res %>% filter(estimand == "MCATE", term == "x1") %>% head(4)
+res %>% filter(estimand == "MCATE") %>% count(term)
+```
+
+`x1`（真修饰变量，斜率 0.8）、`x3`（只是预后）、`x4`（纯噪声）
+三条曲线的对比是这份数据的主要看点，作图见
+[第 7 页](07-diagnostics-plots.qmd#sec-mcate-plot)。
+
+::: {.callout-note}
+## 标准误怎么来的
+
+离散变量走 `StratifiedPredictor`，每层是加权均值 + **聚类稳健**标准误
+（聚类单位是 `make_splits()` 里的标识符）。
+连续变量走 `nprobust::lprobust()` 的局部线性回归，
+标准误是它给的（**不做聚类调整**）。
+`MCATE_cfg$std_errors <- FALSE` 时两者都只返回点估计，
+`std_error` 列在合并后成为 `NA`。
+:::
+
+## ATE
+
+`calculate_ate()` 直接对伪结局取（加权）均值：
+
+```{r}
+#| label: ate
+tidyhte:::calculate_ate
+res %>% filter(grepl("ATE", estimand))
+```
+
+两个细节：
+
+- **`PATE` 只在权重非常数时才出现**（源码里 `if (!zero_range(data[[w_col]]))`）。
+  默认权重全 1，所以默认输出里只有 `SATE`。
+- 标准误恒为**聚类稳健**版本，聚类单位是标识符列。
+  没有聚类时（每行一个 id）退化成普通的均值标准误。
+
+```{r}
+#| label: ate-se
+tidyhte:::clustered_se_of_mean
+```
+
+## VIMP：调节变量重要性 {#sec-vimp}
+
+```r
+VIMP_cfg$new(sample_splitting = TRUE, linear_only = FALSE)
+```
+
+两条路径算的是**不同的量**：
+
+| | `linear = FALSE`（默认） | `linear = TRUE` |
+|---|---|---|
+| 内核 | `calculate_vimp()` | `calculate_linear_vimp()` |
+| 依赖 | `vimp` + `quadprog` + `SuperLearner` | 只用 `stats::lm()` |
+| 估计量 | 去掉该变量后**总体 $R^2$ 的下降** | 去掉该变量后**平方残差均值的上升** |
+| 量纲 | 无量纲，截断在 $[0, 1]$ | 结局量纲的平方 |
+| 速度 | 要拟合 $1 + p$ 个 `CV.SuperLearner` | 一个 `lm` + $p$ 个 `lm` |
+| 有效性 | 算法无关，需要效应面模型收敛 | 只有真模型是线性时才一致 |
+
+```{r}
+#| label: vimp-compare
+#| message: false
+cfg_np <- make_cfg() %>% add_vimp(sample_splitting = FALSE)
+cfg_ln <- make_cfg(); cfg_ln$qoi$vimp <- VIMP_cfg$new(sample_splitting = FALSE, linear_only = TRUE)
+cfg_ss <- make_cfg() %>% add_vimp(sample_splitting = TRUE)
+
+vimp_of <- function(cfg, label) {
+  d <- prepped; attr(d, "HTE_cfg") <- cfg
+  estimate_QoI(d, x1, x2, x3, x4) %>% filter(estimand == "VIMP") %>%
+    transmute(路径 = label, term, estimate = round(estimate, 4), std_error = round(std_error, 4))
+}
+bind_rows(
+  vimp_of(cfg_np, "非参数, 不分样本"),
+  vimp_of(cfg_ss, "非参数, 分样本"),
+  vimp_of(cfg_ln, "线性")
+) %>% arrange(term, 路径) %>% print(n = 12)
+```
+
+三条路径都把两个真修饰变量（`x1`、`x2`）排在预后变量 `x3` 和噪声 `x4` 之上，
+但**数值不可跨路径比较**：线性 VIMP 的 `x1` 是零点几个结局单位的平方，
+非参数 VIMP 的 `x1` 是零点几的 $R^2$ 份额。
+
+::: {.callout-important}
+## 用配方 API 打不开线性路径
+
+`add_vimp(linear_only = TRUE)` 不起作用（见
+[第 2 页](02-recipe-api.qmd#sec-vimp)），上面第三行是靠
+`cfg$qoi$vimp <- VIMP_cfg$new(..., linear_only = TRUE)` 手工设的。
+:::
+
+三个必须记住的约束：
+
+1. **折数必须是偶数**，否则 `calculate_vimp()` 抛
+   `Number of splits must be even to calculate VIMP.`；
+   `make_splits()` 在配方已挂上时会自动向上取偶。
+2. **VIMP 对哪些变量算，取决于 `estimate_QoI()` 的 `...`**，
+   而不是 `VIMP_cfg`。少传一个变量，它就不在重要性表里，
+   而且**剩下变量的重要性值会变**（因为"全模型"变小了）。
+3. **因子按整体剔除**。VIMP 用的是 `Model_data$model_frame`（原始列），
+   不是哑变量矩阵，所以一个三水平因子算作一个变量。
+
+```{r}
+#| label: vimp-odd
+#| error: true
+#| message: false
+# 先用不带 VIMP 的配方划 3 折（这样不会被自动取偶），再换上带 VIMP 的配方
+d_odd <- sim %>% attach_config(make_cfg()) %>% make_splits(uid, .num_splits = 3) %>%
+  produce_plugin_estimates(y, a, x1, x2, x3, x4) %>% construct_pseudo_outcomes(y, a)
+attr(d_odd, "HTE_cfg") <- cfg_np
+estimate_QoI(d_odd, x2)
+```
+
+`sample_splitting = TRUE` 时，折被对半分成两组，
+一组拟合全模型、一组拟合缩减模型。代价是标准误明显变大
+（上表第二组），收益是**对真实重要性为 0 的变量也有正确的覆盖率**；
+`FALSE` 时零假设下的推断无效，只能用来排序。
+
+## PCATE：偏条件平均治疗效应 {#sec-pcate}
+
+```r
+PCATE_cfg$new(model_covariates, cfgs, num_mc_samples = 100)
+```
+
+`[实验性]`。它先在**全部** `model_covariates` 上拟合一个交叉拟合的效应面模型
+$\hat\tau(x)$，再把关心的那个协变量在其取值范围上扫一遍、
+其余协变量按经验分布蒙特卡洛积分，得到"控制住其它变量之后"的效应曲面。
+和 MCATE 的区别正是"偏"与"边际"：两个高度相关的变量，
+MCATE 曲面会很像，PCATE 曲面可以完全不同。
+
+```{r}
+#| label: pcate
+#| message: false
+cfg_pc <- make_cfg()
+cfg_pc$qoi$pcate <- PCATE_cfg$new(
+  model_covariates = c("x1", "x2", "x3", "x4"),
+  # cfgs 的内容不会用于展示（见下方 callout），但它的**名字**决定 num_mc_samples
+  cfgs = list(x1 = KernelSmooth_cfg$new(neval = 7), x2 = Stratified_cfg$new("x2")),
+  num_mc_samples = 20
+)
+d_pc <- prepped; attr(d_pc, "HTE_cfg") <- cfg_pc
+res_pc <- suppressWarnings(estimate_QoI(d_pc, x1, x2))
+count(res_pc, estimand, level)
+```
+
+同一个 `x2`，两种口径的对照：
+
+```{r}
+#| label: pcate-vs-mcate
+res_pc %>% filter(term == "x2", estimand %in% c("MCATE", "PCATE")) %>%
+  select(estimand, level, estimate, std_error) %>% arrange(level, estimand)
+```
+
+::: {.callout-important}
+## `PCATE_cfg$cfgs` 被忽略，展示用的是 `MCATE_cfg`
+
+`estimate_QoI()` 调用内核时写的是
+`calculate_pcate_quantities(..., .MCATE_cfg = .QoI_cfg$mcate)`，
+内核里再 `.MCATE_cfg$cfgs[[covariate]]`。
+也就是说 PCATE 曲面的展示模型来自 **MCATE** 的配置，
+`PCATE_cfg$cfgs`（以及 `PCATE_cfg$add_moderator()`）写进去的东西没有读取方。
+证据是评估点个数：
+
+```{r}
+#| label: pcate-cfg-ignored
+c(MCATE设的neval = cfg_pc$qoi$mcate$cfgs$x1$neval,
+  PCATE设的neval = cfg_pc$qoi$pcate$cfgs$x1$neval,
+  PCATE实际行数  = sum(res_pc$estimand == "PCATE" & res_pc$term == "x1"))
+```
+
+直接后果：**`mcate = NULL` 而只配 `pcate` 会报 `Unknown model class.`**——
+取不到展示配置。PCATE 只能在 MCATE 之上叠加使用。
+:::
+
+::: {.callout-warning}
+## 每次调用都会打印一句劝退
+
+```{r}
+#| label: pcate-warning
+#| message: false
+w <- tryCatch(estimate_QoI(d_pc, x2), warning = function(w) conditionMessage(w))
+w
+```
+
+这是包作者刻意放的：PCATE 没有"其它变量也被随机化"这一条件时，
+不具备干净的因果解释，本质上更接近偏依赖图。
+把它当描述性工具用，别当成因果估计量。
+:::
+
+::: {.callout-warning}
+## `cfgs` 虽然不用于展示，却决定 `num_mc_samples` 的名字
+
+`PCATE_cfg$new()` 里对标量 `num_mc_samples` 的处理是
+
+```r
+self$num_mc_samples <- as.list(structure(rep(num_mc_samples, length(cfgs)),
+                                         names = names(cfgs)))
+```
+
+——按 **`cfgs` 的名字**展开，而不是按 `model_covariates`。
+而 `FX.Predictor$predict()` 取的是
+`self$num_mc_samples[[covariate]]`。于是**只要你向 `estimate_QoI()`
+要一个不在 `cfgs` 名字里的 PCATE，抽样数就是缺失值**，
+报一个来自 `dplyr::sample_n()` 的错：
+
+```{r}
+#| label: pcate-mc-names
+#| error: true
+#| message: false
+cfg_bad <- make_cfg()
+cfg_bad$qoi$pcate <- PCATE_cfg$new(
+  model_covariates = c("x1", "x2", "x3", "x4"),
+  cfgs = list(x1 = KernelSmooth_cfg$new()),   # 只有 x1
+  num_mc_samples = 20)
+d_bad <- prepped; attr(d_bad, "HTE_cfg") <- cfg_bad
+suppressWarnings(estimate_QoI(d_bad, x1, x2))   # 却要了 x2
+```
+
+稳妥写法是把 `num_mc_samples` 直接写成覆盖全部目标变量的命名列表：
+
+```{r}
+#| label: pcate-mc-named
+#| message: false
+cfg_ok <- make_cfg()
+cfg_ok$qoi$pcate <- PCATE_cfg$new(
+  model_covariates = c("x1", "x2", "x3", "x4"),
+  cfgs = list(),                                   # 反正也不会被读
+  num_mc_samples = list(x1 = 20, x2 = 20))
+d_ok <- prepped; attr(d_ok, "HTE_cfg") <- cfg_ok
+suppressWarnings(estimate_QoI(d_ok, x1, x2)) %>% filter(estimand == "PCATE") %>% count(term)
+```
+:::
+
+`num_mc_samples` 控制蒙特卡洛积分的抽样数（大于样本量时就用全样本）。
+它直接决定这一步的耗时：内部对每个唯一取值抽 `num_mc_samples` 行、
+逐折预测，因此离散变量的成本随水平数线性增长。
+
+底层对象是 `FX.Predictor`（未导出），由 `fit_fx_predictor()` 构造：
+它保存 K 个交叉拟合模型，`$predict(data, covariate)` 返回
+`covariate_value` / `.hte` / `.id` 三列的长表。
+
+## `predictions`：逐单位 CATE {#sec-predictions}
+
+`QoI_cfg$predictions <- TRUE` 会把每个单位的 $\hat\tau(x_i)$ 作为
+`estimand = "Predicted CATE"` 的行返回。两个问题：
+
+**① 没有 `PCATE_cfg` 时直接报错。** 源码里 `predictions` 和 `pcate`
+共用一个 `if`，取 `covs <- rlang::syms(.QoI_cfg$pcate$model_covariates)`；
+`pcate` 为 `NULL` 时它是空的，效应面模型没有任何协变量：
+
+```{r}
+#| label: predictions-alone
+#| error: true
+#| message: false
+cfg_pr <- make_cfg(); cfg_pr$qoi$predictions <- TRUE
+d_pr <- prepped; attr(d_pr, "HTE_cfg") <- cfg_pr
+estimate_QoI(d_pr, x1, x2)
+```
+
+**② 配上 PCATE 之后能跑，但 `level` 列写的是标识符的列名。**
+
+```{r}
+#| label: predictions-with-pcate
+#| message: false
+cfg_pr2 <- make_cfg()
+cfg_pr2$qoi$pcate <- PCATE_cfg$new(model_covariates = c("x1", "x2", "x3", "x4"),
+                                   cfgs = list(), num_mc_samples = list(x2 = 20))
+cfg_pr2$qoi$predictions <- TRUE
+d_pr2 <- prepped; attr(d_pr2, "HTE_cfg") <- cfg_pr2
+res_pr <- suppressWarnings(estimate_QoI(d_pr2, x2))
+res_pr %>% filter(estimand == "Predicted CATE") %>% head(3)
+res_pr %>% filter(estimand == "Predicted CATE") %>% count(term, level)
+```
+
+源码是 `ids <- identifier_name`（一个字符串），然后
+`tibble(..., level = ids, estimate = fx)` 让它循环补齐。
+本该是 `data[[identifier_name]]`。于是 800 行预测值的 `level`
+全都是 `"uid"`，只能靠**行序**对回原数据——而 `estimate_QoI()`
+开头做过 listwise 删除，行序未必和输入数据一致。
+要逐单位预测值，更稳的办法是自己取 `.pseudo_outcome_hat`：
+
+```{r}
+#| label: predictions-workaround
+#| message: false
+fx <- tidyhte:::fit_fx_predictor(prepped, .weights, ".pseudo_outcome", x1, x2, x3, x4,
+                                 .pcate.cfg = cfg_pr2$qoi$pcate,
+                                 .Model_cfg = cfg_pr2$effect)
+fx$data %>% select(uid, .pseudo_outcome, .pseudo_outcome_hat) %>% head(3)
+cor(fx$data$.pseudo_outcome_hat, sim$tau)      # 与真 CATE 的相关
+```
+
+## 效应面诊断只在这条路径上才有 {#sec-effect-diag}
+
+`calculate_diagnostics()` 里，效应面那一段第一句就是：
+
+```r
+for (diag in fx_cfg) {
+    if (!(".pseudo_outcome_hat" %in% names(data))) {
+        message("Skipping diagnostic on .pseudo_outcome due to lack of model.")
+        break
+    }
+    ...
+}
+```
+
+而 `.pseudo_outcome_hat` 只有 `fit_fx_predictor()` 会写，
+后者只在 `pcate` 非空或 `predictions = TRUE` 时被调用。所以：
+
+```{r}
+#| label: effect-diag
+#| message: false
+# 默认（只有 MCATE）：没有 Effect Surface
+res %>% filter(level == "Effect Surface") %>% nrow()
+
+# 配了 PCATE：三个效应面诊断都出来了
+res_pc %>% filter(level == "Effect Surface")
+```
+
+::: {.callout-important}
+## 官方 vignette 里那三张图的 "Effect Surface" 面板是空的
+
+`vignette("experimental_analysis")` 用
+`add_effect_model()` + `add_effect_diagnostic("RROC")` 配置了效应面，
+却没有配 PCATE，于是 `facet_wrap(~level)` 里
+`factor(level, levels = c("Control Response", "Treatment Response", "Effect Surface"))`
+的第三个面板没有任何数据。本手册[第 7 页](07-diagnostics-plots.qmd#sec-rroc)
+画的是补上 PCATE 之后的版本。
+:::
+
+## 本页涉及的帮助主题
+
+`estimate_QoI`、`QoI_cfg`、`MCATE_cfg`、`PCATE_cfg`、`VIMP_cfg`、
+`calculate_ate`、`calculate_vimp`、`calculate_linear_vimp`、
+`calculate_pcate_quantities`、`fit_fx_predictor`、`FX.Predictor`、
+`fit_effect`。

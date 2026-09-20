@@ -13814,5 +13814,736 @@
       "StratifiedMedicine 包函数手册",
       "<span class='chapter-number'>207</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
     ]
+  },
+  {
+    "objectID": "notes/tidyhte/01-overview.html",
+    "href": "notes/tidyhte/01-overview.html",
+    "title": "1. 总览、对象结构与示例数据",
+    "section": "",
+    "text": "包的边界\n本页先把包的边界说清楚：它依赖什么、导出了什么、四步流水线各自往数据框里 加了什么；再说明后面七页共用的模拟数据——它的真值是写死的， 因此可以用来判断某个方法是估对了还是估错了。\npackageVersion(\"tidyhte\")\n#&gt; [1] '1.0.4'\nlength(getNamespaceExports(\"tidyhte\"))\n#&gt; [1] 32\nsort(getNamespaceExports(\"tidyhte\"))\n#&gt;  [1] \"add_effect_diagnostic\"      \"add_effect_model\"          \n#&gt;  [3] \"add_known_propensity_score\" \"add_moderator\"             \n#&gt;  [5] \"add_outcome_diagnostic\"     \"add_outcome_model\"         \n#&gt;  [7] \"add_propensity_diagnostic\"  \"add_propensity_score_model\"\n#&gt;  [9] \"add_vimp\"                   \"attach_config\"             \n#&gt; [11] \"basic_config\"               \"Constant_cfg\"              \n#&gt; [13] \"construct_pseudo_outcomes\"  \"Diagnostics_cfg\"           \n#&gt; [15] \"estimate_diagnostic\"        \"estimate_QoI\"              \n#&gt; [17] \"HTE_cfg\"                    \"KernelSmooth_cfg\"          \n#&gt; [19] \"Known_cfg\"                  \"make_splits\"               \n#&gt; [21] \"MCATE_cfg\"                  \"Model_cfg\"                 \n#&gt; [23] \"Model_data\"                 \"PCATE_cfg\"                 \n#&gt; [25] \"produce_plugin_estimates\"   \"QoI_cfg\"                   \n#&gt; [27] \"remove_vimp\"                \"SL.glmnet.interaction\"     \n#&gt; [29] \"SLEnsemble_cfg\"             \"SLLearner_cfg\"             \n#&gt; [31] \"Stratified_cfg\"             \"VIMP_cfg\"\n32 个导出对象里，12 个是配方 API 的函数、10 个是 R6 配置类、 4 个是流水线主函数，剩下的是 attach_config()、Model_data、 estimate_diagnostic() 和一个 SuperLearner 学习器 SL.glmnet.interaction()。\n帮助页比导出多得多：\nrd &lt;- sub(\"[.]Rd$\", \"\", names(tools::Rd_db(\"tidyhte\")))\nex &lt;- getNamespaceExports(\"tidyhte\")\nlength(rd)\n#&gt; [1] 54\nsetdiff(rd, c(ex, \"tidyhte-package\", \"predict.SL.glmnet.interaction\"))\n#&gt;  [1] \"FX.Predictor\"               \"HTEFold\"                   \n#&gt;  [3] \"calculate_ate\"              \"calculate_diagnostics\"     \n#&gt;  [5] \"calculate_linear_vimp\"      \"calculate_pcate_quantities\"\n#&gt;  [7] \"calculate_rroc\"             \"calculate_vimp\"            \n#&gt;  [9] \"check_data_has_hte_cfg\"     \"check_identifier\"          \n#&gt; [11] \"check_nuisance_models\"      \"check_splits\"              \n#&gt; [13] \"check_weights\"              \"fit_effect\"                \n#&gt; [15] \"fit_fx_predictor\"           \"fit_plugin\"                \n#&gt; [17] \"fit_plugin_A\"               \"fit_plugin_Y\"              \n#&gt; [19] \"listwise_deletion\"          \"split_data\"\n这 20 个函数有完整的帮助页（也出现在 pkgdown 的 Reference 里），却没有导出。 想调用必须写 tidyhte:::。它们分三类：关心量的计算内核 （calculate_*）、模型拟合的适配层（fit_*、FX.Predictor）、 以及折划分与前置检查（split_data、HTEFold、check_*、listwise_deletion）。 本手册在用到时一律显式写 tidyhte:::，提醒它们不属于稳定接口。\n依赖关系决定了哪些功能”装了包才有”：",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>208</span>  <span class='chapter-title'>1. 总览、对象结构与数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/01-overview.html#包的边界",
+    "href": "notes/tidyhte/01-overview.html#包的边界",
+    "title": "1. 总览、对象结构与示例数据",
+    "section": "",
+    "text": "类别\n包\n影响什么\n\n\n\n\nImports（必装）\nSuperLearner\n全部冗余函数与效应面模型\n\n\n\nR6\n所有配置类\n\n\n\ndplyr、tibble、rlang、purrr、magrittr\ntidy 语义、非标准求值\n\n\n\ncheckmate\ncheck_* 前置检查\n\n\n\nprogress\n三个进度条\n\n\nSuggests（可选，缺了就用不了）\nnprobust\nadd_moderator(\"KernelSmooth\", ...)，即全部连续调节变量\n\n\n\nvimp + quadprog\nadd_vimp()，而 basic_config() 默认就打开它\n\n\n\nquickblock\nmake_splits() 的分层区组；缺了会打印提示并退回纯随机划分\n\n\n\nWeightedROC\n\"AUC\" 诊断，而 basic_config() 默认就要算它\n\n\n\nglmnet\nSL.glmnet、SL.glmnet.interaction\n\n\n\nestimatr、palmerpenguins\n仅 vignette 与测试用\n\n\n\n\n\n\n\n\n\n警告basic_config() 默认依赖两个 Suggests\n\n\n\n默认配方里 vimp = VIMP_cfg$new(sample_splitting = TRUE)、 倾向诊断含 \"AUC\"。也就是说，只装了主包和 Imports 的机器上， 照着帮助页第一个例子跑就会缺包。官方帮助页里所有完整示例都要先写 remove_vimp()，原因就在这里。缺 WeightedROC 时 soft_require() 会给出可读的提示，缺 vimp 同理，但都发生在流水线跑到最后一步之后。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>208</span>  <span class='chapter-title'>1. 总览、对象结构与数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/01-overview.html#sec-pipeline",
+    "href": "notes/tidyhte/01-overview.html#sec-pipeline",
+    "title": "1. 总览、对象结构与示例数据",
+    "section": "四步流水线各自做了什么",
+    "text": "四步流水线各自做了什么\n每一步都返回原数据框（这是 tidy 语义的关键）， 只是多几列、多几个 attribute：\n\n\n\n\n\n\n\n\n步骤\n新增列\n新增 / 修改的 attribute\n\n\n\n\nattach_config(data, cfg)\n无\nHTE_cfg\n\n\nmake_splits(data, id, ..., .num_splits)\n.split_id\nnum_splits、identifier\n\n\nproduce_plugin_estimates(data, y, a, ...)\n.weights（未给权重时）、.pi_hat、.mu0_hat、.mu1_hat\nSL_coefs、weights\n\n\nconstruct_pseudo_outcomes(data, y, a)\n.pseudo_outcome\ntreatment、outcome\n\n\nestimate_QoI(data, ...)\n—\n返回的是结果 tibble，不再是原数据\n\n\n\n\n\n模拟数据的生成代码（与本页最后一节相同）\nset.seed(20260920)\nn &lt;- 800\nsim &lt;- tibble(\n  uid = seq_len(n),\n  x1  = rnorm(n),\n  x2  = factor(sample(c(\"a\", \"b\", \"c\"), n, replace = TRUE)),\n  x3  = runif(n, -2, 2),\n  x4  = rnorm(n)\n) %&gt;% mutate(\n  ps  = plogis(0.6 * x1 - 0.5 * (x2 == \"c\") + 0.3 * x3),\n  a   = rbinom(n, 1, ps),\n  tau = 0.5 + 0.8 * x1 + 0.6 * (x2 == \"c\"),\n  y   = 1 + x1 + 0.5 * x3 + tau * a + rnorm(n, sd = 0.5),\n  w   = 0.2 + rexp(n, 1)\n)\n\ncfg &lt;- basic_config() %&gt;%\n  add_known_propensity_score(\"ps\") %&gt;%\n  add_outcome_model(\"SL.glm.interaction\") %&gt;%\n  add_moderator(\"Stratified\", x2) %&gt;%\n  add_moderator(\"KernelSmooth\", x1) %&gt;%\n  remove_vimp()\n\nstep0 &lt;- attach_config(sim, cfg)\nstep1 &lt;- make_splits(step0, uid, .num_splits = 4)\nstep2 &lt;- produce_plugin_estimates(step1, y, a, x1, x2, x3, x4)\nstep3 &lt;- construct_pseudo_outcomes(step2, y, a)\n\nsetdiff(names(step1), names(step0))\n#&gt; [1] \".split_id\"\nsetdiff(names(step2), names(step1))\n#&gt; [1] \".weights\" \".pi_hat\"  \".mu1_hat\" \".mu0_hat\"\nsetdiff(names(step3), names(step2))\n#&gt; [1] \".pseudo_outcome\"\n\n\n伪结局那一列就是后面所有估计的输入：\n\nstep3 %&gt;% select(uid, a, y, .split_id, .pi_hat, .mu0_hat, .mu1_hat, .pseudo_outcome) %&gt;% head(4)\n#&gt; # A tibble: 4 × 8\n#&gt;     uid     a      y .split_id .pi_hat .mu0_hat .mu1_hat .pseudo_outcome\n#&gt;   &lt;int&gt; &lt;int&gt;  &lt;dbl&gt;     &lt;int&gt;   &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;           &lt;dbl&gt;\n#&gt; 1     1     0  2.41          4   0.649    2.01     3.99            0.851\n#&gt; 2     2     1 -1.04          1   0.153   -1.03    -1.44            2.21 \n#&gt; 3     3     0 -0.718         1   0.307   -0.455   -0.219           0.616\n#&gt; 4     4     0  2.12          1   0.539    2.10     3.25            1.10",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>208</span>  <span class='chapter-title'>1. 总览、对象结构与数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/01-overview.html#sec-attrs",
+    "href": "notes/tidyhte/01-overview.html#sec-attrs",
+    "title": "1. 总览、对象结构与示例数据",
+    "section": "状态全部存在 attribute 里",
+    "text": "状态全部存在 attribute 里\n这是 tidyhte 最容易踩的设计：四步之间靠数据框的 attribute 传状态， 而不是靠一个显式对象。\n\nsetdiff(names(attributes(step3)), c(\"names\", \"row.names\", \"class\"))\n#&gt; [1] \"HTE_cfg\"    \"num_splits\" \"identifier\" \"SL_coefs\"   \"weights\"   \n#&gt; [6] \"treatment\"  \"outcome\"\nattr(step3, \"identifier\")\n#&gt; [1] \"uid\"\nattr(step3, \"num_splits\")\n#&gt; [1] 4\nattr(step3, \"weights\")\n#&gt; [1] \".weights\"\nc(treatment = attr(step3, \"treatment\"), outcome = attr(step3, \"outcome\"))\n#&gt; treatment   outcome \n#&gt;       \"a\"       \"y\"\n\nSL_coefs 存的是每一折、每个子学习器的集成权重与交叉验证风险， \"SL_coefs\" / \"SL_risk\" 两个诊断就是从这里读的（见 第 7 页）：\n\nstr(attr(step3, \"SL_coefs\"), max.level = 2)\n#&gt; List of 3\n#&gt;  $ pi : list()\n#&gt;  $ mu0:List of 4\n#&gt;   ..$ : tibble [2 × 4] (S3: tbl_df/tbl/data.frame)\n#&gt;   ..$ : tibble [2 × 4] (S3: tbl_df/tbl/data.frame)\n#&gt;   ..$ : tibble [2 × 4] (S3: tbl_df/tbl/data.frame)\n#&gt;   ..$ : tibble [2 × 4] (S3: tbl_df/tbl/data.frame)\n#&gt;  $ mu1:List of 4\n#&gt;   ..$ : tibble [2 × 4] (S3: tbl_df/tbl/data.frame)\n#&gt;   ..$ : tibble [2 × 4] (S3: tbl_df/tbl/data.frame)\n#&gt;   ..$ : tibble [2 × 4] (S3: tbl_df/tbl/data.frame)\n#&gt;   ..$ : tibble [2 × 4] (S3: tbl_df/tbl/data.frame)\n\n\n\n\n\n\n\n重要group_by() 会把全部 attribute 丢掉\n\n\n\n大多数 dplyr 动词保留自定义 attribute，但分组会重建对象。 下面这段在渲染时真实执行：\n\nops &lt;- list(\n  filter      = \\(d) dplyr::filter(d, x1 &gt; -10),\n  mutate      = \\(d) dplyr::mutate(d, z = 1),\n  arrange     = \\(d) dplyr::arrange(d, x1),\n  select      = \\(d) dplyr::select(d, dplyr::everything()),\n  slice       = \\(d) dplyr::slice(d, seq_len(nrow(d))),\n  `group_by+ungroup` = \\(d) dplyr::ungroup(dplyr::group_by(d, x2)),\n  as_tibble   = \\(d) tibble::as_tibble(d),\n  `[ , ]`     = \\(d) d[seq_len(nrow(d)), ]\n)\nkeys &lt;- c(\"HTE_cfg\", \"num_splits\", \"identifier\", \"weights\", \"outcome\")\nt(vapply(ops, \\(f) keys %in% names(attributes(f(step3))), logical(length(keys)))) |&gt;\n  `colnames&lt;-`(keys)\n#&gt;                  HTE_cfg num_splits identifier weights outcome\n#&gt; filter              TRUE       TRUE       TRUE    TRUE    TRUE\n#&gt; mutate              TRUE       TRUE       TRUE    TRUE    TRUE\n#&gt; arrange             TRUE       TRUE       TRUE    TRUE    TRUE\n#&gt; select              TRUE       TRUE       TRUE    TRUE    TRUE\n#&gt; slice               TRUE       TRUE       TRUE    TRUE    TRUE\n#&gt; group_by+ungroup   FALSE      FALSE      FALSE   FALSE   FALSE\n#&gt; as_tibble           TRUE       TRUE       TRUE    TRUE    TRUE\n#&gt; [ , ]               TRUE       TRUE       TRUE    TRUE    TRUE\n\n也就是说，在四步之间插一句 group_by()（哪怕随后 ungroup()） 会让下一步报 Must attach HTE_cfg with `attach_config`.。 要做分组统计，请在 estimate_QoI() 之后对结果 tibble 做。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>208</span>  <span class='chapter-title'>1. 总览、对象结构与数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/01-overview.html#sec-checks",
+    "href": "notes/tidyhte/01-overview.html#sec-checks",
+    "title": "1. 总览、对象结构与示例数据",
+    "section": "五个前置检查与它们的报错",
+    "text": "五个前置检查与它们的报错\n包里有五个未导出的检查函数，流水线在每一步开头调用它们。 把报错原文列出来，便于按错误信息反查是哪一步没做：\n\n\n\n\n\n\n\n\n检查\n触发条件\n报错原文\n\n\n\n\ncheck_data_has_hte_cfg()\n数据框没有 HTE_cfg attribute\nMust attach HTE_cfg with `attach_config`.\n\n\ncheck_splits()\n缺 .split_id 列，或缺 num_splits / identifier attribute\nYou must first construct splits with `tidyhte::make_splits`.\n\n\ncheck_identifier()\n标识符列不存在、含 NA、长度不符，或是非整数型的 double\nInvalid identifier. Each unit / cluster must have its own unique ID.\n\n\ncheck_weights()\n权重列不存在 / 非数值 / 有负值\nInvalid weight column. Must be ...\n\n\ncheck_nuisance_models()\n缺 .pi_hat / .mu0_hat / .mu1_hat\nYou must first estimate plugin models with `tidyhte::produce_plugin_estimates`.\n\n\n\n\ntidyhte:::check_data_has_hte_cfg(tibble(x = 1))\n#&gt; Error in tidyhte:::check_data_has_hte_cfg(tibble(x = 1)): Must attach HTE_cfg with `attach_config`.\n\n\ntidyhte:::check_splits(step0)\n#&gt; Error in tidyhte:::check_splits(step0): You must first construct splits with `tidyhte::make_splits`.\n\n\n\n\n\n\n\n注记check_identifier() 的报错文案与它的检查不一致\n\n\n\n报错说”每个单位 / 群必须有自己唯一的 ID”，但函数体里没有唯一性检查—— 它检查的是空值、长度和类型。重复 ID 是故意允许的： 那正是聚类设计（一个村、一个班级多行数据）的表达方式， 见第 4 页。真正会被这条报错拦下的是 含 NA 的标识符，以及取值不是整数的 double 列：\n\ntidyhte:::check_identifier(tibble(id = c(1.5, 2.5, 3.5)), \"id\")\n#&gt; Error in tidyhte:::check_identifier(tibble(id = c(1.5, 2.5, 3.5)), \"id\"): Invalid identifier. Each unit / cluster must have its own unique ID.",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>208</span>  <span class='chapter-title'>1. 总览、对象结构与数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/01-overview.html#sec-data",
+    "href": "notes/tidyhte/01-overview.html#sec-data",
+    "title": "1. 总览、对象结构与示例数据",
+    "section": "示例数据",
+    "text": "示例数据\n后面各页共用同一份模拟数据。它同时具备四种变量，真值写死，便于核对：\nset.seed(20260920)\nn &lt;- 800\nsim &lt;- tibble(\n  uid = seq_len(n),\n  x1  = rnorm(n),                                             # 效应修饰 + 混杂\n  x2  = factor(sample(c(\"a\", \"b\", \"c\"), n, replace = TRUE)),  # 效应修饰 + 混杂（离散）\n  x3  = runif(n, -2, 2),                                      # 只是预后 + 混杂\n  x4  = rnorm(n)                                              # 纯噪声\n) %&gt;% mutate(\n  ps  = plogis(0.6 * x1 - 0.5 * (x2 == \"c\") + 0.3 * x3),      # 真倾向得分\n  a   = rbinom(n, 1, ps),\n  tau = 0.5 + 0.8 * x1 + 0.6 * (x2 == \"c\"),                   # 真 CATE\n  y   = 1 + x1 + 0.5 * x3 + tau * a + rnorm(n, sd = 0.5),\n  w   = 0.2 + rexp(n, 1)                                      # 抽样权重\n)\n\nc(\n  真SATE      = mean(sim$tau),\n  真PATE_加权 = weighted.mean(sim$tau, sim$w),\n  处理比例    = mean(sim$a),\n  朴素差值    = mean(sim$y[sim$a == 1]) - mean(sim$y[sim$a == 0])\n) |&gt; round(4)\n#&gt;      真SATE 真PATE_加权    处理比例    朴素差值 \n#&gt;      0.7007      0.6908      0.4312      1.5560\n\ntapply(sim$tau, sim$x2, mean) |&gt; round(3)   # x2 各水平的真 CATE\n#&gt;     a     b     c \n#&gt; 0.450 0.534 1.126\n\n四个协变量的角色互不相同，这是后面几页反复要用的对照：\n\n\n\n\n\n\n\n\n变量\n角色\n进入真模型的方式\n\n\n\n\nx1\n既是混杂又是效应修饰\n进 ps、进基线、进 tau（系数 0.8）\n\n\nx2\n既是混杂又是效应修饰（离散）\n进 ps、进 tau（c 水平 +0.6）\n\n\nx3\n只是混杂 + 预后\n进 ps、进基线，不进 tau\n\n\nx4\n纯噪声\n哪里都不进\n\n\n\n朴素差值 1.556 远大于真 SATE 0.701，说明混杂确实存在； ps 一列存的是真倾向得分，因此既可以用 add_known_propensity_score(\"ps\") 模拟”随机试验 / 已知倾向”的情形， 也可以把它当未知、用 add_propensity_score_model() 估计—— 两条路的差别在第 3 页里有直接对照。\n\n\n\n\n\n\n提示一个可复制的检查习惯\n\n\n\ntidyhte 的输出是长格式 tibble，estimand 列区分量的类型。 做任何一次分析后，先跑一句 count(results, estimand, level) 看看该有的行是不是都在——本手册里好几个”静默失效” （效应面诊断被跳过、某个调节变量没估出来）都是这样发现的。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>208</span>  <span class='chapter-title'>1. 总览、对象结构与数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/01-overview.html#本页涉及的帮助主题",
+    "href": "notes/tidyhte/01-overview.html#本页涉及的帮助主题",
+    "title": "1. 总览、对象结构与示例数据",
+    "section": "本页涉及的帮助主题",
+    "text": "本页涉及的帮助主题\ntidyhte-package、attach_config、check_data_has_hte_cfg、check_splits、 check_identifier、check_weights、check_nuisance_models、listwise_deletion。 其中 listwise_deletion() 的行为在第 5 页 与缺失数据一起讲。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>208</span>  <span class='chapter-title'>1. 总览、对象结构与数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/02-recipe-api.html",
+    "href": "notes/tidyhte/02-recipe-api.html",
+    "title": "2. 配方 API：basic_config() 与 11 个 add_*",
+    "section": "",
+    "text": "basic_config()：默认配方到底是什么\n配方 API（Recipe API）是 tidyhte 面向使用者的主入口： 从 basic_config() 起手，用一串 %&gt;% 把模型、调节变量、诊断、变量重要性 一层层加上去，最后得到一个 HTE_cfg 对象。 本页逐个说明这 12 个函数，并给出三处签名与行为不符的实测结果。\ntidyhte::basic_config\n#&gt; function () \n#&gt; {\n#&gt;     trt_cfg &lt;- SLEnsemble_cfg$new()\n#&gt;     reg_cfg &lt;- SLEnsemble_cfg$new()\n#&gt;     fx_cfg &lt;- SLEnsemble_cfg$new()\n#&gt;     qoi_cfg &lt;- QoI_cfg$new(ate = TRUE, vimp = VIMP_cfg$new(sample_splitting = TRUE), \n#&gt;         diag = Diagnostics_cfg$new(ps = c(\"AUC\", \"MSE\", \"SL_risk\", \n#&gt;             \"SL_coefs\"), outcome = c(\"MSE\", \"SL_risk\", \"SL_coefs\"), \n#&gt;             effect = c(\"MSE\", \"SL_risk\", \"SL_coefs\")))\n#&gt;     hte_cfg &lt;- HTE_cfg$new(treatment = trt_cfg, outcome = reg_cfg, \n#&gt;         effect = fx_cfg, qoi = qoi_cfg)\n#&gt;     invisible(hte_cfg)\n#&gt; }\n#&gt; &lt;bytecode: 0x0000025612530120&gt;\n#&gt; &lt;environment: namespace:tidyhte&gt;\n展开成表就是：\ncfg &lt;- basic_config()\ncfg$outcome$SL.library\n#&gt; [1] \"SL.glm\"\ncfg$treatment$family$family\n#&gt; [1] \"gaussian\"\nc(ate = cfg$qoi$ate, predictions = cfg$qoi$predictions)\n#&gt;         ate predictions \n#&gt;        TRUE       FALSE\nc(mcate_is_null = is.null(cfg$qoi$mcate), pcate_is_null = is.null(cfg$qoi$pcate))\n#&gt; mcate_is_null pcate_is_null \n#&gt;          TRUE          TRUE\ncfg$qoi$diag$ps\n#&gt; [1] \"AUC\"      \"MSE\"      \"SL_risk\"  \"SL_coefs\"",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>209</span>  <span class='chapter-title'>2. 配方 API</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/02-recipe-api.html#sec-basic",
+    "href": "notes/tidyhte/02-recipe-api.html#sec-basic",
+    "title": "2. 配方 API：basic_config() 与 11 个 add_*",
+    "section": "",
+    "text": "位置\n默认值\n含义\n\n\n\n\n$treatment\nSLEnsemble_cfg$new() → 只含 SL.glm，family = gaussian()\n倾向得分用线性概率模型\n\n\n$outcome\nSLEnsemble_cfg$new() → 只含 SL.glm\nT-learner 的两个结局回归\n\n\n$effect\nSLEnsemble_cfg$new() → 只含 SL.glm\n伪结局的联合模型（只有 VIMP / PCATE 会用）\n\n\n$qoi$ate\nTRUE\n输出 SATE（有权重时另加 PATE）\n\n\n$qoi$mcate\nNULL\n默认不输出任何 CATE 曲面，要靠 add_moderator()\n\n\n$qoi$pcate\nNULL\n偏 CATE，配方 API 没有入口\n\n\n$qoi$vimp\nVIMP_cfg$new(sample_splitting = TRUE)\n默认打开，需要 vimp 包、折数为偶数\n\n\n$qoi$predictions\nFALSE\n逐单位 CATE 预测\n\n\n$qoi$diag$ps\nAUC MSE SL_risk SL_coefs\n倾向模型诊断，AUC 需要 WeightedROC\n\n\n$qoi$diag$outcome\nMSE SL_risk SL_coefs\n结局模型诊断\n\n\n$qoi$diag$effect\nMSE SL_risk SL_coefs\n效应面诊断，通常被跳过\n\n\n$verbose\nFALSE\n调试输出\n\n\n\n\n\n\n\n\n\n\n警告默认配方不会给出任何 CATE\n\n\n\n$qoi$mcate 是 NULL。只写 basic_config() 然后跑完整条流水线， 拿到的只有 SATE 和一堆诊断——想要按调节变量分解效应， 必须显式 add_moderator()。这与”HTE 包”的直觉相反， 但和它的设计一致：展示方式（怎么画）和估计（算什么）是分开配置的。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>209</span>  <span class='chapter-title'>2. 配方 API</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/02-recipe-api.html#sec-models",
+    "href": "notes/tidyhte/02-recipe-api.html#sec-models",
+    "title": "2. 配方 API：basic_config() 与 11 个 add_*",
+    "section": "往三个集成里加学习器",
+    "text": "往三个集成里加学习器\n三个函数签名完全一样，只是改的字段不同：\n\n\n\n\n\n\n\n\n函数\n改哪个字段\n什么时候真的被用到\n\n\n\n\nadd_propensity_score_model(hte_cfg, model_name, ...)\n$treatment\nproduce_plugin_estimates() 估 \\(\\hat\\pi\\)\n\n\nadd_outcome_model(hte_cfg, model_name, ...)\n$outcome\nproduce_plugin_estimates() 估 \\(\\hat\\mu_0,\\hat\\mu_1\\)\n\n\nadd_effect_model(hte_cfg, model_name, ...)\n$effect\n只有 VIMP、PCATE、predictions 会用\n\n\n\nmodel_name 用 SuperLearner 的命名约定（SuperLearner::listWrappers(\"SL\") 可列全），... 里写要网格搜索的超参数，包会对超参数取笛卡尔积， 每个组合生成一个独立学习器：\n\ncfg &lt;- basic_config() %&gt;%\n  add_outcome_model(\"SL.glmnet\", alpha = c(0, 0.5, 1)) %&gt;%\n  add_outcome_model(\"SL.ranger\", num.trees = c(200, 500), min.node.size = c(5, 20))\n\ncfg$outcome$SL.library\n#&gt; [1] \"SL.glm\"                  \"custom_SL.glmnet_0\"     \n#&gt; [3] \"custom_SL.glmnet_0.5\"    \"custom_SL.glmnet_1\"     \n#&gt; [5] \"custom_SL.ranger_200_5\"  \"custom_SL.ranger_500_5\" \n#&gt; [7] \"custom_SL.ranger_200_20\" \"custom_SL.ranger_500_20\"\n\n生成的学习器叫 custom_&lt;模型名&gt;_&lt;超参数值...&gt;， 名字按参数在 ... 里出现的顺序拼接。它们被 assign 到配置自带的 SL.env 环境里，本质上是一层薄包装：\n\nget(\"custom_SL.ranger_200_5\", envir = cfg$outcome$SL.env)\n#&gt; function (...) \n#&gt; SL.ranger(..., num.trees = 200, min.node.size = 5)\n#&gt; &lt;environment: namespace:SuperLearner&gt;\n\n这些名字会原样出现在 \"SL risk\" / \"SL coefficient\" 两个诊断的 term 列里， 所以它是把诊断图上的点对回具体超参数的唯一线索 （见第 7 页）。\n\n\n\n\n\n\n注记不带超参数时会怎样\n\n\n\nadd_outcome_model(\"SL.glm.interaction\") 里 ... 为空， 此时不生成包装，直接把原名放进 SL.library。 所以库里会混着 SL.glm、SL.glm.interaction 这样的原名 和 custom_SL.glmnet_0.5 这样的生成名。\n\n\n\n效应面集成的实际作用范围\nadd_effect_model() 改的 $effect 字段，在默认（只有 MCATE）的流程里 完全不会被调用。estimate_QoI() 里用到 .HTE_cfg$effect 的地方只有三处： calculate_vimp()、calculate_linear_vimp()、fit_fx_predictor() （后者服务于 PCATE 和 predictions）。 MCATE 用的是 add_moderator() 里登记的展示模型，与 $effect 无关。\n\nbody_txt &lt;- paste(deparse(tidyhte::estimate_QoI), collapse = \" \")\n# estimate_QoI() 里把 .HTE_cfg$effect 传出去的调用一共只有三处\nregmatches(body_txt, gregexpr(\"[A-Za-z_.]+(?=[(][^()]{0,300}?HTE_cfg[$]effect)\",\n                              body_txt, perl = TRUE))[[1]]\n#&gt; [1] \"fit_fx_predictor\"      \"calculate_vimp\"        \"calculate_linear_vimp\"",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>209</span>  <span class='chapter-title'>2. 配方 API</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/02-recipe-api.html#sec-known",
+    "href": "notes/tidyhte/02-recipe-api.html#sec-known",
+    "title": "2. 配方 API：basic_config() 与 11 个 add_*",
+    "section": "已知倾向得分",
+    "text": "已知倾向得分\n随机试验里倾向得分是设计出来的，不需要估计：\n\ncfg &lt;- basic_config() %&gt;% add_known_propensity_score(\"ps\")\nclass(cfg$treatment)\n#&gt; [1] \"Known_cfg\" \"Model_cfg\" \"R6\"\ncfg$treatment$covariate_name\n#&gt; [1] \"ps\"\n\n它把 $treatment 整个换成 Known_cfg，此后 produce_plugin_estimates() 直接把 ps 这一列当作 \\(\\hat\\pi\\) 用 （不拟合、不交叉拟合，见第 5 页）。\n\n\n\n\n\n\n重要它会顺手清空倾向诊断和 Diagnostics_cfg$params\n\n\n\n函数体第二句是 hte_cfg$qoi$diag = Diagnostics_cfg$new(outcome = ..., effect = ...)， 重建了诊断配置，于是 ps 项被丢弃、params 也一起没了。 因此调用顺序会改变结果：\n\n# 先加诊断，再声明已知倾向 —— 诊断被清掉\nc1 &lt;- basic_config() %&gt;% add_propensity_diagnostic(\"AUC\") %&gt;% add_known_propensity_score(\"ps\")\nc1$qoi$diag$ps\n#&gt; character(0)\n\n# 反过来 —— 诊断留下了\nc2 &lt;- basic_config() %&gt;% add_known_propensity_score(\"ps\") %&gt;% add_propensity_diagnostic(\"AUC\")\nc2$qoi$diag$ps\n#&gt; [1] \"auc\"\n\n# params 同样会被清掉\nc3 &lt;- basic_config()\nc3$qoi$diag &lt;- Diagnostics_cfg$new(outcome = c(\"MSE\", \"RROC\"), params = list(num_bins = 20))\nc3$qoi$diag$params\n#&gt; $num_bins\n#&gt; [1] 20\nc3 &lt;- add_known_propensity_score(c3, \"ps\")\nc3$qoi$diag$params\n#&gt; list()\n\n对倾向得分是常数的随机试验来说，清掉 AUC 是合理的（AUC 恒为 0.5）； 但顺序敏感这件事没写在文档里，而 params 被清掉纯属附带损伤—— num_bins 是 RROC 唯一的调节入口（见第 7 页）。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>209</span>  <span class='chapter-title'>2. 配方 API</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/02-recipe-api.html#sec-moderator",
+    "href": "notes/tidyhte/02-recipe-api.html#sec-moderator",
+    "title": "2. 配方 API：basic_config() 与 11 个 add_*",
+    "section": "登记调节变量",
+    "text": "登记调节变量\nadd_moderator(hte_cfg, model_type, ..., .model_arguments = NULL)\n\n\n\n\n\n\n\n\n参数\n取值\n说明\n\n\n\n\nmodel_type\n\"Stratified\" / \"KernelSmooth\"\n大小写不敏感（源码里 tolower()），其它值报 Unknown `model_type`.\n\n\n...\n不加引号的变量名\n可一次写多个，共用同一个 model_type\n\n\n.model_arguments\n命名 list\n传给 KernelSmooth_cfg$new()；对 Stratified 无效\n\n\n\n\ncfg &lt;- basic_config() %&gt;%\n  add_moderator(\"Stratified\", x2, x3) %&gt;%\n  add_moderator(\"KernelSmooth\", x1, x4, .model_arguments = list(neval = 25, eval_min_quantile = 0.1))\n\nnames(cfg$qoi$mcate$cfgs)\n#&gt; [1] \"x2\" \"x3\" \"x1\" \"x4\"\nvapply(cfg$qoi$mcate$cfgs, \\(z) z$model_class, character(1))\n#&gt;             x2             x3             x1             x4 \n#&gt;   \"Stratified\"   \"Stratified\" \"KernelSmooth\" \"KernelSmooth\"\ncfg$qoi$mcate$cfgs$x1$neval\n#&gt; [1] 25\ncfg$qoi$mcate$cfgs$x1$eval_min_quantile\n#&gt; [1] 0.1\n\n\nbasic_config() %&gt;% add_moderator(\"rpart\", x2)\n#&gt; Error in add_moderator(., \"rpart\", x2): Unknown `model_type`.\n\n\n\n\n\n\n\n警告登记与调用必须一一对应，否则报一个看不懂的错\n\n\n\nestimate_QoI(data, ...) 里出现的每个变量，都要在 add_moderator() 里登记过。少登记一个，calculate_mcate_quantities() 取到 NULL 配置， predictor_factory() 抛 Unknown model class.——这句话完全没提到是哪个变量。\n\n\n完整复现（含数据与流水线）\nset.seed(20260920)\nn &lt;- 400\nsim &lt;- tibble(uid = seq_len(n), x1 = rnorm(n),\n              x2 = factor(sample(c(\"a\", \"b\"), n, replace = TRUE))) %&gt;%\n  mutate(ps = 0.5, a = rbinom(n, 1, ps),\n         y = x1 + a * (0.5 + x1) + rnorm(n, sd = 0.5))\n\ncfg &lt;- basic_config() %&gt;%\n  add_known_propensity_score(\"ps\") %&gt;%\n  add_moderator(\"Stratified\", x2) %&gt;%      # 只登记了 x2\n  remove_vimp()\n\nprepped &lt;- sim %&gt;% attach_config(cfg) %&gt;% make_splits(uid, .num_splits = 4) %&gt;%\n  produce_plugin_estimates(y, a, x1, x2) %&gt;% construct_pseudo_outcomes(y, a)\n\nestimate_QoI(prepped, x1, x2)              # 却要了 x1\n#&gt; Error in predictor_factory(.Model_cfg): Unknown model class.\n\n\n反过来，不传任何变量是合法的：这时包会打印 No moderators specified, so pulling list from definitions in QoI. 并使用 add_moderator() 登记过的全部变量。 这是比逐个手写更安全的调用方式：\n\n# 用 withCallingHandlers 把包发出的提示接下来（否则会混进进度条）\nmsgs &lt;- character()\nres &lt;- withCallingHandlers(\n  estimate_QoI(prepped),\n  message = function(m) { msgs &lt;&lt;- c(msgs, conditionMessage(m)); invokeRestart(\"muffleMessage\") }\n)\ngrep(\"moderators\", msgs, value = TRUE)\n#&gt; [1] \"No moderators specified, so pulling list from definitions in QoI.\\n\"\ncount(res, estimand)\n#&gt; # A tibble: 5 × 2\n#&gt;   estimand           n\n#&gt;   &lt;chr&gt;          &lt;int&gt;\n#&gt; 1 MCATE              2\n#&gt; 2 MSE                2\n#&gt; 3 SATE               1\n#&gt; 4 SL coefficient     2\n#&gt; 5 SL risk            2\n\n\n\n\n\n\n\n\n\n注记.model_arguments 对 Stratified 是静默忽略\n\n\n\n源码里离散分支写死 Stratified_cfg$new(covariate = mod_name)， 根本不看 .model_arguments。传了也不报错：\n\nss &lt;- basic_config() %&gt;% add_moderator(\"Stratified\", x2, .model_arguments = list(neval = 25))\nss$qoi$mcate$cfgs$x2\n#&gt; &lt;Stratified_cfg&gt;\n#&gt;   Inherits from: &lt;Model_cfg&gt;\n#&gt;   Public:\n#&gt;     clone: function (deep = FALSE) \n#&gt;     covariate: x2\n#&gt;     initialize: function (covariate) \n#&gt;     model_class: Stratified\n\n帮助页写的是”see Stratified_cfg and KernelSmooth_cfg for more details”， 容易读成两边都支持。实际上 Stratified_cfg$new() 只有 covariate 一个参数， 本来也没有可配的东西。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>209</span>  <span class='chapter-title'>2. 配方 API</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/02-recipe-api.html#sec-vimp",
+    "href": "notes/tidyhte/02-recipe-api.html#sec-vimp",
+    "title": "2. 配方 API：basic_config() 与 11 个 add_*",
+    "section": "变量重要性开关",
+    "text": "变量重要性开关\nadd_vimp(hte_cfg, sample_splitting = TRUE, linear_only = FALSE)\nremove_vimp(hte_cfg)\n\n\n\n\n\n\n重要linear_only 从未被传下去\n\n\n\n\ntidyhte::add_vimp\n#&gt; function (hte_cfg, sample_splitting = TRUE, linear_only = FALSE) \n#&gt; {\n#&gt;     hte_cfg$qoi$vimp &lt;- VIMP_cfg$new(sample_splitting = sample_splitting)\n#&gt;     invisible(hte_cfg)\n#&gt; }\n#&gt; &lt;bytecode: 0x000002561807fd98&gt;\n#&gt; &lt;environment: namespace:tidyhte&gt;\n\ncfg &lt;- basic_config() %&gt;% add_vimp(linear_only = TRUE)\ncfg$qoi$vimp$linear      # 期望 TRUE，实际 FALSE\n#&gt; [1] FALSE\n\n函数体只写了 VIMP_cfg$new(sample_splitting = sample_splitting)。 linear_only = TRUE 被收下、然后丢掉，$linear 仍是 FALSE。 要真正启用线性 VIMP，只能绕过配方 API 直接赋值：\n\ncfg &lt;- basic_config()\ncfg$qoi$vimp &lt;- VIMP_cfg$new(sample_splitting = FALSE, linear_only = TRUE)\ncfg$qoi$vimp$linear\n#&gt; [1] TRUE\n\n两条路算的不是同一个量：非参数 VIMP 是 \\(R^2\\) 的下降幅度（无量纲、截断在 0）， 线性 VIMP 是平方残差均值的下降（带结局量纲）。 数量级对照见第 6 页。\n\n\nsample_splitting = TRUE（默认）会把折再对半分成两组， 一组拟合全模型、一组拟合缩减模型，这样对零重要性的变量也能给出有效推断， 代价是标准误大得多。FALSE 时推断只对真正非零的变量有效。\nremove_vimp() 把 $qoi$vimp 设为 NULL，同时也就取消了折数必须为偶数的约束 （见第 4 页）。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>209</span>  <span class='chapter-title'>2. 配方 API</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/02-recipe-api.html#三个诊断开关",
+    "href": "notes/tidyhte/02-recipe-api.html#三个诊断开关",
+    "title": "2. 配方 API：basic_config() 与 11 个 add_*",
+    "section": "三个诊断开关",
+    "text": "三个诊断开关\nadd_propensity_diagnostic(hte_cfg, diag)\nadd_outcome_diagnostic(hte_cfg, diag)\nadd_effect_diagnostic(hte_cfg, diag)\ndiag 可以是字符向量，一次加多个。合法取值： 倾向模型 \"AUC\"、\"MSE\"、\"SL_risk\"、\"SL_coefs\"； 结局与效应面把 \"AUC\" 换成 \"RROC\"。 三者都调用 Diagnostics_cfg$add()，它会统一转小写并去重：\n\nc1 &lt;- basic_config()\nc1$qoi$diag$ps                     # 默认（大写）\n#&gt; [1] \"AUC\"      \"MSE\"      \"SL_risk\"  \"SL_coefs\"\nc1 &lt;- add_propensity_diagnostic(c1, \"AUC\")\nc1$qoi$diag$ps                     # 追加一次之后，整列变小写\n#&gt; [1] \"auc\"      \"mse\"      \"sl_risk\"  \"sl_coefs\"\n\n下游 estimate_diagnostic() 用 tolower() 比较，所以大小写不影响结果， 只是打印出来不一致。诊断的具体含义、输出结构和作图见 第 7 页。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>209</span>  <span class='chapter-title'>2. 配方 API</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/02-recipe-api.html#个配方函数速查",
+    "href": "notes/tidyhte/02-recipe-api.html#个配方函数速查",
+    "title": "2. 配方 API：basic_config() 与 11 个 add_*",
+    "section": "12 个配方函数速查",
+    "text": "12 个配方函数速查\n\n\n\n\n\n\n\n\n\n函数\n签名\n返回\n关键实测\n\n\n\n\nbasic_config()\n—\nHTE_cfg\n三处模型都只有 SL.glm；默认开 VIMP、无 MCATE\n\n\nadd_propensity_score_model()\n(cfg, model_name, ...)\n同一引用\n不能改 family，恒为高斯\n\n\nadd_known_propensity_score()\n(cfg, covariate_name)\n同一引用\n清空 diag$ps 与 diag$params\n\n\nadd_outcome_model()\n(cfg, model_name, ...)\n同一引用\n超参数取笛卡尔积\n\n\nadd_effect_model()\n(cfg, model_name, ...)\n同一引用\n仅 VIMP / PCATE / predictions 用\n\n\nadd_propensity_diagnostic()\n(cfg, diag)\n同一引用\n转小写去重\n\n\nadd_outcome_diagnostic()\n(cfg, diag)\n同一引用\n同上\n\n\nadd_effect_diagnostic()\n(cfg, diag)\n同一引用\n默认流程下不会被计算\n\n\nadd_moderator()\n(cfg, model_type, ..., .model_arguments)\n同一引用\nStratified 忽略 .model_arguments\n\n\nadd_vimp()\n(cfg, sample_splitting, linear_only)\n同一引用\nlinear_only 无效\n\n\nremove_vimp()\n(cfg)\n同一引用\n同时解除偶数折约束\n\n\nattach_config()\n(data, .HTE_cfg)\n数据框\n挂的是引用，不是副本",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>209</span>  <span class='chapter-title'>2. 配方 API</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/02-recipe-api.html#本页涉及的帮助主题",
+    "href": "notes/tidyhte/02-recipe-api.html#本页涉及的帮助主题",
+    "title": "2. 配方 API：basic_config() 与 11 个 add_*",
+    "section": "本页涉及的帮助主题",
+    "text": "本页涉及的帮助主题\nbasic_config、add_propensity_score_model、add_known_propensity_score、 add_outcome_model、add_effect_model、add_propensity_diagnostic、 add_outcome_diagnostic、add_effect_diagnostic、add_moderator、 add_vimp、remove_vimp、attach_config。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>209</span>  <span class='chapter-title'>2. 配方 API</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/03-model-cfg.html",
+    "href": "notes/tidyhte/03-model-cfg.html",
+    "title": "3. 模型配置类：Model_cfg 家族",
+    "section": "",
+    "text": "基类与分派\n配方 API 是薄薄一层语法糖，底下是 7 个继承自 Model_cfg 的 R6 类。 凡是配方 API 够不着的设置（倾向得分的 family、SuperLearner 的 cvControl、展示模型的细节），都只能直接操作这些类。 本页逐个说明它们的字段、构造参数，以及三处只有读源码才知道的行为。\nModel_cfg 本身只有一个字段 model_class，predictor_factory() 就靠它把配置对象翻译成实际干活的 Predictor：\ntidyhte:::predictor_factory\n#&gt; function (cfg, ...) \n#&gt; {\n#&gt;     if (!(\"model_class\" %in% names(cfg))) {\n#&gt;         stop(\"Unknown model class.\")\n#&gt;     }\n#&gt;     else if (cfg$model_class == \"known\") {\n#&gt;         KnownPredictor$new(cfg$covariate_name)\n#&gt;     }\n#&gt;     else if (cfg$model_class == \"SL\") {\n#&gt;         SLPredictor$new(cfg$SL.library, cfg$SL.env, family = cfg$family, \n#&gt;             ...)\n#&gt;     }\n#&gt;     else if (cfg$model_class == \"KernelSmooth\") {\n#&gt;         KernelSmoothPredictor$new(neval = cfg$neval, eval_min_quantile = cfg$eval_min_quantile)\n#&gt;     }\n#&gt;     else if (cfg$model_class == \"Stratified\") {\n#&gt;         StratifiedPredictor$new(cfg$covariate)\n#&gt;     }\n#&gt;     else if (cfg$model_class == \"Constant\") {\n#&gt;         ConstantPredictor$new()\n#&gt;     }\n#&gt;     else {\n#&gt;         stop(\"Unknown model class.\")\n#&gt;     }\n#&gt; }\n#&gt; &lt;bytecode: 0x00000166838a8858&gt;\n#&gt; &lt;environment: namespace:tidyhte&gt;\nvapply(list(SLEnsemble_cfg$new(), Known_cfg$new(\"ps\"), KernelSmooth_cfg$new(),\n            Stratified_cfg$new(\"x2\"), Constant_cfg$new()),\n       \\(z) z$model_class, character(1))\n#&gt; Super Learner\n#&gt; Version: 2.0-42\n#&gt; Package created on 2026-09-14\n#&gt; [1] \"SL\"           \"known\"        \"KernelSmooth\" \"Stratified\"   \"Constant\"\nModel_cfg$new() 本身可以构造，但它没有 model_class，交给 predictor_factory() 会被直接拒绝——它只是继承用的基类：\ntidyhte:::predictor_factory(Model_cfg$new())\n#&gt; Error in tidyhte:::predictor_factory(Model_cfg$new()): Unknown model class.",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>210</span>  <span class='chapter-title'>3. 模型配置类</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/03-model-cfg.html#sec-base",
+    "href": "notes/tidyhte/03-model-cfg.html#sec-base",
+    "title": "3. 模型配置类：Model_cfg 家族",
+    "section": "",
+    "text": "配置类\nmodel_class\n对应的 Predictor\n用在哪\n\n\n\n\nSLEnsemble_cfg\n\"SL\"\nSLPredictor\n倾向、结局、效应面\n\n\nKnown_cfg\n\"known\"\nKnownPredictor\n已知倾向得分\n\n\nKernelSmooth_cfg\n\"KernelSmooth\"\nKernelSmoothPredictor\n连续调节变量的 CATE 曲面\n\n\nStratified_cfg\n\"Stratified\"\nStratifiedPredictor\n离散调节变量的分层均值\n\n\nConstant_cfg\n\"Constant\"\nConstantPredictor\n单参数常数模型",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>210</span>  <span class='chapter-title'>3. 模型配置类</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/03-model-cfg.html#sec-sl",
+    "href": "notes/tidyhte/03-model-cfg.html#sec-sl",
+    "title": "3. 模型配置类：Model_cfg 家族",
+    "section": "SuperLearner 集成",
+    "text": "SuperLearner 集成\nSLEnsemble_cfg$new(cvControl = NULL, learner_cfgs = NULL, family = stats::gaussian())\nSLEnsemble_cfg$add_sublearner(learner_name, hps = NULL)\nSLLearner_cfg$new(model_name, hp = NULL)\n\n\n\n\n\n\n\n\n字段\n含义\n实测备注\n\n\n\n\nSL.library\n学习器名字向量\n由 add_sublearner() 累积，默认 SL.glm\n\n\nSL.env\n存放生成学习器的环境\n构造时把整个 SuperLearner 命名空间拷进来\n\n\nfamily\nstats::family 对象\n默认 gaussian()，配方 API 改不了\n\n\ncvControl\n交叉验证设置\n只被 calculate_vimp() 读，冗余函数拟合时完全不用\n\n\nmodel_class\n\"SL\"\n—\n\n\n\n\ncfg &lt;- SLEnsemble_cfg$new(\n  learner_cfgs = list(SLLearner_cfg$new(\"SL.glm\"),\n                      SLLearner_cfg$new(\"SL.glmnet\", list(alpha = c(0, 1))))\n)\ncfg$SL.library\n#&gt; [1] \"SL.glm\"             \"custom_SL.glmnet_0\" \"custom_SL.glmnet_1\"\ncfg$family$family\n#&gt; [1] \"gaussian\"\n\nSLLearner_cfg 只是一个”模型名 + 超参数网格”的容器， 真正展开成多个学习器发生在 add_sublearner() 里：\n\nl &lt;- SLLearner_cfg$new(\"SL.ranger\", list(num.trees = c(200, 500)))\nl$model_name\n#&gt; [1] \"SL.ranger\"\nl$hyperparameters\n#&gt; $num.trees\n#&gt; [1] 200 500\n\n\n\n\n\n\n\n重要cvControl 存下来了，但拟合时不会用\n\n\n\n\ncfg &lt;- SLEnsemble_cfg$new(cvControl = list(V = 5))\ncfg$cvControl\n#&gt; $V\n#&gt; [1] 5\n\nns &lt;- asNamespace(\"tidyhte\")\nmentions &lt;- function(pattern) {          # 连 R6 类的方法体一起搜\n  Filter(function(o) {\n    v &lt;- get(o, envir = ns)\n    txt &lt;- paste(deparse(v), collapse = \" \")\n    if (inherits(v, \"R6ClassGenerator\")) {\n      txt &lt;- paste(txt, paste(vapply(v$public_methods,\n                                     \\(m) paste(deparse(m), collapse = \" \"), \"\"),\n                              collapse = \" \"))\n    }\n    grepl(pattern, txt)\n  }, ls(ns, all.names = TRUE))\n}\nmentions(\"[$]cvControl\")     # 谁碰过这个字段\n#&gt; [1] \"SLEnsemble_cfg\"\nmentions(\"SL_cv_control\")    # 实际拟合时用的是什么\n#&gt; [1] \"calculate_vimp\" \"SLPredictor\"\n\n$cvControl 这个字段只在 SLEnsemble_cfg 自己的构造函数里被写过一次， 全包没有任何地方读它。真正决定内层交叉验证的是 Model_data$SL_cv_control()——SLPredictor$fit() 写死了 cvControl = data$SL_cv_control()，而后者是用外层交叉拟合的 .split_id 现造的（见第 4 页）。所以：\n\n传进来的 cvControl 对倾向 / 结局 / 效应面模型没有任何作用；\nSuperLearner 的内层 CV 折数恒等于 .num_splits - 1；\n只有 VIMP 的 CV.SuperLearner 会用到 data$SL_cv_control() 的结果， 那也不是用户传的那个对象。\n\nSLEnsemble_cfg 的默认 cvControl 打印出来是 V = 10， 很容易让人以为内层做的是 10 折——实际上不是。\n\n\n\n倾向得分被默认拟合成线性概率模型\nbasic_config() 三处模型都用 SLEnsemble_cfg$new()，family 全是高斯。 对倾向得分来说这意味着线性概率模型：预测值可以越界， 而 DR 伪结局里 \\(\\hat\\pi(1-\\hat\\pi)\\) 在分母上。\n\nrun &lt;- function(cfg, label) {\n  d &lt;- sim %&gt;% attach_config(cfg) %&gt;% make_splits(uid, .num_splits = 4) %&gt;%\n    produce_plugin_estimates(y, a, x1, x2, x3, x4) %&gt;%\n    construct_pseudo_outcomes(y, a)\n  res &lt;- estimate_QoI(d, x2)\n  tibble(\n    配置       = label,\n    pi_min     = min(d$.pi_hat),\n    pi_max     = max(d$.pi_hat),\n    越界个数   = sum(d$.pi_hat &lt;= 0 | d$.pi_hat &gt;= 1),\n    伪结局最小 = min(d$.pseudo_outcome),\n    SATE       = res$estimate[res$estimand == \"SATE\"],\n    SE         = res$std_error[res$estimand == \"SATE\"]\n  )\n}\n\n# ① 配方 API 造出来的（高斯族）\ncfg_gauss &lt;- basic_config() %&gt;%\n  add_propensity_score_model(\"SL.glm\") %&gt;%\n  add_outcome_model(\"SL.glm.interaction\") %&gt;%\n  add_moderator(\"Stratified\", x2) %&gt;% remove_vimp()\n\n# ② 手工把 treatment 换成二项族（配方 API 没有入口）\ncfg_binom &lt;- basic_config() %&gt;%\n  add_outcome_model(\"SL.glm.interaction\") %&gt;%\n  add_moderator(\"Stratified\", x2) %&gt;% remove_vimp()\ncfg_binom$treatment &lt;- SLEnsemble_cfg$new(\n  learner_cfgs = list(SLLearner_cfg$new(\"SL.glm\")),\n  family = stats::binomial()\n)\n\n# ③ 真倾向得分（本例已知）\ncfg_known &lt;- basic_config() %&gt;%\n  add_known_propensity_score(\"ps\") %&gt;%\n  add_outcome_model(\"SL.glm.interaction\") %&gt;%\n  add_moderator(\"Stratified\", x2) %&gt;% remove_vimp()\n\nbind_rows(run(cfg_gauss, \"① 高斯族（默认）\"),\n          run(cfg_binom, \"② 二项族（手工）\"),\n          run(cfg_known, \"③ 已知真值\")) %&gt;%\n  mutate(across(where(is.numeric), \\(z) round(z, 3)))\n#&gt; # A tibble: 3 × 7\n#&gt;   配置             pi_min pi_max 越界个数 伪结局最小  SATE    SE\n#&gt;   &lt;chr&gt;             &lt;dbl&gt;  &lt;dbl&gt;    &lt;dbl&gt;      &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;\n#&gt; 1 ① 高斯族（默认） -0.006  0.911        1    -169.   0.517 0.218\n#&gt; 2 ② 二项族（手工）  0.074  0.847        0      -5.47 0.72  0.051\n#&gt; 3 ③ 已知真值        0.092  0.894        0      -4.24 0.726 0.05\n\n真 SATE 是 0.701。高斯族那一行的 pi_min 掉到 0 以下， 一个近零的倾向把某个单位的伪结局放大到几十上百，SATE 的点估计和标准误 都明显劣于另外两行。\n\n\n\n\n\n\n警告配方 API 里没有任何改 family 的入口\n\n\n\nadd_propensity_score_model() 的函数体只做两件事： $treatment 不是 SLEnsemble_cfg 时新建一个（仍是高斯）， 然后 add_sublearner()。它从不碰 family。 换句话说，只要你走配方 API，倾向得分模型就是线性概率模型， 哪怕你把 SL.ranger、SL.xgboost 全塞进去—— 这些学习器也会被以 family = gaussian() 调用。\n要用 logistic，必须像上面 ② 那样直接赋值 cfg$treatment。 对二值结局也一样：结局模型的 family 同样只能手工改。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>210</span>  <span class='chapter-title'>3. 模型配置类</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/03-model-cfg.html#sec-known",
+    "href": "notes/tidyhte/03-model-cfg.html#sec-known",
+    "title": "3. 模型配置类：Model_cfg 家族",
+    "section": "已知得分",
+    "text": "已知得分\nKnown_cfg$new(covariate_name)\n唯一的字段是列名。它的 Predictor 不做任何拟合，predict() 直接把那一列原样返回：\n\ntidyhte:::KnownPredictor$public_methods$fit\n#&gt; function (data) \n#&gt; {\n#&gt;     invisible(self)\n#&gt; }\n#&gt; &lt;bytecode: 0x000001668a4756d0&gt;\n#&gt; &lt;environment: namespace:tidyhte&gt;\ntidyhte:::KnownPredictor$public_methods$predict\n#&gt; function (data) \n#&gt; {\n#&gt;     dplyr::tibble(x = rep(NA_real_, nrow(data$model_frame)), \n#&gt;         estimate = data$model_frame[[self$covariate]], sample_size = rep(NA_real_, \n#&gt;             nrow(data$model_frame)))\n#&gt; }\n#&gt; &lt;bytecode: 0x000001668a475510&gt;\n#&gt; &lt;environment: namespace:tidyhte&gt;\n\n因此它不占交叉拟合的成本，也不会有 SL_coefs / SL_risk 诊断 （那两个诊断从 SL_coefs attribute 取值，Known_cfg 不往里写东西）。\n\n\n\n\n\n\n注记Known_cfg 只能用在倾向得分上\n\n\n\nproduce_plugin_estimates() 里有一段专门的分支：当 .HTE_cfg$treatment$model_class == \"known\" 时，把那一列临时加进协变量， 好让 Model_data 能把它取出来，预测完再删掉。结局模型没有这个分支， 把 $outcome 设成 Known_cfg 会在 fit_plugin_Y() 里取不到列。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>210</span>  <span class='chapter-title'>3. 模型配置类</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/03-model-cfg.html#sec-display",
+    "href": "notes/tidyhte/03-model-cfg.html#sec-display",
+    "title": "3. 模型配置类：Model_cfg 家族",
+    "section": "三个展示模型",
+    "text": "三个展示模型\n这三类不估计因果量，只决定已经算好的伪结局怎么呈现。 它们出现在 MCATE_cfg$cfgs / PCATE_cfg$cfgs 的命名列表里， 每个调节变量一个。\n\nStratified_cfg\nStratified_cfg$new(covariate)\n按取值分层，每层给加权均值与聚类稳健标准误。适合因子和少数几个取值的整数。\n\n\n\n\n\n\n警告用在连续变量上不会报错，会给出一堆 NaN\n\n\n\n每个唯一取值算一个”层”，于是 800 行数据得到 800 层、每层 1 个观测， 标准误全是 NaN：\n\ncfg &lt;- basic_config() %&gt;% add_known_propensity_score(\"ps\") %&gt;%\n  add_outcome_model(\"SL.glm\") %&gt;% add_moderator(\"Stratified\", x3) %&gt;% remove_vimp()\nprepped &lt;- sim %&gt;% attach_config(cfg) %&gt;% make_splits(uid, .num_splits = 4) %&gt;%\n  produce_plugin_estimates(y, a, x1, x2, x3, x4) %&gt;% construct_pseudo_outcomes(y, a)\nres &lt;- estimate_QoI(prepped, x3)\nres %&gt;% filter(estimand == \"MCATE\") %&gt;% summarise(行数 = n(), 标准误缺失 = sum(is.na(std_error)))\n#&gt; # A tibble: 1 × 2\n#&gt;    行数 标准误缺失\n#&gt;   &lt;int&gt;      &lt;int&gt;\n#&gt; 1   800        800\n\n\n\n\n\nKernelSmooth_cfg\nKernelSmooth_cfg$new(neval = 100, eval_min_quantile = 0.05)\n\n\n\n参数\n默认\n含义\n\n\n\n\nneval\n100\n评估点个数，也就是输出的行数\n\n\neval_min_quantile\n0.05\n两端各裁掉的分位数；0 表示不裁\n\n\n\n评估点是分位数网格，不是等距网格：\n\ntidyhte:::KernelSmoothPredictor$public_methods$fit\n#&gt; function (data) \n#&gt; {\n#&gt;     self$label &lt;- data$label\n#&gt;     self$covariates &lt;- drop(data$features)\n#&gt;     if (any(data$weights != 1)) \n#&gt;         stop(\"`nprobust` does not support the use of weights.\")\n#&gt;     eval_pts &lt;- quantile(self$covariates, probs = seq(self$eval_min_quantile, \n#&gt;         1 - self$eval_min_quantile, length = self$neval))\n#&gt;     if (length(unique(self$covariates)) == length(self$covariates)) {\n#&gt;         self$model &lt;- nprobust::lprobust(self$label, self$covariates, \n#&gt;             eval = eval_pts)\n#&gt;     }\n#&gt;     else {\n#&gt;         agg_tbl &lt;- dplyr::tibble(y = self$label, x = self$covariates) %&gt;% \n#&gt;             dplyr::group_by(x) %&gt;% dplyr::summarize(y = mean(y), \n#&gt;             n = dplyr::n())\n#&gt;         agg_y &lt;- agg_tbl$y\n#&gt;         agg_x &lt;- agg_tbl$x\n#&gt;         bws &lt;- nprobust::lpbwselect(agg_y, agg_x, eval = eval_pts, \n#&gt;             bwselect = \"imse-dpi\")\n#&gt;         self$model &lt;- nprobust::lprobust(self$label, self$covariates, \n#&gt;             eval = eval_pts, h = bws$bws[, \"h\"])\n#&gt;     }\n#&gt;     invisible(self)\n#&gt; }\n#&gt; &lt;bytecode: 0x000001668a399c78&gt;\n#&gt; &lt;environment: namespace:tidyhte&gt;\n\n两个容易忽略的细节：\n\n默认只画 5% 到 95% 分位之间。曲线两端缺掉的部分不是”没估出来”， 是配置里裁掉的。要看全域得写 eval_min_quantile = 0（边缘方差会很大）。\n有并列值时换一条带宽选择路径：协变量有重复取值时， 先按取值聚合成均值再用 lpbwselect(bwselect = \"imse-dpi\") 选带宽； 全部互不相同时直接用 lprobust() 的默认带宽。 同一份数据做了取整，曲线会因此变。\n\n它还有一个硬限制，见第 5 页： nprobust 不支持权重，只要 .weights 不全为 1 就直接报错。\n\n\nConstant_cfg\nConstant_cfg$new()\n单参数均值模型。它在默认设置下不能用：\n\ncfg &lt;- basic_config() %&gt;% add_known_propensity_score(\"ps\") %&gt;%\n  add_outcome_model(\"SL.glm\") %&gt;% add_moderator(\"Stratified\", x2) %&gt;% remove_vimp()\ncfg$qoi$mcate$add_moderator(\"x2\", Constant_cfg$new())\nprepped2 &lt;- sim %&gt;% attach_config(cfg) %&gt;% make_splits(uid, .num_splits = 4) %&gt;%\n  produce_plugin_estimates(y, a, x1, x2, x3, x4) %&gt;% construct_pseudo_outcomes(y, a)\nestimate_QoI(prepped2, x2)\n#&gt; Error in model$predict_se(data): Not Implemented\n\n原因是 ConstantPredictor 只实现了 fit() 和 predict()， 没有 predict_se()，而 MCATE_cfg$std_errors 默认是 TRUE：\n\nnames(tidyhte:::ConstantPredictor$public_methods)\n#&gt; [1] \"initialize\" \"fit\"        \"predict\"    \"clone\"\n\n关掉标准误就能跑，输出一行，等于伪结局的加权均值（也就是 SATE）：\n\ncfg$qoi$mcate$std_errors &lt;- FALSE\nestimate_QoI(prepped2, x2) %&gt;% filter(estimand %in% c(\"MCATE\", \"SATE\"))\n#&gt; # A tibble: 2 × 5\n#&gt;   estimand term  level estimate std_error\n#&gt;   &lt;chr&gt;    &lt;chr&gt; &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 MCATE    x2    &lt;NA&gt;     0.726   NA     \n#&gt; 2 SATE     &lt;NA&gt;  &lt;NA&gt;     0.726    0.0494",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>210</span>  <span class='chapter-title'>3. 模型配置类</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/03-model-cfg.html#sec-glmnet",
+    "href": "notes/tidyhte/03-model-cfg.html#sec-glmnet",
+    "title": "3. 模型配置类：Model_cfg 家族",
+    "section": "SL.glmnet.interaction()",
+    "text": "SL.glmnet.interaction()\n包自带的唯一一个学习器：在 SL.glmnet 的基础上， 先用 model.matrix(~ -1 + .^2, X) 造出全部两两交互（不含截距）， 再做 elastic net。\nSL.glmnet.interaction(Y, X, newX, family, obsWeights, id,\n                      alpha = 1, nfolds = 10, nlambda = 100,\n                      useMin = TRUE, loss = \"deviance\", ...)\n\n\n\n\n\n\n\n\n参数\n默认\n说明\n\n\n\n\nalpha\n1\n0 = 岭回归，1 = Lasso\n\n\nnfolds\n10\ncv.glmnet 内部选 \\(\\lambda\\) 的折数\n\n\nnlambda\n100\n\\(\\lambda\\) 网格大小\n\n\nuseMin\nTRUE\nTRUE 取风险最小的 \\(\\lambda\\)，FALSE 用 1-SE 规则\n\n\nloss\n\"deviance\"\n还可以是 \"mse\"、\"mae\"，二分类另有 \"auc\"、\"class\"\n\n\n\n配套的 predict.SL.glmnet.interaction() 有两个 SL.glmnet 没有的参数： remove_extra_cols（丢掉新数据里多出来的列）和 add_missing_cols （把训练时有、预测时没有的列补 0）。交互展开后列名对不齐是常事， 这两个开关默认都是 TRUE，所以新数据里出现训练时没见过的因子水平不会报错， 而是被静默补零——这点在小样本 + 稀有水平时要留意。\n\nnames(formals(tidyhte:::predict.SL.glmnet.interaction))\n#&gt; [1] \"object\"            \"newdata\"           \"remove_extra_cols\"\n#&gt; [4] \"add_missing_cols\"  \"...\"\n\n它和 alpha 一起用是最常见的写法：\nadd_outcome_model(\"SL.glmnet.interaction\", alpha = c(0.05, 0.25, 0.5, 0.75, 1))",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>210</span>  <span class='chapter-title'>3. 模型配置类</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/03-model-cfg.html#sec-hte",
+    "href": "notes/tidyhte/03-model-cfg.html#sec-hte",
+    "title": "3. 模型配置类：Model_cfg 家族",
+    "section": "手工装配 HTE_cfg",
+    "text": "手工装配 HTE_cfg\n配方 API 够不着的东西（family、PCATE、predictions、线性 VIMP） 都得走这条路。HTE_cfg$new() 的四个槽位对应四件事：\n\nmcate_cfg &lt;- MCATE_cfg$new(cfgs = list(\n  x1 = KernelSmooth_cfg$new(neval = 50),\n  x2 = Stratified_cfg$new(\"x2\")\n))\nvimp_cfg &lt;- VIMP_cfg$new(sample_splitting = FALSE, linear_only = TRUE)\ndiag_cfg &lt;- Diagnostics_cfg$new(outcome = c(\"MSE\", \"RROC\"), params = list(num_bins = 25))\nqoi_cfg  &lt;- QoI_cfg$new(mcate = mcate_cfg, vimp = vimp_cfg, diag = diag_cfg, ate = TRUE)\n\nhte_cfg &lt;- HTE_cfg$new(\n  outcome   = SLEnsemble_cfg$new(learner_cfgs = list(SLLearner_cfg$new(\"SL.glm.interaction\"))),\n  treatment = SLEnsemble_cfg$new(learner_cfgs = list(SLLearner_cfg$new(\"SL.glm\")),\n                                 family = stats::binomial()),\n  effect    = SLEnsemble_cfg$new(learner_cfgs = list(SLLearner_cfg$new(\"SL.glm\"))),\n  qoi       = qoi_cfg,\n  verbose   = FALSE\n)\nc(结局 = hte_cfg$outcome$SL.library, 倾向族 = hte_cfg$treatment$family$family,\n  线性VIMP = hte_cfg$qoi$vimp$linear, RROC点数 = hte_cfg$qoi$diag$params$num_bins)\n#&gt;                 结局               倾向族             线性VIMP \n#&gt; \"SL.glm.interaction\"           \"binomial\"               \"TRUE\" \n#&gt;             RROC点数 \n#&gt;                 \"25\"\n\n混合写法也可以：先 basic_config() 再覆盖个别字段， 这是本手册后面几页最常用的方式。\n\n\n\n\n\n\n注记verbose 目前没有任何输出\n\n\n\nHTE_cfg$new(verbose = ) 的帮助文字是”是否打印调试信息”。 在 1.0.4 的源码里，verbose 字段除了被赋值之外， 在包内没有任何读取处：\n\nns &lt;- asNamespace(\"tidyhte\")\nmentions &lt;- function(pattern) {\n  Filter(function(o) {\n    v &lt;- get(o, envir = ns)\n    txt &lt;- paste(deparse(v), collapse = \" \")\n    if (inherits(v, \"R6ClassGenerator\")) {\n      txt &lt;- paste(txt, paste(vapply(v$public_methods,\n                                     \\(m) paste(deparse(m), collapse = \" \"), \"\"),\n                              collapse = \" \"))\n    }\n    grepl(pattern, txt)\n  }, ls(ns, all.names = TRUE))\n}\nmentions(\"verbose\")   # 连 R6 类的方法体一起搜\n#&gt; [1] \"HTE_cfg\"\n\n全包只有 HTE_cfg 一处提到它，而那一处是构造函数里的 self$verbose &lt;- verbose。没有任何函数读它。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>210</span>  <span class='chapter-title'>3. 模型配置类</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/03-model-cfg.html#本页涉及的帮助主题",
+    "href": "notes/tidyhte/03-model-cfg.html#本页涉及的帮助主题",
+    "title": "3. 模型配置类：Model_cfg 家族",
+    "section": "本页涉及的帮助主题",
+    "text": "本页涉及的帮助主题\nModel_cfg、SLEnsemble_cfg、SLLearner_cfg、Known_cfg、 KernelSmooth_cfg、Stratified_cfg、Constant_cfg、HTE_cfg、 SL.glmnet.interaction、predict.SL.glmnet.interaction。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>210</span>  <span class='chapter-title'>3. 模型配置类</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/04-splits.html",
+    "href": "notes/tidyhte/04-splits.html",
+    "title": "4. make_splits() 与三个数据对象",
+    "section": "",
+    "text": "make_splits()\n交叉拟合的折是整条流水线的地基：它同时决定了聚类稳健标准误的聚类单位、 SuperLearner 内层交叉验证的折数，以及 VIMP 能不能算。 这一步做错，后面所有数字都跟着错，而且多数情况下不会报错。\n返回原数据框，加一列 .split_id，加两个 attribute（num_splits、identifier）。\ncfg &lt;- basic_config() %&gt;% add_known_propensity_score(\"ps\") %&gt;%\n  add_moderator(\"Stratified\", x2) %&gt;% remove_vimp()\n#&gt; Super Learner\n#&gt; Version: 2.0-42\n#&gt; Package created on 2026-09-14\ns &lt;- sim %&gt;% attach_config(cfg) %&gt;% make_splits(uid, .num_splits = 4)\ntable(s$.split_id)\n#&gt; \n#&gt;   1   2   3   4 \n#&gt; 200 200 200 200\nc(num_splits = attr(s, \"num_splits\"), identifier = attr(s, \"identifier\"))\n#&gt; num_splits identifier \n#&gt;        \"4\"      \"uid\"",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>211</span>  <span class='chapter-title'>4. make_splits() 与数据对象</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/04-splits.html#make_splits",
+    "href": "notes/tidyhte/04-splits.html#make_splits",
+    "title": "4. make_splits() 与三个数据对象",
+    "section": "",
+    "text": "make_splits(data, identifier, ..., .num_splits)\n\n\n\n\n\n\n\n\n参数\n类型\n说明\n\n\n\n\ndata\n数据框\n通常已经 attach_config() 过（不是必须，但见下面的偶数折规则）\n\n\nidentifier\n不加引号的列名\n单位或聚类的标识符；同一标识符的所有行进同一折\n\n\n...\n不加引号的列名\n分层用的协变量；需要 quickblock\n\n\n.num_splits\n整数\n折数；要算 VIMP 时必须是偶数（会自动向上取偶）\n\n\n\n\n\n\n折数不能小于 3\nSuperLearner 的内层交叉验证并不是独立设定的， 而是直接拿训练集里剩下的外层折当内层折用：\n\ntidyhte::Model_data$public_methods$SL_cv_control\n#&gt; function () \n#&gt; {\n#&gt;     validRows &lt;- purrr::map(sort(unique(self$split_id)), ~which(.x == \n#&gt;         self$split_id))\n#&gt;     SuperLearner::SuperLearner.CV.control(V = length(validRows), \n#&gt;         validRows = validRows)\n#&gt; }\n#&gt; &lt;bytecode: 0x0000025595048038&gt;\n#&gt; &lt;environment: namespace:tidyhte&gt;\n\n于是内层折数恒等于 .num_splits - 1：\n\nvapply(c(2, 3, 4, 6), function(k) {\n  dd   &lt;- make_splits(sim, uid, .num_splits = k)\n  fold &lt;- tidyhte:::split_data(dd, 1)\n  Model_data$new(fold$train, y, x1, x2)$SL_cv_control()$V\n}, numeric(1)) |&gt; setNames(paste0(\".num_splits = \", c(2, 3, 4, 6)))\n#&gt; .num_splits = 2 .num_splits = 3 .num_splits = 4 .num_splits = 6 \n#&gt;               1               2               3               5\n\n.num_splits = 2 时内层 \\(V = 1\\)：唯一那一折全部是验证集，训练集为空， 每个学习器都在 0 行数据上拟合失败，SuperLearner 把它们全部剔除后报错：\n\ncfg2 &lt;- basic_config() %&gt;% add_known_propensity_score(\"ps\") %&gt;%\n  add_moderator(\"Stratified\", x2) %&gt;% remove_vimp()\nsim %&gt;% attach_config(cfg2) %&gt;% make_splits(uid, .num_splits = 2) %&gt;%\n  produce_plugin_estimates(y, a, x1, x2, x3, x4)\n#&gt; Warning in glm.fit(x = structure(numeric(0), dim = c(0L, 7L), dimnames = list(:\n#&gt; no observations informative at iteration 1\n#&gt; Warning: glm.fit: algorithm did not converge\n#&gt; Error in glm.fit(x = structure(numeric(0), dim = c(0L, 7L), dimnames = list( : \n#&gt;   object 'fit' not found\n#&gt; Warning in FUN(X[[i]], ...): Error in algorithm SL.glm \n#&gt;   The Algorithm will be removed from the Super Learner (i.e. given weight 0)\n#&gt; Error in SuperLearner::SuperLearner(Y = data$label, X = X_df, family = self$family, : All algorithms dropped from library\n\n\n\n\n\n\n\n重要All algorithms dropped from library 的三种成因\n\n\n\n这句报错来自 SuperLearner，本身不指向病因。实测下来在 tidyhte 里有三种来源：\n\n折数为 2（上面这种），训练集为空；\n稀有因子水平：某折的训练集里缺了某个水平， predict.lm 抛 factor x has new levels， 如果库里只有一个学习器就会被全部剔除。多放几个 （SL.glmnet 等基于 model.matrix 的）可以让这类错误退化成打印一行、继续跑；\n协变量常数或共线到 glm.fit 不收敛。\n\n三者的共同表现是先在 stderr 上打印一串 Error in algorithm SL.xxx 的警告，然后才抛这句。看到它先回头数折数和每折的稀有水平频数。\n\n\n\n\n要算 VIMP 时折数被强制取偶\n\ncfg_v &lt;- basic_config() %&gt;% add_moderator(\"Stratified\", x2) %&gt;%\n  add_moderator(\"KernelSmooth\", x1) %&gt;% add_vimp(sample_splitting = FALSE)\n\nmsgs &lt;- character()\nsv &lt;- withCallingHandlers(\n  sim %&gt;% attach_config(cfg_v) %&gt;% make_splits(uid, .num_splits = 3),\n  message = function(m) { msgs &lt;&lt;- c(msgs, conditionMessage(m)); invokeRestart(\"muffleMessage\") }\n)\ngrep(\"num_splits\", msgs, value = TRUE)\n#&gt; [1] \"`num_splits` must be even if VIMP is requested as a QoI. Rounding up.\\n\"\nattr(sv, \"num_splits\")    # 要的是 3，拿到的是 4\n#&gt; [1] 4\n\n注意这条规则依赖 attach_config() 已经调用过——make_splits() 先检查数据框上有没有 HTE_cfg，没有就当作不需要 VIMP。 先 make_splits() 再 attach_config() 的写法能跑， 但奇数折会一路带到 estimate_QoI() 才炸：\n\nd_odd &lt;- sim %&gt;% make_splits(uid, .num_splits = 3) %&gt;% attach_config(cfg_v) %&gt;%\n  produce_plugin_estimates(y, a, x1, x2, x3, x4) %&gt;% construct_pseudo_outcomes(y, a)\nestimate_QoI(d_odd, x2)\n#&gt; Error in calculate_vimp(data, {: Number of splits must be even to calculate VIMP.\n\n\n\n聚类：同一标识符进同一折\n标识符允许重复，重复就意味着聚类。make_splits() 先按标识符 tally() 再分配折，所以一个聚类的所有行必然落在同一折； 下游 Model_data$cluster 用同一列做聚类稳健标准误。\n\nset.seed(1)\nclustered &lt;- tibble(vid = rep(1:150, each = 4), x1 = rnorm(600))\ncs &lt;- make_splits(clustered, vid, .num_splits = 4)\n# 每个 vid 只出现在一个折里\nall(tapply(cs$.split_id, cs$vid, \\(z) length(unique(z))) == 1)\n#&gt; [1] TRUE\ntable(cs$.split_id)\n#&gt; \n#&gt;   1   2   3   4 \n#&gt; 152 148 152 148\n\n这是把聚类设计告诉 tidyhte 的唯一入口： calculate_ate()、estimate_diagnostic(\"MSE\")、 线性 VIMP 都调用 clustered_se_of_mean(..., data[[id_col]])， 聚类层次完全由这一列决定。\n\n\n分层：quickblock 区组\n... 里给协变量就会启用 Higgins, Sävje & Sekhon (2016) 的贪婪阈值区组： 先把单位聚成大小至少为 .num_splits 的区组（欧氏距离）， 再在每个区组内把折号随机置换一遍。效果是各折的协变量分布更接近：\n\nset.seed(2)\nplain &lt;- make_splits(sim, uid, .num_splits = 4)\nblock &lt;- make_splits(sim, uid, x1, x3, x2, .num_splits = 4)\nrbind(\n  纯随机 = round(tapply(sim$x1, plain$.split_id, mean), 3),\n  分层   = round(tapply(sim$x1, block$.split_id, mean), 3)\n)\n#&gt;            1      2      3      4\n#&gt; 纯随机 0.053 -0.073  0.045 -0.010\n#&gt; 分层   0.017  0.042 -0.027 -0.021\n\n\n\n\n\n\n\n注记没装 quickblock 会静默降级\n\n\n\n源码里先 package_present(\"quickblock\")，缺了就打印 `quickblock` is not installed, so falling back to un-stratified CV. 然后按纯随机划分继续。这是 message 而不是 warning， 在 message = FALSE 的 Rmd / Quarto 代码块里完全看不到—— 分层折悄悄变成了随机折。要确认分层真的生效， 最稳的办法是像上面那样比一下各折的协变量均值。\n\n\n\n\n\n\n\n\n警告分层变量有缺失 → .split_id 变成 NA，后果取决于它是不是协变量\n\n\n\nmake_splits() 对 ... 里的变量做 listwise 删除， 被删掉的行仍留在返回的数据框里，只是 .split_id 为 NA。 它只打印一句 Dropped 40 of 800 rows (5%) through listwise deletion.， 而这是 message，在 message = FALSE 的代码块里看不见。\n\nsim_na &lt;- sim; sim_na$x1[1:40] &lt;- NA\nsna &lt;- make_splits(sim_na, uid, x1, x2, .num_splits = 4)\nattr(sna, \"HTE_cfg\") &lt;- cfg\ntable(sna$.split_id, useNA = \"ifany\")\n#&gt; \n#&gt;    1    2    3    4 &lt;NA&gt; \n#&gt;  190  182  196  192   40\n\n接下来分两种情况，都不好：\n① 那个变量也在模型协变量里——produce_plugin_estimates() 自己再做一次 listwise 删除，这些行被排除在估计之外， 返回的数据框里它们的预测是 NA（静默）：\n\nz &lt;- produce_plugin_estimates(sna, y, a, x1, x2, x3)\nc(pi_hat缺失 = sum(is.na(z$.pi_hat)), mu1缺失 = sum(is.na(z$.mu1_hat)))\n#&gt; pi_hat缺失    mu1缺失 \n#&gt;         40         40\n\n② 那个变量不在模型协变量里（“只用来分层”是很自然的做法）—— 这些行通过了 listwise 删除，却带着 NA 的折号进入主循环， 在把预测写回原位置时报一个与病因无关的错：\n\nproduce_plugin_estimates(sna, y, a, x2, x3)\n#&gt; Error in pi_hat[folds$in_holdout] &lt;- a_model$pi$predict(pred_data)$estimate: NAs are not allowed in subscripted assignments\n\n所以分层变量的缺失必须在 make_splits() 之前自己处理掉。\n\n\n\n\n\n\n\n\n警告缺失把一整折抽空时，VIMP 报 Number of splits is inconsistent.\n\n\n\ncalculate_vimp() 会核对”数据里实际出现的折数”与 num_splits attribute 是否一致。如果某一折的单位恰好都因缺失被删掉（分层抽样、按时间段收集的 数据里并不罕见），两者就对不上：\n\nd3 &lt;- sim %&gt;% attach_config(cfg_v) %&gt;% make_splits(uid, .num_splits = 4)\nd3$x1[d3$.split_id == 3] &lt;- NA          # 第 3 折整折缺失\nd3 &lt;- d3 %&gt;% produce_plugin_estimates(y, a, x1, x2, x3, x4) %&gt;%\n  construct_pseudo_outcomes(y, a)\nestimate_QoI(d3, x1, x2)\n#&gt; Error in calculate_vimp(data, {: Number of splits is inconsistent.",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>211</span>  <span class='chapter-title'>4. make_splits() 与数据对象</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/04-splits.html#sec-split-data",
+    "href": "notes/tidyhte/04-splits.html#sec-split-data",
+    "title": "4. make_splits() 与三个数据对象",
+    "section": "split_data() 与 HTEFold",
+    "text": "split_data() 与 HTEFold\ntidyhte:::split_data(data, split_id)\n把数据切成训练 / 留出两半，返回一个 HTEFold R6 对象。 produce_plugin_estimates() 的主循环就是在它上面跑的。\n\nfold &lt;- tidyhte:::split_data(s, 2)\nclass(fold)\n#&gt; [1] \"HTEFold\" \"R6\"\nc(train = nrow(fold$train), holdout = nrow(fold$holdout), in_holdout = sum(fold$in_holdout))\n#&gt;      train    holdout in_holdout \n#&gt;        600        200        200\n\n\n\n\n字段\n内容\n\n\n\n\ntrain\n.split_id != split_id 的那部分，用来拟合\n\n\nholdout\n.split_id == split_id 的那部分，用来预测\n\n\nin_holdout\n长度为 \\(n\\) 的逻辑向量，方便把预测值写回原位置\n\n\n\n也就是留一折做预测、其余折做训练（K 折交叉拟合）， 和”训练集小、验证集大”的直觉正好相反—— 这解释了为什么 .num_splits 越大，每次拟合用的数据越多。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>211</span>  <span class='chapter-title'>4. make_splits() 与数据对象</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/04-splits.html#sec-modeldata",
+    "href": "notes/tidyhte/04-splits.html#sec-modeldata",
+    "title": "4. make_splits() 与三个数据对象",
+    "section": "Model_data",
+    "text": "Model_data\nModel_data$new(data, label_col, ..., .weight_col = NULL)\n所有模型拿到的都是这个对象，它把数据框标准化成 “标签向量 + 设计矩阵 + 折号 + 聚类 + 权重”：\n\nmd &lt;- Model_data$new(s, y, x1, x2, x3)\nc(label = length(md$label), 行 = nrow(md$features), 列 = ncol(md$features))\n#&gt; label    行    列 \n#&gt;   800   800     5\ncolnames(md$features)\n#&gt; [1] \"x1\"  \"x2a\" \"x2b\" \"x2c\" \"x3\"\nc(num_splits = md$num_splits, 权重前三 = head(md$weights, 3), 聚类前三 = head(md$cluster, 3))\n#&gt; num_splits  权重前三1  权重前三2  权重前三3  聚类前三1  聚类前三2  聚类前三3 \n#&gt;          4          1          1          1          1          2          3\n\n\n\n\n\n\n\n\n\n字段\n构造方式\n注意\n\n\n\n\nlabel\nlabel_col 那一列\n传 NULL 表示”只要特征”（预测时用）\n\n\nfeatures\nstats::model.matrix()\n因子会被拆成哑变量，列名形如 x2b、x2c\n\n\nmodel_frame\nstats::model.frame()\n保留原始列，VIMP 按原始列逐个剔除\n\n\nsplit_id\n.split_id\n\n\n\ncluster\n标识符列\n聚类稳健标准误用\n\n\nweights\n.weight_col，缺省全 1\n\n\n\n\nfeatures 和 model_frame 的区别很重要： MCATE / 效应面模型用的是 features（哑变量）， 而 VIMP 用的是 model_frame，所以一个 \\(k\\) 水平的因子在 VIMP 里 算作一个变量整体剔除，而不是 \\(k-1\\) 个哑变量各剔各的。\n\nnames(md$model_frame)\n#&gt; [1] \"x1\" \"x2\" \"x3\"",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>211</span>  <span class='chapter-title'>4. make_splits() 与数据对象</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/04-splits.html#本页涉及的帮助主题",
+    "href": "notes/tidyhte/04-splits.html#本页涉及的帮助主题",
+    "title": "4. make_splits() 与三个数据对象",
+    "section": "本页涉及的帮助主题",
+    "text": "本页涉及的帮助主题\nmake_splits、split_data、HTEFold、Model_data、listwise_deletion、 check_splits、check_identifier。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>211</span>  <span class='chapter-title'>4. make_splits() 与数据对象</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/05-plugin-pseudo.html",
+    "href": "notes/tidyhte/05-plugin-pseudo.html",
+    "title": "5. 冗余函数与伪结局",
+    "section": "",
+    "text": "produce_plugin_estimates()\n第二、三步把三个冗余函数估出来，再压成一列伪结局。 这两步决定了后面所有估计的偏倚和方差， 也是整条流水线里唯一会真正花时间的地方。\n新增 .pi_hat、.mu0_hat、.mu1_hat 三列，以及 SL_coefs、weights 两个 attribute。 重复调用是安全的——函数开头会先把同名的旧列剔除再 join。\nprepped &lt;- sim %&gt;% attach_config(cfg) %&gt;% make_splits(uid, .num_splits = 4) %&gt;%\n  produce_plugin_estimates(y, a, x1, x2, x3, x4)\nprepped %&gt;% select(uid, a, y, .split_id, .weights, .pi_hat, .mu0_hat, .mu1_hat) %&gt;% head(4)\n#&gt; # A tibble: 4 × 8\n#&gt;     uid     a      y .split_id .weights .pi_hat .mu0_hat .mu1_hat\n#&gt;   &lt;int&gt; &lt;int&gt;  &lt;dbl&gt;     &lt;int&gt;    &lt;dbl&gt;   &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;\n#&gt; 1     1     0  2.41          4        1   0.649    2.01     3.99 \n#&gt; 2     2     1 -1.04          1        1   0.153   -1.03    -1.44 \n#&gt; 3     3     0 -0.718         1        1   0.307   -0.455   -0.219\n#&gt; 4     4     0  2.12          1        1   0.539    2.10     3.25",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>212</span>  <span class='chapter-title'>5. 冗余函数与伪结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/05-plugin-pseudo.html#produce_plugin_estimates",
+    "href": "notes/tidyhte/05-plugin-pseudo.html#produce_plugin_estimates",
+    "title": "5. 冗余函数与伪结局",
+    "section": "",
+    "text": "produce_plugin_estimates(data, outcome, treatment, ..., .weights = NULL)\n\n\n\n参数\n说明\n\n\n\n\noutcome\n不加引号的结局列名\n\n\ntreatment\n不加引号的治疗列名，必须是 0/1\n\n\n...\n不加引号的协变量名，三个模型共用同一组\n\n\n.weights\n不加引号的权重列名；NULL 时建一列全 1 的 .weights\n\n\n\n\n\n\n交叉拟合循环\n主循环对每个折 \\(k\\) 做同一件事：在其余折上拟合，在第 \\(k\\) 折上预测。\nfor split_id in 1..K:\n    folds   &lt;- split_data(ok_data, split_id)      # train = 其余折, holdout = 本折\n    a_model &lt;- fit_plugin_A(folds$train, ...)     # 1 个模型：pi\n    y_model &lt;- fit_plugin_Y(folds$train, ...)     # 2 个模型：mu1, mu0\n    记录 SuperLearner 的 coef / cvRisk 到 SL_coefs\n    在 folds$holdout 上预测，写回 pi_hat / mu1_hat / mu0_hat 的对应位置\n三个 fit_* 函数是薄适配层，都归结到 fit_plugin() （构造 Model_data → predictor_factory() → $fit()）：\n\n\n\n\n\n\n\n\n函数\n返回\n做法\n\n\n\n\nfit_plugin_A()\nlist(pi = )\n用治疗当标签拟合一个模型\n\n\nfit_plugin_Y()\nlist(mu1 = , mu0 = )\nT-learner：按 a == 1 / a == 0 把训练集切两半，各拟合一个\n\n\nfit_effect()\nlist(fx = )\n用伪结局当标签（只在 PCATE / predictions 路径用）\n\n\n\n\ntidyhte:::fit_plugin_Y\n#&gt; function (full_data, weight_col, y_col, a_col, ..., .Model_cfg) \n#&gt; {\n#&gt;     dots &lt;- rlang::enexprs(...)\n#&gt;     df_0 &lt;- dplyr::filter(full_data, {\n#&gt;         {\n#&gt;             a_col\n#&gt;         }\n#&gt;     } == 0)\n#&gt;     df_1 &lt;- dplyr::filter(full_data, {\n#&gt;         {\n#&gt;             a_col\n#&gt;         }\n#&gt;     } == 1)\n#&gt;     list(mu1 = fit_plugin(df_1, {\n#&gt;         {\n#&gt;             weight_col\n#&gt;         }\n#&gt;     }, {\n#&gt;         {\n#&gt;             y_col\n#&gt;         }\n#&gt;     }, !!!dots, .Model_cfg = .Model_cfg), mu0 = fit_plugin(df_0, \n#&gt;         {\n#&gt;             {\n#&gt;                 weight_col\n#&gt;             }\n#&gt;         }, {\n#&gt;             {\n#&gt;                 y_col\n#&gt;             }\n#&gt;         }, !!!dots, .Model_cfg = .Model_cfg))\n#&gt; }\n#&gt; &lt;bytecode: 0x000001d5ddb2d968&gt;\n#&gt; &lt;environment: namespace:tidyhte&gt;\n\nT-learner 这个细节有两个直接后果：\n\n每个结局模型只用到一个臂的数据，样本量约为 \\(n \\cdot (K-1)/K \\cdot P(A=a)\\)。 本例 \\(n = 800\\)、\\(K = 4\\)、处理比例 0.43， 处理臂模型的训练样本只有 259 行左右。\n治疗变量必须编码成 0/1。不是 0/1 时 dplyr::filter(a == 1) 会得到空数据框，报错却发生在 SuperLearner 内部。\n\n\nsim %&gt;% attach_config(cfg) %&gt;% make_splits(uid, .num_splits = 4) %&gt;%\n  mutate(a2 = a * 2) %&gt;%                                  # 0/2 编码\n  produce_plugin_estimates(y, a2, x1, x2, x3, x4)\n#&gt; Error in SuperLearner::SuperLearner(Y = data$label, X = X_df, family = self$family, : id vector must have the same dimension as Y\n\n\nsim %&gt;% attach_config(cfg) %&gt;% make_splits(uid, .num_splits = 4) %&gt;%\n  mutate(a_f = factor(ifelse(a == 1, \"trt\", \"ctl\"))) %&gt;%  # 因子编码\n  produce_plugin_estimates(y, a_f, x1, x2, x3, x4)\n#&gt; Error in SuperLearner::SuperLearner(Y = data$label, X = X_df, family = self$family, : id vector must have the same dimension as Y\n\n\n\n\n\n\n\n注记三个模型共用同一组协变量\n\n\n\n... 里的协变量同时喂给倾向模型和两个结局模型，没有分开指定的入口。 想让倾向模型用一组变量、结局模型用另一组，只能跑两次流水线 再手工拼 .pi_hat / .mu*_hat 列。\n\n\n\n\n已知倾向得分时的特殊分支\nKnown_cfg 下，.pi_hat 直接取那一列。为了让 Model_data 能在留出折里取到它，源码临时把该列加进协变量、预测完再还原：\nif (.HTE_cfg$treatment$model_class == \"known\") {\n    cov  &lt;- rlang::sym(.HTE_cfg$treatment$covariate_name)\n    dots &lt;- c(dots, cov)\n}\npred_data &lt;- Model_data$new(folds$holdout, NULL, !!!dots)\npi_hat[folds$in_holdout] &lt;- a_model$pi$predict(pred_data)$estimate\nif (.HTE_cfg$treatment$model_class == \"known\") {   # 还原，免得污染结局模型\n    dots &lt;- rlang::enexprs(...)\n    pred_data &lt;- Model_data$new(folds$holdout, NULL, !!!dots)\n}\n结果是：倾向得分列不会被当成结局模型的协变量， SL_coefs 里也不会有 pi 这一项， 因此 \"SL_risk\" / \"SL_coefs\" 两个倾向诊断在这种配置下无从计算 （add_known_propensity_score() 干脆把它们一起删了， 见第 2 页）。\n\n\n权重\n.weights 一路传到三个地方：SuperLearner 的 obsWeights、 calculate_ate() 的加权均值、以及各诊断的加权统计量。 给了非常数权重，ATE 会多出一行 PATE：\n\ncfg_w &lt;- basic_config() %&gt;% add_known_propensity_score(\"ps\") %&gt;%\n  add_outcome_model(\"SL.glm.interaction\") %&gt;%\n  add_moderator(\"Stratified\", x2) %&gt;% remove_vimp()      # 注意：没有连续调节变量\nweighted &lt;- sim %&gt;% attach_config(cfg_w) %&gt;% make_splits(uid, .num_splits = 4) %&gt;%\n  produce_plugin_estimates(y, a, x1, x2, x3, x4, .weights = w) %&gt;%\n  construct_pseudo_outcomes(y, a)\nestimate_QoI(weighted, x2) %&gt;% filter(grepl(\"ATE\", estimand))\n#&gt; # A tibble: 5 × 5\n#&gt;   estimand term  level estimate std_error\n#&gt;   &lt;chr&gt;    &lt;chr&gt; &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 MCATE    x2    b        0.533    0.113 \n#&gt; 2 MCATE    x2    c        1.18     0.0915\n#&gt; 3 MCATE    x2    a        0.451    0.120 \n#&gt; 4 SATE     &lt;NA&gt;  &lt;NA&gt;     0.720    0.0496\n#&gt; 5 PATE     &lt;NA&gt;  &lt;NA&gt;     0.743    0.0652\n\n真值：SATE 0.701，加权 PATE 0.691。\n\n\n\n\n\n\n重要权重和连续调节变量不能同时用\n\n\n\nKernelSmoothPredictor$fit() 第一句就是 if (any(data$weights != 1)) stop(\"nprobust does not support the use of weights.\")。 于是只要有任何一个 KernelSmooth 调节变量，.weights 就会让 estimate_QoI() 在算 MCATE 时直接报错：\n\ncfg_wk &lt;- basic_config() %&gt;% add_known_propensity_score(\"ps\") %&gt;%\n  add_outcome_model(\"SL.glm.interaction\") %&gt;%\n  add_moderator(\"KernelSmooth\", x1) %&gt;% remove_vimp()     # 连续调节变量\nsim %&gt;% attach_config(cfg_wk) %&gt;% make_splits(uid, .num_splits = 4) %&gt;%\n  produce_plugin_estimates(y, a, x1, x2, x3, x4, .weights = w) %&gt;%\n  construct_pseudo_outcomes(y, a) %&gt;%\n  estimate_QoI(x1)\n#&gt; Error in predictor$fit(data): `nprobust` does not support the use of weights.\n\n报错发生在流水线最后一步，前面的冗余函数已经白算了一遍。 调查权重 + 连续调节变量的组合时，要么把连续变量离散化后走 Stratified，要么放弃权重。\n\n\n\n\n缺失数据\nproduce_plugin_estimates() 调用 listwise_deletion()， 对结局、治疗和全部协变量做成列删除，并打印删了多少：\n\nsim_na &lt;- sim; sim_na$x3[1:60] &lt;- NA\nmsgs &lt;- character()\npna &lt;- withCallingHandlers(\n  sim_na %&gt;% attach_config(cfg) %&gt;% make_splits(uid, .num_splits = 4) %&gt;%\n    produce_plugin_estimates(y, a, x1, x2, x3, x4),\n  message = function(m) { msgs &lt;&lt;- c(msgs, conditionMessage(m)); invokeRestart(\"muffleMessage\") }\n)\ngrep(\"Dropped\", msgs, value = TRUE)\n#&gt; [1] \"Dropped 60 of 800 rows (7.5%) through listwise deletion.\\n\"\nc(总行数 = nrow(pna), pi_hat缺失 = sum(is.na(pna$.pi_hat)))\n#&gt;     总行数 pi_hat缺失 \n#&gt;        800         60\n\n被删的行留在返回的数据框里，只是三个 _hat 列为 NA； estimate_QoI() 会再做一次同样的删除。 包的文档明说”更高级的插补方法尚不支持”。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>212</span>  <span class='chapter-title'>5. 冗余函数与伪结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/05-plugin-pseudo.html#sec-pseudo",
+    "href": "notes/tidyhte/05-plugin-pseudo.html#sec-pseudo",
+    "title": "5. 冗余函数与伪结局",
+    "section": "construct_pseudo_outcomes()",
+    "text": "construct_pseudo_outcomes()\nconstruct_pseudo_outcomes(data, outcome, treatment, type = \"dr\")\n三种 type 对应三个一行的函数：\n\n\n\n\n\n\n\n\ntype\n公式\n性质\n\n\n\n\n\"dr\"（默认）\n\\(\\dfrac{A - \\hat\\pi}{\\hat\\pi(1-\\hat\\pi)}(Y - \\hat\\mu_A) + \\hat\\mu_1 - \\hat\\mu_0\\)\n双稳健，Kennedy (2023) 的 DR-learner\n\n\n\"ipw\"\n\\(\\dfrac{A - \\hat\\pi}{\\hat\\pi(1-\\hat\\pi)}\\,Y\\)\n只依赖倾向模型；方差最大\n\n\n\"plugin\"\n\\(\\hat\\mu_1 - \\hat\\mu_0\\)\n纯 T-learner 差值；方差最小、偏倚最大\n\n\n\n\ntidyhte:::dr_pseudo_outcome\n#&gt; function (A, YA, pi, mu1, mu0) \n#&gt; {\n#&gt;     muA &lt;- muA &lt;- A * mu1 + (1 - A) * mu0\n#&gt;     (A - pi)/(pi * (1 - pi)) * (YA - muA) + mu1 - mu0\n#&gt; }\n#&gt; &lt;bytecode: 0x000001d5d3090c10&gt;\n#&gt; &lt;environment: namespace:tidyhte&gt;\ntidyhte:::ipw_pseudo_outcome\n#&gt; function (A, YA, pi, mu1, mu0) \n#&gt; {\n#&gt;     (A - pi)/(pi * (1 - pi)) * YA\n#&gt; }\n#&gt; &lt;bytecode: 0x000001d5d3247cb8&gt;\n#&gt; &lt;environment: namespace:tidyhte&gt;\ntidyhte:::plugin_pseudo_outcome\n#&gt; function (A, YA, pi, mu1, mu0) \n#&gt; {\n#&gt;     mu1 - mu0\n#&gt; }\n#&gt; &lt;bytecode: 0x000001d5d3290f90&gt;\n#&gt; &lt;environment: namespace:tidyhte&gt;\n\n同一份冗余估计，三种伪结局的差别：\n\nbind_rows(lapply(c(\"dr\", \"ipw\", \"plugin\"), function(ty) {\n  z &lt;- construct_pseudo_outcomes(prepped, y, a, type = ty)$.pseudo_outcome\n  tibble(type = ty, 均值 = mean(z), 标准差 = sd(z), 最小 = min(z), 最大 = max(z))\n})) %&gt;% mutate(across(where(is.numeric), \\(v) round(v, 3)))\n#&gt; # A tibble: 3 × 5\n#&gt;   type    均值 标准差   最小  最大\n#&gt;   &lt;chr&gt;  &lt;dbl&gt;  &lt;dbl&gt;  &lt;dbl&gt; &lt;dbl&gt;\n#&gt; 1 dr     0.725  1.40   -4.36  8.13\n#&gt; 2 ipw    0.447  4.54  -36.2   9.64\n#&gt; 3 plugin 0.723  0.822  -1.93  3.22\n\n真 SATE 是 0.701。三列的均值都在附近 （本例倾向得分是真值，所以 IPW 也无偏）， 但标准差差了一个量级：plugin 最小但会把冗余模型的偏倚原样带进来， ipw 最大且对倾向得分的极端值极其敏感。默认的 dr 是二者的折中， 也是唯一有双稳健性质的一个。\n\nconstruct_pseudo_outcomes(prepped, y, a, type = \"aipw\")\n#&gt; Error in pseudo_outcome_factory(type): Unknown type of pseudo-outcome.\n\n\n\n\n\n\n\n注记它不检查 outcome / treatment 是否和上一步一致\n\n\n\nconstruct_pseudo_outcomes() 会把传进来的两个名字写进 treatment / outcome 两个 attribute，后面的 ATE、诊断全按这两个 attribute 找列。 但它不核对这两列是不是 produce_plugin_estimates() 用过的那两列。 传错了不会报错，只会算出一组无意义的数。\n\n\n伪结局这一列的含义值得强调：它不是任何单位的个体治疗效应估计， 单看某一行的值（可以是 −169 或 +170）没有意义； 它的用途是条件期望等于 \\(\\tau(x)\\)，因此任何对它取平均、做回归、 算变量重要性的操作，都等价于对真实的 \\(\\tau(x)\\) 做同样的事。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>212</span>  <span class='chapter-title'>5. 冗余函数与伪结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/05-plugin-pseudo.html#本页涉及的帮助主题",
+    "href": "notes/tidyhte/05-plugin-pseudo.html#本页涉及的帮助主题",
+    "title": "5. 冗余函数与伪结局",
+    "section": "本页涉及的帮助主题",
+    "text": "本页涉及的帮助主题\nproduce_plugin_estimates、construct_pseudo_outcomes、fit_plugin、 fit_plugin_A、fit_plugin_Y、fit_effect、listwise_deletion、 check_nuisance_models、check_weights。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>212</span>  <span class='chapter-title'>5. 冗余函数与伪结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/06-estimate-qoi.html",
+    "href": "notes/tidyhte/06-estimate-qoi.html",
+    "title": "6. estimate_QoI()：五类关心量",
+    "section": "",
+    "text": "输出的长格式 schema\n... 是不加引号的调节变量名，每一个都必须在 add_moderator() 里登记过 （见第 2 页）；一个都不给时， 自动使用 MCATE_cfg 里登记的全部变量。 本页按 estimate_QoI() 内部的执行顺序讲五类关心量。\n不管算了哪几类，返回的都是同一张表，最多六列：\nres &lt;- estimate_QoI(prepped, x1, x2, x3, x4)\nnames(res)\n#&gt; [1] \"estimand\"  \"term\"      \"value\"     \"level\"     \"estimate\"  \"std_error\"\ncount(res, estimand, level)\n#&gt; # A tibble: 11 × 3\n#&gt;    estimand       level                  n\n#&gt;    &lt;chr&gt;          &lt;chr&gt;              &lt;int&gt;\n#&gt;  1 MCATE          a                      1\n#&gt;  2 MCATE          b                      1\n#&gt;  3 MCATE          c                      1\n#&gt;  4 MCATE          &lt;NA&gt;                  90\n#&gt;  5 MSE            Control Response       1\n#&gt;  6 MSE            Treatment Response     1\n#&gt;  7 SATE           &lt;NA&gt;                   1\n#&gt;  8 SL coefficient Control Response       2\n#&gt;  9 SL coefficient Treatment Response     2\n#&gt; 10 SL risk        Control Response       2\n#&gt; 11 SL risk        Treatment Response     2",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>213</span>  <span class='chapter-title'>6. estimate_QoI()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/06-estimate-qoi.html#输出的长格式-schema",
+    "href": "notes/tidyhte/06-estimate-qoi.html#输出的长格式-schema",
+    "title": "6. estimate_QoI()：五类关心量",
+    "section": "",
+    "text": "列\n含义\n什么时候是 NA\n\n\n\n\nestimand\n量的名字：MCATE、PCATE、VIMP、SATE、PATE、Predicted CATE、MSE、AUC、RROC、SL risk、SL coefficient\n从不\n\n\nterm\n变量名 / 子模型名\nATE 行为 NA\n\n\nvalue\n连续取值（连续调节变量的评估点、RROC 的横轴）\n离散量为 NA\n\n\nlevel\n离散取值（因子水平、Propensity Score / Treatment Response / Control Response / Effect Surface）\n连续量为 NA\n\n\nestimate\n点估计\n从不\n\n\nstd_error\n标准误\nRROC、Predicted CATE 恒为 NA\n\n\n\n\n\n\n\n\n\n\n注记sample_size 被最后一行 select() 丢掉了\n\n\n\ncalculate_ate() 和 PCATE 的内核都算了 sample_size 一列， 但 estimate_QoI() 收尾时写的是 select(intersect(col_order, names(.)))，而 col_order 只有上表那六个名字。 于是 ATE 的样本量（以及 PCATE 每个评估点的有效样本量）在公开输出里拿不到， 只能自己从数据框数。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>213</span>  <span class='chapter-title'>6. estimate_QoI()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/06-estimate-qoi.html#sec-qoicfg",
+    "href": "notes/tidyhte/06-estimate-qoi.html#sec-qoicfg",
+    "title": "6. estimate_QoI()：五类关心量",
+    "section": "QoI_cfg：开关总表",
+    "text": "QoI_cfg：开关总表\nQoI_cfg$new(mcate = NULL, pcate = NULL, vimp = NULL, diag = NULL,\n            ate = TRUE, predictions = FALSE)\n\n\n\n\n\n\n\n\n\n字段\n类型\nbasic_config() 的默认值\n对应内核\n\n\n\n\nmcate\nMCATE_cfg / NULL\nNULL（靠 add_moderator() 建）\ncalculate_mcate_quantities()\n\n\npcate\nPCATE_cfg / NULL\nNULL（配方 API 无入口）\nfit_fx_predictor() + calculate_pcate_quantities()\n\n\nvimp\nVIMP_cfg / NULL\nVIMP_cfg$new(sample_splitting = TRUE)\ncalculate_vimp() / calculate_linear_vimp()\n\n\ndiag\nDiagnostics_cfg / NULL\n三处诊断都有\ncalculate_diagnostics()\n\n\nate\n逻辑\nTRUE\ncalculate_ate()\n\n\npredictions\n逻辑\nFALSE\n与 PCATE 共用 fit_fx_predictor()\n\n\n\n执行顺序固定为 MCATE → （效应面模型）→ PCATE → VIMP → 诊断 → ATE， 最后 bind_rows()。顺序之所以重要：效应面模型只有在这一步被拟合， 诊断在它之后才看得到 .pseudo_outcome_hat。\n注意裸的 QoI_cfg$new() 六项里有四项是 NULL， 所以 HTE_cfg$new() 直接构造出来的配方既没有 VIMP 也没有任何诊断， 和 basic_config() 不是一回事。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>213</span>  <span class='chapter-title'>6. estimate_QoI()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/06-estimate-qoi.html#sec-mcate",
+    "href": "notes/tidyhte/06-estimate-qoi.html#sec-mcate",
+    "title": "6. estimate_QoI()：五类关心量",
+    "section": "MCATE：边际条件平均治疗效应",
+    "text": "MCATE：边际条件平均治疗效应\n“边际”指的是其余协变量全部积掉，只保留一个调节变量。 这就是文献里通常说的 CATE，也是本包的主力输出。\nMCATE_cfg$new(cfgs, std_errors = TRUE)\nMCATE_cfg$add_moderator(var_name, cfg)\ncfgs 是”变量名 → 展示模型”的命名列表，add_moderator() 配方函数 帮你填的就是它。对每个变量，内核做的事只有三步： 用 .pseudo_outcome 当标签、该变量当唯一特征建 Model_data， 按展示模型拟合，取 predict_se()。\n离散变量给每个水平一行（level 有值、value 为 NA）：\n\nres %&gt;% filter(estimand == \"MCATE\", term == \"x2\") %&gt;% arrange(level) %&gt;%\n  mutate(真值 = round(as.numeric(tapply(sim$tau, sim$x2, mean)), 3))\n#&gt; # A tibble: 3 × 7\n#&gt;   estimand term  value level estimate std_error  真值\n#&gt;   &lt;chr&gt;    &lt;chr&gt; &lt;dbl&gt; &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt; &lt;dbl&gt;\n#&gt; 1 MCATE    x2       NA a        0.469    0.0909 0.45 \n#&gt; 2 MCATE    x2       NA b        0.535    0.0779 0.534\n#&gt; 3 MCATE    x2       NA c        1.18     0.0803 1.13\n\n连续变量给 neval 行（value 有值、level 为 NA）：\n\nres %&gt;% filter(estimand == \"MCATE\", term == \"x1\") %&gt;% head(4)\n#&gt; # A tibble: 4 × 6\n#&gt;   estimand term  value level estimate std_error\n#&gt;   &lt;chr&gt;    &lt;chr&gt; &lt;dbl&gt; &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 MCATE    x1    -1.66 &lt;NA&gt;   -0.398     0.177 \n#&gt; 2 MCATE    x1    -1.43 &lt;NA&gt;   -0.282     0.121 \n#&gt; 3 MCATE    x1    -1.20 &lt;NA&gt;   -0.154     0.0848\n#&gt; 4 MCATE    x1    -1.03 &lt;NA&gt;   -0.0511    0.0685\nres %&gt;% filter(estimand == \"MCATE\") %&gt;% count(term)\n#&gt; # A tibble: 4 × 2\n#&gt;   term      n\n#&gt;   &lt;chr&gt; &lt;int&gt;\n#&gt; 1 x1       30\n#&gt; 2 x2        3\n#&gt; 3 x3       30\n#&gt; 4 x4       30\n\nx1（真修饰变量，斜率 0.8）、x3（只是预后）、x4（纯噪声） 三条曲线的对比是这份数据的主要看点，作图见 第 7 页。\n\n\n\n\n\n\n注记标准误怎么来的\n\n\n\n离散变量走 StratifiedPredictor，每层是加权均值 + 聚类稳健标准误 （聚类单位是 make_splits() 里的标识符）。 连续变量走 nprobust::lprobust() 的局部线性回归， 标准误是它给的（不做聚类调整）。 MCATE_cfg$std_errors &lt;- FALSE 时两者都只返回点估计， std_error 列在合并后成为 NA。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>213</span>  <span class='chapter-title'>6. estimate_QoI()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/06-estimate-qoi.html#ate",
+    "href": "notes/tidyhte/06-estimate-qoi.html#ate",
+    "title": "6. estimate_QoI()：五类关心量",
+    "section": "ATE",
+    "text": "ATE\ncalculate_ate() 直接对伪结局取（加权）均值：\n\ntidyhte:::calculate_ate\n#&gt; function (data) \n#&gt; {\n#&gt;     id_col &lt;- attr(data, \"identifier\")\n#&gt;     w_col &lt;- attr(data, \"weights\")\n#&gt;     o &lt;- dplyr::summarize(data, estimand = \"SATE\", estimate = mean(data$.pseudo_outcome), \n#&gt;         std_error = clustered_se_of_mean(data$.pseudo_outcome, \n#&gt;             data[[id_col]]), sample_size = length(unique(data[[id_col]])))\n#&gt;     if (!zero_range(data[[w_col]])) {\n#&gt;         o &lt;- dplyr::bind_rows(o, dplyr::summarize(data, estimand = \"PATE\", \n#&gt;             estimate = stats::weighted.mean(data$.pseudo_outcome, \n#&gt;                 data[[w_col]]), std_error = clustered_se_of_mean(data$.pseudo_outcome, \n#&gt;                 data[[id_col]], data[[w_col]]), sample_size = sum(data[[w_col]])))\n#&gt;     }\n#&gt;     o\n#&gt; }\n#&gt; &lt;bytecode: 0x0000022f05c0bce8&gt;\n#&gt; &lt;environment: namespace:tidyhte&gt;\nres %&gt;% filter(grepl(\"ATE\", estimand))\n#&gt; # A tibble: 94 × 6\n#&gt;    estimand term   value level estimate std_error\n#&gt;    &lt;chr&gt;    &lt;chr&gt;  &lt;dbl&gt; &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt;  1 MCATE    x1    -1.66  &lt;NA&gt;   -0.398     0.177 \n#&gt;  2 MCATE    x1    -1.43  &lt;NA&gt;   -0.282     0.121 \n#&gt;  3 MCATE    x1    -1.20  &lt;NA&gt;   -0.154     0.0848\n#&gt;  4 MCATE    x1    -1.03  &lt;NA&gt;   -0.0511    0.0685\n#&gt;  5 MCATE    x1    -0.916 &lt;NA&gt;    0.0237    0.0619\n#&gt;  6 MCATE    x1    -0.827 &lt;NA&gt;    0.0827    0.0588\n#&gt;  7 MCATE    x1    -0.713 &lt;NA&gt;    0.160     0.0566\n#&gt;  8 MCATE    x1    -0.608 &lt;NA&gt;    0.234     0.0557\n#&gt;  9 MCATE    x1    -0.516 &lt;NA&gt;    0.299     0.0554\n#&gt; 10 MCATE    x1    -0.408 &lt;NA&gt;    0.378     0.0553\n#&gt; # ℹ 84 more rows\n\n两个细节：\n\nPATE 只在权重非常数时才出现（源码里 if (!zero_range(data[[w_col]]))）。 默认权重全 1，所以默认输出里只有 SATE。\n标准误恒为聚类稳健版本，聚类单位是标识符列。 没有聚类时（每行一个 id）退化成普通的均值标准误。\n\n\ntidyhte:::clustered_se_of_mean\n#&gt; function (y, cluster, weights = rep(1, length(y))) \n#&gt; {\n#&gt;     n &lt;- length(y)\n#&gt;     weights &lt;- weights/sum(weights) * n\n#&gt;     H &lt;- length(unique(cluster))\n#&gt;     yhat &lt;- stats::weighted.mean(y, weights)\n#&gt;     if (H &lt; n) {\n#&gt;         cl_resids &lt;- dplyr::tibble(r = y - yhat, w = weights, \n#&gt;             cl = cluster) %&gt;% dplyr::group_by(.data$cl) %&gt;% dplyr::summarize(r = sum(tcrossprod(.data$w) * \n#&gt;             tcrossprod(.data$r))) %&gt;% dplyr::select(\"r\") %&gt;% \n#&gt;             unlist()\n#&gt;     }\n#&gt;     else {\n#&gt;         cl_resids &lt;- weights^2 * (y - yhat)^2\n#&gt;     }\n#&gt;     sqrt(sum(cl_resids)/n^2 * H/(H - 1))\n#&gt; }\n#&gt; &lt;bytecode: 0x0000022f023c10e0&gt;\n#&gt; &lt;environment: namespace:tidyhte&gt;",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>213</span>  <span class='chapter-title'>6. estimate_QoI()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/06-estimate-qoi.html#sec-vimp",
+    "href": "notes/tidyhte/06-estimate-qoi.html#sec-vimp",
+    "title": "6. estimate_QoI()：五类关心量",
+    "section": "VIMP：调节变量重要性",
+    "text": "VIMP：调节变量重要性\nVIMP_cfg$new(sample_splitting = TRUE, linear_only = FALSE)\n两条路径算的是不同的量：\n\n\n\n\n\n\n\n\n\nlinear = FALSE（默认）\nlinear = TRUE\n\n\n\n\n内核\ncalculate_vimp()\ncalculate_linear_vimp()\n\n\n依赖\nvimp + quadprog + SuperLearner\n只用 stats::lm()\n\n\n估计量\n去掉该变量后总体 \\(R^2\\) 的下降\n去掉该变量后平方残差均值的上升\n\n\n量纲\n无量纲，截断在 \\([0, 1]\\)\n结局量纲的平方\n\n\n速度\n要拟合 \\(1 + p\\) 个 CV.SuperLearner\n一个 lm + \\(p\\) 个 lm\n\n\n有效性\n算法无关，需要效应面模型收敛\n只有真模型是线性时才一致\n\n\n\n\ncfg_np &lt;- make_cfg() %&gt;% add_vimp(sample_splitting = FALSE)\ncfg_ln &lt;- make_cfg(); cfg_ln$qoi$vimp &lt;- VIMP_cfg$new(sample_splitting = FALSE, linear_only = TRUE)\ncfg_ss &lt;- make_cfg() %&gt;% add_vimp(sample_splitting = TRUE)\n\nvimp_of &lt;- function(cfg, label) {\n  d &lt;- prepped; attr(d, \"HTE_cfg\") &lt;- cfg\n  estimate_QoI(d, x1, x2, x3, x4) %&gt;% filter(estimand == \"VIMP\") %&gt;%\n    transmute(路径 = label, term, estimate = round(estimate, 4), std_error = round(std_error, 4))\n}\nbind_rows(\n  vimp_of(cfg_np, \"非参数, 不分样本\"),\n  vimp_of(cfg_ss, \"非参数, 分样本\"),\n  vimp_of(cfg_ln, \"线性\")\n) %&gt;% tidyr::pivot_wider(names_from = 路径, values_from = c(estimate, std_error))\n#&gt; # A tibble: 4 × 7\n#&gt;   term  `estimate_非参数, 不分样本` `estimate_非参数, 分样本` estimate_线性\n#&gt;   &lt;chr&gt;                       &lt;dbl&gt;                     &lt;dbl&gt;         &lt;dbl&gt;\n#&gt; 1 x1                         0.256                      0.189        0.506 \n#&gt; 2 x2                         0.0424                     0            0.0914\n#&gt; 3 x3                         0.003                      0            0.002 \n#&gt; 4 x4                         0                          0            0.0007\n#&gt; # ℹ 3 more variables: `std_error_非参数, 不分样本` &lt;dbl&gt;,\n#&gt; #   `std_error_非参数, 分样本` &lt;dbl&gt;, std_error_线性 &lt;dbl&gt;\n\n三条路径都把两个真修饰变量（x1、x2）排在预后变量 x3 和噪声 x4 之上， 但数值不可跨路径比较：线性 VIMP 的 x1 是零点几个结局单位的平方， 非参数 VIMP 的 x1 是零点几的 \\(R^2\\) 份额。\n\n\n\n\n\n\n重要用配方 API 打不开线性路径\n\n\n\nadd_vimp(linear_only = TRUE) 不起作用（见 第 2 页），上面第三行是靠 cfg$qoi$vimp &lt;- VIMP_cfg$new(..., linear_only = TRUE) 手工设的。\n\n\n三个必须记住的约束：\n\n折数必须是偶数，否则 calculate_vimp() 抛 Number of splits must be even to calculate VIMP.； make_splits() 在配方已挂上时会自动向上取偶。\nVIMP 对哪些变量算，取决于 estimate_QoI() 的 ...， 而不是 VIMP_cfg。少传一个变量，它就不在重要性表里， 而且剩下变量的重要性值会变（因为”全模型”变小了）。\n因子按整体剔除。VIMP 用的是 Model_data$model_frame（原始列）， 不是哑变量矩阵，所以一个三水平因子算作一个变量。\n\n\n# 先用不带 VIMP 的配方划 3 折（这样不会被自动取偶），再换上带 VIMP 的配方\nd_odd &lt;- sim %&gt;% attach_config(make_cfg()) %&gt;% make_splits(uid, .num_splits = 3) %&gt;%\n  produce_plugin_estimates(y, a, x1, x2, x3, x4) %&gt;% construct_pseudo_outcomes(y, a)\nattr(d_odd, \"HTE_cfg\") &lt;- cfg_np\nestimate_QoI(d_odd, x2)\n#&gt; Error in calculate_vimp(data, {: Number of splits must be even to calculate VIMP.\n\nsample_splitting = TRUE 时，折被对半分成两组， 一组拟合全模型、一组拟合缩减模型。代价是标准误明显变大 （上表第二组），收益是对真实重要性为 0 的变量也有正确的覆盖率； FALSE 时零假设下的推断无效，只能用来排序。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>213</span>  <span class='chapter-title'>6. estimate_QoI()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/06-estimate-qoi.html#sec-pcate",
+    "href": "notes/tidyhte/06-estimate-qoi.html#sec-pcate",
+    "title": "6. estimate_QoI()：五类关心量",
+    "section": "PCATE：偏条件平均治疗效应",
+    "text": "PCATE：偏条件平均治疗效应\nPCATE_cfg$new(model_covariates, cfgs, num_mc_samples = 100)\n[实验性]。它先在全部 model_covariates 上拟合一个交叉拟合的效应面模型 \\(\\hat\\tau(x)\\)，再把关心的那个协变量在其取值范围上扫一遍、 其余协变量按经验分布蒙特卡洛积分，得到”控制住其它变量之后”的效应曲面。 和 MCATE 的区别正是”偏”与”边际”：两个高度相关的变量， MCATE 曲面会很像，PCATE 曲面可以完全不同。\n\ncfg_pc &lt;- make_cfg()\ncfg_pc$qoi$pcate &lt;- PCATE_cfg$new(\n  model_covariates = c(\"x1\", \"x2\", \"x3\", \"x4\"),\n  # cfgs 的内容不会用于展示（见下方 callout），但它的**名字**决定 num_mc_samples\n  cfgs = list(x1 = KernelSmooth_cfg$new(neval = 7), x2 = Stratified_cfg$new(\"x2\")),\n  num_mc_samples = 20\n)\nd_pc &lt;- prepped; attr(d_pc, \"HTE_cfg\") &lt;- cfg_pc\nres_pc &lt;- suppressWarnings(estimate_QoI(d_pc, x1, x2))\ncount(res_pc, estimand, level)\n#&gt; # A tibble: 18 × 3\n#&gt;    estimand       level                  n\n#&gt;    &lt;chr&gt;          &lt;chr&gt;              &lt;int&gt;\n#&gt;  1 MCATE          a                      1\n#&gt;  2 MCATE          b                      1\n#&gt;  3 MCATE          c                      1\n#&gt;  4 MCATE          &lt;NA&gt;                  30\n#&gt;  5 MSE            Control Response       1\n#&gt;  6 MSE            Effect Surface         1\n#&gt;  7 MSE            Treatment Response     1\n#&gt;  8 PCATE          a                      1\n#&gt;  9 PCATE          b                      1\n#&gt; 10 PCATE          c                      1\n#&gt; 11 PCATE          &lt;NA&gt;                  30\n#&gt; 12 SATE           &lt;NA&gt;                   1\n#&gt; 13 SL coefficient Control Response       2\n#&gt; 14 SL coefficient Effect Surface         2\n#&gt; 15 SL coefficient Treatment Response     2\n#&gt; 16 SL risk        Control Response       2\n#&gt; 17 SL risk        Effect Surface         2\n#&gt; 18 SL risk        Treatment Response     2\n\n同一个 x2，两种口径的对照：\n\nres_pc %&gt;% filter(term == \"x2\", estimand %in% c(\"MCATE\", \"PCATE\")) %&gt;%\n  select(estimand, level, estimate, std_error) %&gt;% arrange(level, estimand)\n#&gt; # A tibble: 6 × 4\n#&gt;   estimand level estimate std_error\n#&gt;   &lt;chr&gt;    &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 MCATE    a        0.469    0.0909\n#&gt; 2 PCATE    a        0.420    0.307 \n#&gt; 3 MCATE    b        0.535    0.0779\n#&gt; 4 PCATE    b        0.471    0.296 \n#&gt; 5 MCATE    c        1.18     0.0803\n#&gt; 6 PCATE    c        1.24     0.308\n\n\n\n\n\n\n\n重要PCATE_cfg$cfgs 被忽略，展示用的是 MCATE_cfg\n\n\n\nestimate_QoI() 调用内核时写的是 calculate_pcate_quantities(..., .MCATE_cfg = .QoI_cfg$mcate)， 内核里再 .MCATE_cfg$cfgs[[covariate]]。 也就是说 PCATE 曲面的展示模型来自 MCATE 的配置， PCATE_cfg$cfgs（以及 PCATE_cfg$add_moderator()）写进去的东西没有读取方。 证据是评估点个数：\n\nc(MCATE设的neval = cfg_pc$qoi$mcate$cfgs$x1$neval,\n  PCATE设的neval = cfg_pc$qoi$pcate$cfgs$x1$neval,\n  PCATE实际行数  = sum(res_pc$estimand == \"PCATE\" & res_pc$term == \"x1\"))\n#&gt; MCATE设的neval PCATE设的neval  PCATE实际行数 \n#&gt;             30              7             30\n\n直接后果：mcate = NULL 而只配 pcate 会报 Unknown model class.—— 取不到展示配置。PCATE 只能在 MCATE 之上叠加使用。\n\n\n\n\n\n\n\n\n警告每次调用都会打印一句劝退\n\n\n\n\nw &lt;- tryCatch(estimate_QoI(d_pc, x2), warning = function(w) conditionMessage(w))\nw\n#&gt; [1] \"Only use PCATEs if you know what you're doing!\"\n\n这是包作者刻意放的：PCATE 没有”其它变量也被随机化”这一条件时， 不具备干净的因果解释，本质上更接近偏依赖图。 把它当描述性工具用，别当成因果估计量。\n\n\n\n\n\n\n\n\n警告cfgs 虽然不用于展示，却决定 num_mc_samples 的名字\n\n\n\nPCATE_cfg$new() 里对标量 num_mc_samples 的处理是\nself$num_mc_samples &lt;- as.list(structure(rep(num_mc_samples, length(cfgs)),\n                                         names = names(cfgs)))\n——按 cfgs 的名字展开，而不是按 model_covariates。 而 FX.Predictor$predict() 取的是 self$num_mc_samples[[covariate]]。于是只要你向 estimate_QoI() 要一个不在 cfgs 名字里的 PCATE，抽样数就是缺失值， 报一个来自 dplyr::sample_n() 的错：\n\ncfg_bad &lt;- make_cfg()\ncfg_bad$qoi$pcate &lt;- PCATE_cfg$new(\n  model_covariates = c(\"x1\", \"x2\", \"x3\", \"x4\"),\n  cfgs = list(x1 = KernelSmooth_cfg$new()),   # 只有 x1\n  num_mc_samples = 20)\nd_bad &lt;- prepped; attr(d_bad, \"HTE_cfg\") &lt;- cfg_bad\nsuppressWarnings(estimate_QoI(d_bad, x1, x2))   # 却要了 x2\n#&gt; Error in `dplyr::sample_n()`:\n#&gt; ! Can't compute indices.\n#&gt; Caused by error in `if (size &lt;= n || replace) ...`:\n#&gt; ! missing value where TRUE/FALSE needed\n\n稳妥写法是把 num_mc_samples 直接写成覆盖全部目标变量的命名列表：\n\ncfg_ok &lt;- make_cfg()\ncfg_ok$qoi$pcate &lt;- PCATE_cfg$new(\n  model_covariates = c(\"x1\", \"x2\", \"x3\", \"x4\"),\n  cfgs = list(),                                   # 反正也不会被读\n  num_mc_samples = list(x1 = 20, x2 = 20))\nd_ok &lt;- prepped; attr(d_ok, \"HTE_cfg\") &lt;- cfg_ok\nsuppressWarnings(estimate_QoI(d_ok, x1, x2)) %&gt;% filter(estimand == \"PCATE\") %&gt;% count(term)\n#&gt; # A tibble: 2 × 2\n#&gt;   term      n\n#&gt;   &lt;chr&gt; &lt;int&gt;\n#&gt; 1 x1       30\n#&gt; 2 x2        3\n\n\n\nnum_mc_samples 控制蒙特卡洛积分的抽样数（大于样本量时就用全样本）。 它直接决定这一步的耗时：内部对每个唯一取值抽 num_mc_samples 行、 逐折预测，因此离散变量的成本随水平数线性增长。\n底层对象是 FX.Predictor（未导出），由 fit_fx_predictor() 构造： 它保存 K 个交叉拟合模型，$predict(data, covariate) 返回 covariate_value / .hte / .id 三列的长表。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>213</span>  <span class='chapter-title'>6. estimate_QoI()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/06-estimate-qoi.html#sec-predictions",
+    "href": "notes/tidyhte/06-estimate-qoi.html#sec-predictions",
+    "title": "6. estimate_QoI()：五类关心量",
+    "section": "predictions：逐单位 CATE",
+    "text": "predictions：逐单位 CATE\nQoI_cfg$predictions &lt;- TRUE 会把每个单位的 \\(\\hat\\tau(x_i)\\) 作为 estimand = \"Predicted CATE\" 的行返回。两个问题：\n① 没有 PCATE_cfg 时直接报错。 源码里 predictions 和 pcate 共用一个 if，取 covs &lt;- rlang::syms(.QoI_cfg$pcate$model_covariates)； pcate 为 NULL 时它是空的，效应面模型没有任何协变量：\n\ncfg_pr &lt;- make_cfg(); cfg_pr$qoi$predictions &lt;- TRUE\nd_pr &lt;- prepped; attr(d_pr, \"HTE_cfg\") &lt;- cfg_pr\nestimate_QoI(d_pr, x1, x2)\n#&gt; Error in terms.formula(object, data = data): '.' in formula and no 'data' argument\n\n② 配上 PCATE 之后能跑，但 level 列写的是标识符的列名。\n\ncfg_pr2 &lt;- make_cfg()\ncfg_pr2$qoi$pcate &lt;- PCATE_cfg$new(model_covariates = c(\"x1\", \"x2\", \"x3\", \"x4\"),\n                                   cfgs = list(), num_mc_samples = list(x2 = 20))\ncfg_pr2$qoi$predictions &lt;- TRUE\nd_pr2 &lt;- prepped; attr(d_pr2, \"HTE_cfg\") &lt;- cfg_pr2\nres_pr &lt;- suppressWarnings(estimate_QoI(d_pr2, x2))\nres_pr %&gt;% filter(estimand == \"Predicted CATE\") %&gt;% head(3)\n#&gt; # A tibble: 3 × 6\n#&gt;   estimand       term  value level estimate std_error\n#&gt;   &lt;chr&gt;          &lt;chr&gt; &lt;int&gt; &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 Predicted CATE y        NA uid      1.91         NA\n#&gt; 2 Predicted CATE y        NA uid     -0.300        NA\n#&gt; 3 Predicted CATE y        NA uid      0.204        NA\nres_pr %&gt;% filter(estimand == \"Predicted CATE\") %&gt;% count(term, level)\n#&gt; # A tibble: 1 × 3\n#&gt;   term  level     n\n#&gt;   &lt;chr&gt; &lt;chr&gt; &lt;int&gt;\n#&gt; 1 y     uid     800\n\n源码是 ids &lt;- identifier_name（一个字符串），然后 tibble(..., level = ids, estimate = fx) 让它循环补齐。 本该是 data[[identifier_name]]。于是 800 行预测值的 level 全都是 \"uid\"，只能靠行序对回原数据——而 estimate_QoI() 开头做过 listwise 删除，行序未必和输入数据一致。 要逐单位预测值，更稳的办法是自己取 .pseudo_outcome_hat：\n\nfx &lt;- tidyhte:::fit_fx_predictor(prepped, .weights, \".pseudo_outcome\", x1, x2, x3, x4,\n                                 .pcate.cfg = cfg_pr2$qoi$pcate,\n                                 .Model_cfg = cfg_pr2$effect)\nfx$data %&gt;% select(uid, .pseudo_outcome, .pseudo_outcome_hat) %&gt;% head(3)\n#&gt; # A tibble: 3 × 3\n#&gt;     uid .pseudo_outcome .pseudo_outcome_hat\n#&gt;   &lt;int&gt;           &lt;dbl&gt;               &lt;dbl&gt;\n#&gt; 1     1           0.851               1.91 \n#&gt; 2     2           2.21               -0.300\n#&gt; 3     3           0.616               0.204\ncor(fx$data$.pseudo_outcome_hat, sim$tau)      # 与真 CATE 的相关\n#&gt; [1] 0.9924715",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>213</span>  <span class='chapter-title'>6. estimate_QoI()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/06-estimate-qoi.html#sec-effect-diag",
+    "href": "notes/tidyhte/06-estimate-qoi.html#sec-effect-diag",
+    "title": "6. estimate_QoI()：五类关心量",
+    "section": "效应面诊断只在这条路径上才有",
+    "text": "效应面诊断只在这条路径上才有\ncalculate_diagnostics() 里，效应面那一段第一句就是：\nfor (diag in fx_cfg) {\n    if (!(\".pseudo_outcome_hat\" %in% names(data))) {\n        message(\"Skipping diagnostic on .pseudo_outcome due to lack of model.\")\n        break\n    }\n    ...\n}\n而 .pseudo_outcome_hat 只有 fit_fx_predictor() 会写， 后者只在 pcate 非空或 predictions = TRUE 时被调用。所以：\n\n# 默认（只有 MCATE）：没有 Effect Surface\nres %&gt;% filter(level == \"Effect Surface\") %&gt;% nrow()\n#&gt; [1] 0\n\n# 配了 PCATE：三个效应面诊断都出来了\nres_pc %&gt;% filter(level == \"Effect Surface\")\n#&gt; # A tibble: 5 × 6\n#&gt;   estimand       term                   value level          estimate std_error\n#&gt;   &lt;chr&gt;          &lt;chr&gt;                  &lt;dbl&gt; &lt;chr&gt;             &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 MSE            .pseudo_outcome           NA Effect Surface   1.37      0.148 \n#&gt; 2 SL risk        SL.glm.interaction_All    NA Effect Surface   1.44      0.0472\n#&gt; 3 SL risk        SL.glm_All                NA Effect Surface   1.38      0.0336\n#&gt; 4 SL coefficient SL.glm.interaction_All    NA Effect Surface   0.0145    0.0145\n#&gt; 5 SL coefficient SL.glm_All                NA Effect Surface   0.986     0.0145\n\n\n\n\n\n\n\n重要官方 vignette 里那三张图的 “Effect Surface” 面板是空的\n\n\n\nvignette(\"experimental_analysis\") 用 add_effect_model() + add_effect_diagnostic(\"RROC\") 配置了效应面， 却没有配 PCATE，于是 facet_wrap(~level) 里 factor(level, levels = c(\"Control Response\", \"Treatment Response\", \"Effect Surface\")) 的第三个面板没有任何数据。本手册第 7 页 画的是补上 PCATE 之后的版本。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>213</span>  <span class='chapter-title'>6. estimate_QoI()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/06-estimate-qoi.html#本页涉及的帮助主题",
+    "href": "notes/tidyhte/06-estimate-qoi.html#本页涉及的帮助主题",
+    "title": "6. estimate_QoI()：五类关心量",
+    "section": "本页涉及的帮助主题",
+    "text": "本页涉及的帮助主题\nestimate_QoI、QoI_cfg、MCATE_cfg、PCATE_cfg、VIMP_cfg、 calculate_ate、calculate_vimp、calculate_linear_vimp、 calculate_pcate_quantities、fit_fx_predictor、FX.Predictor、 fit_effect。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>213</span>  <span class='chapter-title'>6. estimate_QoI()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/07-diagnostics-plots.html",
+    "href": "notes/tidyhte/07-diagnostics-plots.html",
+    "title": "7. 诊断与可视化",
+    "section": "",
+    "text": "Diagnostics_cfg\ntidyhte 不产出任何图形对象：它只返回一张长格式 tibble， 画图完全交给使用者。这一页先讲诊断怎么配、算的是什么， 再给五张可以直接照抄的 ggplot2 模板。\n输出里的 level 列标明诊断的对象： Propensity Score、Treatment Response、Control Response、Effect Surface。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>214</span>  <span class='chapter-title'>7. 诊断与可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/07-diagnostics-plots.html#sec-cfg",
+    "href": "notes/tidyhte/07-diagnostics-plots.html#sec-cfg",
+    "title": "7. 诊断与可视化",
+    "section": "",
+    "text": "Diagnostics_cfg$new(ps = NULL, outcome = NULL, effect = NULL, params = NULL)\nDiagnostics_cfg$add(ps = NULL, outcome = NULL, effect = NULL)\n\n\n\n\n\n\n\n\n\n字段\n针对的模型\n预测列\n合法诊断\n\n\n\n\nps\n倾向得分\n.pi_hat\nAUC、MSE、SL_risk、SL_coefs\n\n\noutcome\n两个结局模型（分臂各算一次）\n.mu1_hat / .mu0_hat\nRROC、MSE、SL_risk、SL_coefs\n\n\neffect\n效应面模型\n.pseudo_outcome_hat\n同上，但通常被跳过\n\n\nparams\n诊断的额外参数\n—\n目前只有 num_bins（RROC 用）\n\n\n\n\n\n\n\n\n\n\n注记calculate_diagnostics() 的两个形参是死参数\n\n\n\n帮助页写的签名是 calculate_diagnostics(data, treatment, outcome, .diag.cfg)， 但函数体里 treatment_name、outcome_name 是从数据框的 attribute 取的， 形参 treatment / outcome 从头到尾没有被使用。 estimate_QoI() 自己也是这样调的：calculate_diagnostics(data, .diag.cfg = ...)， 两个位置参数干脆不传。传了也不会有任何效果。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>214</span>  <span class='chapter-title'>7. 诊断与可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/07-diagnostics-plots.html#sec-estimate",
+    "href": "notes/tidyhte/07-diagnostics-plots.html#sec-estimate",
+    "title": "7. 诊断与可视化",
+    "section": "estimate_diagnostic()",
+    "text": "estimate_diagnostic()\n这是唯一导出的诊断函数，可以脱离流水线单独用， 但要求数据框带 weights 和 identifier 两个 attribute：\n\nd &lt;- tibble(y = rbinom(200, 1, 0.4), p = runif(200), w = rexp(200), u = 1:200)\nattr(d, \"weights\") &lt;- \"w\"\nattr(d, \"identifier\") &lt;- \"u\"\n\nestimate_diagnostic(d, \"y\", \"p\", \"AUC\")\n#&gt; # A tibble: 1 × 4\n#&gt;   estimand term  estimate std_error\n#&gt;   &lt;chr&gt;    &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 AUC      y        0.566    0.0565\nestimate_diagnostic(d, \"y\", \"p\", \"MSE\")\n#&gt; # A tibble: 1 × 4\n#&gt;   estimand term  estimate std_error\n#&gt;   &lt;chr&gt;    &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 MSE      y        0.311    0.0352\n\n五个诊断的算法：\n\n\n\n诊断\n算法\n标准误\n\n\n\n\nAUC\nWeightedROC::WeightedAUC()，加权 ROC 曲线下面积\n\\(\\tfrac{1}{2}/\\sqrt{\\min(n_1, n_0)}\\)，一个保守的近似\n\n\nMSE\n加权平方误差均值\n聚类稳健\n\n\nSL_risk\n各折 cvRisk 的均值\n折间标准差 \\(/\\sqrt{K}\\)\n\n\nSL_coefs\n各折集成权重 coef 的均值\n折间标准差 \\(/\\sqrt{K}\\)\n\n\nRROC\n见下文\n恒为 NA\n\n\n\n三条失败路径都值得知道：\n\n# ① 标签不是 0/1 时，AUC 返回 NULL（并发一条 message）\nmsgs &lt;- character()\nr1 &lt;- withCallingHandlers(\n  estimate_diagnostic(mutate(d, y = rnorm(200)), \"y\", \"p\", \"AUC\"),\n  message = function(m) { msgs &lt;&lt;- c(msgs, conditionMessage(m)); invokeRestart(\"muffleMessage\") })\nc(结果 = is.null(r1)); trimws(msgs)\n#&gt; 结果 \n#&gt; TRUE\n#&gt; [1] \"Cannot calculate AUC because labels are not binary.\"\n\n\n# ② 模型不是 SuperLearner 时，SL_coefs / SL_risk 返回 NULL\nmsgs &lt;- character()\nr2 &lt;- withCallingHandlers(\n  estimate_diagnostic(d, \"y\", \"p\", \"SL_coefs\"),\n  message = function(m) { msgs &lt;&lt;- c(msgs, conditionMessage(m)); invokeRestart(\"muffleMessage\") })\nc(结果 = is.null(r2)); trimws(msgs)\n#&gt; 结果 \n#&gt; TRUE\n#&gt; [1] \"Cannot calculate SL_coefs because the model is not SuperLearner.\"\n\n\n# ③ 诊断名拼错：函数没有 else 分支，报一个与病因无关的错\nestimate_diagnostic(d, \"y\", \"p\", \"R2\")\n#&gt; Error in estimate_diagnostic(d, \"y\", \"p\", \"R2\"): object 'result' not found\n\n前两种是”静默返回 NULL“——它们会让某一类诊断整块消失在结果表里， 而 message 在 message = FALSE 的代码块里看不见。 第三种的报错信息（object 'result' not found）完全不提是哪个名字写错了。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>214</span>  <span class='chapter-title'>7. 诊断与可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/07-diagnostics-plots.html#跑一遍完整流水线",
+    "href": "notes/tidyhte/07-diagnostics-plots.html#跑一遍完整流水线",
+    "title": "7. 诊断与可视化",
+    "section": "跑一遍完整流水线",
+    "text": "跑一遍完整流水线\n下面这份配置把三类诊断都打开，并且配了 PCATE， 好让效应面诊断真的算出来（原因见第 6 页）。\n\ncfg &lt;- basic_config() %&gt;%\n  add_propensity_score_model(\"SL.glm\") %&gt;%\n  add_outcome_model(\"SL.glm\") %&gt;%\n  add_outcome_model(\"SL.glm.interaction\") %&gt;%\n  add_effect_model(\"SL.glm\") %&gt;%\n  add_effect_model(\"SL.glm.interaction\") %&gt;%\n  add_outcome_diagnostic(\"RROC\") %&gt;%\n  add_effect_diagnostic(\"RROC\") %&gt;%\n  add_moderator(\"Stratified\", x2) %&gt;%\n  add_moderator(\"KernelSmooth\", x1, x3, x4) %&gt;%\n  add_vimp(sample_splitting = FALSE)\ncfg$qoi$diag$params &lt;- list(num_bins = 60)      # 不然 RROC 会有 n 行\ncfg$qoi$pcate &lt;- PCATE_cfg$new(              # 只为了让效应面模型被拟合\n  model_covariates = c(\"x1\", \"x2\", \"x3\", \"x4\"),\n  cfgs = list(),\n  num_mc_samples = list(x1 = 15, x2 = 15, x3 = 15, x4 = 15))\n\nprepped &lt;- sim %&gt;% attach_config(cfg) %&gt;% make_splits(uid, .num_splits = 4) %&gt;%\n  produce_plugin_estimates(y, a, x1, x2, x3, x4) %&gt;% construct_pseudo_outcomes(y, a)\nresults &lt;- suppressWarnings(estimate_QoI(prepped, x1, x2, x3, x4))\ncount(results, estimand, level)\n#&gt; # A tibble: 26 × 3\n#&gt;    estimand level                  n\n#&gt;    &lt;chr&gt;    &lt;chr&gt;              &lt;int&gt;\n#&gt;  1 AUC      Propensity Score       1\n#&gt;  2 MCATE    a                      1\n#&gt;  3 MCATE    b                      1\n#&gt;  4 MCATE    c                      1\n#&gt;  5 MCATE    &lt;NA&gt;                 300\n#&gt;  6 MSE      Control Response       1\n#&gt;  7 MSE      Effect Surface         1\n#&gt;  8 MSE      Propensity Score       1\n#&gt;  9 MSE      Treatment Response     1\n#&gt; 10 PCATE    a                      1\n#&gt; # ℹ 16 more rows",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>214</span>  <span class='chapter-title'>7. 诊断与可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/07-diagnostics-plots.html#sec-mcate-plot",
+    "href": "notes/tidyhte/07-diagnostics-plots.html#sec-mcate-plot",
+    "title": "7. 诊断与可视化",
+    "section": "MCATE 曲线",
+    "text": "MCATE 曲线\n连续调节变量：value 是横轴，带真值参照线。 x1 的真效应是 \\(0.5 + 0.8x_1 + 0.6\\Pr(x_2 = c)\\)， x3（只影响基线）和 x4（纯噪声）的真效应都是常数。\n\ntruth &lt;- tibble(\n  term = rep(c(\"x1\", \"x3\", \"x4\"), each = 2),\n  value = c(range(sim$x1), range(sim$x3), range(sim$x4)),\n  truth = c(0.5 + 0.8 * range(sim$x1) + 0.6 * mean(sim$x2 == \"c\"),\n            rep(mean(sim$tau), 2), rep(mean(sim$tau), 2))\n)\n\nresults %&gt;%\n  filter(estimand == \"MCATE\", term %in% c(\"x1\", \"x3\", \"x4\")) %&gt;%\n  ggplot(aes(x = value)) +\n  geom_hline(yintercept = 0, linetype = \"dotted\", colour = \"grey50\") +\n  geom_ribbon(aes(ymin = estimate - 1.96 * std_error,\n                  ymax = estimate + 1.96 * std_error), alpha = 0.25) +\n  geom_line(aes(y = estimate), linewidth = 0.7) +\n  geom_line(aes(y = truth), data = truth, linetype = \"dashed\", colour = \"firebrick\") +\n  facet_wrap(~term, scales = \"free_x\") +\n  labs(x = \"协变量取值\", y = \"CATE\", title = \"边际条件平均治疗效应\")\n\n\n\n\n\n\n\n图 214.1: 连续调节变量的 MCATE（阴影为 ±1.96 SE，虚线为真值）\n\n\n\n\n\n只有 x1 有真实的斜率，另外两个变量的曲线在真值附近水平摆动—— 这正是”用 MCATE 找效应修饰变量”时想看到的对照。 注意曲线只覆盖 5%–95% 分位（KernelSmooth_cfg$eval_min_quantile 的默认值）。\n离散调节变量：level 是横轴。\n\ntruth_x2 &lt;- tibble(level = levels(sim$x2),\n                   truth = as.numeric(tapply(sim$tau, sim$x2, mean)))\n\nresults %&gt;%\n  filter(estimand == \"MCATE\", term == \"x2\") %&gt;%\n  ggplot(aes(x = level, y = estimate)) +\n  geom_hline(yintercept = 0, linetype = \"dotted\", colour = \"grey50\") +\n  geom_pointrange(aes(ymin = estimate - 1.96 * std_error,\n                      ymax = estimate + 1.96 * std_error)) +\n  geom_point(aes(y = truth), data = truth_x2, colour = \"firebrick\", size = 2.5, shape = 4) +\n  labs(x = \"x2 的水平\", y = \"CATE\", title = \"分层估计的 CATE\")\n\n\n\n\n\n\n\n图 214.2: 离散调节变量的 MCATE（红点为真值）",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>214</span>  <span class='chapter-title'>7. 诊断与可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/07-diagnostics-plots.html#变量重要性",
+    "href": "notes/tidyhte/07-diagnostics-plots.html#变量重要性",
+    "title": "7. 诊断与可视化",
+    "section": "变量重要性",
+    "text": "变量重要性\n\nresults %&gt;%\n  filter(estimand == \"VIMP\") %&gt;%\n  ggplot(aes(x = reorder(term, estimate), y = estimate)) +\n  geom_hline(yintercept = 0, linetype = \"dashed\") +\n  geom_pointrange(aes(ymin = estimate - 1.96 * std_error,\n                      ymax = estimate + 1.96 * std_error)) +\n  coord_flip() +\n  labs(x = \"调节变量\", y = \"R² 的下降\", title = \"VIMP\")\n\n\n\n\n\n\n\n图 214.3: 调节变量重要性（去掉该变量后 R² 的下降）\n\n\n\n\n\nsample_splitting = FALSE 时估计值被截断在 0， 所以 x3、x4 这类零重要性变量会紧贴 0 线，且区间不对称—— 这种设置下的区间不能用来做”重要性是否为 0”的检验 （要检验就用 sample_splitting = TRUE，代价是区间明显变宽）。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>214</span>  <span class='chapter-title'>7. 诊断与可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/07-diagnostics-plots.html#sec-slrisk",
+    "href": "notes/tidyhte/07-diagnostics-plots.html#sec-slrisk",
+    "title": "7. 诊断与可视化",
+    "section": "SuperLearner 集成诊断",
+    "text": "SuperLearner 集成诊断\nSL risk 是各折交叉验证风险的均值，SL coefficient 是各折集成权重的均值。 term 列就是第 2 页讲的学习器名。\n\nresults %&gt;%\n  filter(estimand %in% c(\"SL risk\", \"SL coefficient\")) %&gt;%\n  mutate(level = factor(level, c(\"Propensity Score\", \"Control Response\",\n                                 \"Treatment Response\", \"Effect Surface\"))) %&gt;%\n  ggplot(aes(x = term, y = estimate)) +\n  geom_pointrange(aes(ymin = estimate - 1.96 * std_error,\n                      ymax = estimate + 1.96 * std_error)) +\n  coord_flip() +\n  facet_grid(level ~ estimand, scales = \"free_x\") +\n  labs(x = NULL, y = NULL, title = \"集成内部：风险与权重\")\n\n\n\n\n\n\n\n图 214.4: SuperLearner 子模型的交叉验证风险与集成权重\n\n\n\n\n\n两条读图规则：\n\n权重全部压在一个子模型上（本例线性 DGP 下常见）说明其余学习器没有贡献， 可以从库里去掉以省时间；反过来权重分散说明确实需要集成。\n风险的折间标准误很大说明不同折之间模型表现不稳定， 通常是样本量不足或有稀有水平。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>214</span>  <span class='chapter-title'>7. 诊断与可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/07-diagnostics-plots.html#sec-rroc",
+    "href": "notes/tidyhte/07-diagnostics-plots.html#sec-rroc",
+    "title": "7. 诊断与可视化",
+    "section": "RROC",
+    "text": "RROC\n回归 ROC 曲线（Hernández-Orallo 2013）把预测值整体平移一系列常数， 描出”高估总量”与”低估总量”的权衡曲线。越贴近两条坐标轴越好， 其中不平移的那个点代表模型本身的表现。\n\nrroc &lt;- filter(results, estimand == \"RROC\")\n# 不平移的那个点是每组的第一行（level 列里的 observed 标记已被覆盖，见下）\nobserved &lt;- rroc %&gt;% group_by(level) %&gt;% slice_head(n = 1) %&gt;% ungroup()\n\nggplot(rroc, aes(x = value, y = estimate)) +\n  geom_line(aes(group = level)) +\n  geom_point(data = observed, colour = \"firebrick\", size = 2) +\n  facet_wrap(~level, scales = \"free\") +\n  labs(x = \"高估总量 / n\", y = \"低估总量 / n\", title = \"RROC\")\n\n\n\n\n\n\n\n图 214.5: 回归 ROC 曲线（点为不平移时的位置）\n\n\n\n\n\n\n\n\n\n\n\n重要进入流水线后，observed / shifted 这个标记会被覆盖掉\n\n\n\ncalculate_rroc() 用 level 列区分”不平移”（observed） 和”平移后”（shifted）：\n\ntidyhte:::calculate_rroc(rnorm(100), rnorm(100), nbins = 4)\n#&gt; # A tibble: 4 × 5\n#&gt;   estimand value level    estimate std_error\n#&gt;   &lt;chr&gt;    &lt;dbl&gt; &lt;chr&gt;       &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 RROC     0.428 observed   -0.710        NA\n#&gt; 2 RROC     4.45  shifted     0            NA\n#&gt; 3 RROC     0.492 shifted    -0.634        NA\n#&gt; 4 RROC     0     shifted    -3.65         NA\n\n但 calculate_diagnostics() 拿到结果后立刻执行 result$level &lt;- \"Treatment Response\"（或 \"Control Response\" / \"Effect Surface\"），把这一列整个盖掉：\n\nresults %&gt;% filter(estimand == \"RROC\") %&gt;% count(level)\n#&gt; # A tibble: 3 × 2\n#&gt;   level                  n\n#&gt;   &lt;chr&gt;              &lt;int&gt;\n#&gt; 1 Control Response      60\n#&gt; 2 Effect Surface        60\n#&gt; 3 Treatment Response    60\n\n于是输出里再也找不到哪一行是不平移的那个点。 官方 vignette 的做法是 group_by(level) %&gt;% slice_head(n = 1)—— 能用是因为 calculate_rroc() 把 observed 那行放在最前面， 属于依赖行序的约定，而不是数据里的标记。\n\n\n\n\n\n\n\n\n警告nbins 的默认值是样本量，不是帮助页写的 100\n\n\n\ncalculate_rroc(label, prediction, nbins = 100) 的默认值是 100， 但流水线里根本不走这个默认值——estimate_diagnostic() 里写的是\nif (\"num_bins\" %in% names(params)) nbins &lt;- params$num_bins else nbins &lt;- nrow(data)\n于是每个模型每次都返回 \\(n\\) 行。\\(n = 10^5\\) 的数据上， 光 RROC 就能给结果表加几十万行。\n\ncfg_n &lt;- basic_config() %&gt;% add_known_propensity_score(\"ps\") %&gt;%\n  add_outcome_model(\"SL.glm\") %&gt;% add_moderator(\"Stratified\", x2) %&gt;% remove_vimp()\ncfg_n$qoi$diag &lt;- Diagnostics_cfg$new(outcome = \"RROC\")      # 不设 params\np2 &lt;- sim %&gt;% attach_config(cfg_n) %&gt;% make_splits(uid, .num_splits = 4) %&gt;%\n  produce_plugin_estimates(y, a, x1, x2, x3, x4) %&gt;% construct_pseudo_outcomes(y, a)\nestimate_QoI(p2, x2) %&gt;% filter(estimand == \"RROC\") %&gt;% count(level)\n#&gt; # A tibble: 2 × 2\n#&gt;   level                  n\n#&gt;   &lt;chr&gt;              &lt;int&gt;\n#&gt; 1 Control Response     455\n#&gt; 2 Treatment Response   345\ntable(sim$a)      # 对照：两臂各自的样本量\n#&gt; \n#&gt;   0   1 \n#&gt; 455 345\n\n唯一的调节入口是 Diagnostics_cfg$params$num_bins， 而配方 API 里没有设置它的函数，add_known_propensity_score() 还会把已经设好的 params 清空（见第 2 页）。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>214</span>  <span class='chapter-title'>7. 诊断与可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/07-diagnostics-plots.html#auc-与-mse",
+    "href": "notes/tidyhte/07-diagnostics-plots.html#auc-与-mse",
+    "title": "7. 诊断与可视化",
+    "section": "AUC 与 MSE",
+    "text": "AUC 与 MSE\n\nresults %&gt;% filter(estimand %in% c(\"AUC\", \"MSE\"))\n#&gt; # A tibble: 5 × 6\n#&gt;   estimand term            value level              estimate std_error\n#&gt;   &lt;chr&gt;    &lt;chr&gt;           &lt;dbl&gt; &lt;chr&gt;                 &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 AUC      a                  NA Propensity Score      0.671   0.0269 \n#&gt; 2 MSE      a                  NA Propensity Score      0.225   0.00521\n#&gt; 3 MSE      y                  NA Control Response      0.272   0.0177 \n#&gt; 4 MSE      y                  NA Treatment Response    0.276   0.0200 \n#&gt; 5 MSE      .pseudo_outcome    NA Effect Surface       13.1    10.3\n\n\nAUC 只对倾向得分有意义（标签是 0/1 的治疗）。 这里约 0.67， 说明协变量确实预测了治疗分配，也就是确实有混杂。 用已知倾向得分时 add_known_propensity_score() 会把它删掉。\nMSE 三行分别是两个结局模型和效应面模型的均方误差。 注意效应面那一行的标签是 .pseudo_outcome—— 伪结局本身方差就很大，这个数字不能和结局模型的 MSE 相比， 只能和同一个效应面模型的不同配置相比。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>214</span>  <span class='chapter-title'>7. 诊断与可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/07-diagnostics-plots.html#逐单位-cate-的分布",
+    "href": "notes/tidyhte/07-diagnostics-plots.html#逐单位-cate-的分布",
+    "title": "7. 诊断与可视化",
+    "section": "逐单位 CATE 的分布",
+    "text": "逐单位 CATE 的分布\n有 PCATE 配置时，.pseudo_outcome_hat 这一列会留在数据里， 可以直接画个体效应的分布——这是回答”有多少人受益”的最直接材料：\n\nfx &lt;- tidyhte:::fit_fx_predictor(prepped, .weights, \".pseudo_outcome\", x1, x2, x3, x4,\n                                 .pcate.cfg = cfg$qoi$pcate, .Model_cfg = cfg$effect)\ntibble(hat = fx$data$.pseudo_outcome_hat, truth = sim$tau) %&gt;%\n  ggplot() +\n  geom_density(aes(x = hat), fill = \"grey70\", colour = NA, alpha = 0.8) +\n  geom_density(aes(x = truth), colour = \"firebrick\", linewidth = 0.7) +\n  labs(x = \"CATE\", y = \"密度\", title = \"预测的个体治疗效应 vs 真值\")\n\nc(相关系数 = round(cor(fx$data$.pseudo_outcome_hat, sim$tau), 3),\n  受益比例_估计 = round(mean(fx$data$.pseudo_outcome_hat &gt; 0), 3),\n  受益比例_真值 = round(mean(sim$tau &gt; 0), 3))\n#&gt;      相关系数 受益比例_估计 受益比例_真值 \n#&gt;         0.892         0.769         0.810\n\n\n\n\n\n\n\n图 214.6: 逐单位 CATE 预测值的分布（红线为真 CATE 的分布）\n\n\n\n\n\n\n\n\n\n\n\n注记为什么不用 predictions = TRUE\n\n\n\nQoI_cfg$predictions 返回的行里，level 列写的是标识符的列名而不是 id （见第 6 页）， 对不回原数据。直接调 tidyhte:::fit_fx_predictor() 拿 .pseudo_outcome_hat 更可靠，代价是用了未导出的函数。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>214</span>  <span class='chapter-title'>7. 诊断与可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/07-diagnostics-plots.html#本页涉及的帮助主题",
+    "href": "notes/tidyhte/07-diagnostics-plots.html#本页涉及的帮助主题",
+    "title": "7. 诊断与可视化",
+    "section": "本页涉及的帮助主题",
+    "text": "本页涉及的帮助主题\nDiagnostics_cfg、estimate_diagnostic、calculate_diagnostics、 calculate_rroc、add_propensity_diagnostic、add_outcome_diagnostic、 add_effect_diagnostic。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>214</span>  <span class='chapter-title'>7. 诊断与可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/08-pitfalls.html",
+    "href": "notes/tidyhte/08-pitfalls.html",
+    "title": "8. 实测清单与工作流",
+    "section": "",
+    "text": "失效路径总表\n前七页的实测结论汇总在这里，外加一套可以照抄的工作流。 所有条目都在 tidyhte 1.0.4 / Windows R 4.4.3 上复现过， 正文里给出了触发条件、表现和出处。\n“静默”一栏是本表最重要的一列：报错至少能让人回头查， 静默失效会让一份看起来完整的结果表里少掉整块内容。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>215</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/08-pitfalls.html#失效路径总表",
+    "href": "notes/tidyhte/08-pitfalls.html#失效路径总表",
+    "title": "8. 实测清单与工作流",
+    "section": "",
+    "text": "#\n触发条件\n表现\n静默？\n出处\n\n\n\n\n1\n走配方 API 配倾向得分模型\nfamily 恒为 gaussian()，得到线性概率模型，\\(\\hat\\pi\\) 可以越界\n是\n3\n\n\n2\nadd_vimp(linear_only = TRUE)\n参数被丢弃，仍走非参数 VIMP\n是\n2\n\n\n3\n只配 MCATE（默认）时用 add_effect_model() / add_effect_diagnostic()\n效应面模型只被 VIMP 用；效应面诊断整块跳过\n是（只有一条 message）\n6\n\n\n4\n从同一个 HTE_cfg 派生多份配方\nR6 引用语义，改一份等于改全部；浅 clone() 也不够\n是\n2\n\n\n5\nSLEnsemble_cfg$new(cvControl = ...)\n字段存下来但无人读取，内层折数恒为 .num_splits - 1\n是\n3\n\n\n6\nPCATE_cfg$cfgs\n展示模型取自 MCATE_cfg，这里写的被忽略\n是\n6\n\n\n7\nRROC 不设 params$num_bins\n每个模型返回 \\(n\\) 行，而非帮助页写的 100\n是\n7\n\n\n8\nRROC 进入流水线\nobserved / shifted 标记被 level 列覆盖\n是\n7\n\n\n9\nStratified_cfg 用在连续变量上\n每个取值一层，标准误全 NaN\n是\n3\n\n\n10\n缺 quickblock 而给了分层变量\n退回纯随机划分\n是（message）\n4\n\n\n11\nHTE_cfg$new(verbose = TRUE)\n全包无人读取该字段\n是\n3\n\n\n12\nestimate_QoI() 里出现未登记的调节变量\nUnknown model class.\n否\n2\n\n\n13\n.num_splits = 2\nAll algorithms dropped from library\n否\n4\n\n\n14\nVIMP + 奇数折\nNumber of splits must be even to calculate VIMP.\n否\n6\n\n\n15\n缺失把整折抽空 + VIMP\nNumber of splits is inconsistent.\n否\n4\n\n\n16\n.weights + 任一 KernelSmooth 调节变量\n`nprobust` does not support the use of weights.\n否（但发生在最后一步）\n5\n\n\n17\n治疗变量不是 0/1（因子、0/2）\nSuperLearner 内部报 id vector must have the same dimension as Y\n否\n5\n\n\n18\npredictions = TRUE 而 pcate = NULL\n'.' in formula and no 'data' argument\n否\n6\n\n\n19\npredictions = TRUE 且配了 PCATE\n能跑，但 level 列是标识符的列名，不是 id\n是\n6\n\n\n20\npcate 非空而 mcate = NULL\nUnknown model class.\n否\n6\n\n\n21\nPCATE 目标变量不在 cfgs 的名字里\ndplyr::sample_n() 报缺失值\n否\n6\n\n\n22\nConstant_cfg + 默认 std_errors = TRUE\nNot Implemented\n否\n3\n\n\n23\n诊断名拼错\nobject 'result' not found\n否\n7\n\n\n24\n分层变量有缺失、且不在模型协变量里\nNAs are not allowed in subscripted assignments\n否\n4\n\n\n25\n四步之间插入 group_by()\n全部 attribute 丢失 → Must attach HTE_cfg\n否\n1",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>215</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/08-pitfalls.html#默认值陷阱",
+    "href": "notes/tidyhte/08-pitfalls.html#默认值陷阱",
+    "title": "8. 实测清单与工作流",
+    "section": "默认值陷阱",
+    "text": "默认值陷阱\n\n\n\n\n\n\n\n\n位置\n默认值\n为什么要改\n\n\n\n\nSLEnsemble_cfg$family\ngaussian()\n倾向得分应该用 binomial()；二值结局同理\n\n\nbasic_config()$qoi$vimp\n打开且 sample_splitting = TRUE\n需要 vimp 包、折数为偶；不用就 remove_vimp()\n\n\nbasic_config()$qoi$diag$ps\n含 \"AUC\"\n需要 WeightedROC 包\n\n\nbasic_config()$qoi$mcate\nNULL\n不加 add_moderator() 就没有任何 CATE 输出\n\n\n三处模型的 SL.library\n只有 SL.glm\n名为”机器学习集成”，实为线性回归\n\n\nKernelSmooth_cfg$eval_min_quantile\n0.05\n曲线只画 5%–95% 分位，两端是被裁掉而不是估不出来\n\n\nMCATE_cfg$std_errors\nTRUE\n用 Constant_cfg 时必须改成 FALSE\n\n\nRROC 的 nbins\n样本量 \\(n\\)\n大样本下结果表会膨胀几十万行\n\n\nconstruct_pseudo_outcomes(type=)\n\"dr\"\n这个默认值是对的，别改成 \"ipw\"",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>215</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/08-pitfalls.html#三件工程上的小事",
+    "href": "notes/tidyhte/08-pitfalls.html#三件工程上的小事",
+    "title": "8. 实测清单与工作流",
+    "section": "三件工程上的小事",
+    "text": "三件工程上的小事\n① 进度条关不掉，只能靠 chunk 选项。 三个进度条都是 progress_bar$new(..., force = TRUE, show_after = 0)， 没有全局开关。在 Rmd / Quarto 里必须给代码块加 message: false， 否则每次调用都会在输出里留下一长串 [====&gt;-----]。 需要显示包发出的真消息时，用 withCallingHandlers() 接住再筛：\nmsgs &lt;- character()\nres &lt;- withCallingHandlers(\n  estimate_QoI(prepped, x1, x2),\n  message = function(m) { msgs &lt;&lt;- c(msgs, conditionMessage(m)); invokeRestart(\"muffleMessage\") }\n)\ngrep(\"moderators\", msgs, value = TRUE)\n注意 capture.output(..., type = \"message\") 在 knitr 下拿不到这些消息 （knitr 已经接管了 message 流），会返回 character(0)。\n② 时间花在哪。 主要成本是 \\(K\\) 折 × 3 个冗余模型， 以及 VIMP 的 \\(1 + p\\) 个 CV.SuperLearner。 本手册的例子（\\(n = 800\\)、4 折、线性学习器）： 冗余函数约 2 秒，MCATE 不到 1 秒，VIMP 约 2 秒， PCATE 随 num_mc_samples × 唯一取值数线性增长。 换成 SL.ranger / SL.xgboost 会涨一到两个数量级—— 先用线性学习器把流程跑通，再换模型。\n③ 结果表要先 count() 再看数字。 由于上表里那么多”静默”路径， 养成习惯：\ncount(results, estimand, level)\n对照自己配了什么。少了 Effect Surface、少了某个 term、 VIMP 只有三行而你有四个调节变量——这些都是配置没生效的信号。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>215</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/08-pitfalls.html#可照抄的工作流",
+    "href": "notes/tidyhte/08-pitfalls.html#可照抄的工作流",
+    "title": "8. 实测清单与工作流",
+    "section": "可照抄的工作流",
+    "text": "可照抄的工作流\n下面这段把前面所有坑都绕开了：二项族倾向得分、 深拷贝派生配方、偶数折、显式登记每个调节变量、 不与权重混用连续调节变量、num_bins 明确设定。\n\nlibrary(tidyhte); library(dplyr); library(ggplot2)\n\n## 0. 数据：uid 是单位/聚类标识符，a 必须是 0/1\nset.seed(20260920)\nn &lt;- 800\ndat &lt;- tibble(\n  uid = seq_len(n),\n  x1 = rnorm(n), x2 = factor(sample(c(\"a\", \"b\", \"c\"), n, replace = TRUE)),\n  x3 = runif(n, -2, 2), x4 = rnorm(n)\n) %&gt;% mutate(\n  ps  = plogis(0.6 * x1 - 0.5 * (x2 == \"c\") + 0.3 * x3),\n  a   = rbinom(n, 1, ps),\n  tau = 0.5 + 0.8 * x1 + 0.6 * (x2 == \"c\"),\n  y   = 1 + x1 + 0.5 * x3 + tau * a + rnorm(n, sd = 0.5)\n)\n\n## 1. 配方：配方 API 打底，手工修 family 与诊断参数\nmake_recipe &lt;- function() {                     # 用函数，避免 R6 引用语义\n  cfg &lt;- basic_config() %&gt;%\n    add_outcome_model(\"SL.glm.interaction\") %&gt;%\n    add_outcome_model(\"SL.glmnet\", alpha = c(0, 1)) %&gt;%\n    add_effect_model(\"SL.glm.interaction\") %&gt;%\n    add_moderator(\"Stratified\", x2) %&gt;%\n    add_moderator(\"KernelSmooth\", x1, x3, x4) %&gt;%\n    add_vimp(sample_splitting = FALSE) %&gt;%\n    add_outcome_diagnostic(\"RROC\")\n  # 配方 API 够不着的两处\n  cfg$treatment &lt;- SLEnsemble_cfg$new(\n    learner_cfgs = list(SLLearner_cfg$new(\"SL.glm\"),\n                        SLLearner_cfg$new(\"SL.glmnet\", list(alpha = c(0, 1)))),\n    family = stats::binomial())                 # ← 关键：logistic 倾向得分\n  cfg$qoi$diag$params &lt;- list(num_bins = 50)    # ← RROC 不要 n 行\n  cfg\n}\n\n## 2. 四步流水线：折数取偶且 &gt;= 4\nresults &lt;- dat %&gt;%\n  attach_config(make_recipe()) %&gt;%\n  make_splits(uid, .num_splits = 4) %&gt;%\n  produce_plugin_estimates(y, a, x1, x2, x3, x4) %&gt;%\n  construct_pseudo_outcomes(y, a) %&gt;%\n  estimate_QoI(x1, x2, x3, x4)                  # 每个变量都登记过\n\n## 3. 先体检，再看数字\ncount(results, estimand, level)\n#&gt; # A tibble: 18 × 3\n#&gt;    estimand       level                  n\n#&gt;    &lt;chr&gt;          &lt;chr&gt;              &lt;int&gt;\n#&gt;  1 AUC            Propensity Score       1\n#&gt;  2 MCATE          a                      1\n#&gt;  3 MCATE          b                      1\n#&gt;  4 MCATE          c                      1\n#&gt;  5 MCATE          &lt;NA&gt;                 300\n#&gt;  6 MSE            Control Response       1\n#&gt;  7 MSE            Propensity Score       1\n#&gt;  8 MSE            Treatment Response     1\n#&gt;  9 RROC           Control Response      50\n#&gt; 10 RROC           Treatment Response    50\n#&gt; 11 SATE           &lt;NA&gt;                   1\n#&gt; 12 SL coefficient Control Response       4\n#&gt; 13 SL coefficient Propensity Score       3\n#&gt; 14 SL coefficient Treatment Response     4\n#&gt; 15 SL risk        Control Response       4\n#&gt; 16 SL risk        Propensity Score       3\n#&gt; 17 SL risk        Treatment Response     4\n#&gt; 18 VIMP           &lt;NA&gt;                   4\n\n\n# 倾向得分是否越界（高斯族的典型症状）\nprepped &lt;- dat %&gt;% attach_config(make_recipe()) %&gt;% make_splits(uid, .num_splits = 4) %&gt;%\n  produce_plugin_estimates(y, a, x1, x2, x3, x4) %&gt;% construct_pseudo_outcomes(y, a)\nc(pi_min = min(prepped$.pi_hat), pi_max = max(prepped$.pi_hat),\n  越界 = sum(prepped$.pi_hat &lt;= 0 | prepped$.pi_hat &gt;= 1)) |&gt; round(4)\n#&gt; pi_min pi_max   越界 \n#&gt; 0.0958 0.8727 0.0000\n\n# 主结果对照真值\nfilter(results, estimand %in% c(\"SATE\", \"VIMP\"))\n#&gt; # A tibble: 5 × 6\n#&gt;   estimand term  value level estimate std_error\n#&gt;   &lt;chr&gt;    &lt;chr&gt; &lt;dbl&gt; &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 VIMP     x1       NA &lt;NA&gt;    0.245    0.0431 \n#&gt; 2 VIMP     x2       NA &lt;NA&gt;    0.0425   0.0136 \n#&gt; 3 VIMP     x3       NA &lt;NA&gt;    0        0.00267\n#&gt; 4 VIMP     x4       NA &lt;NA&gt;    0        0.00263\n#&gt; 5 SATE     &lt;NA&gt;     NA &lt;NA&gt;    0.736    0.0496\nc(真SATE = round(mean(dat$tau), 3))\n#&gt; 真SATE \n#&gt;  0.701\n\n\np1 &lt;- results %&gt;% filter(estimand == \"MCATE\", term %in% c(\"x1\", \"x3\", \"x4\")) %&gt;%\n  ggplot(aes(value, estimate)) +\n  geom_hline(yintercept = 0, linetype = \"dotted\") +\n  geom_ribbon(aes(ymin = estimate - 1.96 * std_error,\n                  ymax = estimate + 1.96 * std_error), alpha = 0.25) +\n  geom_line() + facet_wrap(~term, scales = \"free_x\") +\n  labs(x = NULL, y = \"CATE\")\n\np2 &lt;- results %&gt;% filter(estimand == \"VIMP\") %&gt;%\n  ggplot(aes(reorder(term, estimate), estimate)) +\n  geom_hline(yintercept = 0, linetype = \"dashed\") +\n  geom_pointrange(aes(ymin = estimate - 1.96 * std_error,\n                      ymax = estimate + 1.96 * std_error)) +\n  coord_flip() + labs(x = NULL, y = \"VIMP\")\n\npatchwork_available &lt;- requireNamespace(\"patchwork\", quietly = TRUE)\nif (patchwork_available) print(p1 + p2) else { print(p1); print(p2) }\n\n\n\n\n\n\n\n图 215.1: 模板产出的两张主图",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>215</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/08-pitfalls.html#什么时候该用这个包",
+    "href": "notes/tidyhte/08-pitfalls.html#什么时候该用这个包",
+    "title": "8. 实测清单与工作流",
+    "section": "什么时候该用这个包",
+    "text": "什么时候该用这个包\n放在本站已有的几个异质性效应工具里比较：\n\n\n\n包\n找什么\n输出形态\n和 tidyhte 的区别\n\n\n\n\ntidyhte\n预先指定的调节变量的效应曲面 + 重要性排序\n长格式 tibble，自己画图\n不做变量发现，也不切亚组；调节变量必须自己列出来\n\n\ngrf\n个体效应 + 自动的变量重要性\n森林对象、predict()\n非参数发现异质性；tidyhte 的曲面更易读、推断更直接\n\n\nStratifiedMedicine\n可读的亚组规则\n树 + 逐亚组效应表\n目标是”切出亚组”，tidyhte 是”给定变量看曲面”\n\n\nmodel4you\n基于模型的递归分割\n树\n同上，且以参数模型的参数不稳定性为准则\n\n\n\n一句话：tidyhte 适合”我已经知道要看哪几个调节变量、 想要一份带正确标准误的效应曲面和重要性排序”； 要从几十个候选变量里发现谁是效应修饰变量， 它的 VIMP 只能做排序，且依赖效应面模型设得够灵活。\n它真正的独到之处有三点：交叉拟合 + 聚类稳健标准误 + 抽样权重 这三件在应用研究里必须有的东西，它一次做齐； 配方对象可以复用到多个结局 / 多个对比上； 输出是 tidy 的长表，接 ggplot2 零摩擦。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>215</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte/08-pitfalls.html#版本与环境",
+    "href": "notes/tidyhte/08-pitfalls.html#版本与环境",
+    "title": "8. 实测清单与工作流",
+    "section": "版本与环境",
+    "text": "版本与环境\n\nc(tidyhte = as.character(packageVersion(\"tidyhte\")),\n  SuperLearner = as.character(packageVersion(\"SuperLearner\")),\n  nprobust = as.character(packageVersion(\"nprobust\")),\n  vimp = as.character(packageVersion(\"vimp\")),\n  quickblock = as.character(packageVersion(\"quickblock\")),\n  WeightedROC = as.character(packageVersion(\"WeightedROC\")),\n  R = paste(R.version$major, R.version$minor, sep = \".\"))\n#&gt;      tidyhte SuperLearner     nprobust         vimp   quickblock  WeightedROC \n#&gt;      \"1.0.4\"     \"2.0.42\"      \"1.0.0\"      \"2.3.6\"      \"0.2.2\"  \"2026.8.27\" \n#&gt;            R \n#&gt;      \"4.4.3\"\n\n本手册核对于 2026 年 9 月 20 日。上表里的每一条都可以在当前页面上 重新执行复现；若日后上游修好了其中任何一条， 最先变化的会是本页表格里标”静默”的那几行。",
+    "crumbs": [
+      "tidyhte 包函数手册",
+      "<span class='chapter-number'>215</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte.html",
+    "href": "notes/tidyhte.html",
+    "title": "tidyhte 包函数手册",
+    "section": "",
+    "text": "核对环境与证据边界\ntidyhte 把 Kennedy (2023) 的 DR-learner 落成一条 tidy 风格的四步流水线： 先写一份”配方”（recipe）说明用哪些机器学习模型估计冗余函数， 再把配方贴在数据框上，顺着 make_splits() → produce_plugin_estimates() → construct_pseudo_outcomes() → estimate_QoI() 走一遍，最后拿到一个长格式 tibble，里面是 ATE、各调节变量的 CATE 曲面、 变量重要性和模型诊断。画图交给使用者，包本身不产出任何图形对象。\n本部分是该包的函数用法手册，逐个覆盖包内 54 个帮助主题 （pkgdown 站点、 CRAN 参考手册）。 每页给出参数逐项说明、可直接运行的代码、返回对象的结构， 以及本机实际运行后发现的默认值陷阱与失效路径。\n本手册核对截止 2026 年 9 月 20 日，环境为：\n证据分三级，正文中逐处标明：\n本手册的代码块由本站渲染时真实执行，页面上的输出与图形就是本机结果。 随机过程已固定种子（set.seed(20260920)）。",
+    "crumbs": [
+      "tidyhte 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte.html#核对环境与证据边界",
+    "href": "notes/tidyhte.html#核对环境与证据边界",
+    "title": "tidyhte 包函数手册",
+    "section": "",
+    "text": "项目\n值\n\n\n\n\n包版本\ntidyhte 1.0.4（2025-07-29，MIT，维护者 Drew Dimmery）\n\n\nR\nWindows R 4.4.3\n\n\nImports\ncheckmate、dplyr、lifecycle、magrittr、progress、purrr、R6、rlang、SuperLearner、tibble\n\n\nSuggests（影响可用选项）\nnprobust（连续调节变量）、vimp + quadprog（变量重要性）、quickblock（分层折）、WeightedROC（AUC 诊断）、glmnet、estimatr、palmerpenguins\n\n\n已装版本\nSuperLearner 2.0-42、nprobust 1.0.0、vimp 2.3.6、quickblock 1.0.5、WeightedROC 2026.8.27、glmnet 5.0\n\n\n示例数据\n本手册自带的模拟 DGP（\\(n = 800\\)，真值已知），见第 1 页\n\n\n\n\n\n文档——包自带帮助页、三个 vignette 与 DESCRIPTION 的原文；\n源码——本机已安装包的函数体（tidyhte::: 可复核）；\n实测——在上述环境下实际运行的输出。\n\n\n\n\n\n\n\n\n重要七处与官方文档不一致的实测结论\n\n\n\n在展开之前先给出结论，它们影响所有使用者：\n\n配方 API 造不出 logistic 倾向得分模型。 SLEnsemble_cfg 的默认 family 是 stats::gaussian()，add_propensity_score_model() 只往集成里塞学习器、 从不改 family，也没有任何参数能改它。于是倾向得分是线性概率模型， 实测 .pi_hat 落在 \\([-0.006,\\ 0.911]\\)，一个近零的倾向把某个单位的 DR 伪结局 压到 \\(-169\\)，SATE 从 0.726 掉到 0.517（真值 0.701）。 见第 3 页。\nHTE_cfg 是 R6 对象，管道不复制它。 variant &lt;- base %&gt;% add_outcome_model(...) 会把 base 一起改掉（identical(base, variant) 为 TRUE）， 连数据框上已经 attach_config() 挂好的那份也跟着变； 而且 $clone() 浅拷贝不够，必须 $clone(deep = TRUE)。 “同一份配方跑多个结局”正是作者在 vignette 里推荐的用法。 见第 2 页。\nadd_vimp(linear_only = TRUE) 是空操作。 函数签名收下这个参数， 函数体却只写了 VIMP_cfg$new(sample_splitting = sample_splitting)， linear_only 从未传下去。要用线性 VIMP 只能手工替换 cfg$qoi$vimp。 见第 2 页。\nadd_effect_model() 与 add_effect_diagnostic() 在默认流程里几乎不起作用。 效应面模型只有 VIMP 会用到；“Effect Surface” 的诊断一律被跳过并打印 Skipping diagnostic on .pseudo_outcome due to lack of model.， 除非额外配置 PCATE_cfg 或 predictions = TRUE。 官方 vignette 那三张 facet_wrap(~level) 图里的 Effect Surface 面板是空的。 见第 6 页。\n.num_splits 不能小于 3。 SuperLearner 的内层交叉验证直接复用外层 split id （Model_data$SL_cv_control()），.num_splits = 2 时训练集只剩一个 fold， 训练集为空，报 All algorithms dropped from library。 同时 SLEnsemble_cfg$new(cvControl = ) 存下来的值从未被使用。 见第 4 页。\npredictions = TRUE 在没有 PCATE_cfg 时直接报错 （'.' in formula and no 'data' argument）；即使补上 PCATE， Predicted CATE 那些行的 level 列写的是标识符列名（\"uid\"） 而不是每个单位的 id，预测值只能靠行序对回原数据。 见第 6 页。\n权重与连续调节变量互斥。 nprobust 不支持权重， produce_plugin_estimates(.weights = w) 配上任何 KernelSmooth 调节变量， estimate_QoI() 就抛 `nprobust` does not support the use of weights.。 见第 5 页。\n\n另有若干 documented-but-broken 的路径（Constant_cfg 在默认设置下抛 Not Implemented、PCATE_cfg$cfgs 被忽略、RROC 的 nbins 默认是样本量而非 100、 未知诊断名报 object 'result' not found）汇总在 第 8 页。",
+    "crumbs": [
+      "tidyhte 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte.html#这个包在做什么",
+    "href": "notes/tidyhte.html#这个包在做什么",
+    "title": "tidyhte 包函数手册",
+    "section": "这个包在做什么",
+    "text": "这个包在做什么\n给定 \\((X_i, A_i, Y_i)\\)，记两个冗余函数\n\\[\n\\pi(x) \\equiv \\mathbb{P}(A = 1 \\mid X = x), \\qquad\n\\mu_a(x) \\equiv \\mathbb{E}(Y \\mid X = x, A = a),\n\\]\n在一致性、无未测混杂、正值性下，条件平均治疗效应 \\(\\tau(x) = \\mu_1(x) - \\mu_0(x) = \\mathbb{E}[Y(1) - Y(0) \\mid X = x]\\)。 DR-learner 的做法是先交叉拟合出 \\((\\hat\\pi, \\hat\\mu_0, \\hat\\mu_1)\\)， 再把它们压成一个伪结局\n\\[\n\\hat\\psi(Z) = \\frac{A - \\hat\\pi(X)}{\\hat\\pi(X)\\{1 - \\hat\\pi(X)\\}}\n              \\bigl\\{Y - \\hat\\mu_A(X)\\bigr\\} + \\hat\\mu_1(X) - \\hat\\mu_0(X),\n\\]\n它的条件期望就是 \\(\\tau(x)\\)。此后任何对 \\(\\hat\\psi\\) 的回归、分组平均、 变量重要性，都可以当成是对个体治疗效应本身做的。 tidyhte 的四个函数正好对应这四步：\n原始数据 + HTE_cfg（配方）\n   │  attach_config()：把配方挂成数据框的一个 attribute\n   ▼\n   │  ① make_splits()：按单位标识符（可选分层）划 K 折 → .split_id\n   ▼\n   │  ② produce_plugin_estimates()：交叉拟合三个冗余模型\n   ▼            → .pi_hat, .mu0_hat, .mu1_hat\n   │  ③ construct_pseudo_outcomes()：压成一列 → .pseudo_outcome\n   ▼\n   │  ④ estimate_QoI()：对伪结局做各种\"二阶段回归\"\n   ▼\n长格式 tibble：estimand / term / value / level / estimate / std_error\n四步之间靠数据框的 attribute 传递状态（HTE_cfg、num_splits、 identifier、weights、treatment、outcome、SL_coefs）， 这是这个包最需要注意的设计—— 第 1 页有完整清单和会把它们弄丢的操作。\n\n\n\n\n\n\n警告默认配方只有 SL.glm，而且倾向得分用的是高斯族\n\n\n\nbasic_config() 给三处模型（倾向、结局、效应面）各建一个只含 SL.glm 的 SuperLearner 集成，family 全部是 stats::gaussian()。 也就是说，不加任何 add_*_model() 时，整条流水线退化成线性回归， 倾向得分还是线性概率模型。这和”用机器学习集成估计冗余函数”的宣传 差距很大，而配方 API 里没有改 family 的入口。 对照实测见第 3 页。",
+    "crumbs": [
+      "tidyhte 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte.html#函数地图",
+    "href": "notes/tidyhte.html#函数地图",
+    "title": "tidyhte 包函数手册",
+    "section": "函数地图",
+    "text": "函数地图\n54 个帮助主题里 32 个导出、20 个只有帮助页但没有导出 （需要 tidyhte::: 访问），外加包总览页和一个 S3 predict 方法。 按角色归类如下，每行给出所在页面。\n\n四步流水线（导出）\n\n\n\n函数\n作用\n页面\n\n\n\n\nattach_config()\n把配方挂到数据框上\n1. 总览\n\n\nmake_splits()\n造交叉拟合折，写入 .split_id\n4. 折与数据对象\n\n\nproduce_plugin_estimates()\n交叉拟合 \\(\\hat\\pi,\\hat\\mu_0,\\hat\\mu_1\\)\n5. 冗余函数与伪结局\n\n\nconstruct_pseudo_outcomes()\n合成 .pseudo_outcome\n5. 冗余函数与伪结局\n\n\nestimate_QoI()\n产出全部关心量\n6. estimate_QoI\n\n\n\n\n\n配方 API（导出，12 个）\n\n\n\n函数\n作用\n页面\n\n\n\n\nbasic_config()\n生成最小配方\n2. 配方 API\n\n\nadd_propensity_score_model()\n往倾向集成加学习器\n2. 配方 API\n\n\nadd_known_propensity_score()\n改用已知倾向得分列\n2. 配方 API\n\n\nadd_outcome_model()\n往结局集成加学习器\n2. 配方 API\n\n\nadd_effect_model()\n往效应面集成加学习器\n2. 配方 API\n\n\nadd_propensity_diagnostic()\n加倾向模型诊断\n7. 诊断与作图\n\n\nadd_outcome_diagnostic()\n加结局模型诊断\n7. 诊断与作图\n\n\nadd_effect_diagnostic()\n加效应面诊断（多数情况无效）\n7. 诊断与作图\n\n\nadd_moderator()\n登记调节变量及其展示方式\n2. 配方 API\n\n\nadd_vimp()\n打开变量重要性\n2. 配方 API\n\n\nremove_vimp()\n关闭变量重要性\n2. 配方 API\n\n\nSL.glmnet.interaction()\n带两两交互的 elastic net 学习器\n3. 配置类\n\n\n\n\n\n配置类（导出的 R6 类，10 个）\n\n\n\n类\n作用\n页面\n\n\n\n\nHTE_cfg\n顶层配方对象\n3. 配置类\n\n\nQoI_cfg\n要算哪些关心量\n6. estimate_QoI\n\n\nMCATE_cfg / PCATE_cfg\n边际 / 偏 CATE 曲面\n6. estimate_QoI\n\n\nVIMP_cfg\n变量重要性\n6. estimate_QoI\n\n\nDiagnostics_cfg\n模型诊断\n7. 诊断与作图\n\n\nModel_cfg\n全部模型配置的基类\n3. 配置类\n\n\nSLEnsemble_cfg / SLLearner_cfg\nSuperLearner 集成与单个学习器\n3. 配置类\n\n\nKnown_cfg\n已知得分（不拟合）\n3. 配置类\n\n\nKernelSmooth_cfg / Stratified_cfg / Constant_cfg\n三种展示模型\n3. 配置类\n\n\n\n\n\n数据与诊断（导出）\n\n\n\n函数 / 类\n作用\n页面\n\n\n\n\nModel_data\n给模型用的标准化数据容器\n4. 折与数据对象\n\n\nestimate_diagnostic()\n单个诊断的计算入口\n7. 诊断与作图\n\n\n\n\n\n有帮助页但未导出（20 个，需 tidyhte:::）\n\n\n\n分组\n函数\n页面\n\n\n\n\n关心量内核\ncalculate_ate()、calculate_vimp()、calculate_linear_vimp()、calculate_pcate_quantities()、calculate_diagnostics()、calculate_rroc()\n6、7\n\n\n模型拟合\nfit_plugin()、fit_plugin_A()、fit_plugin_Y()、fit_effect()、fit_fx_predictor()、FX.Predictor\n5、6\n\n\n折与数据\nsplit_data()、HTEFold、listwise_deletion()\n4. 折与数据对象\n\n\n前置检查\ncheck_data_has_hte_cfg()、check_splits()、check_identifier()、check_weights()、check_nuisance_models()\n1. 总览\n\n\n\n最后一页8. 实测清单与工作流汇总全部失效路径、 默认值陷阱，以及一套可照抄的模板。",
+    "crumbs": [
+      "tidyhte 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte.html#最小可运行例子",
+    "href": "notes/tidyhte.html#最小可运行例子",
+    "title": "tidyhte 包函数手册",
+    "section": "最小可运行例子",
+    "text": "最小可运行例子\n\nlibrary(tidyhte)\nlibrary(dplyr)\n\nset.seed(20260920)\nn &lt;- 800\nsim &lt;- tibble(\n  uid = seq_len(n),\n  x1  = rnorm(n),                                        # 真效应修饰变量\n  x2  = factor(sample(c(\"a\", \"b\", \"c\"), n, replace = TRUE)),  # 真效应修饰变量\n  x3  = runif(n, -2, 2),                                 # 只影响基线（预后）\n  x4  = rnorm(n)                                         # 纯噪声\n) %&gt;% mutate(\n  ps  = plogis(0.6 * x1 - 0.5 * (x2 == \"c\") + 0.3 * x3), # 真倾向得分\n  a   = rbinom(n, 1, ps),\n  tau = 0.5 + 0.8 * x1 + 0.6 * (x2 == \"c\"),              # 真 CATE\n  y   = 1 + x1 + 0.5 * x3 + tau * a + rnorm(n, sd = 0.5)\n)\n\ncfg &lt;- basic_config() %&gt;%\n  add_known_propensity_score(\"ps\") %&gt;%\n  add_outcome_model(\"SL.glm.interaction\") %&gt;%\n  add_effect_model(\"SL.glm.interaction\") %&gt;%\n  add_moderator(\"Stratified\", x2) %&gt;%\n  add_moderator(\"KernelSmooth\", x1, x3, x4) %&gt;%\n  add_vimp(sample_splitting = FALSE)\n\nresults &lt;- sim %&gt;%\n  attach_config(cfg) %&gt;%\n  make_splits(uid, .num_splits = 4) %&gt;%\n  produce_plugin_estimates(y, a, x1, x2, x3, x4) %&gt;%\n  construct_pseudo_outcomes(y, a) %&gt;%\n  estimate_QoI(x1, x2, x3, x4)\n\nfilter(results, estimand %in% c(\"SATE\", \"VIMP\"))\n#&gt; # A tibble: 5 × 6\n#&gt;   estimand term  value level estimate std_error\n#&gt;   &lt;chr&gt;    &lt;chr&gt; &lt;dbl&gt; &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 VIMP     x1       NA &lt;NA&gt;    0.247    0.0441 \n#&gt; 2 VIMP     x2       NA &lt;NA&gt;    0.0429   0.0134 \n#&gt; 3 VIMP     x3       NA &lt;NA&gt;    0        0.00305\n#&gt; 4 VIMP     x4       NA &lt;NA&gt;    0        0.00242\n#&gt; 5 SATE     &lt;NA&gt;     NA &lt;NA&gt;    0.728    0.0495\n\n真 SATE 是 0.701，估计值落在它的一个标准误以内； VIMP 把两个真修饰变量（x1、x2）排在预后变量 x3 和噪声 x4 之上。 离散调节变量的 CATE 与真值对照：\n\nfilter(results, estimand == \"MCATE\", term == \"x2\") %&gt;%\n  arrange(level) %&gt;%\n  mutate(truth = round(tapply(sim$tau, sim$x2, mean), 3))\n#&gt; # A tibble: 3 × 7\n#&gt;   estimand term  value level estimate std_error     truth\n#&gt;   &lt;chr&gt;    &lt;chr&gt; &lt;dbl&gt; &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt; &lt;dbl[1d]&gt;\n#&gt; 1 MCATE    x2       NA a        0.473    0.0908     0.45 \n#&gt; 2 MCATE    x2       NA b        0.540    0.0775     0.534\n#&gt; 3 MCATE    x2       NA c        1.18     0.0811     1.13\n\n整个流水线（含 VIMP）在本机耗时约 5 秒。",
+    "crumbs": [
+      "tidyhte 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/tidyhte.html#官方资料",
+    "href": "notes/tidyhte.html#官方资料",
+    "title": "tidyhte 包函数手册",
+    "section": "官方资料",
+    "text": "官方资料\n\n\n\n资源\n位置\n\n\n\n\npkgdown 站点\nhttps://ddimmery.github.io/tidyhte/\n\n\nCRAN 页面\nhttps://cran.r-project.org/package=tidyhte\n\n\n源码\nhttps://github.com/ddimmery/tidyhte\n\n\nDR-learner 原始文献\nKennedy, E. H. (2023). Towards optimal doubly robust estimation of heterogeneous causal effects. Electronic Journal of Statistics 17(2), 3008–3049. doi:10.1214/23-EJS2157\n\n\n变量重要性\nWilliamson, Gilbert, Carone & Simon (2021). Biometrics 77(1), 9–22；Williamson, Gilbert, Simon & Carone (2021). JASA\n\n\n局部多项式回归\nCalonico, Cattaneo & Farrell (2019). nprobust, Journal of Statistical Software\n\n\n分层折的区组算法\nHiggins, Sävje & Sekhon (2016). PNAS 113(27), 7369–7376\n\n\n回归 ROC 曲线\nHernández-Orallo, J. (2013). Pattern Recognition 46(12), 3395–3411",
+    "crumbs": [
+      "tidyhte 包函数手册"
+    ]
   }
 ]

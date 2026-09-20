@@ -1,0 +1,446 @@
+---
+title: "3. 模型配置类：Model_cfg 家族"
+subtitle: "tidyhte 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(tidyhte)
+library(dplyr)
+```
+
+```{r}
+#| label: sim
+#| include: false
+set.seed(20260920)
+n <- 800
+sim <- tibble(
+  uid = seq_len(n),
+  x1  = rnorm(n),
+  x2  = factor(sample(c("a", "b", "c"), n, replace = TRUE)),
+  x3  = runif(n, -2, 2),
+  x4  = rnorm(n)
+) %>% mutate(
+  ps  = plogis(0.6 * x1 - 0.5 * (x2 == "c") + 0.3 * x3),
+  a   = rbinom(n, 1, ps),
+  tau = 0.5 + 0.8 * x1 + 0.6 * (x2 == "c"),
+  y   = 1 + x1 + 0.5 * x3 + tau * a + rnorm(n, sd = 0.5),
+  w   = 0.2 + rexp(n, 1)
+)
+```
+
+配方 API 是薄薄一层语法糖，底下是 7 个继承自 `Model_cfg` 的 R6 类。
+凡是配方 API 够不着的设置（**倾向得分的 family**、SuperLearner 的
+`cvControl`、展示模型的细节），都只能直接操作这些类。
+本页逐个说明它们的字段、构造参数，以及三处只有读源码才知道的行为。
+
+## 基类与分派 {#sec-base}
+
+`Model_cfg` 本身只有一个字段 `model_class`，`predictor_factory()`
+就靠它把配置对象翻译成实际干活的 `Predictor`：
+
+```{r}
+#| label: dispatch
+tidyhte:::predictor_factory
+```
+
+| 配置类 | `model_class` | 对应的 Predictor | 用在哪 |
+|---|---|---|---|
+| `SLEnsemble_cfg` | `"SL"` | `SLPredictor` | 倾向、结局、效应面 |
+| `Known_cfg` | `"known"` | `KnownPredictor` | 已知倾向得分 |
+| `KernelSmooth_cfg` | `"KernelSmooth"` | `KernelSmoothPredictor` | 连续调节变量的 CATE 曲面 |
+| `Stratified_cfg` | `"Stratified"` | `StratifiedPredictor` | 离散调节变量的分层均值 |
+| `Constant_cfg` | `"Constant"` | `ConstantPredictor` | 单参数常数模型 |
+
+```{r}
+#| label: model-class
+vapply(list(SLEnsemble_cfg$new(), Known_cfg$new("ps"), KernelSmooth_cfg$new(),
+            Stratified_cfg$new("x2"), Constant_cfg$new()),
+       \(z) z$model_class, character(1))
+```
+
+`Model_cfg$new()` 本身可以构造，但它没有 `model_class`，交给
+`predictor_factory()` 会被直接拒绝——它只是继承用的基类：
+
+```{r}
+#| label: base-cfg
+#| error: true
+tidyhte:::predictor_factory(Model_cfg$new())
+```
+
+## SuperLearner 集成 {#sec-sl}
+
+```r
+SLEnsemble_cfg$new(cvControl = NULL, learner_cfgs = NULL, family = stats::gaussian())
+SLEnsemble_cfg$add_sublearner(learner_name, hps = NULL)
+SLLearner_cfg$new(model_name, hp = NULL)
+```
+
+| 字段 | 含义 | 实测备注 |
+|---|---|---|
+| `SL.library` | 学习器名字向量 | 由 `add_sublearner()` 累积，默认 `SL.glm` |
+| `SL.env` | 存放生成学习器的环境 | 构造时把整个 `SuperLearner` 命名空间拷进来 |
+| `family` | `stats::family` 对象 | 默认 `gaussian()`，**配方 API 改不了** |
+| `cvControl` | 交叉验证设置 | **只被 `calculate_vimp()` 读，冗余函数拟合时完全不用** |
+| `model_class` | `"SL"` | — |
+
+```{r}
+#| label: sl-new
+cfg <- SLEnsemble_cfg$new(
+  learner_cfgs = list(SLLearner_cfg$new("SL.glm"),
+                      SLLearner_cfg$new("SL.glmnet", list(alpha = c(0, 1))))
+)
+cfg$SL.library
+cfg$family$family
+```
+
+`SLLearner_cfg` 只是一个"模型名 + 超参数网格"的容器，
+真正展开成多个学习器发生在 `add_sublearner()` 里：
+
+```{r}
+#| label: sl-learner
+l <- SLLearner_cfg$new("SL.ranger", list(num.trees = c(200, 500)))
+l$model_name
+l$hyperparameters
+```
+
+::: {.callout-important}
+## `cvControl` 存下来了，但拟合时不会用 {#sec-cvcontrol}
+
+```{r}
+#| label: cvcontrol
+cfg <- SLEnsemble_cfg$new(cvControl = list(V = 5))
+cfg$cvControl
+
+ns <- asNamespace("tidyhte")
+mentions <- function(pattern) {          # 连 R6 类的方法体一起搜
+  Filter(function(o) {
+    v <- get(o, envir = ns)
+    txt <- paste(deparse(v), collapse = " ")
+    if (inherits(v, "R6ClassGenerator")) {
+      txt <- paste(txt, paste(vapply(v$public_methods,
+                                     \(m) paste(deparse(m), collapse = " "), ""),
+                              collapse = " "))
+    }
+    grepl(pattern, txt)
+  }, ls(ns, all.names = TRUE))
+}
+mentions("[$]cvControl")     # 谁碰过这个字段
+mentions("SL_cv_control")    # 实际拟合时用的是什么
+```
+
+`$cvControl` 这个字段只在 `SLEnsemble_cfg` 自己的构造函数里被**写**过一次，
+全包没有任何地方**读**它。真正决定内层交叉验证的是
+`Model_data$SL_cv_control()`——`SLPredictor$fit()` 写死了
+`cvControl = data$SL_cv_control()`，而后者是**用外层交叉拟合的
+`.split_id` 现造**的（见[第 4 页](04-splits.qmd#sec-numsplits)）。所以：
+
+- 传进来的 `cvControl` 对倾向 / 结局 / 效应面模型**没有任何作用**；
+- SuperLearner 的内层 CV 折数恒等于 `.num_splits - 1`；
+- 只有 VIMP 的 `CV.SuperLearner` 会用到 `data$SL_cv_control()` 的结果，
+  那也不是用户传的那个对象。
+
+`SLEnsemble_cfg` 的默认 `cvControl` 打印出来是 `V = 10`，
+很容易让人以为内层做的是 10 折——实际上不是。
+:::
+
+### 倾向得分被默认拟合成线性概率模型 {#sec-family}
+
+`basic_config()` 三处模型都用 `SLEnsemble_cfg$new()`，family 全是高斯。
+对倾向得分来说这意味着**线性概率模型**：预测值可以越界，
+而 DR 伪结局里 $\hat\pi(1-\hat\pi)$ 在分母上。
+
+```{r}
+#| label: family-ab
+#| message: false
+run <- function(cfg, label) {
+  d <- sim %>% attach_config(cfg) %>% make_splits(uid, .num_splits = 4) %>%
+    produce_plugin_estimates(y, a, x1, x2, x3, x4) %>%
+    construct_pseudo_outcomes(y, a)
+  res <- estimate_QoI(d, x2)
+  tibble(
+    配置       = label,
+    pi_min     = min(d$.pi_hat),
+    pi_max     = max(d$.pi_hat),
+    越界个数   = sum(d$.pi_hat <= 0 | d$.pi_hat >= 1),
+    伪结局最小 = min(d$.pseudo_outcome),
+    SATE       = res$estimate[res$estimand == "SATE"],
+    SE         = res$std_error[res$estimand == "SATE"]
+  )
+}
+
+# ① 配方 API 造出来的（高斯族）
+cfg_gauss <- basic_config() %>%
+  add_propensity_score_model("SL.glm") %>%
+  add_outcome_model("SL.glm.interaction") %>%
+  add_moderator("Stratified", x2) %>% remove_vimp()
+
+# ② 手工把 treatment 换成二项族（配方 API 没有入口）
+cfg_binom <- basic_config() %>%
+  add_outcome_model("SL.glm.interaction") %>%
+  add_moderator("Stratified", x2) %>% remove_vimp()
+cfg_binom$treatment <- SLEnsemble_cfg$new(
+  learner_cfgs = list(SLLearner_cfg$new("SL.glm")),
+  family = stats::binomial()
+)
+
+# ③ 真倾向得分（本例已知）
+cfg_known <- basic_config() %>%
+  add_known_propensity_score("ps") %>%
+  add_outcome_model("SL.glm.interaction") %>%
+  add_moderator("Stratified", x2) %>% remove_vimp()
+
+bind_rows(run(cfg_gauss, "① 高斯族（默认）"),
+          run(cfg_binom, "② 二项族（手工）"),
+          run(cfg_known, "③ 已知真值")) %>%
+  mutate(across(where(is.numeric), \(z) round(z, 3)))
+```
+
+真 SATE 是 `r round(mean(sim$tau), 3)`。高斯族那一行的 `pi_min` 掉到 0 以下，
+一个近零的倾向把某个单位的伪结局放大到几十上百，SATE 的点估计和标准误
+都明显劣于另外两行。
+
+::: {.callout-warning}
+## 配方 API 里没有任何改 family 的入口
+
+`add_propensity_score_model()` 的函数体只做两件事：
+`$treatment` 不是 `SLEnsemble_cfg` 时新建一个（仍是高斯），
+然后 `add_sublearner()`。**它从不碰 family。**
+换句话说，只要你走配方 API，倾向得分模型就是线性概率模型，
+哪怕你把 `SL.ranger`、`SL.xgboost` 全塞进去——
+这些学习器也会被以 `family = gaussian()` 调用。
+
+要用 logistic，必须像上面 ② 那样直接赋值 `cfg$treatment`。
+对二值结局也一样：结局模型的 family 同样只能手工改。
+:::
+
+## 已知得分 {#sec-known}
+
+```r
+Known_cfg$new(covariate_name)
+```
+
+唯一的字段是列名。它的 Predictor 不做任何拟合，`predict()`
+直接把那一列原样返回：
+
+```{r}
+#| label: known
+tidyhte:::KnownPredictor$public_methods$fit
+tidyhte:::KnownPredictor$public_methods$predict
+```
+
+因此它不占交叉拟合的成本，也不会有 `SL_coefs` / `SL_risk` 诊断
+（那两个诊断从 `SL_coefs` attribute 取值，`Known_cfg` 不往里写东西）。
+
+::: {.callout-note}
+## `Known_cfg` 只能用在倾向得分上
+
+`produce_plugin_estimates()` 里有一段专门的分支：当
+`.HTE_cfg$treatment$model_class == "known"` 时，把那一列**临时加进协变量**，
+好让 `Model_data` 能把它取出来，预测完再删掉。结局模型没有这个分支，
+把 `$outcome` 设成 `Known_cfg` 会在 `fit_plugin_Y()` 里取不到列。
+:::
+
+## 三个展示模型 {#sec-display}
+
+这三类不估计因果量，只决定**已经算好的伪结局怎么呈现**。
+它们出现在 `MCATE_cfg$cfgs` / `PCATE_cfg$cfgs` 的命名列表里，
+每个调节变量一个。
+
+### `Stratified_cfg`
+
+```r
+Stratified_cfg$new(covariate)
+```
+
+按取值分层，每层给加权均值与聚类稳健标准误。适合因子和少数几个取值的整数。
+
+::: {.callout-warning}
+## 用在连续变量上不会报错，会给出一堆 `NaN`
+
+每个唯一取值算一个"层"，于是 800 行数据得到 800 层、每层 1 个观测，
+标准误全是 `NaN`：
+
+```{r}
+#| label: stratified-continuous
+#| message: false
+cfg <- basic_config() %>% add_known_propensity_score("ps") %>%
+  add_outcome_model("SL.glm") %>% add_moderator("Stratified", x3) %>% remove_vimp()
+prepped <- sim %>% attach_config(cfg) %>% make_splits(uid, .num_splits = 4) %>%
+  produce_plugin_estimates(y, a, x1, x2, x3, x4) %>% construct_pseudo_outcomes(y, a)
+res <- estimate_QoI(prepped, x3)
+res %>% filter(estimand == "MCATE") %>% summarise(行数 = n(), 标准误缺失 = sum(is.na(std_error)))
+```
+:::
+
+### `KernelSmooth_cfg`
+
+```r
+KernelSmooth_cfg$new(neval = 100, eval_min_quantile = 0.05)
+```
+
+| 参数 | 默认 | 含义 |
+|---|---|---|
+| `neval` | 100 | 评估点个数，也就是输出的行数 |
+| `eval_min_quantile` | 0.05 | 两端各裁掉的分位数；0 表示不裁 |
+
+评估点是**分位数网格**，不是等距网格：
+
+```{r}
+#| label: ks-internals
+tidyhte:::KernelSmoothPredictor$public_methods$fit
+```
+
+两个容易忽略的细节：
+
+1. **默认只画 5% 到 95% 分位之间**。曲线两端缺掉的部分不是"没估出来"，
+   是配置里裁掉的。要看全域得写 `eval_min_quantile = 0`（边缘方差会很大）。
+2. **有并列值时换一条带宽选择路径**：协变量有重复取值时，
+   先按取值聚合成均值再用 `lpbwselect(bwselect = "imse-dpi")` 选带宽；
+   全部互不相同时直接用 `lprobust()` 的默认带宽。
+   同一份数据做了取整，曲线会因此变。
+
+它还有一个硬限制，见[第 5 页](05-plugin-pseudo.qmd#sec-weights)：
+`nprobust` 不支持权重，只要 `.weights` 不全为 1 就直接报错。
+
+### `Constant_cfg`
+
+```r
+Constant_cfg$new()
+```
+
+单参数均值模型。**它在默认设置下不能用**：
+
+```{r}
+#| label: constant-broken
+#| error: true
+#| message: false
+cfg <- basic_config() %>% add_known_propensity_score("ps") %>%
+  add_outcome_model("SL.glm") %>% add_moderator("Stratified", x2) %>% remove_vimp()
+cfg$qoi$mcate$add_moderator("x2", Constant_cfg$new())
+prepped2 <- sim %>% attach_config(cfg) %>% make_splits(uid, .num_splits = 4) %>%
+  produce_plugin_estimates(y, a, x1, x2, x3, x4) %>% construct_pseudo_outcomes(y, a)
+estimate_QoI(prepped2, x2)
+```
+
+原因是 `ConstantPredictor` 只实现了 `fit()` 和 `predict()`，
+**没有 `predict_se()`**，而 `MCATE_cfg$std_errors` 默认是 `TRUE`：
+
+```{r}
+#| label: constant-methods
+names(tidyhte:::ConstantPredictor$public_methods)
+```
+
+关掉标准误就能跑，输出一行，等于伪结局的加权均值（也就是 SATE）：
+
+```{r}
+#| label: constant-works
+#| message: false
+cfg$qoi$mcate$std_errors <- FALSE
+estimate_QoI(prepped2, x2) %>% filter(estimand %in% c("MCATE", "SATE"))
+```
+
+## `SL.glmnet.interaction()` {#sec-glmnet}
+
+包自带的唯一一个学习器：在 `SL.glmnet` 的基础上，
+先用 `model.matrix(~ -1 + .^2, X)` 造出全部两两交互（不含截距），
+再做 elastic net。
+
+```r
+SL.glmnet.interaction(Y, X, newX, family, obsWeights, id,
+                      alpha = 1, nfolds = 10, nlambda = 100,
+                      useMin = TRUE, loss = "deviance", ...)
+```
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `alpha` | 1 | 0 = 岭回归，1 = Lasso |
+| `nfolds` | 10 | `cv.glmnet` 内部选 $\lambda$ 的折数 |
+| `nlambda` | 100 | $\lambda$ 网格大小 |
+| `useMin` | `TRUE` | `TRUE` 取风险最小的 $\lambda$，`FALSE` 用 1-SE 规则 |
+| `loss` | `"deviance"` | 还可以是 `"mse"`、`"mae"`，二分类另有 `"auc"`、`"class"` |
+
+配套的 `predict.SL.glmnet.interaction()` 有两个 `SL.glmnet` 没有的参数：
+`remove_extra_cols`（丢掉新数据里多出来的列）和 `add_missing_cols`
+（把训练时有、预测时没有的列补 0）。交互展开后列名对不齐是常事，
+这两个开关默认都是 `TRUE`，所以**新数据里出现训练时没见过的因子水平不会报错，
+而是被静默补零**——这点在小样本 + 稀有水平时要留意。
+
+```{r}
+#| label: glmnet-args
+names(formals(tidyhte:::predict.SL.glmnet.interaction))
+```
+
+它和 `alpha` 一起用是最常见的写法：
+
+```r
+add_outcome_model("SL.glmnet.interaction", alpha = c(0.05, 0.25, 0.5, 0.75, 1))
+```
+
+## 手工装配 `HTE_cfg` {#sec-hte}
+
+配方 API 够不着的东西（family、PCATE、`predictions`、线性 VIMP）
+都得走这条路。`HTE_cfg$new()` 的四个槽位对应四件事：
+
+```{r}
+#| label: hte-manual
+mcate_cfg <- MCATE_cfg$new(cfgs = list(
+  x1 = KernelSmooth_cfg$new(neval = 50),
+  x2 = Stratified_cfg$new("x2")
+))
+vimp_cfg <- VIMP_cfg$new(sample_splitting = FALSE, linear_only = TRUE)
+diag_cfg <- Diagnostics_cfg$new(outcome = c("MSE", "RROC"), params = list(num_bins = 25))
+qoi_cfg  <- QoI_cfg$new(mcate = mcate_cfg, vimp = vimp_cfg, diag = diag_cfg, ate = TRUE)
+
+hte_cfg <- HTE_cfg$new(
+  outcome   = SLEnsemble_cfg$new(learner_cfgs = list(SLLearner_cfg$new("SL.glm.interaction"))),
+  treatment = SLEnsemble_cfg$new(learner_cfgs = list(SLLearner_cfg$new("SL.glm")),
+                                 family = stats::binomial()),
+  effect    = SLEnsemble_cfg$new(learner_cfgs = list(SLLearner_cfg$new("SL.glm"))),
+  qoi       = qoi_cfg,
+  verbose   = FALSE
+)
+c(结局 = hte_cfg$outcome$SL.library, 倾向族 = hte_cfg$treatment$family$family,
+  线性VIMP = hte_cfg$qoi$vimp$linear, RROC点数 = hte_cfg$qoi$diag$params$num_bins)
+```
+
+混合写法也可以：先 `basic_config()` 再覆盖个别字段，
+这是本手册后面几页最常用的方式。
+
+::: {.callout-note}
+## `verbose` 目前没有任何输出
+
+`HTE_cfg$new(verbose = )` 的帮助文字是"是否打印调试信息"。
+在 1.0.4 的源码里，`verbose` 字段除了被赋值之外，
+**在包内没有任何读取处**：
+
+```{r}
+#| label: verbose-unused
+ns <- asNamespace("tidyhte")
+mentions <- function(pattern) {
+  Filter(function(o) {
+    v <- get(o, envir = ns)
+    txt <- paste(deparse(v), collapse = " ")
+    if (inherits(v, "R6ClassGenerator")) {
+      txt <- paste(txt, paste(vapply(v$public_methods,
+                                     \(m) paste(deparse(m), collapse = " "), ""),
+                              collapse = " "))
+    }
+    grepl(pattern, txt)
+  }, ls(ns, all.names = TRUE))
+}
+mentions("verbose")   # 连 R6 类的方法体一起搜
+```
+
+全包只有 `HTE_cfg` 一处提到它，而那一处是构造函数里的
+`self$verbose <- verbose`。没有任何函数读它。
+:::
+
+## 本页涉及的帮助主题
+
+`Model_cfg`、`SLEnsemble_cfg`、`SLLearner_cfg`、`Known_cfg`、
+`KernelSmooth_cfg`、`Stratified_cfg`、`Constant_cfg`、`HTE_cfg`、
+`SL.glmnet.interaction`、`predict.SL.glmnet.interaction`。
