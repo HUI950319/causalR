@@ -1,0 +1,388 @@
+---
+title: "8. 实测清单与工作流"
+subtitle: "StratifiedMedicine 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", message = FALSE)
+library(StratifiedMedicine)
+library(survival)
+dat <- generate_subgrp_data(family = "gaussian")
+Y <- dat$Y; A <- dat$A; X <- dat$X
+```
+
+前七页逐个函数展开。这一页把所有**会咬人的地方**集中起来，
+再给一套可以照抄的工作流。
+
+## 失效路径清单 {#sec-broken}
+
+在 1.0.7 + R 4.4.3 上实测，下列写法**必定失败**：
+
+| 写法 | 错误信息 | 根因 |
+|---|---|---|
+| `propensity = TRUE`（`ple_train` / `submod_train` / `PRISM`） | `comparison (==) is possible only for atomic and list types` | `prop_learner(learner = )` 收到函数对象，却拿去和字符串比 |
+| `PRISM(submod = "None")` | `order(param.dat$Subgrps, ...) argument lengths differ` | 未拟合 submod 时后续代码仍按有亚组处理 |
+| `PRISM(ple = "None")`（不改 `param`） | 同上 | 默认 `param = "dr"` 需要 `mu_train`。改成 `param = "lm"` 即可 |
+| `param_est(param = "rmst")` 且 `A` 是因子 | `object 'summ' not found` | `survRM2::rmst2()` 要 0/1 数值；失败分支没构造返回对象 |
+| `submod_train(submod = "otr")`（不传 `mu_train`） | `data.frame(ind_PLE, X) ... 0, 800` | `otr` 不在触发 ple 拟合的条件里 |
+| **树一刀未切**（真的没有亚组，或 `maxdepth = 1`） | `submod_train`：`data.frame(Subgrps = names(rules_vec), ...) ... 0, 1`；`PRISM`：`rep(1, dim(Xtest)[1])` | 零分裂的树让 `extract_rules()` 崩溃。**这是阴性结果的正常表现**，见[下文](#sec-modifier) |
+| `filter_train(filter = "None")` / `submod_train(submod = "None")` | `object 'None' not found` | `"None"` 只在 `PRISM()` 外层有特判 |
+| `plot(res, type = "heatmap")` | `$<-.data.frame ... value = integer(0)` | 已弃用；内部找一个叫 `PLE` 的列，现在叫 `diff_1_0` |
+| `plot_tree(submod_train(..., param = "dr"))` | `data.frame(...) ... 1, 0, 800` | 节点面板代码要 `PRISM` 才有的字段 |
+| `plot_dependence(vars = <3 个>)` | `data.frame(grid.data, var3 = v) ... 441, 800` | 三变量分面路径与 `X` 的列类型冲突 |
+| `plot(res, type = "resample")` 而未重抽样 | `UseMethod("left_join")` | 没有 `resamp_dist` 可合并 |
+| `generate_subgrp_data(family = "survival")` | `object 'Y' not found` | 源码里生存分支是空的 |
+| `ple_train(ple = "bart", meta = "S-learner")` | `argument "Xtest" is missing` | `S_learner()` 不给 `ple_bart()` 传 `Xtest` |
+
+**静默失败**（不报错但结果是错的）更危险：
+
+| 写法 | 表现 |
+|---|---|
+| `param_est(param = "dr")` 不传 `mu_hat` | 全部返回 `NaN`，`SE = 0` |
+| `calibrate = TRUE` | 空操作，输出与 `FALSE` **逐字节相同** |
+| `ple_train(tau = )` 且 `A` 非空 | `tau` 被内部重算覆盖 |
+| `plot_importance(top_n = )` + glmnet 过滤 | `rank` 被硬编码成 1，`top_n` 无效 |
+| `ple = "linear"` + 生存 + T-learner | `diff` 是两个各自居中的 Cox 线性预测值之差，**符号都可能是反的** |
+| `efficient = TRUE/FALSE` | 实测对象大小与内容相同 |
+
+## 文档与实现不一致清单
+
+| 帮助页写的 | 实际 |
+|---|---|
+| `submod_train` 默认 `param = "dr"` | 实际 `"lm"`（生存 `"cox"`）；只有 `PRISM` 是 `"dr"` |
+| `lmtree` / `glmtree` 默认 `alpha = 0.05` | 源码是 `alpha = 0.1` |
+| `rpart` / `rpart_cate` 有 `alpha` 超参 | 函数签名里没有这个参数 |
+| `*_train` 返回 `mod` | 实际是 `fit`（`filter_train` 除外） |
+| `submod_train` 返回 `pred.train` / `pred.test` | 不存在；实际是 `Subgrps.train` / `Subgrps.test` / `trt_eff` |
+| `predict.submod_train` 返回 `pred` | 树类模型恒为 `NULL` |
+| `predict.PRISM(type = "submod")` 带效应估计 | 只有 `Subgrps` 一列 |
+| `generate_subgrp_data` 支持 `"survival"` | 分支为空，报错 |
+| `meta` 可选 T/S/X | 源码里还有 `"DR-learner"` |
+| `param` 可选 lm/dr/gcomp/cox/rmst | 还有已弃用的 `"ple"` 和未文档化的 `"aft"` |
+| `ple` 可选 linear/ranger/glmnet/bart | `"glmnet"` 已 `.Deprecated()` |
+
+## 过滤反而制造假亚组 {#sec-filter-harm}
+
+这是本手册最重要的一条方法学结论，也是默认 `PRISM()` 与手工拼流水线
+结果不同的唯一来源。
+
+```{r}
+#| label: filter-harm
+s_full <- submod_train(Y, A, X, submod = "lmtree")          # 全部 50 个
+fv     <- filter_train(Y, A, X, filter = "glmnet")$filter.vars
+s_filt <- submod_train(Y, A, X[, fv], submod = "lmtree")    # 过滤后 16 个
+
+s_full$Rules
+s_filt$Rules
+```
+
+真值只有 `X1`、`X2` 两个效应修饰变量。
+**用全部 50 个变量时树只切 `X1`、`X2`；过滤到 16 个之后反而多切出 `X50` 和 `X26`。**
+
+把每一刀的分裂 p 值挖出来，原因一目了然：
+
+```{r}
+#| label: split-pvals
+#| message: false
+library(partykit)
+split_p <- function(tr) {
+  m <- tr$fit$mod
+  inner <- setdiff(nodeids(m), nodeids(m, terminal = TRUE))
+  do.call(rbind, lapply(inner, function(i) {
+    info <- nodeapply(m, i, function(n) n$info)[[1]]
+    data.frame(node = i,
+               var  = names(info$test[1, ])[which.min(info$test["p.value", ])],
+               p    = signif(min(info$test["p.value", ], na.rm = TRUE), 2))
+  }))
+}
+split_p(s_full)
+split_p(s_filt)
+```
+
+::: {.callout-important}
+## 为什么少给变量反而切得更碎
+
+MOB 的分裂检验对**候选变量个数**做 Bonferroni 校正。
+候选从 50 个降到 16 个，等于把校正放松了 3 倍多，
+原本过不了阈值的边缘变量就挤了进来。
+
+再加上本包 `lmtree` 的默认 `alpha` 是 **0.1**（不是帮助页写的 0.05），
+`X50` 那一刀的 p 值是 **0.062**——在 0.05 下会被拒绝，在 0.1 下被接受。
+
+**判别办法**：真分裂的 p 值通常小几个数量级（这里是 $10^{-13}$、$10^{-6}$），
+挤进来的在 0.03–0.06 之间。用上面的 `split_p()` 把 p 值打出来，
+比看树图可靠得多。
+
+**推荐做法**：想找效应修饰变量时**不要过滤**（`filter = "None"`），
+把全部候选变量交给 MOB，让它自己的多重性校正发挥作用。
+过滤留给 $p \gg n$ 的场景，或者只用来做"看一眼有哪些变量相关"的探索。
+:::
+
+## 默认配置在零假设下的表现 {#sec-null}
+
+`generate_subgrp_data(null = TRUE)` 生成的数据里，
+**治疗效应恒为 0，不存在任何亚组**。跑 20 次看默认 `PRISM()` 报什么：
+
+```{r}
+#| label: null-sim
+set.seed(99)
+sim <- t(sapply(1:20, function(i) {
+  d <- generate_subgrp_data(n = 800, seed = 1000 + i, family = "gaussian", null = TRUE)
+  r <- PRISM(Y = d$Y, A = d$A, X = d$X, verbose = FALSE)
+  pd <- r$param.dat[r$param.dat$Subgrps != "ovrl", ]
+  c(亚组数 = nrow(pd), 显著亚组数 = sum(pd$pval < 0.05, na.rm = TRUE))
+}))
+table(sim[, "亚组数"])
+colMeans(sim)
+mean(sim[, "显著亚组数"] > 0)
+```
+
+::: {.callout-warning}
+## 三个必须记住的数字
+
+- **20 次里没有一次报告"没有亚组"**——树总是切得出东西来；
+- 平均每份数据报出 4.2 个亚组；
+- **45% 的数据里至少有一个亚组 $p < 0.05$**。
+
+`param.dat$pval` 是**在同一份数据上找完亚组之后算的**，没有任何多重性校正，
+也没有对"亚组是选出来的"这件事做修正。它不能按名义水平解读。
+
+而 1.0.7 里唯一的内建修正手段 `calibrate = TRUE` 是空操作。
+所以实践中只有三条路：
+① 用外部验证集；② 用 `resample = "CV"`；
+③ 像上面这样自己做阴性对照，把经验阈值标定出来。
+:::
+
+## 推荐工作流：在生存数据上找效应修饰变量 {#sec-modifier}
+
+下面这套在 GBSG2 上跑一遍。这份数据里 `progrec`（孕激素受体）是文献公认的
+效应修饰变量，`pnodes`（阳性淋巴结数）是强预后但非修饰因子——
+正好用来检验流程是否分得清两者。
+
+```{r}
+#| label: wf-data
+data("GBSG2", package = "TH.data")
+Ys   <- with(GBSG2, Surv(time, cens))
+Xs   <- GBSG2[, !(colnames(GBSG2) %in% c("time", "cens", "horTh"))]
+Anum <- as.numeric(GBSG2$horTh == "yes")   # 数值 0/1，rmst 需要
+```
+
+### 第 1 步：用交互项筛一遍，看排序
+
+```{r}
+#| label: wf-filter
+f  <- filter_train(Ys, Anum, Xs, family = "survival", filter = "glmnet",
+                   hyper = list(interaction = TRUE))
+cf <- coef(f$mod, s = f$mod$sel.lambda)[, 1]
+cf <- cf[cf != 0]
+
+round(cf[!grepl("_trtA$", names(cf))], 4)     # 主效应 = 预后
+round(cf[ grepl("_trtA$", names(cf))], 4)     # 交互 = 效应修饰候选
+```
+
+主效应里 `pnodes` 最大（0.247），交互项里 `progrec_trtA` 绝对值最大（0.162）。
+**两列的排序不同**——这正是"预后"和"效应修饰"是两回事的直接证据。
+
+### 第 2 步：MOB + `parm = 2`，不做过滤
+
+```{r}
+#| label: wf-tree
+res <- PRISM(Y = Ys, A = Anum, X = Xs,
+             filter = "None",                        # 见上一节
+             submod.hyper = list(parm = 2),          # 只检验治疗系数
+             verbose = FALSE)
+res$Rules
+```
+
+切点 `progrec = 21` 由数据决定，与文献一致。
+作为对照，不加 `parm = 2` 的默认树会先切 `pnodes`（纯预后变量）。
+
+### 第 3 步：两个尺度各报一遍
+
+```{r}
+#| label: wf-param
+res$param.dat[, c("Subgrps", "N", "est", "SE", "LCL", "UCL", "pval", "events")]
+
+param_est(Ys, Anum, Xs, param = "rmst",
+          Subgrps = res$out.train$Subgrps)[, c("Subgrps", "N", "est", "SE", "pval")]
+```
+
+| 亚组 | n | log HR | RMST 差（天） |
+|---|---|---|---|
+| `progrec ≤ 21` | 281 | $-0.10$（$p = 0.55$） | $+80$（$p = 0.52$） |
+| `progrec > 21` | 405 | $-0.66$（$p < 0.001$） | $+349$（$p < 0.001$） |
+
+**两个尺度结论一致**——这是一个好迹象。
+如果相乘尺度显著而相加尺度不显著，往往说明"修饰效应"其实来自基线风险的差异，
+见[效应修饰的效应尺度](../sources/effect-modifier-effect-scale.qmd)。
+
+### 第 4 步：重抽样，看这个结论有多稳
+
+```{r}
+#| label: wf-boot
+set.seed(2)
+res_b <- PRISM(Y = Ys, A = Anum, X = Xs, filter = "None",
+               submod.hyper = list(parm = 2),
+               resample = "Bootstrap", R = 30, verbose = FALSE)
+
+res_b$param.dat[, c("Subgrps", "est", "LCL", "UCL", "Prob(>0)")]
+table(aggregate(numb_subs ~ R, data = res_b$resamp_dist,
+                FUN = function(x) x[1])$numb_subs)
+```
+
+区间仍然把 `progrec > 21` 那一组的获益排除在 0 之外，这是支持性证据。
+但 `numb_subs` 的分布说明**树的大小在重抽样之间波动很大**：
+观测数据上只切 1 刀，重抽样里常常切出 4–5 个亚组。
+
+::: {.callout-note}
+## `resamp_dist` 的行标签是**观测**亚组
+
+每次重抽样对**每一个观测亚组**各给一行估计（$R \times$ 亚组数 + $R$ 行 `ovrl`），
+而 `numb_subs` 记录的是那一次重抽样自己的树切出了几个亚组。
+两者不相等说明：重抽样区间回答的是
+"**在重抽样数据上重新估计这批人的效应**"有多不确定，
+**不是**"重抽样能不能找到同样的亚组"。
+
+后一个问题要看 `numb_subs`（树的大小是否稳定）
+与 `resamp_subgrps`（每个人是否稳定落在同一组）。
+包里有内部函数 `subgrp_stability()` 处理后者，但没有导出。
+:::
+
+### 完整脚本
+
+```r
+library(StratifiedMedicine); library(survival)
+data("GBSG2", package = "TH.data")
+Ys   <- with(GBSG2, Surv(time, cens))
+Xs   <- GBSG2[, !(colnames(GBSG2) %in% c("time", "cens", "horTh"))]
+Anum <- as.numeric(GBSG2$horTh == "yes")
+
+## 1. 交互筛选：看候选排序，不用它做过滤
+f  <- filter_train(Ys, Anum, Xs, family = "survival", filter = "glmnet",
+                   hyper = list(interaction = TRUE))
+cf <- coef(f$mod, s = f$mod$sel.lambda)[, 1]; cf <- cf[cf != 0]
+sort(abs(cf[grepl("_trtA$", names(cf))]), decreasing = TRUE)
+
+## 2. MOB 只检验治疗系数，不过滤
+res <- PRISM(Ys, Anum, Xs, filter = "None",
+             submod.hyper = list(parm = 2), verbose = FALSE)
+summary(res)
+
+## 3. 两个尺度
+res$param.dat                                             # log HR
+param_est(Ys, Anum, Xs, param = "rmst", Subgrps = res$out.train$Subgrps)
+
+## 4. 稳定性
+res_b <- PRISM(Ys, Anum, Xs, filter = "None", submod.hyper = list(parm = 2),
+               resample = "Bootstrap", R = 200, verbose = FALSE)
+res_b$param.dat
+table(aggregate(numb_subs ~ R, data = res_b$resamp_dist, FUN = function(x) x[1])$numb_subs)
+
+## 5. 置换对照：跑几十次，统计"切出东西"的频率
+##    注意必须 tryCatch——一刀未切时本包报错而不是返回空结果
+set.seed(11)
+perm <- replicate(50, {
+  r <- tryCatch(PRISM(Ys, sample(Anum), Xs, filter = "None",
+                      submod.hyper = list(parm = 2), verbose = FALSE),
+                error = function(e) NULL)
+  if (is.null(r)) 0L else nrow(r$Rules)
+})
+mean(perm > 0)          # 置换零假设下"找到亚组"的经验频率
+```
+
+### 第 5 步：置换对照
+
+把治疗标签随机打乱，真实的效应修饰信号应当消失。本包没有提供这一步，
+但它是这套流程里最便宜也最有说服力的一环：
+
+```{r}
+#| label: wf-perm
+#| cache: false
+set.seed(11)
+perm <- sapply(1:10, function(i) {
+  ap <- sample(Anum)
+  r <- tryCatch(PRISM(Y = Ys, A = ap, X = Xs, filter = "None",
+                      submod.hyper = list(parm = 2), verbose = FALSE),
+                error = function(e) NULL)
+  if (is.null(r)) "一刀未切" else paste(nrow(r$Rules), "个亚组:", r$Rules$Rules[1])
+})
+table(perm)
+```
+
+10 次置换里 **10 次都一刀未切**——这正是正确答案：
+治疗被打乱之后确实不存在效应修饰。
+
+::: {.callout-important}
+## "没有亚组"这个正确答案，在本包里是一个**报错**
+
+上面那 10 次全都走了 `tryCatch` 的错误分支。裸跑是这样：
+
+```{r}
+#| label: perm-crash
+#| error: true
+set.seed(11); A_p <- sample(Anum)
+PRISM(Y = Ys, A = A_p, X = Xs, filter = "None",
+      submod.hyper = list(parm = 2), verbose = FALSE)
+```
+
+树没有分裂时 `extract_rules()` 拿到零行规则，
+`PRISM()` 随后走进一条需要 `Xtest` 的分支（补上 `Xtest` 也救不了）。
+和 [`maxdepth = 1`](04-submod-train.qmd) 是同一个根因，但这一次
+它触发在**最正常的使用场景**里：数据中本来就没有效应修饰。
+
+所以**任何批量运行（模拟、置换、交叉验证）都必须用 `tryCatch()` 包住 `PRISM()`，
+并把错误当成"未发现亚组"来统计**，否则整个循环会在第一次遇到阴性结果时中断。
+:::
+
+并不是每次置换都这么干净。换一个种子：
+
+```{r}
+#| label: wf-perm-fp
+set.seed(1)
+r_fp <- PRISM(Y = Ys, A = sample(Anum), X = Xs, filter = "None",
+              submod.hyper = list(parm = 2), verbose = FALSE)
+r_fp$Rules
+r_fp$param.dat[, c("Subgrps", "N", "est", "SE", "pval")]
+```
+
+这一次它切在 `estrec` 上，而且其中一个"亚组"的 $p = 0.005$——
+**比真实数据上那棵树的分裂 p 值（0.010）还小**。
+11 次置换里出现 1 次，与 `lmtree` 默认的 $\alpha = 0.1$ 大致相符。
+
+**这就是为什么置换对照要跑几十次而不是一次**：
+单次阴性说明不了什么，单次阳性更说明不了什么，要看频率。
+
+## 本包在方法谱系里的位置
+
+| 能力 | `StratifiedMedicine` | 对照 |
+|---|---|---|
+| 把 MOB 的 `parm` 接通 | ✅ `submod.hyper = list(parm = 2)` | `model4you::pmtree()` 接受但**不生效** |
+| 直接给出可读的亚组规则 | ✅ `$Rules` | `grf` 只给 CATE，规则要自己提取 |
+| 亚组效应的正式推断 | ✅ 五种 `param`，两种尺度 | `grf` 靠 RATE / BLP |
+| 效应修饰变量的重要性 + p 值 | ⚠️ `filter = "ranger"` 测的是预后重要性 | `tidyhte::calculate_vimp()` 给 VIMP 及标准误 |
+| 混杂校正 | ❌ `propensity = TRUE` 在 1.0.7 里坏了 | `grf`、`tmle3` 内建 |
+| 多重性校正 | ❌ `calibrate` 是空操作 | 需自己做置换/CV |
+
+一句话：**`StratifiedMedicine` 是"从候选变量到可读亚组 + 正式效应表"这段路上最顺手的包**，
+但它的**混杂校正和多重性校正都要在包外自己解决**。
+
+更系统的横向比较见
+[观察性研究中的效应修饰变量识别](../sources/effect-modifier-discovery.qmd)
+与[快速筛选效应修饰变量的 R 包](../sources/quick-screening-r-packages.qmd)。
+
+## 本手册覆盖的 17 个帮助主题
+
+| 主题 | 页 |
+|---|---|
+| `generate_subgrp_data` | [1](01-overview.qmd) |
+| `filter_train` | [2](02-filter-train.qmd) |
+| `ple_train`、`predict.ple_train` | [3](03-ple-train.qmd) |
+| `submod_train`、`predict.submod_train`、`summary.submod_train` | [4](04-submod-train.qmd) |
+| `param_est`、`param_combine` | [5](05-param-est.qmd) |
+| `PRISM`、`predict.PRISM`、`summary.PRISM` | [6](06-prism.qmd) |
+| `plot.PRISM`、`plot_tree`、`plot_importance`、`plot_ple`、`plot_dependence` | [7](07-plots.qmd) |
+
+回到[手册首页](../stratifiedmedicine.qmd)。

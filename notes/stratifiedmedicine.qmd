@@ -1,0 +1,219 @@
+---
+title: "StratifiedMedicine 包函数手册"
+subtitle: "基于 1.0.7 的逐函数用法说明与本机实测"
+lang: zh
+---
+
+`StratifiedMedicine` 把"**从一批协变量里找出治疗效应不同的亚组**"这件事，
+拆成四个可以各自替换的步骤——**filter → ple → submod → param**，
+再用 `PRISM()` 把四步串成一条流水线。
+它面向的典型场景是临床试验或观察性研究里的亚组分析与个体化治疗效应估计。
+
+本部分是该包的**函数用法手册**，逐个覆盖 CRAN 参考手册
+（[refman](https://cran.r-project.org/web/packages/StratifiedMedicine/refman/StratifiedMedicine.html)）
+里的全部 17 个帮助主题。每页给出参数逐项说明、可直接运行的代码、返回对象的结构，
+以及**本机实际运行后发现的默认值陷阱与失效路径**。
+
+## 核对环境与证据边界
+
+本手册核对截止 **2026 年 9 月 20 日**，环境为：
+
+| 项目 | 值 |
+|---|---|
+| 包版本 | `StratifiedMedicine` 1.0.7（2026-03-24 发布，GPL-3，维护者 Thomas Jemielita） |
+| R | Windows R 4.4.3 |
+| Imports | `glmnet`、`ranger`、`partykit`、`coin`、`survival`、`ggplot2`、`ggparty`、`dplyr`、`mvtnorm`、`rlang` |
+| Suggests（影响可用选项） | `rpart`（`submod = "rpart*"`）、`survRM2`（`param = "rmst"`）、`BART`（`ple = "bart"`） |
+| 示例数据 | 包自带 `generate_subgrp_data()`（n = 800，50 个协变量）、`TH.data::GBSG2`（n = 686，299 个事件） |
+
+证据分三级，正文中逐处标明：
+
+1. **文档**——包自带帮助页与 `DESCRIPTION` 的原文；
+2. **源码**——本机已安装包的函数体（`StratifiedMedicine:::` 可复核）；
+3. **实测**——在上述环境下实际运行的输出。
+
+本手册的代码块**由本站渲染时真实执行**，页面上的输出与图形就是本机结果。
+随机过程（`ranger`、Bootstrap）已固定种子；`PRISM()` 自带 `seed = 777` 默认值。
+
+::: {.callout-important}
+## 五处与官方文档不一致的实测结论
+
+在展开之前先给出结论，它们影响所有使用者：
+
+1. **`propensity = TRUE` 在 1.0.7 里必定报错。** `ple_train()` 把已经取出的
+   *函数对象* 传给 `prop_learner(learner = )`，而后者用 `learner == "ranger"`
+   做字符串比较，于是抛
+   `comparison (==) is possible only for atomic and list types`。
+   `PRISM(propensity = TRUE)` 同样失败。见[第 3 页](stratifiedmedicine/03-ple-train.qmd#sec-propensity)。
+2. **`calibrate = TRUE` 是空操作。** `PRISM()` 函数体里 `resamp_calib <- NULL`
+   写死，重抽样过程算出的校准表从未取回，输出与 `calibrate = FALSE`
+   **逐字节相同**。见[第 6 页](stratifiedmedicine/06-prism.qmd#sec-calibrate)。
+3. **`param = "rmst"` 只接受数值型 0/1 治疗。** 传因子（如 `horTh`）时
+   `survRM2::rmst2()` 失败，而 `param_rmst()` 的错误分支没有构造返回对象，
+   于是报一个与病因无关的 `object 'summ' not found`。
+   见[第 5 页](stratifiedmedicine/05-param-est.qmd#sec-rmst)。
+4. **`submod_train()` 的默认 `param` 是 `"lm"`，不是帮助页写的 `"dr"`。**
+   两个函数共用同一段参数说明文字，但 `submod_train()` 源码里
+   `if (is.null(param)) param <- "lm"`（生存为 `"cox"`），
+   而 `PRISM()` 默认确实是 `"dr"`。同一份数据两者给出不同的估计。
+   见[第 4 页](stratifiedmedicine/04-submod-train.qmd#sec-param-default)。
+5. **`generate_subgrp_data(family = "survival")` 报错。** 源码里
+   `if (family == "survival") { }` 是**空的**，帮助页却把 `"survival"`
+   列为合法取值。见[第 1 页](stratifiedmedicine/01-overview.qmd#sec-survival-gap)。
+6. **"没有找到任何亚组"这个正确答案，在本包里表现为一个报错。**
+   树一刀未切时 `extract_rules()` 拿到零行规则，
+   `submod_train()` 与 `PRISM()` 各抛一个与病因无关的错误。
+   这会在**阴性数据上正常发生**，因此任何批量运行都必须 `tryCatch()`。
+   见[第 8 页](stratifiedmedicine/08-pitfalls.qmd#sec-modifier)。
+
+另有两条 documented-but-broken 的路径（`submod = "None"`、
+`plot(type = "heatmap")`）汇总在[第 8 页](stratifiedmedicine/08-pitfalls.qmd)。
+:::
+
+## 这个包在做什么
+
+用一句话概括：**把"谁从治疗中获益更多"这个问题，拆成四个可替换的模块。**
+
+给定 $(Y, A, X)$（结局、二值治疗、协变量），PRISM 依次做：
+
+```text
+X（50 个协变量）
+   │  ① filter：扔掉与 Y 和／或 A×X 无关的噪声变量
+   ▼
+X*（剩下 16 个）
+   │  ② ple：估计每个人的反事实量 μ(a,x)，并给出 CATE
+   ▼
+mu_train（每人一行：mu_0, mu_1, diff_1_0, pi_0, pi_1）
+   │  ③ submod：用树把人群切成可读的亚组
+   ▼
+Subgrps（节点编号）+ Rules（"X1 > 0.016 & X2 > 0.693"）
+   │  ④ param：在每个亚组里做点估计与区间估计
+   ▼
+param.dat（est, SE, LCL, UCL, pval，外加一行 ovrl）
+```
+
+三层的关键区别在于**第 ③ 步的树在对什么做检验**：
+
+| 目标 | `submod` 取值 | 检验对象 |
+|---|---|---|
+| 直接针对 $A \times X$ 交互 | `lmtree`、`glmtree`、`mob_weib` | 模型参数（含截距）的不稳定性 |
+| 对估计出来的 CATE 建树 | `rpart_cate`、`ctree_cate` | 第 ② 步产出的 `diff_1_0` |
+| 只找预后变量 | `rpart`、`ctree` | 结局 $Y$ 本身 |
+| 最优治疗方案 | `otr` | $\mathbb{1}(\widehat{\text{CATE}} > \delta)$，权重 $|\widehat{\text{CATE}} - \delta|$ |
+
+::: {.callout-warning}
+## 默认配置找的是"预后 + 效应修饰"的混合物
+
+MOB（`lmtree`）的分裂检验默认针对**所有**模型参数，其中包括截距。
+截距不稳定意味着**基线水平**不同，那是**预后**差异，不是效应修饰。
+把 `hyper = list(parm = 2)` 传进去才只检验治疗系数——
+本包**确实把 `parm` 转发给了 `partykit::lmtree()`**，
+这一点与 `model4you::pmtree()` 形成对比（后者接受 `parm` 但不生效）。
+实测对照见[第 4 页](stratifiedmedicine/04-submod-train.qmd#sec-parm)与
+[第 8 页](stratifiedmedicine/08-pitfalls.qmd#sec-modifier)。
+
+另外，`filter` 这一步**不是无害的预处理**：把候选变量从 50 个砍到 16 个，
+等于放松了 MOB 分裂检验的多重性校正，实测反而多切出两个假亚组。
+:::
+
+## 函数地图
+
+17 个帮助主题按角色归类如下，每行给出所在页面。
+
+### 流水线主函数
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `PRISM()` | 四步流水线，本包的主入口 | [6. PRISM](stratifiedmedicine/06-prism.qmd) |
+| `predict.PRISM()` | 对新数据输出 ple / 亚组 / 两者 | [6. PRISM](stratifiedmedicine/06-prism.qmd#sec-predict) |
+| `summary.PRISM()` | 配置、过滤结果、亚组定义、效应表 | [6. PRISM](stratifiedmedicine/06-prism.qmd#sec-summary) |
+
+### 四个步骤，各自可单独调用
+
+| 函数 | 步骤 | 页面 |
+|---|---|---|
+| `filter_train()` | ① 变量过滤（elastic net / 随机森林 VI） | [2. filter_train](stratifiedmedicine/02-filter-train.qmd) |
+| `ple_train()` | ② 个体水平估计（base-learner × meta-learner） | [3. ple_train](stratifiedmedicine/03-ple-train.qmd) |
+| `predict.ple_train()` | ② 对新数据预测反事实量 | [3. ple_train](stratifiedmedicine/03-ple-train.qmd#sec-predict) |
+| `submod_train()` | ③ 亚组识别（7 种树） | [4. submod_train](stratifiedmedicine/04-submod-train.qmd) |
+| `predict.submod_train()` | ③ 对新数据分配亚组 | [4. submod_train](stratifiedmedicine/04-submod-train.qmd#sec-predict) |
+| `summary.submod_train()` | ③ 亚组个数、定义与效应表 | [4. submod_train](stratifiedmedicine/04-submod-train.qmd#sec-summary) |
+| `param_est()` | ④ 逐亚组点估计与区间 | [5. param_est](stratifiedmedicine/05-param-est.qmd) |
+| `param_combine()` | ④ 把亚组估计合成总体估计 | [5. param_est](stratifiedmedicine/05-param-est.qmd#sec-combine) |
+
+### 可视化
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `plot.PRISM()` | 统一入口：`tree` / `forest` / `PLE:*` / `resample` | [7. 可视化](stratifiedmedicine/07-plots.qmd) |
+| `plot_tree()` | 树结构 + 各节点的效应与分布图 | [7. 可视化](stratifiedmedicine/07-plots.qmd#sec-tree) |
+| `plot_importance()` | 过滤模型的变量重要性 | [7. 可视化](stratifiedmedicine/07-plots.qmd#sec-importance) |
+| `plot_ple()` | CATE 的瀑布图与密度图 | [7. 可视化](stratifiedmedicine/07-plots.qmd#sec-ple) |
+| `plot_dependence()` | 偏依赖曲线与二维热图 | [7. 可视化](stratifiedmedicine/07-plots.qmd#sec-dependence) |
+
+### 数据
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `generate_subgrp_data()` | 模拟数据，真值已知 | [1. 总览与数据](stratifiedmedicine/01-overview.qmd#sec-data) |
+
+最后一页[8. 实测清单与工作流](stratifiedmedicine/08-pitfalls.qmd)汇总全部失效路径、
+默认值陷阱，以及一套针对"**找效应修饰变量**"的可照抄工作流。
+
+## 最小可运行例子
+
+```{r}
+#| label: minimal
+#| message: false
+library(StratifiedMedicine)
+
+dat <- generate_subgrp_data(family = "gaussian")
+
+res <- PRISM(Y = dat$Y, A = dat$A, X = dat$X, verbose = FALSE)
+
+summary(res)$`PRISM Configuration`
+res$Rules
+```
+
+四行代码背后是 `glmnet` 过滤 → `ranger` X-learner → MOB(OLS) 建树 →
+双稳健估计。每个亚组的治疗效应：
+
+```{r}
+#| label: minimal-param
+res$param.dat[, c("Subgrps", "N", "est", "SE", "LCL", "UCL", "pval")]
+```
+
+真值是 $X_1, X_2$ 两个变量按中位数切出四个亚组、效应分别为
+0、0.25、0.45、0.65。上面这棵树切对了 $X_1$ 和 $X_2$，
+但也多切了 `X50` 和 `X26` 两刀——这是[第 8 页](stratifiedmedicine/08-pitfalls.qmd#sec-filter-harm)
+要解释的问题。
+
+## 官方资料
+
+| 资源 | 位置 |
+|---|---|
+| CRAN 页面与参考手册 | <https://cran.r-project.org/package=StratifiedMedicine> |
+| 方法论文 | Jemielita T, Mehrotra D. *PRISM: Patient Response Identifiers for Stratified Medicine*. [arXiv:1912.03337](https://arxiv.org/abs/1912.03337) |
+| MOB（模型基础递归分割） | Zeileis, Hothorn & Hornik (2008), *JCGS* 17(2), 492–514 |
+| 子组分析中的 MOB | Seibold, Zeileis & Hothorn (2016), *Int J Biostat* 12, 45–63 |
+| Meta-learner | Künzel et al. (2019), *PNAS*，S/T/X-learner |
+| 随机森林变量重要性的 p 值 | Ishwaran & Lu (2019), *Statistics in Medicine* |
+| 总体估计的 maxZ 加权 | Mehrotra & Marceau-West (2021) |
+
+包自带两份 vignette：
+
+```{r}
+#| label: vignettes
+vignette(package = "StratifiedMedicine")$results[, c("Item", "Title")]
+```
+
+## 与本书其它页面的关系
+
+- [观察性研究中的效应修饰变量识别](sources/effect-modifier-discovery.qmd)——
+  `StratifiedMedicine` 在整个方法谱系中的位置；
+- [快速筛选效应修饰变量的 R 包](sources/quick-screening-r-packages.qmd)——
+  `filter_train()` 与其它 17 个包的能力对照；
+- [筛选软件与方法核查](sources/modifier-screening-audit.qmd)——
+  本包 `interaction = TRUE` 这一默认设置常被误读的来龙去脉；
+- [效应修饰的效应尺度](sources/effect-modifier-effect-scale.qmd)——
+  `param = "cox"` 与 `param = "rmst"` 在同一份数据上给出不同结论的原因。

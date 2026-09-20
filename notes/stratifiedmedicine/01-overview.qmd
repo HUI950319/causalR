@@ -1,0 +1,249 @@
+---
+title: "1. 总览、对象结构与数据生成"
+subtitle: "StratifiedMedicine 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(StratifiedMedicine)
+```
+
+本页先把包的**边界**说清楚：它依赖什么、导出了什么、四个步骤各自返回什么形状的对象；
+再逐项说明 `generate_subgrp_data()`——后面七页的所有例子都建在它生成的数据上，
+而它的**真值在源码里是写死的**，因此可以用来判断某个方法是找对了还是找错了。
+
+## 包的边界
+
+```{r}
+#| label: pkg-info
+packageVersion("StratifiedMedicine")
+sort(getNamespaceExports("StratifiedMedicine"))
+```
+
+11 个导出函数，加上 6 个 S3 方法（`predict`/`summary`/`plot` 各自的
+`PRISM`、`ple_train`、`submod_train` 方法），正好是 CRAN 参考手册里的 17 个帮助主题。
+
+依赖关系值得单独看一眼，因为它决定了哪些选项"装了包才有"：
+
+| 类别 | 包 | 影响哪个选项 |
+|---|---|---|
+| **Imports**（必装） | `glmnet` | `filter = "glmnet"`、`ple = "glmnet"` |
+| | `ranger` | `filter = "ranger"`、`ple = "ranger"`（默认） |
+| | `partykit` | `submod = "lmtree"/"glmtree"/"ctree"/"ctree_cate"/"mob_weib"/"otr"` |
+| | `coin` | 生存结局下 `lmtree` 用的 log-rank 变换 |
+| | `survival` | `family = "survival"`、`param = "cox"` |
+| | `ggplot2`、`ggparty` | 全部绘图函数 |
+| | `mvtnorm` | `generate_subgrp_data()` |
+| **Suggests**（可选） | `rpart` | `submod = "rpart"`、`"rpart_cate"` |
+| | `survRM2` | `param = "rmst"` |
+| | `BART` | `ple = "bart"` |
+| | `sandwich` | 部分方差估计 |
+
+也就是说，**`submod = "rpart_cate"` 和 `param = "rmst"` 在只装了主包的机器上会缺依赖**，
+而它们分别是"两阶段 CATE 建树"和"生存结局的相加尺度"这两条重要路线的入口。
+
+## 四步流水线的对象结构 {#sec-objects}
+
+四个步骤可以单独调用，也可以由 `PRISM()` 串起来。各自返回的对象如下：
+
+| 函数 | 返回类 | 关键字段 |
+|---|---|---|
+| `filter_train()` | `filter_train` | `mod`（模型）、`filter.vars`（留下的变量名）、`filter` |
+| `ple_train()` | `ple_train` | `fit`（拟合对象）、`mu_train`、`mu_test`、`ple`、`meta`、`family` |
+| `submod_train()` | `submod_train` | `fit`、`Subgrps.train`、`Subgrps.test`、`Rules`、`trt_eff`、`out.train` |
+| `param_est()` | `data.frame` | `Subgrps`、`N`、`estimand`、`est`、`SE`、`LCL`、`UCL`、`pval`、`alpha` |
+| `PRISM()` | `PRISM` | 上面全部，外加 `param.dat`、`resamp_dist`、`trt_assign` |
+
+::: {.callout-note}
+## 帮助页的 Value 段落与实际字段名对不上
+
+三个 `*_train` 函数的帮助页都把拟合对象写作 **`mod`**，实际字段是 **`fit`**：
+
+```{r}
+#| label: fit-vs-mod
+dat <- generate_subgrp_data(family = "gaussian")
+p <- ple_train(dat$Y, dat$A, dat$X, ple = "ranger", meta = "X-learner")
+names(p)                 # 帮助页写的是 mod / mu_train / mu_test
+```
+
+`submod_train()` 的帮助页还写了 `pred.train` / `pred.test` 两个字段，实际不存在；
+真正能用的是 `Subgrps.train` / `Subgrps.test` 与 `trt_eff`。
+只有 `filter_train()` 的 `mod` 名副其实。写代码时以 `names()` 为准。
+:::
+
+## `generate_subgrp_data()` {#sec-data}
+
+```r
+generate_subgrp_data(n = 800, seed = 513413, family, null = FALSE, ...)
+```
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `n` | `800` | 样本量 |
+| `seed` | `513413` | 随机种子。函数内部直接 `set.seed(seed)`，因此**默认调用永远给出同一份数据** |
+| `family` | 无默认，**必填** | `"gaussian"`、`"binomial"`；`"survival"` 见下文 |
+| `null` | `FALSE` | `TRUE` 时治疗效应恒为 0，且不存在任何亚组 |
+| `...` | — | 不传递任何东西 |
+
+返回一个五元素列表：
+
+```{r}
+#| label: gen-str
+dat <- generate_subgrp_data(family = "gaussian")
+str(dat, max.level = 1)
+```
+
+`subgrps` 与 `PLE` 是**真值**，正式分析里当然没有，但用来判断方法对错非常方便。
+
+### 真值是什么
+
+源码（`StratifiedMedicine:::generate_subgrp_data`）把结构写死了，这里摘出来：
+
+- $X$ 是 50 维多元正态，$\Sigma = 0.9 I + 0.1 J$，即**任意两个协变量相关系数 0.1**；
+- $A \sim \text{Bernoulli}(0.5)$，与 $X$ 独立——**这是一份 RCT 数据，没有混杂**；
+- 按 $X_1, X_2$ 的中位数（$\Phi^{-1}(0.5) = 0$）切成四个亚组。
+
+连续结局：
+
+$$
+\mu = 1.5 + \tau(X_1, X_2)\cdot A
++ 0.15\tilde X_1 + 0.20\tilde X_2 + 0.10\tilde X_3 + 0.10\tilde X_5 + 0.10\tilde X_7,
+\qquad Y \sim N(\mu, 1)
+$$
+
+其中 $\tilde X$ 是标准化后的协变量，$\tau$ 就是真 CATE：
+
+```{r}
+#| label: truth
+table(dat$subgrps)
+tapply(dat$PLE, dat$subgrps, unique)
+```
+
+于是真值可以列成一张表——**这张表是后面所有"找对了没有"判断的依据**：
+
+| 变量 | 预后作用（影响基线 $\mu$） | 效应修饰作用（影响 $\tau$） |
+|---|---|---|
+| `X1` | ✅ 0.15 | ✅ |
+| `X2` | ✅ 0.20 | ✅ |
+| `X3`、`X5`、`X7` | ✅ 0.10 | ❌ |
+| 其余 45 个 | ❌ | ❌ |
+
+注意 `X3`、`X5`、`X7` 是**纯预后**变量：它们跟结局有关，但跟治疗效应无关。
+一个工具如果把它们报成"重要"，说明它测的是预后而不是效应修饰。
+
+二值结局用同一套亚组结构，但效应定义在 logit 尺度上
+（$b_0 = \text{logit}(0.3)$，三个亚组的 log-OR 分别是 1.3 / 0.9 / 0.5），
+`PLE` 字段给的是**换算到风险差尺度**之后的值：
+
+```{r}
+#| label: truth-bin
+datb <- generate_subgrp_data(family = "binomial")
+tapply(datb$PLE, datb$subgrps, unique)
+mean(datb$Y)
+```
+
+预后系数也更大（0.5 / 0.5 / 0.3 / 0.3 / 0.3），因为二值结局信息量更低。
+
+### `family = "survival"` 会报错 {#sec-survival-gap}
+
+帮助页写 `family` 的取值是 `"gaussian"`、`"binomial"`、`"survival"`。
+但源码里生存那一支是空的：
+
+```r
+if (family == "survival") {
+}
+return(list(Y = Y, A = A, X = X, subgrps = subgrps, PLE = PLE))
+```
+
+于是 `Y`、`PLE` 从未被赋值，函数在 `return()` 处失败：
+
+```{r}
+#| label: survival-fail
+#| error: true
+generate_subgrp_data(family = "survival")
+```
+
+**要做生存结局的例子，只能自己找数据。** 官方帮助页的生存示例用的是
+`TH.data::GBSG2`（德国乳腺癌研究组第 2 号试验，n = 686，299 个事件），
+本手册后面也沿用它：
+
+```{r}
+#| label: gbsg2
+#| message: false
+library(survival)
+data("GBSG2", package = "TH.data")
+Y_surv <- with(GBSG2, Surv(time, cens))
+X_surv <- GBSG2[, !(colnames(GBSG2) %in% c("time", "cens", "horTh"))]
+A_surv <- GBSG2$horTh          # 真实的内分泌治疗分配
+str(X_surv)
+```
+
+::: {.callout-warning}
+## 官方生存示例里的治疗是随机生成的
+
+`PRISM` 帮助页的生存示例是这么写的：
+
+```r
+X = surv.dat[, !(colnames(surv.dat) %in% c("time", "cens"))]
+set.seed(513)
+A = rbinom(n = dim(X)[1], size = 1, prob = 0.5)
+```
+
+也就是说，它把 `horTh` **留在了 X 里**，然后**另外掷硬币**造了一个治疗变量。
+这个 `A` 与结局完全独立，任何"亚组治疗效应"都只可能是噪声。
+本手册在需要展示真实信号时改用 `A = GBSG2$horTh`，并把它从 X 中移除；
+只有在复现帮助页输出时才沿用随机 `A`，并会明确标注。
+:::
+
+### `null = TRUE`：一份没有任何信号的数据
+
+```{r}
+#| label: null-data
+dnull <- generate_subgrp_data(family = "gaussian", null = TRUE)
+unique(dnull$PLE)
+```
+
+这份数据的用途是做**阴性对照**。任何在它上面"找到"的亚组都是假阳性。
+[第 8 页](08-pitfalls.qmd#sec-null)会用它来量化默认配置的假阳性率——
+剧透一下：默认 `PRISM()` 在完全没有信号的数据上照样报出 5 个亚组，
+其中两个在 $\alpha = 0.05$ 下"显著"。
+
+## 一次完整的流水线
+
+把四步拆开写一遍，能看清 `PRISM()` 内部到底发生了什么：
+
+```{r}
+#| label: manual-pipeline
+Y <- dat$Y; A <- dat$A; X <- dat$X
+
+## ① filter：50 → 16
+f <- filter_train(Y, A, X, filter = "glmnet")
+f$filter.vars
+
+## ② ple：每人一行反事实量
+set.seed(1)
+p <- ple_train(Y, A, X, ple = "ranger", meta = "X-learner")
+head(round(p$mu_train, 3), 3)
+
+## ③ submod：把人群切成亚组（这里故意用全部 50 个变量）
+s <- submod_train(Y, A, X, submod = "lmtree")
+s$Rules
+
+## ④ param：逐亚组估计
+param_est(Y, A, X, param = "dr", mu_hat = p$mu_train,
+          Subgrps = s$Subgrps.train)
+```
+
+四步手工拼出来的结果，与 `PRISM()` 的差别只有一处：
+`PRISM()` 会把第 ① 步过滤后的 `X*` 喂给第 ③ 步，而上面第 ③ 步用的是全部 50 个变量。
+就这一处差别，把 4 个亚组变成了 6 个——见
+[第 8 页](08-pitfalls.qmd#sec-filter-harm)。
+
+## 本页涉及的帮助主题
+
+- `generate_subgrp_data`
+
+下一页开始逐个展开四个步骤：[2. filter_train](02-filter-train.qmd)。

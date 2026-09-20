@@ -1,0 +1,290 @@
+---
+title: "2. filter_train()：变量过滤"
+subtitle: "StratifiedMedicine 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(StratifiedMedicine)
+dat <- generate_subgrp_data(family = "gaussian")
+Y <- dat$Y; A <- dat$A; X <- dat$X
+```
+
+第 ① 步。输入 $(Y, A, X)$，输出一个**更短的变量名向量**，
+后面三步只在这些变量上工作。
+
+```r
+filter_train(Y, A, X, family = "gaussian", filter = "glmnet", hyper = NULL, ...)
+```
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `Y` | — | 结局。数值向量，或 `survival::Surv()` 对象 |
+| `A` | — | 治疗。二值（数值或因子）。**可以是 `NULL`**，此时只找预后变量 |
+| `X` | — | 协变量数据框 |
+| `family` | `"gaussian"` | `"gaussian"` / `"binomial"` / `"survival"` |
+| `filter` | `"glmnet"` | `"glmnet"` 或 `"ranger"`；也接受旧名 `"filter_glmnet"` / `"filter_ranger"` |
+| `hyper` | `NULL` | 命名 `list`，两个分支各有各的字段，见下 |
+| `...` | — | 帮助页写明"不传递任何东西" |
+
+返回一个 `filter_train` 对象：`$mod`（拟合好的模型）、
+`$filter.vars`（留下的变量名）、`$filter`（用了哪个过滤器）。
+
+::: {.callout-important}
+## `filter = "None"` 只在 `PRISM()` 里合法
+
+帮助页的 `filter` 参数说明里写着 `"None" uses no filter`，
+但那段文字是 `PRISM()` 和 `filter_train()` 共用的。直接调用会失败：
+
+```{r}
+#| label: none-fail
+#| error: true
+filter_train(Y, A, X, filter = "None")
+```
+
+`filter_train()` 用 `get(filter, envir = parent.frame())` 去找同名函数，
+`"None"` 不是函数。`PRISM(filter = "None")` 则在外层做了特判，可以正常跑。
+:::
+
+## glmnet 分支（默认）
+
+拟合 elastic net，**系数为 0 的变量被扔掉**。
+`family` 决定用 LM / logistic / Cox 版本的 `glmnet`。
+
+默认超参数：
+
+```r
+hyper = list(lambda = "lambda.min", family = "gaussian", alpha = 0.5, interaction = FALSE)
+```
+
+| 字段 | 默认值 | 作用 |
+|---|---|---|
+| `lambda` | `"lambda.min"` | 取 10 折 CV 的哪个 $\lambda$。改成 `"lambda.1se"` 会得到**稀疏得多**的结果 |
+| `alpha` | `0.5` | elastic net 混合比。**传一个向量**（如 `c(0, 0.5, 1)`）时用 CV 在这些值里选 |
+| `interaction` | `FALSE` | `FALSE` 跑 $Y \sim \text{ENET}(X)$；`TRUE` 跑 $Y \sim \text{ENET}(X, A, X \times A)$ |
+
+### 默认设置找的是预后变量 {#sec-prognostic}
+
+这是本包最容易被误用的一处。默认 `interaction = FALSE` 回归的是
+$Y \sim \text{ENET}(X)$——治疗 $A$ **根本没进模型**：
+
+```{r}
+#| label: glmnet-default
+f_def <- filter_train(Y, A, X, filter = "glmnet")
+f_def$filter.vars
+length(f_def$filter.vars)
+```
+
+留下 16 个变量。真值里 `X1`–`X2`（既预后又修饰）和 `X3`/`X5`/`X7`（纯预后）
+全部留下，这没问题；问题是**它们混在一起，谁是修饰变量看不出来**，
+另外还混进了 11 个纯噪声变量。
+
+要找效应修饰变量，必须显式打开交互：
+
+```{r}
+#| label: glmnet-inter
+f_int <- filter_train(Y, A, X, filter = "glmnet",
+                      hyper = list(interaction = TRUE))
+length(f_int$filter.vars)
+```
+
+### `filter.vars` 看不出谁是修饰变量 {#sec-dedup}
+
+打开 `interaction = TRUE` 之后，`filter.vars` 里**仍然只有变量名**，
+因为源码做了一次去重：
+
+```r
+filter.vars <- unique(sub("_trtA", "", filter.vars))
+```
+
+主效应项 `X3` 和交互项 `X5_trtA` 被折叠成同一批名字，信息丢了。
+要把两类分开，必须自己挖系数：
+
+```{r}
+#| label: glmnet-coefs
+cf <- coef(f_int$mod, s = f_int$mod$sel.lambda)[, 1]
+cf <- cf[cf != 0]
+
+## 主效应（预后）
+round(cf[!grepl("_trtA$", names(cf))], 4)
+
+## 交互项（效应修饰候选）
+round(sort(abs(cf[grepl("_trtA$", names(cf))]), decreasing = TRUE), 4)
+```
+
+`X1_trtA` 与 `X2_trtA` 排前两位，正是真值里的两个效应修饰变量。
+排第三的 `X40_trtA` 是假阳性——弹性网不做推断，这里没有 p 值可以卡。
+
+::: {.callout-tip}
+## 一条可照抄的"找修饰变量"写法
+
+```r
+f  <- filter_train(Y, A, X, filter = "glmnet", hyper = list(interaction = TRUE))
+cf <- coef(f$mod, s = f$mod$sel.lambda)[, 1]
+cf <- cf[cf != 0]
+cf[grepl("_trtA$", names(cf))]          # 按 |系数| 排序即为候选
+```
+
+如果走的是 `PRISM()`，等价写法是
+`PRISM(..., filter.hyper = list(interaction = TRUE))` 再
+`plot_importance()`——这时图里才会出现 `X1_trtA` 这类条目。
+见[第 7 页](07-plots.qmd#sec-importance)。
+:::
+
+### `lambda` 与 `alpha` 的影响
+
+```{r}
+#| label: glmnet-tuning
+filter_train(Y, A, X, filter = "glmnet",
+             hyper = list(lambda = "lambda.1se"))$filter.vars
+
+f_a <- filter_train(Y, A, X, filter = "glmnet",
+                    hyper = list(alpha = c(0, 0.5, 1)))
+f_a$mod$sel.alpha
+length(f_a$filter.vars)
+```
+
+`lambda.1se` 把 16 个砍到 4 个（`X1`、`X2`、`X7`、`X50`），
+代价是丢掉了 `X3`、`X5` 两个真预后变量。
+**没有"正确"的档位**：`lambda.min` 宁滥勿缺，`lambda.1se` 宁缺勿滥，
+选哪个取决于下游是做发现还是做确认。
+
+## ranger 分支
+
+随机森林变量重要性 + **subsampling 得到的 p 值**（Ishwaran & Lu 2019）。
+对每个变量 $j$ 做 $T_j = VI_j / \widehat{SE}(VI_j)$ 的单侧检验，
+$p \ge$ `pval.thres` 的被扔掉。
+
+默认超参数：
+
+```r
+hyper = list(b = 0.66, K = 200, DF2 = FALSE, FDR = FALSE, pval.thres = 0.10)
+```
+
+| 字段 | 默认值 | 作用 |
+|---|---|---|
+| `b` | `0.66` | 每个子样本抽多少比例的数据 |
+| `K` | `200` | 子样本个数。**这是主要的耗时来源**，`K = 200` 在 n=800、p=50 上约 5–6 秒 |
+| `DF2` | `FALSE` | `TRUE` 时拟合 $Y \sim \text{ranger}(X, XA)$，用 $VI_X + VI_{XA}$ 做 2 自由度联合检验 |
+| `FDR` | `FALSE` | `TRUE` 时对 p 值做 FDR 校正 |
+| `pval.thres` | `0.10` | 过滤阈值 |
+
+```{r}
+#| label: ranger-filter
+set.seed(1)
+f_rf <- filter_train(Y, A, X, filter = "ranger", hyper = list(K = 50))
+f_rf$filter.vars
+```
+
+`$mod` 里存的是一张完整的变量重要性表，比 `filter.vars` 有用得多：
+
+```{r}
+#| label: ranger-table
+vi <- f_rf$mod$VI.dat
+head(vi[order(vi$rank), c("Variables", "est", "SE", "Tstat", "pval", "pval.fdr", "rank")], 8)
+```
+
+### 三个开关的实测差别
+
+```{r}
+#| label: ranger-switches
+set.seed(1)
+sapply(list(
+  `默认 (pval<0.10)` = list(K = 50),
+  `FDR = TRUE`       = list(K = 50, FDR = TRUE),
+  `pval.thres = 0.01`= list(K = 50, pval.thres = 0.01),
+  `DF2 = TRUE`       = list(K = 50, DF2 = TRUE)
+), function(h) {
+  v <- filter_train(Y, A, X, filter = "ranger", hyper = h)$filter.vars
+  paste0(length(v), " 个: ", paste(head(v, 6), collapse = ", "))
+})
+```
+
+`FDR = TRUE` 是这一批里唯一**几乎不放假阳性**的设置（只剩 `X1`、`X2`、`X5`），
+但它同样漏掉了 `X3` 和 `X7`。
+`DF2 = TRUE` 名义上是"主效应 + 交互"的联合检验，实测在这份数据上
+反而放进了 `X4`、`X14`、`X23` 等一批噪声——
+联合检验的自由度换来了更松的阈值。
+
+::: {.callout-note}
+## ranger 分支的 p 值是"重要性 > 0"，不是"效应修饰"
+
+即使 `DF2 = TRUE`，检验的也是 $VI_X + VI_{XA} > 0$，主效应那一项照样贡献信号。
+想要**只**针对效应修饰做筛选，`glmnet` + `interaction = TRUE` 的交互系数
+是本包里更直接的路径。
+:::
+
+## `A = NULL`：只找预后变量
+
+```{r}
+#| label: a-null
+identical(
+  filter_train(Y, A = NULL, X = X, filter = "glmnet")$filter.vars,
+  filter_train(Y, A, X, filter = "glmnet")$filter.vars
+)
+```
+
+**结果完全相同**——因为默认的 `interaction = FALSE` 本来就没用到 `A`。
+这反过来印证了[上一节](#sec-prognostic)的结论：
+默认过滤器对治疗变量视而不见。
+
+## 其它 family
+
+二值结局走 logistic elastic net：
+
+```{r}
+#| label: binomial
+datb <- generate_subgrp_data(family = "binomial")
+filter_train(datb$Y, datb$A, datb$X, family = "binomial",
+             filter = "glmnet")$filter.vars
+```
+
+生存结局走 Cox elastic net。用 GBSG2 的真实治疗变量 `horTh`：
+
+```{r}
+#| label: survival
+#| message: false
+library(survival)
+data("GBSG2", package = "TH.data")
+Ys <- with(GBSG2, Surv(time, cens))
+Xs <- GBSG2[, !(colnames(GBSG2) %in% c("time", "cens", "horTh"))]
+
+filter_train(Ys, GBSG2$horTh, Xs, family = "survival",
+             filter = "glmnet")$filter.vars
+
+filter_train(Ys, GBSG2$horTh, Xs, family = "survival", filter = "glmnet",
+             hyper = list(interaction = TRUE))$filter.vars
+```
+
+前者是纯预后筛选，留下 `tsize`、`tgrade`、`pnodes`、`progrec`——
+都是乳腺癌预后的经典变量。打开交互后多出 `menostat`。
+注意这里的 8 个候选变量本来就不多，过滤的意义有限；
+过滤真正的价值在 $p \gg n$ 或 $p$ 上百的场景。
+
+## 小结
+
+| 想找什么 | 怎么调 |
+|---|---|
+| 预后变量（与结局相关） | 默认 `filter = "glmnet"` 即可 |
+| 效应修饰变量 | `hyper = list(interaction = TRUE)`，然后**自己读交互系数** |
+| 带 p 值的重要性排名 | `filter = "ranger"`，读 `$mod$VI.dat` |
+| 严格控制假阳性 | `filter = "ranger", hyper = list(FDR = TRUE)` |
+| 不过滤 | 只能在 `PRISM(filter = "None")` 里用 |
+
+::: {.callout-warning}
+## 过滤本身会改变下游结论
+
+把候选变量从 50 个砍到 16 个，会**放松 MOB 分裂检验的多重性校正**，
+实测反而让树多切出两个假亚组。这不是本页的问题，但会在
+[第 8 页](08-pitfalls.qmd#sec-filter-harm)被量化——
+先记住"过滤 ≠ 无害的预处理"。
+:::
+
+## 本页涉及的帮助主题
+
+- `filter_train`
+
+下一页：[3. ple_train](03-ple-train.qmd)。

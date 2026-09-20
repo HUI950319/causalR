@@ -1,0 +1,381 @@
+---
+title: "3. ple_train()：个体水平估计"
+subtitle: "StratifiedMedicine 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(StratifiedMedicine)
+dat <- generate_subgrp_data(family = "gaussian")
+Y <- dat$Y; A <- dat$A; X <- dat$X
+```
+
+第 ② 步。输入 $(Y, A, X)$，输出**每人一行**的反事实量
+$\hat\mu(0, x)$、$\hat\mu(1, x)$ 及其差，也就是 CATE 的估计。
+
+```r
+ple_train(Y, A, X, Xtest = NULL, family = "gaussian", propensity = FALSE,
+          ple = "ranger", meta = ifelse(family == "survival", "T-learner", "X-learner"),
+          hyper = NULL, tau = NULL, ...)
+```
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `Y`, `A`, `X` | — | 同 `filter_train()`。`A` 可以有 **2 个以上水平** |
+| `Xtest` | `NULL` | 测试集。**`ple = "bart"` 时必须提供**，见[下文](#sec-bart) |
+| `family` | `"gaussian"` | 传了 `Surv` 对象时会被自动改成 `"survival"` |
+| `propensity` | `FALSE` | 估计 $P(A=a\mid X)$。**在 1.0.7 里恒报错**，见[下文](#sec-propensity) |
+| `ple` | `"ranger"` | base-learner：`"linear"` / `"ranger"` / `"glmnet"`（已弃用）/ `"bart"` |
+| `meta` | 非生存 `"X-learner"`，生存 `"T-learner"` | meta-learner，另有未写进文档的 `"DR-learner"` |
+| `hyper` | `NULL` | 各 base-learner 的超参，见下 |
+| `tau` | `NULL` | RMST 的随访上限。**传了也不生效**，见[下文](#sec-tau) |
+
+## 返回什么
+
+```{r}
+#| label: basic
+set.seed(1)
+p <- ple_train(Y, A, X, ple = "ranger", meta = "X-learner")
+class(p)
+names(p)
+head(round(p$mu_train, 4), 3)
+```
+
+`mu_train` 的列名由**治疗水平**决定：
+
+| 列 | 含义 |
+|---|---|
+| `mu_0`, `mu_1` | $\hat E(Y \mid X, A = a)$；二值结局是概率，生存 + `ranger` 是 RMST |
+| `diff_1_0` | $\hat\mu_1 - \hat\mu_0$，即 CATE |
+| `pi_0`, `pi_1` | 倾向性。默认是**边际比例**（常数列），不是 $P(A\mid X)$ |
+
+治疗是因子时列名跟着变（`mu_no`、`mu_yes`、`diff_yes_no`），
+下游代码**不要写死列名**，用 `grepl("diff", names(mu))` 去取。
+
+三个以上治疗臂也支持，此时以第一个水平为参照：
+
+```{r}
+#| label: multiarm
+set.seed(1)
+A3 <- sample(c("a", "b", "c"), length(Y), replace = TRUE)
+names(ple_train(Y, A3, X, ple = "ranger", meta = "T-learner")$mu_train)
+```
+
+`A = NULL` 时退化成纯预测模型，此时 **`mu_train` 是一个数值向量而不是数据框**：
+
+```{r}
+#| label: a-null
+str(ple_train(Y, A = NULL, X = X, ple = "ranger")$mu_train)
+```
+
+## base-learner
+
+### `"linear"`
+
+无超参数。`family` 决定用 `lm()` / `glm(binomial)` / `coxph()`。
+
+### `"ranger"`（默认）
+
+```r
+hyper = list(mtry = NULL, min.node.pct = 0.10)
+```
+
+`mtry` 默认 $\sqrt{p}$；`min.node.pct` 是终末节点的最小占比。
+
+```{r}
+#| label: ranger-hyper
+set.seed(1)
+p_small <- ple_train(Y, A, X, ple = "ranger", meta = "X-learner",
+                     hyper = list(min.node.pct = 0.01))
+c(default = sd(p$mu_train$diff_1_0),
+  min.node.pct.01 = sd(p_small$mu_train$diff_1_0))
+```
+
+节点越小，CATE 的离散度越大——**这不代表估得更准**，见[下一节](#sec-quality)。
+
+### `"glmnet"`：已弃用
+
+```r
+hyper = list(lambda = "lambda.min")
+```
+
+帮助页仍把它列为第 3 个选项，但源码里第一行就是
+`.Deprecated("ranger, linear, or bart")`。它仍能跑，只是每次调用都会抛一个
+把**整个函数体**打印出来的弃用警告：
+
+```{r}
+#| label: glmnet-deprecated
+w <- tryCatch(ple_train(Y, A, X, ple = "glmnet", meta = "T-learner"),
+              warning = function(w) conditionMessage(w))
+substr(w, 1, 90)
+```
+
+### `"bart"` {#sec-bart}
+
+```r
+hyper = list(sparse = FALSE)
+```
+
+需要 `BART` 包（Suggests）。**三种 meta-learner 的支持程度不一样**，
+这一点文档完全没写：
+
+```{r}
+#| label: bart
+#| error: true
+## T-learner：可用
+invisible(capture.output(
+  p_bart <- ple_train(Y, A, X, ple = "bart", meta = "T-learner")
+))
+round(cor(p_bart$mu_train$diff_1_0, dat$PLE), 3)
+
+## X-learner 不带 Xtest：失败
+invisible(capture.output(
+  ple_train(Y, A, X, ple = "bart", meta = "X-learner")
+))
+```
+
+```{r}
+#| label: bart-fix
+## X-learner 带上 Xtest：可用
+invisible(capture.output(
+  p_bx <- ple_train(Y, A, X, Xtest = X, ple = "bart", meta = "X-learner")
+))
+dim(p_bx$mu_test)
+```
+
+`meta = "S-learner"` 则必定失败——`S_learner()` 不给 `ple_bart()` 传 `Xtest`，
+报 `argument "Xtest" is missing, with no default`。
+
+**规则**：用 `bart` 时要么 `meta = "T-learner"`，要么补上 `Xtest`。
+
+## meta-learner
+
+| 取值 | 做法 |
+|---|---|
+| `"T-learner"` | 两个臂各拟合一个模型，差值即 CATE |
+| `"S-learner"` | 一个模型，把 $A$ 当普通协变量，反事实预测取差 |
+| `"X-learner"` | 两阶段：先 T-learner 算插补的个体效应，再对它建模（Künzel et al. 2019） |
+| `"DR-learner"` | **文档里没有**，但源码的 `meta_avail` 里有，可以用 |
+
+### 八种组合的实测质量 {#sec-quality}
+
+这份模拟数据的真 CATE 存在 `dat$PLE` 里，可以直接对照。
+**只看相关系数会被骗**，所以下表同时给出量纲信息：
+
+```{r}
+#| label: meta-compare
+set.seed(1)
+combos <- expand.grid(ple = c("linear", "ranger"),
+                      meta = c("T-learner", "S-learner", "X-learner", "DR-learner"),
+                      stringsAsFactors = FALSE)
+q <- t(mapply(function(b, m) {
+  d <- ple_train(Y, A, X, ple = b, meta = m)$mu_train$diff_1_0
+  c(cor = cor(d, dat$PLE), mean = mean(d), sd = sd(d),
+    rmse = sqrt(mean((d - dat$PLE)^2)))
+}, combos$ple, combos$meta))
+out <- data.frame(combos, round(q, 3))
+out[order(out$rmse), ]
+
+c(真值均值 = mean(dat$PLE), 真值标准差 = sd(dat$PLE))
+```
+
+三条互相矛盾的读法，恰好说明了 CATE 估计的评价有多脆弱：
+
+- **`linear` + `S-learner` 的 RMSE 最低，但它的 CATE 是个常数**
+  （`sd = 0`，实际是 $5\times10^{-16}$）。S-learner 把 $A$ 当成一个普通的可加协变量，
+  线性模型里没有 $A \times X$ 项，**结构上就不可能表示异质性**。
+  它那个 $-0.053$ 的相关系数是浮点噪声，不是信号。
+  真 CATE 的标准差只有 0.246，用一个常数去猜当然不容易输。
+- **`ranger` + `S-learner` 的相关系数最高（0.68），但均值只有 0.012**——
+  森林几乎没用上 $A$ 这一列，把效应整体收缩到了 0。
+  它能给出**排序**，不能给出**大小**。
+- **默认的 `ranger` + `X-learner`** 相关系数只有 0.21，但均值和离散度都在合理范围，
+  RMSE 排第二。
+
+::: {.callout-warning}
+## n = 800、p = 50 时，CATE 估计本身就很弱
+
+最高的相关系数 0.68 还伴随着量级失真；其余都在 0.2–0.37。
+这不是本包的实现问题，而是小样本 + 弱信号 + 高维噪声下的通病。
+
+它的直接后果是——凡是"先估 CATE 再对 CATE 建树"的 `submod`
+（`rpart_cate`、`ctree_cate`、`otr`）在这份数据上都会切错变量，
+见[第 4 页](04-submod-train.qmd#sec-cate-trees)。
+
+一阶段的 MOB（`lmtree`）不消费 `mu_train`，直接对模型参数做检验，
+因此不受这条影响——这也是它在小样本上更可靠的原因。
+:::
+
+## `propensity = TRUE` 恒报错 {#sec-propensity}
+
+文档说：默认 `FALSE` 用边际比例 $P(A=a)$（适用于 RCT）；
+`TRUE` 则用 `ple` 指定的 base-learner 去估 $P(A=a\mid X)$——
+这正是把本包用在**观察性数据**上所必需的开关。
+
+实测它在 1.0.7 里一定失败：
+
+```{r}
+#| label: propensity
+#| error: true
+ple_train(Y, A, X, ple = "ranger", propensity = TRUE)
+```
+
+根因在源码里一眼可见。`ple_train()` 内部先把字符串解析成函数：
+
+```r
+ple_fn <- get(ple, envir = parent.frame())          # ple_fn 现在是一个函数
+...
+pfit <- prop_learner(A = A, X = X, learner = ple_fn, hyper = hyper)
+```
+
+而 `prop_learner()` 拿到的 `learner` 应当是**字符串**：
+
+```r
+if (learner == "ranger" | learner == "ple_ranger") { ... }
+```
+
+拿函数对象去和字符串比较，就有了那句
+`comparison (==) is possible only for atomic and list types`。
+`PRISM(propensity = TRUE)` 走同一条路，报错信息不同但同样失败：
+
+```{r}
+#| label: propensity-prism
+#| error: true
+PRISM(Y = Y, A = A, X = X, propensity = TRUE, verbose = FALSE)
+```
+
+::: {.callout-important}
+## 观察性数据怎么办
+
+在修复之前，`StratifiedMedicine` 的双稳健估计（`param = "dr"`）**只能用边际倾向性**，
+也就是**只对随机化数据成立**。观察性数据上有两条退路：
+
+1. 自己在外面估好 $\hat\pi(x)$，把权重加到数据里（例如先做 IPW 匹配/加权，
+   再把加权后的样本喂给 `PRISM()`）；
+2. 改用 `param = "gcomp"`（G-计算），它只依赖结局模型 `mu_0`/`mu_1`，
+   不碰 `pi_0`/`pi_1`——代价是失去双稳健性。
+
+无论哪条，都要在报告里写清楚"倾向性没有按协变量校正"。
+:::
+
+## 生存结局：两个 base-learner 给的不是同一个量
+
+生存结局下默认 `meta = "T-learner"`；即使显式传 `"X-learner"` 也会被**静默改回**
+`"T-learner"`（源码 `if (family == "survival" & meta == "X-learner") meta <- "T-learner"`）：
+
+```{r}
+#| label: surv-meta
+#| message: false
+library(survival)
+data("GBSG2", package = "TH.data")
+Ys <- with(GBSG2, Surv(time, cens))
+Xs <- GBSG2[, !(colnames(GBSG2) %in% c("time", "cens", "horTh"))]
+As <- GBSG2$horTh
+
+set.seed(1)
+m_rf <- ple_train(Ys, As, Xs, family = "survival", ple = "ranger", meta = "X-learner")
+m_rf$meta            # 被改回 T-learner
+head(round(m_rf$mu_train, 1), 3)
+```
+
+`mu_no` / `mu_yes` 是 **RMST（限制平均生存时间，单位与 `time` 相同，这里是天）**，
+`diff_yes_no` 就是 RMST 差。均值与朴素 RMST 差几乎一致：
+
+```{r}
+#| label: surv-rmst
+mean(m_rf$mu_train$diff_yes_no)
+```
+
+换成 `ple = "linear"` 之后，**同名的列装的是完全不同的东西**：
+
+```{r}
+#| label: surv-linear
+m_lin <- ple_train(Ys, As, Xs, family = "survival", ple = "linear",
+                   meta = "T-learner")
+head(round(m_lin$mu_train, 3), 3)
+mean(m_lin$mu_train$diff_yes_no)
+coef(coxph(Ys ~ As))          # 真实的边际治疗效应（log HR）
+```
+
+::: {.callout-important}
+## `ple = "linear"` + 生存 + T-learner 的 `diff` 不是治疗效应
+
+`ple_linear()` 在 `family = "survival"` 下返回的是
+`coxph()` 的 **linear predictor**，而 `coxph()` 的线性预测值是
+**按本次拟合的协变量均值居中**的。T-learner 分两臂各拟合一次，
+于是 `mu_no` 和 `mu_yes` 各自以**不同的中心**为原点，两者相减没有因果含义。
+
+数字上：上面这份数据的 `mean(diff_yes_no) = +0.094`，
+而真实的边际 log HR 是 **−0.364**——**符号都是反的**。
+
+结论：生存结局请用 `ple = "ranger"`（RMST，可解释、量纲清楚），
+或者干脆不做 ple（`PRISM` 生存默认的 `param = "cox"` 不需要 `mu_train`）。
+同一个 `diff_*` 列在不同配置下分别是"天数""log HR""风险差"，
+报告时必须写明尺度——这一点在
+[效应修饰的效应尺度](../sources/effect-modifier-effect-scale.qmd)一页有更系统的讨论。
+:::
+
+### `tau` 传了不生效 {#sec-tau}
+
+帮助页：`tau` 是 RMST 的最大随访时间，默认取 $\min_a \max(\text{time}_a)$。
+但只要 `A` 不是 `NULL`，内部就会**重新算一遍并覆盖**用户传进来的值：
+
+```r
+if (survival::is.Surv(Y)) {
+  tau <- NULL
+  for (a in unique(A)) tau <- c(tau, max(Y[, 1][A == a]))
+  tau <- min(tau)
+}
+```
+
+实测：
+
+```{r}
+#| label: tau-ignored
+set.seed(7); a1 <- ple_train(Ys, As, Xs, family = "survival", ple = "ranger")
+set.seed(7); a2 <- ple_train(Ys, As, Xs, family = "survival", ple = "ranger", tau = 500)
+identical(a1$mu_train, a2$mu_train)
+max(a2$mu_train$mu_yes)        # 远大于 500
+min(tapply(GBSG2$time, As, max))   # 内部实际用的 tau
+```
+
+想换 $\tau$ 只能在调用前**自己把数据在 $\tau$ 处截断**
+（`time <- pmin(time, tau); cens[time > tau] <- 0`）。
+
+## `predict.ple_train()` {#sec-predict}
+
+```r
+## S3 method for class 'ple_train'
+predict(object, newdata = NULL, ...)
+```
+
+`newdata = NULL` 时返回训练集上的估计。返回的数据框列与 `mu_train` 一致：
+
+```{r}
+#| label: predict
+predict(p, newdata = X[1:4, ])
+```
+
+`Xtest` 与 `predict()` 的区别只在于时机：`Xtest` 在拟合时一次算好放进 `mu_test`，
+`predict()` 是事后算。两者结果相同。
+
+## 小结
+
+| 场景 | 推荐配置 |
+|---|---|
+| 连续/二值，要点估计的**大小** | 默认 `ranger` + `X-learner`（本页 RMSE 与量纲都合格） |
+| 只要 CATE 的**排序**（如做 OTR） | `ranger` + `S-learner` 相关系数最高，但绝对值被收缩，不能当效应量报告 |
+| 永远不要 | `linear` + `S-learner`——结构上给出常数 CATE |
+| 生存 | `ple = "ranger"`（RMST）。**不要**用 `"linear"` |
+| 观察性数据 | 先在外部处理混杂；`propensity = TRUE` 在 1.0.7 里不可用 |
+| 用 BART | 配 `meta = "T-learner"`，或补 `Xtest` |
+
+## 本页涉及的帮助主题
+
+- `ple_train`
+- `predict.ple_train`
+
+下一页：[4. submod_train](04-submod-train.qmd)。

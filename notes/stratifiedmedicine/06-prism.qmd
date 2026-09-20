@@ -1,0 +1,383 @@
+---
+title: "6. PRISM()：四步流水线"
+subtitle: "StratifiedMedicine 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(StratifiedMedicine)
+dat <- generate_subgrp_data(family = "gaussian")
+Y <- dat$Y; A <- dat$A; X <- dat$X
+```
+
+`PRISM()` 把前四页的四个步骤串起来，并加上重抽样、合并与推断。
+它有 **34 个参数**，但绝大多数是把子函数的参数原样透传。
+
+## 参数全表
+
+```r
+PRISM(Y, A = NULL, X, Xtest = NULL, mu_train = NULL, family = "gaussian",
+      filter = "glmnet", ple = "ranger", submod = NULL, param = NULL,
+      meta = ifelse(family == "survival", "T-learner", "X-learner"),
+      pool = "no", delta = ">0", propensity = FALSE, combine = "SS",
+      alpha_ovrl = 0.05, alpha_s = 0.05,
+      filter.hyper = NULL, ple.hyper = NULL, submod.hyper = NULL,
+      resample = NULL, stratify = ifelse(!is.null(A), "trt", "no"), R = NULL,
+      resample_submod = NULL, R_submod = NULL,
+      resample_pool = NULL, R_pool = NULL,
+      calibrate = FALSE, alpha.mat = NULL,
+      filter.resamp = NULL, ple.resamp = NULL,
+      verbose = TRUE, verbose.resamp = FALSE, seed = 777, efficient = TRUE)
+```
+
+### 数据
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `Y` | — | 数值向量或 `Surv` 对象 |
+| `A` | `NULL` | 治疗。**`NULL` 时整条流水线切换成"只找预后亚组"** |
+| `X` | — | 协变量数据框 |
+| `Xtest` | `NULL` | 测试集，结果放在 `out.test` / `mu_test` |
+| `mu_train` | `NULL` | 外部算好的个体水平估计，传了就跳过第 ② 步 |
+| `family` | `"gaussian"` | 传 `Surv` 时会自动切换 |
+
+### 四个步骤
+
+| 参数 | 默认值 | 透传给 |
+|---|---|---|
+| `filter` | `"glmnet"` | `filter_train()`；`"None"` 跳过 |
+| `ple` | `"ranger"` | `ple_train()`；`"None"` 跳过（**但要同时改 `param`**） |
+| `submod` | `NULL`（按 `family` 定） | `submod_train()` |
+| `param` | `NULL`（按 `family` 定） | `param_est()` |
+| `meta` | 见签名 | `ple_train()` |
+| `filter.hyper` / `ple.hyper` / `submod.hyper` | `NULL` | 各自的 `hyper` |
+| `propensity` | `FALSE` | **1.0.7 里恒报错**，见[第 3 页](03-ple-train.qmd#sec-propensity) |
+
+默认配置随 `family` 与 `A` 变化：
+
+| 场景 | filter | ple | submod | param |
+|---|---|---|---|---|
+| `gaussian` + A | glmnet | ranger（X-learner） | lmtree | dr |
+| `binomial` + A | glmnet | ranger（X-learner） | glmtree | dr |
+| `survival` + A | glmnet | ranger（T-learner） | lmtree | cox |
+| `A = NULL` | glmnet | ranger | ctree | lm |
+
+```{r}
+#| label: default-config
+res <- PRISM(Y = Y, A = A, X = X, verbose = FALSE)
+summary(res)$`PRISM Configuration`
+
+PRISM(Y = Y, X = X, verbose = FALSE)$submod      # A = NULL
+```
+
+`verbose = TRUE`（默认）会把这四步逐行打出来：
+
+```{r}
+#| label: verbose
+invisible(PRISM(Y = Y, A = A, X = X))
+```
+
+### 合并与推断
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `pool` | `"no"` | `"trteff"`、`"trteff_boot"`、`"otr:logistic"`、`"otr:rf"` |
+| `delta` | `">0"` | 获益阈值，供 `pool` 与 `submod = "otr"` 使用 |
+| `combine` | `"SS"` | 合成总体估计：样本量加权或 `"maxZ"` |
+| `alpha_ovrl` / `alpha_s` | `0.05` | 总体与亚组各自的 $\alpha$ |
+
+### 重抽样
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `resample` | `NULL` | `"Bootstrap"` 或 `"CV"`。**重抽样的是整条流水线**（包括重新过滤、重新建树） |
+| `R` | `NULL` | Bootstrap 默认 100，CV 默认 5 |
+| `stratify` | `"trt"` | `"trt"` / `"sub"` / `"trt_sub"` / `"no"` |
+| `resample_submod`、`R_submod` | `NULL` | 只对 submod 一步做 Bootstrap，比整条流水线便宜得多 |
+| `resample_pool`、`R_pool` | `NULL` | 只对 pooling 一步做重抽样 |
+| `filter.resamp`、`ple.resamp` | `NULL` | 设成 `"None"` 时重抽样过程中**不重新训练**这一步，省时间 |
+| `calibrate`、`alpha.mat` | `FALSE`、`NULL` | Bootstrap 校准 $\alpha$。**1.0.7 里是空操作**，见[下文](#sec-calibrate) |
+| `verbose.resamp` | `FALSE` | 打印每次重抽样的进度 |
+
+### 其它
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `seed` | `777` | 整个 PRISM 过程的种子。**不传也可复现** |
+| `efficient` | `TRUE` | 文档说"存更少的输出以提速"。实测在默认配置下对象大小与内容**完全相同** |
+
+## 返回对象
+
+```{r}
+#| label: names
+names(res)
+```
+
+常用的几个：
+
+| 字段 | 内容 |
+|---|---|
+| `filter.mod` / `filter.vars` | 过滤模型与留下的变量 |
+| `ple.fit` / `mu_train` / `mu_test` | 第 ② 步的模型与个体估计 |
+| `submod.fit` | 第 ③ 步；`submod.fit$mod` 是 `partykit` / `rpart` 对象 |
+| `out.train` / `out.test` | 原始数据 + `Subgrps` 列 |
+| `Rules` | 亚组规则表 |
+| `param.dat` | **主结果**：各亚组与总体的效应估计 |
+| `trt_eff_obs` | 观测数据上的效应（重抽样时与 `param.dat` 不同，见下） |
+| `trt_assign` / `trt_eff_pool` / `trt_eff_dopt` | `pool` 的产物 |
+| `resamp_dist` / `resamp_subgrps` | 重抽样分布与逐观测的亚组归属 |
+
+```{r}
+#| label: out-train
+head(res$out.train[, c("Y", "A", "X1", "X2", "Subgrps")], 4)
+table(res$out.train$Subgrps)
+```
+
+## `summary.PRISM()` {#sec-summary}
+
+```r
+## S3 method for class 'PRISM'
+summary(object, round_est = 4, round_SE = 4, round_CI = 4, ...)
+```
+
+```{r}
+#| label: summary
+summary(res)
+```
+
+五块：调用、配置、通过过滤的变量、亚组个数与定义、效应表。
+`$`Variables that Define the Subgroups`` 是做方法对比时最方便的出口。
+
+## `predict.PRISM()` {#sec-predict}
+
+```r
+## S3 method for class 'PRISM'
+predict(object, newdata = NULL, type = "all", ...)
+```
+
+`type` 三个取值：
+
+```{r}
+#| label: predict
+head(predict(res, X[1:3, ], type = "ple"), 3)
+head(predict(res, X[1:3, ], type = "submod"), 3)
+head(predict(res, X[1:3, ]), 3)                 # type = "all"
+```
+
+注意 `type = "submod"` 只返回节点编号，**不带效应估计**——
+帮助页写的"submod predictions with associated parameter estimates"
+在 1.0.7 的输出里看不到。要拿效应，用 `Subgrps` 去 `merge()` 一下 `param.dat`。
+
+## 重抽样 {#sec-resample}
+
+### Bootstrap
+
+```{r}
+#| label: bootstrap
+set.seed(1)
+res_b <- PRISM(Y = Y, A = A, X = X, resample = "Bootstrap", R = 30, verbose = FALSE)
+res_b$param.dat[, c("Subgrps", "N", "est", "SE", "LCL", "UCL", "Prob(>0)")]
+```
+
+与不做重抽样的结果并排看：
+
+```{r}
+#| label: boot-vs-obs
+data.frame(
+  Subgrps  = res_b$trt_eff_obs$Subgrps,
+  观测估计 = round(res_b$trt_eff_obs$est, 3),
+  重抽样估计 = round(res_b$param.dat$est[match(res_b$trt_eff_obs$Subgrps,
+                                               res_b$param.dat$Subgrps)], 3)
+)
+```
+
+::: {.callout-important}
+## 重抽样之后 `param.dat$est` 不再是观测估计，而是**去偏**估计
+
+效应最大的那个亚组从 0.714 缩到 0.563，效应最小的从 $-0.141$ 抬到 0.011——
+**两端一起往中间收**。这正是"亚组是从同一份数据里找出来的"所导致的
+选择性偏倚（winner's curse），`resamp_dist` 里的 `bias` 列记录了每次重抽样的偏差。
+
+观测估计仍然留在 `trt_eff_obs` 里。报告时该用哪个？
+**做发现用观测值、做效应量声明用去偏值**，并且两个都披露。
+
+另外注意 `pval` 在重抽样之后变成 `NA`，取而代之的是 `Prob(>0)`
+（Bootstrap 分布中大于 0 的比例）。这不是 p 值，别当 p 值报。
+:::
+
+### 树结构本身有多不稳定
+
+`resamp_dist` 的 `numb_subs` 列记录了每次重抽样找到几个亚组：
+
+```{r}
+#| label: numb-subs
+tab <- aggregate(numb_subs ~ R, data = res_b$resamp_dist, FUN = function(x) x[1])
+table(tab$numb_subs)
+```
+
+30 次重抽样里亚组个数在 5–7 之间浮动。也就是说，
+"这份数据里有 6 个亚组"这个结论本身的稳定性只有中等。
+
+`resamp_subgrps` 是一个 $n \times (1+R)$ 的表，记录每个观测在每次重抽样中落到哪个节点：
+
+```{r}
+#| label: resamp-subgrps
+dim(res_b$resamp_subgrps)
+res_b$resamp_subgrps[1:3, 1:6]
+mean(is.na(as.matrix(res_b$resamp_subgrps[, -1])))
+```
+
+::: {.callout-warning}
+## `resamp_subgrps` 的列名 `X1`、`X2`…… **不是协变量**
+
+它们是 `data.frame()` 给未命名列自动生成的名字，实际含义是**第 1、2、…… 次重抽样**。
+`NA` 表示该观测在那一次没被抽到（比例 ≈ 0.368，正是 Bootstrap 的袋外比例）。
+
+包里有内部函数 `subgrp_stability()` 和 `plot_stability()` 会用这张表算
+"每个人稳定落在某个亚组里的概率"，但**它们没有被导出，`plot()` 也没有对应的 `type`**，
+只能用 `StratifiedMedicine:::` 调。
+:::
+
+### 交叉验证
+
+```{r}
+#| label: cv
+set.seed(1)
+res_cv <- PRISM(Y = Y, A = A, X = X, resample = "CV", R = 5, verbose = FALSE)
+res_cv$param.dat[, c("Subgrps", "est", "LCL", "UCL", "Prob(>0)")]
+```
+
+CV 的逻辑不同：每折在训练部分重跑整条流水线，在留出部分估效应，
+因此它回答的是"**这套流程在新数据上还成立吗**"，而不是"估计有多不确定"。
+
+### 省时间的两个开关
+
+整条流水线重抽样很贵。`filter.resamp = "None"` 与 `ple.resamp = "None"`
+让重抽样时复用观测数据上训练好的过滤器与 ple 模型：
+
+```{r}
+#| label: resamp-speed
+t_full <- system.time(
+  PRISM(Y = Y, A = A, X = X, resample = "Bootstrap", R = 20, verbose = FALSE)
+)[["elapsed"]]
+
+t_fast <- system.time(
+  PRISM(Y = Y, A = A, X = X, resample = "Bootstrap", R = 20,
+        filter.resamp = "None", ple.resamp = "None", verbose = FALSE)
+)[["elapsed"]]
+
+c(整条流水线 = t_full, 复用前两步 = t_fast)
+```
+
+快 3 倍多。代价是**区间不再包含"过滤和 ple 也会变"这部分不确定性**，
+因此偏窄。做探索时可以开，做最终报告时不建议。
+
+另一个中间档是 `resample_submod`，只对建树那一步做 Bootstrap：
+
+```{r}
+#| label: resample-submod
+set.seed(1)
+res_rs <- PRISM(Y = Y, A = A, X = X, resample_submod = "Bootstrap", R_submod = 20,
+                verbose = FALSE)
+res_rs$param.dat[, c("Subgrps", "est", "LCL", "UCL")]
+```
+
+### `calibrate = TRUE` 是空操作 {#sec-calibrate}
+
+文档：
+
+> Bootstrap calibration for nominal alpha (Loh et al 2016). Default=FALSE.
+> For TRUE, outputs the calibrated alpha level and calibrated CIs...
+
+实测两者的输出**逐字节相同**：
+
+```{r}
+#| label: calibrate
+r0 <- PRISM(Y = Y, A = A, X = X, resample = "Bootstrap", R = 20,
+            calibrate = FALSE, verbose = FALSE, seed = 777)
+r1 <- PRISM(Y = Y, A = A, X = X, resample = "Bootstrap", R = 20,
+            calibrate = TRUE,  verbose = FALSE, seed = 777)
+
+isTRUE(all.equal(r0$param.dat, r1$param.dat))
+is.null(r1$resamp_calib)
+```
+
+根因在 `PRISM()` 的函数体里：
+
+```r
+resamp_calib <- NULL                       # 写死
+...
+return(list(..., resamp_calib = resamp_calib, ...))
+```
+
+算校准表的代码在 `resampler_general()` 里**确实存在**
+（`coverage_counter()` → `calibrate_alpha()`），但 `PRISM()` 从来没把它取回来。
+`alpha.mat` 参数同理，传了也不会有任何效果。
+
+**结论**：在 1.0.7 里，亚组水平的多重性问题没有任何内建的校正手段。
+要控制假阳性，只能自己在 `alpha_s` 上做文章，或用
+[下一节](#sec-null)那样的阴性对照来标定。
+
+## 阴性对照：完全没有信号时会发生什么 {#sec-null}
+
+```{r}
+#| label: null-run
+dnull <- generate_subgrp_data(family = "gaussian", null = TRUE)
+res_null <- PRISM(Y = dnull$Y, A = dnull$A, X = dnull$X, verbose = FALSE)
+
+nrow(res_null$Rules)
+res_null$param.dat[, c("Subgrps", "N", "est", "pval")]
+```
+
+这份数据里**真实的治疗效应恒为 0，不存在任何亚组**。
+默认配置照样报出好几个亚组，其中有亚组的 $p < 0.05$。
+
+这不是本包独有的问题——任何"先找亚组再在同一份数据上检验"的流程都会这样。
+但它说明：**`param.dat` 里的 p 值不能按名义水平解读**。
+可行的做法是把上面这段跑若干次，得到"默认配置在零假设下报出显著亚组的经验频率"，
+再用它来折算你手上那份真实数据的结果。
+
+## 三条在 1.0.7 里走不通的配置
+
+```{r}
+#| label: broken
+#| error: true
+## ① ple = "None" 时 param 的默认值 "dr" 需要 mu_train
+PRISM(Y = Y, A = A, X = X, ple = "None", verbose = FALSE)
+```
+
+```{r}
+#| label: broken-fix
+## 改掉 param 就能跑
+PRISM(Y = Y, A = A, X = X, ple = "None", param = "lm",
+      verbose = FALSE)$param.dat[, c("Subgrps", "est", "SE")]
+```
+
+```{r}
+#| label: broken2
+#| error: true
+## ② submod = "None"：换任何 param、加不加 Xtest 都失败
+PRISM(Y = Y, A = A, X = X, submod = "None", param = "lm", verbose = FALSE)
+```
+
+```{r}
+#| label: broken3
+#| error: true
+## ③ propensity = TRUE
+PRISM(Y = Y, A = A, X = X, propensity = TRUE, verbose = FALSE)
+```
+
+生存结局下 `param = "cox"` 不需要 `mu_train`，所以帮助页里那条
+`PRISM(..., ple = "None", submod = "ctree", resample = "Bootstrap")` 示例是能跑的——
+**巧合而已**，换成连续结局同样的写法就会失败。
+
+## 本页涉及的帮助主题
+
+- `PRISM`
+- `predict.PRISM`
+- `summary.PRISM`
+
+下一页：[7. 可视化](07-plots.qmd)。

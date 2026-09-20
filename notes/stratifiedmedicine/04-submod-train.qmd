@@ -1,0 +1,437 @@
+---
+title: "4. submod_train()：亚组识别"
+subtitle: "StratifiedMedicine 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(StratifiedMedicine)
+dat <- generate_subgrp_data(family = "gaussian")
+Y <- dat$Y; A <- dat$A; X <- dat$X
+```
+
+第 ③ 步，也是本包的核心。输入 $(Y, A, X)$（可选 `mu_train`），
+输出**每个人的亚组编号**和一组**可读的规则**。
+
+```r
+submod_train(Y, A, X, Xtest = NULL, mu_train = NULL, family = "gaussian",
+             submod = "lmtree", hyper = NULL, ple = "ranger", ple.hyper = NULL,
+             meta = ifelse(family == "survival", "T-learner", "X-learner"),
+             propensity = FALSE, pool = "no", delta = ">0", param = NULL,
+             resample = NULL, R = 20, resample_pool = NULL, R_pool = 20,
+             stratify = ifelse(!is.null(A), "trt", "no"), combine = "SS",
+             alpha_ovrl = 0.05, alpha_s = 0.05,
+             verbose.resamp = FALSE, efficient = FALSE, ...)
+```
+
+参数多，但可以按用途分成四组：
+
+| 组 | 参数 | 说明 |
+|---|---|---|
+| **建树** | `submod`、`hyper`、`Xtest` | 选哪种树、树的超参 |
+| **CATE 来源** | `mu_train`、`ple`、`ple.hyper`、`meta`、`propensity` | 只有部分 `submod` 用得到，见[下文](#sec-mu-dependency) |
+| **效应估计** | `param`、`alpha_ovrl`、`alpha_s`、`combine` | 建完树后顺手估一遍各亚组的效应 |
+| **合并与重抽样** | `pool`、`delta`、`resample`、`R`、`resample_pool`、`R_pool`、`stratify` | 把亚组合并成治疗方案，或给估计加上重抽样区间 |
+
+## 七种 `submod`
+
+```{r}
+#| label: all-submods
+#| warning: false
+set.seed(1)
+for (m in c("lmtree", "ctree", "ctree_cate", "rpart", "rpart_cate")) {
+  r <- submod_train(Y, A, X, submod = m)
+  cat(sprintf("%-11s %d 个亚组 | 切在: %s\n", m, nrow(r$Rules),
+              summary(r)$`Variables that Define the Subgroups`))
+}
+```
+
+真值是 $X_1$、$X_2$：只有 `lmtree` 干干净净地只切这两个变量。
+
+按"检验什么"分成三类：
+
+| `submod` | 底层函数 | 拟合的是 | 找到的是 |
+|---|---|---|---|
+| `lmtree` | `partykit::lmtree` | $Y \sim \text{MOB-OLS}(A \mid X)$ | 预后 + 效应修饰（默认两者不分） |
+| `glmtree` | `partykit::glmtree` | $Y \sim \text{MOB-GLM}(A \mid X)$ | 同上，二值结局 |
+| `mob_weib` | `partykit::mob` + Weibull | $Y \sim \text{MOB-WEIB}(A \mid X)$ | 同上，生存结局 |
+| `ctree_cate` | `partykit::ctree` | $\widehat{\text{CATE}}(X) \sim \text{CTREE}(X)$ | 效应修饰（两阶段） |
+| `rpart_cate` | `rpart::rpart` | $\widehat{\text{CATE}}(X) \sim \text{rpart}(X)$ | 效应修饰（两阶段） |
+| `ctree` | `partykit::ctree` | $Y \sim \text{CTREE}(X)$ | **纯预后** |
+| `rpart` | `rpart::rpart` | $Y \sim \text{rpart}(X)$ | **纯预后** |
+| `otr` | `partykit::ctree` + 权重 | $\mathbb 1(\widehat{\text{CATE}} > \delta) \sim \text{CTREE}(X)$，权重 $\lvert\widehat{\text{CATE}}-\delta\rvert$ | 最优治疗方案 |
+
+默认值随 `family` 变：`"gaussian"` → `lmtree`，`"binomial"` → `glmtree`，
+`"survival"` → `lmtree`（先对生存结局做 log-rank 变换 `coin::logrank_trafo()`，
+再拟合 MOB-OLS）。
+
+::: {.callout-note}
+## `submod = "None"` 同样只在 `PRISM()` 里存在
+
+```{r}
+#| label: none
+#| error: true
+submod_train(Y, A, X, submod = "None")
+```
+
+和 `filter_train()` 一样，`submod_train()` 用 `get()` 找同名函数。
+不过 `PRISM(submod = "None")` 在 1.0.7 里**也是坏的**，
+见[第 8 页](08-pitfalls.qmd#sec-broken)。
+:::
+
+## 默认树：MOB(OLS)
+
+```{r}
+#| label: lmtree
+s <- submod_train(Y, A, X, submod = "lmtree")
+s$Rules
+table(s$Subgrps.train)
+```
+
+`$fit$mod` 是一个标准的 `partykit` 对象，可以直接 `print` / `plot`：
+
+```{r}
+#| label: lmtree-print
+s$fit$mod
+```
+
+每个终末节点里的 `A` 系数就是该亚组的治疗效应估计：
+$-0.075$、$-0.003$、$0.393$、$0.735$。
+真值是 0 / 0.25 / 0.45 / 0.65——**树把 $X_1$、$X_2$ 两个真变量都切对了**，
+四个节点的效应排序也对，只是最低那两档没区分开。
+
+## `hyper`：各树的超参数
+
+::: {.callout-important}
+## 帮助页写的 `alpha = 0.05` 与源码的 `alpha = 0.1` 不一致
+
+`submod_train` 帮助页对 `lmtree` 和 `glmtree` 都写：
+
+> Default hyper-parameters are: `hyper = list(alpha=0.05, maxdepth=4, parm=NULL, minsize=floor(dim(X)[1]*0.10))`
+
+而源码是：
+
+```r
+StratifiedMedicine:::submod_lmtree
+#> function (Y, A, X, alpha = 0.1, minsize = floor(dim(X)[1] * 0.1),
+#>     maxdepth = 4, parm = NULL, ...)
+```
+
+**实际默认是 0.1**。这不是小事：本页后面那两个假亚组，其中一个的分裂 p 值是
+**0.062**——在 0.05 下会被拒绝，在 0.1 下则被接受。
+:::
+
+源码里的真实默认值：
+
+| `submod` | `alpha` | 大小约束 | `maxdepth` | 其它 |
+|---|---|---|---|---|
+| `lmtree` | 0.1 | `minsize = floor(0.10n)` | 4 | `parm = NULL` |
+| `glmtree` | 0.1 | `minsize = floor(0.10n)` | 4 | `parm = NULL`、`link = "identity"`、`glm.fam = binomial` |
+| `mob_weib` | 0.1 | `minsize = floor(0.10n)` | 4 | `parm = NULL` |
+| `ctree` / `ctree_cate` | 0.1 | `minbucket = floor(0.10n)` | 4 | — |
+| `rpart` / `rpart_cate` | **无此参数** | `minbucket = floor(0.10n)` | 4 | 帮助页写了 `alpha`，源码签名里没有 |
+| `otr` | 0.1 | `minbucket = floor(0.10n)` | 4 | `delta = ">0"` |
+
+调参的效果：
+
+```{r}
+#| label: hyper
+rules_of <- function(...) paste(submod_train(Y, A, X, submod = "lmtree", ...)$Rules$Rules,
+                                collapse = " | ")
+rules_of(hyper = list(alpha = 0.01))
+rules_of(hyper = list(maxdepth = 2))
+rules_of(hyper = list(minsize = 250))
+```
+
+`maxdepth = 1` 会让树一刀不切，而**没有分裂的树会让 `extract_rules()` 崩溃**：
+
+```{r}
+#| label: maxdepth1
+#| error: true
+submod_train(Y, A, X, submod = "lmtree", hyper = list(maxdepth = 1))
+```
+
+这意味着**"没找到任何亚组"这件正常的事，在本包里表现为一个报错**。
+做阴性对照或严格调参时要用 `tryCatch()` 兜住。
+
+## `parm`：把 MOB 从"找预后"扳成"找效应修饰" {#sec-parm}
+
+这是本页最有用的一条。
+
+MOB 的分裂检验基于模型的**得分函数**。默认检验**所有**参数，
+对 `Y ~ A` 这个节点模型来说就是 $(\beta_0, \beta_1)$——
+其中 $\beta_0$ 是**截距**，它不稳定意味着**基线水平**在变，那是**预后**差异。
+`parm = 2` 只保留治疗系数那一列，于是分裂检验只对**效应修饰**敏感。
+
+`submod_lmtree()` 把 `parm` 原样转发给 `partykit::lmtree(parm = )`，所以它真的生效：
+
+```{r}
+#| label: parm-sim
+submod_train(Y, A, X, submod = "lmtree")$Rules$Rules
+submod_train(Y, A, X, submod = "lmtree", hyper = list(parm = 2))$Rules$Rules
+```
+
+在 GBSG2 上对比更清楚。这份数据里 `progrec`（孕激素受体）是公认的效应修饰变量，
+`pnodes`（阳性淋巴结数）是**强预后但非修饰**因子：
+
+```{r}
+#| label: parm-gbsg
+#| message: false
+library(survival)
+data("GBSG2", package = "TH.data")
+Ys <- with(GBSG2, Surv(time, cens))
+Xs <- GBSG2[, !(colnames(GBSG2) %in% c("time", "cens", "horTh"))]
+As <- GBSG2$horTh
+
+submod_train(Ys, As, Xs, family = "survival", submod = "lmtree")$Rules
+submod_train(Ys, As, Xs, family = "survival", submod = "lmtree",
+             hyper = list(parm = 2))$Rules
+```
+
+默认切出 `pnodes` + `progrec` 四个亚组——`pnodes` 那一刀来自基线风险；
+加上 `parm = 2` 之后只剩 **`progrec ≤ 21` / `> 21`**，
+正是文献里公认的那个效应修饰变量，切点由数据决定。
+
+::: {.callout-tip}
+## 与 `model4you::pmtree()` 的对比
+
+`model4you` 的内部函数 `.modelfit()` 同样有 `parm` 参数，
+但 `pmtree()` **不转发**它——传了不报错也不生效
+（见[model4you 手册](../model4you.qmd)）。
+`StratifiedMedicine::submod_train()` 是这一族包里少数把 `parm` 真正接通的。
+
+代价是**功效下降**：上面模拟数据里，`parm = 2` 只找到了 $X_1$，
+漏掉了 $X_2$。检验的自由度从 2 降到 1，信号弱的修饰变量会被漏掉。
+"只找修饰变量"和"把修饰变量找全"是一对权衡。
+:::
+
+## 哪些 `submod` 需要 `mu_train` {#sec-mu-dependency}
+
+源码里的条件是 `if (cate_ind | param == "dr")`——
+只有**两阶段的 `*_cate` 方法**，或者 `param = "dr"`，才会去拟合 ple 模型。
+`otr` 不在 `cate_ind` 里，于是它**默认就是坏的**：
+
+```{r}
+#| label: otr-fail
+#| error: true
+submod_train(Y, A, X, submod = "otr")
+```
+
+两种修法，任选其一：
+
+```{r}
+#| label: otr-fix
+set.seed(2)
+mu <- ple_train(Y, A, X, ple = "ranger", meta = "X-learner")$mu_train
+
+## ① 显式传 mu_train
+submod_train(Y, A, X, submod = "otr", mu_train = mu)$Rules
+
+## ② 或者让 param="dr" 顺带把 ple 拟合出来
+set.seed(2)
+submod_train(Y, A, X, submod = "otr", param = "dr")$Rules
+```
+
+::: {.callout-warning}
+## `otr` 在这份数据上有四成的概率"一刀未切"，而那也是报错
+
+换五个种子重跑：
+
+```{r}
+#| label: otr-unstable
+sapply(1:5, function(s) {
+  set.seed(s)
+  r <- tryCatch(submod_train(Y, A, X, submod = "otr", param = "dr"),
+                error = function(e) NULL)
+  if (is.null(r)) "一刀未切（报错）" else paste(nrow(r$Rules), "个亚组")
+})
+```
+
+`otr` 的树建在 $\mathbb 1(\widehat{\text{CATE}} > 0)$ 上，权重是
+$|\widehat{\text{CATE}}|$。CATE 估计一噪声化，这棵树就切不动——
+而"切不动"在本包里是报错不是空结果，见[第 8 页](08-pitfalls.qmd#sec-modifier)。
+:::
+
+### 两阶段树在这份数据上切错了变量 {#sec-cate-trees}
+
+```{r}
+#| label: cate-trees
+#| warning: false
+set.seed(1)
+for (m in c("rpart_cate", "ctree_cate")) {
+  cat(m, ":\n  ", paste(submod_train(Y, A, X, submod = m)$Rules$Rules,
+                        collapse = "\n  "), "\n", sep = "")
+}
+```
+
+第一刀切在 `X1`（`rpart_cate`）或 `X40`（`ctree_cate`）上，
+后续几刀是 `X19`、`X11`、`X13`、`X30`、`X21`——**全是噪声变量**。
+原因在[上一页](03-ple-train.qmd#sec-quality)已经给出：
+这份数据上的 CATE 估计与真值的相关只有 0.21–0.37，
+对它建树等于在噪声上建树。
+
+**同一份数据、同一批变量，一阶段的 `lmtree` 切对了 $X_1$、$X_2$，
+两阶段的 `rpart_cate` / `ctree_cate` 全切在噪声上。**
+样本量不大时优先 MOB，这是本手册最实用的一条结论。
+
+两阶段方法对 `ple` 的选择极其敏感。在 GBSG2 上做一次受控对比——
+**只换 base-learner，树的方法不变**：
+
+```{r}
+#| label: cate-baselearner
+for (b in c("linear", "ranger")) {
+  set.seed(1)
+  r <- submod_train(Ys, As, Xs, family = "survival",
+                    submod = "rpart_cate", ple = b)
+  cat(sprintf("ple = %-7s 切在: %s\n", b,
+              summary(r)$`Variables that Define the Subgroups`))
+}
+```
+
+参数型的 `linear`（Cox）把 `progrec` 排在第一刀——**对**；
+换成 `ranger` 之后第一刀切到了 `estrec`（雌激素受体），
+它与 `progrec` 高度共线（Spearman $\rho \approx 0.6$），是个典型的替身变量。
+
+作为**阴性对照**，一阶段的 MOB 对 `ple` 完全不敏感——它根本不消费 `mu_train`：
+
+```{r}
+#| label: mob-insensitive
+identical(
+  submod_train(Ys, As, Xs, family = "survival", submod = "lmtree", ple = "linear")$Rules,
+  submod_train(Ys, As, Xs, family = "survival", submod = "lmtree", ple = "ranger")$Rules
+)
+```
+
+## `param`：建完树顺手估效应 {#sec-param-default}
+
+`submod_train()` 会把各亚组的效应估计放进 `$trt_eff`：
+
+```{r}
+#| label: trt-eff
+s$trt_eff
+```
+
+::: {.callout-important}
+## 默认 `param` 是 `"lm"`，不是帮助页写的 `"dr"`
+
+`param` 的那段说明文字被 `PRISM()`、`submod_train()`、`param_est()` 三个帮助页共用，
+写的是"gaussian / binomial 默认 `dr`"。但 `submod_train()` 的源码是：
+
+```r
+if (is.null(param)) {
+  if (family == "survival") param <- "cox"
+  else                      param <- "lm"
+}
+```
+
+而 `PRISM()` 的默认确实是 `"dr"`。同一棵树、同一份数据，两者给出不同的数字：
+
+```{r}
+#| label: param-default
+cbind(lm = round(s$trt_eff$est, 4),
+      dr = round(submod_train(Y, A, X, submod = "lmtree", param = "dr")$trt_eff$est, 4))
+```
+
+差别不大（这是 RCT 数据，双稳健没什么可校正的），但**不一致本身**足以让
+"我用 `submod_train` 复现 `PRISM` 结果"这件事失败。
+:::
+
+## `pool`：把亚组合并成治疗方案
+
+`pool` 不改变树，只是给每个亚组打一个 `dopt` 标签（该不该给治疗），
+再把同标签的亚组合并估计。
+
+| `pool` | 判定方式 |
+|---|---|
+| `"no"`（默认） | 不合并 |
+| `"trteff"` | 用亚组的朴素效应估计与阈值 `delta` 比较 |
+| `"trteff_boot"` | 同上，但用 Bootstrap 估计 |
+| `"otr:logistic"` | 以 $\mathbb 1(\hat\mu_1-\hat\mu_0>\delta)$ 为结局、亚组为自变量的**加权 logistic** |
+| `"otr:rf"` | 同上，换成加权随机森林，并把 $X$ 也放进去 |
+
+```{r}
+#| label: pool
+sp <- submod_train(Y, A, X, submod = "lmtree", pool = "trteff", param = "dr")
+unique(sp$trt_assign)         # 每个亚组归到哪个 dopt
+sp$trt_eff_dopt               # 合并之后的估计
+```
+
+4 个亚组被合成 2 组：`dopt = 0`（149 人，效应 $-0.045$，不显著）与
+`dopt = 1`（651 人，效应 $0.270$，$p < 0.001$）。
+注意 `trt_assign` 是**逐观测**的数据框（800 行），要看亚组层面的归属得 `unique()`。
+
+## `resample`：给估计加上 Bootstrap 区间
+
+```{r}
+#| label: resample
+set.seed(1)
+sb <- submod_train(Y, A, X, submod = "lmtree", resample = "Bootstrap", R = 20)
+sb$trt_eff
+```
+
+`stratify` 控制重抽样时按什么分层，默认 `"trt"`（按治疗分层）；
+其它取值 `"sub"`、`"trt_sub"`、`"no"`。
+注意这里重抽样的是**整个 `submod_train` 过程**（包括重新建树），
+所以区间里包含了"树本身不稳定"这部分不确定性——
+这正是[第 6 页](06-prism.qmd#sec-resample)要展开的话题。
+
+## `predict.submod_train()` {#sec-predict}
+
+```r
+## S3 method for class 'submod_train'
+predict(object, newdata = NULL, ...)
+```
+
+返回一个两元素列表：
+
+```{r}
+#| label: predict
+out <- predict(s, newdata = X[1:6, ])
+out
+```
+
+::: {.callout-note}
+## `$pred` 对 `lmtree` 恒为 `NULL`
+
+帮助页的 Value 段写着"`pred` - Predictions, depends on subgroup model"。
+实测树类模型走的是 `pred.fun(..., type = "subgrp")` 这条分支，
+只填 `Subgrps`，`pred` 留空。要拿节点内的 $\hat\mu_0,\hat\mu_1$，
+只能自己从 `summary(object$fit$mod)` 里取，或者用 `param_est()` 重算。
+:::
+
+## `summary.submod_train()` {#sec-summary}
+
+```r
+## S3 method for class 'submod_train'
+summary(object, round_est = 4, round_SE = 4, round_CI = 4, ...)
+```
+
+```{r}
+#| label: summary
+summary(s)
+```
+
+四块：调用、亚组个数、**定义亚组的变量**、效应表。
+第三块 `Variables that Define the Subgroups` 是快速判断"树切在了哪些变量上"
+最方便的出口，做方法对比时直接读它。
+
+## 小结
+
+| 目标 | 配置 |
+|---|---|
+| 找效应修饰变量，样本量一般 | `submod = "lmtree"` + `hyper = list(parm = 2)` |
+| 找效应修饰变量，样本量大、非线性强 | `rpart_cate` / `ctree_cate`，但先验证 CATE 质量 |
+| 只找预后亚组 | `submod = "ctree"` 或 `"rpart"` |
+| 做治疗方案 | `submod = "otr"` + `mu_train`，或 `pool = "otr:logistic"` |
+| 生存结局 | `lmtree`（log-rank 变换）或 `mob_weib`；两者结论通常接近 |
+
+## 本页涉及的帮助主题
+
+- `submod_train`
+- `predict.submod_train`
+- `summary.submod_train`
+
+下一页：[5. param_est 与 param_combine](05-param-est.qmd)。

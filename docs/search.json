@@ -12985,5 +12985,834 @@
       "model4you 包函数手册",
       "<span class='chapter-number'>199</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
     ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine.html",
+    "href": "notes/stratifiedmedicine.html",
+    "title": "StratifiedMedicine 包函数手册",
+    "section": "",
+    "text": "核对环境与证据边界\nStratifiedMedicine 把”从一批协变量里找出治疗效应不同的亚组”这件事， 拆成四个可以各自替换的步骤——filter → ple → submod → param， 再用 PRISM() 把四步串成一条流水线。 它面向的典型场景是临床试验或观察性研究里的亚组分析与个体化治疗效应估计。\n本部分是该包的函数用法手册，逐个覆盖 CRAN 参考手册 （refman） 里的全部 17 个帮助主题。每页给出参数逐项说明、可直接运行的代码、返回对象的结构， 以及本机实际运行后发现的默认值陷阱与失效路径。\n本手册核对截止 2026 年 9 月 20 日，环境为：\n证据分三级，正文中逐处标明：\n本手册的代码块由本站渲染时真实执行，页面上的输出与图形就是本机结果。 随机过程（ranger、Bootstrap）已固定种子；PRISM() 自带 seed = 777 默认值。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine.html#核对环境与证据边界",
+    "href": "notes/stratifiedmedicine.html#核对环境与证据边界",
+    "title": "StratifiedMedicine 包函数手册",
+    "section": "",
+    "text": "项目\n值\n\n\n\n\n包版本\nStratifiedMedicine 1.0.7（2026-03-24 发布，GPL-3，维护者 Thomas Jemielita）\n\n\nR\nWindows R 4.4.3\n\n\nImports\nglmnet、ranger、partykit、coin、survival、ggplot2、ggparty、dplyr、mvtnorm、rlang\n\n\nSuggests（影响可用选项）\nrpart（submod = \"rpart*\"）、survRM2（param = \"rmst\"）、BART（ple = \"bart\"）\n\n\n示例数据\n包自带 generate_subgrp_data()（n = 800，50 个协变量）、TH.data::GBSG2（n = 686，299 个事件）\n\n\n\n\n\n文档——包自带帮助页与 DESCRIPTION 的原文；\n源码——本机已安装包的函数体（StratifiedMedicine::: 可复核）；\n实测——在上述环境下实际运行的输出。\n\n\n\n\n\n\n\n\n重要五处与官方文档不一致的实测结论\n\n\n\n在展开之前先给出结论，它们影响所有使用者：\n\npropensity = TRUE 在 1.0.7 里必定报错。 ple_train() 把已经取出的 函数对象 传给 prop_learner(learner = )，而后者用 learner == \"ranger\" 做字符串比较，于是抛 comparison (==) is possible only for atomic and list types。 PRISM(propensity = TRUE) 同样失败。见第 3 页。\ncalibrate = TRUE 是空操作。 PRISM() 函数体里 resamp_calib &lt;- NULL 写死，重抽样过程算出的校准表从未取回，输出与 calibrate = FALSE 逐字节相同。见第 6 页。\nparam = \"rmst\" 只接受数值型 0/1 治疗。 传因子（如 horTh）时 survRM2::rmst2() 失败，而 param_rmst() 的错误分支没有构造返回对象， 于是报一个与病因无关的 object 'summ' not found。 见第 5 页。\nsubmod_train() 的默认 param 是 \"lm\"，不是帮助页写的 \"dr\"。 两个函数共用同一段参数说明文字，但 submod_train() 源码里 if (is.null(param)) param &lt;- \"lm\"（生存为 \"cox\"）， 而 PRISM() 默认确实是 \"dr\"。同一份数据两者给出不同的估计。 见第 4 页。\ngenerate_subgrp_data(family = \"survival\") 报错。 源码里 if (family == \"survival\") { } 是空的，帮助页却把 \"survival\" 列为合法取值。见第 1 页。\n“没有找到任何亚组”这个正确答案，在本包里表现为一个报错。 树一刀未切时 extract_rules() 拿到零行规则， submod_train() 与 PRISM() 各抛一个与病因无关的错误。 这会在阴性数据上正常发生，因此任何批量运行都必须 tryCatch()。 见第 8 页。\n\n另有两条 documented-but-broken 的路径（submod = \"None\"、 plot(type = \"heatmap\")）汇总在第 8 页。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine.html#这个包在做什么",
+    "href": "notes/stratifiedmedicine.html#这个包在做什么",
+    "title": "StratifiedMedicine 包函数手册",
+    "section": "这个包在做什么",
+    "text": "这个包在做什么\n用一句话概括：把”谁从治疗中获益更多”这个问题，拆成四个可替换的模块。\n给定 \\((Y, A, X)\\)（结局、二值治疗、协变量），PRISM 依次做：\nX（50 个协变量）\n   │  ① filter：扔掉与 Y 和／或 A×X 无关的噪声变量\n   ▼\nX*（剩下 16 个）\n   │  ② ple：估计每个人的反事实量 μ(a,x)，并给出 CATE\n   ▼\nmu_train（每人一行：mu_0, mu_1, diff_1_0, pi_0, pi_1）\n   │  ③ submod：用树把人群切成可读的亚组\n   ▼\nSubgrps（节点编号）+ Rules（\"X1 &gt; 0.016 & X2 &gt; 0.693\"）\n   │  ④ param：在每个亚组里做点估计与区间估计\n   ▼\nparam.dat（est, SE, LCL, UCL, pval，外加一行 ovrl）\n三层的关键区别在于第 ③ 步的树在对什么做检验：\n\n\n\n\n\n\n\n\n目标\nsubmod 取值\n检验对象\n\n\n\n\n直接针对 \\(A \\times X\\) 交互\nlmtree、glmtree、mob_weib\n模型参数（含截距）的不稳定性\n\n\n对估计出来的 CATE 建树\nrpart_cate、ctree_cate\n第 ② 步产出的 diff_1_0\n\n\n只找预后变量\nrpart、ctree\n结局 \\(Y\\) 本身\n\n\n最优治疗方案\notr\n\\(\\mathbb{1}(\\widehat{\\text{CATE}} &gt; \\delta)\\)，权重 \\(|\\widehat{\\text{CATE}} - \\delta|\\)\n\n\n\n\n\n\n\n\n\n警告默认配置找的是”预后 + 效应修饰”的混合物\n\n\n\nMOB（lmtree）的分裂检验默认针对所有模型参数，其中包括截距。 截距不稳定意味着基线水平不同，那是预后差异，不是效应修饰。 把 hyper = list(parm = 2) 传进去才只检验治疗系数—— 本包确实把 parm 转发给了 partykit::lmtree()， 这一点与 model4you::pmtree() 形成对比（后者接受 parm 但不生效）。 实测对照见第 4 页与 第 8 页。\n另外，filter 这一步不是无害的预处理：把候选变量从 50 个砍到 16 个， 等于放松了 MOB 分裂检验的多重性校正，实测反而多切出两个假亚组。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine.html#函数地图",
+    "href": "notes/stratifiedmedicine.html#函数地图",
+    "title": "StratifiedMedicine 包函数手册",
+    "section": "函数地图",
+    "text": "函数地图\n17 个帮助主题按角色归类如下，每行给出所在页面。\n\n流水线主函数\n\n\n\n函数\n作用\n页面\n\n\n\n\nPRISM()\n四步流水线，本包的主入口\n6. PRISM\n\n\npredict.PRISM()\n对新数据输出 ple / 亚组 / 两者\n6. PRISM\n\n\nsummary.PRISM()\n配置、过滤结果、亚组定义、效应表\n6. PRISM\n\n\n\n\n\n四个步骤，各自可单独调用\n\n\n\n函数\n步骤\n页面\n\n\n\n\nfilter_train()\n① 变量过滤（elastic net / 随机森林 VI）\n2. filter_train\n\n\nple_train()\n② 个体水平估计（base-learner × meta-learner）\n3. ple_train\n\n\npredict.ple_train()\n② 对新数据预测反事实量\n3. ple_train\n\n\nsubmod_train()\n③ 亚组识别（7 种树）\n4. submod_train\n\n\npredict.submod_train()\n③ 对新数据分配亚组\n4. submod_train\n\n\nsummary.submod_train()\n③ 亚组个数、定义与效应表\n4. submod_train\n\n\nparam_est()\n④ 逐亚组点估计与区间\n5. param_est\n\n\nparam_combine()\n④ 把亚组估计合成总体估计\n5. param_est\n\n\n\n\n\n可视化\n\n\n\n函数\n作用\n页面\n\n\n\n\nplot.PRISM()\n统一入口：tree / forest / PLE:* / resample\n7. 可视化\n\n\nplot_tree()\n树结构 + 各节点的效应与分布图\n7. 可视化\n\n\nplot_importance()\n过滤模型的变量重要性\n7. 可视化\n\n\nplot_ple()\nCATE 的瀑布图与密度图\n7. 可视化\n\n\nplot_dependence()\n偏依赖曲线与二维热图\n7. 可视化\n\n\n\n\n\n数据\n\n\n\n函数\n作用\n页面\n\n\n\n\ngenerate_subgrp_data()\n模拟数据，真值已知\n1. 总览与数据\n\n\n\n最后一页8. 实测清单与工作流汇总全部失效路径、 默认值陷阱，以及一套针对”找效应修饰变量”的可照抄工作流。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine.html#最小可运行例子",
+    "href": "notes/stratifiedmedicine.html#最小可运行例子",
+    "title": "StratifiedMedicine 包函数手册",
+    "section": "最小可运行例子",
+    "text": "最小可运行例子\n\nlibrary(StratifiedMedicine)\n\ndat &lt;- generate_subgrp_data(family = \"gaussian\")\n\nres &lt;- PRISM(Y = dat$Y, A = dat$A, X = dat$X, verbose = FALSE)\n\nsummary(res)$`PRISM Configuration`\n\n[1] \"[Filter] glmnet =&gt; [PLE] ranger =&gt; [Subgroups] lmtree =&gt; [Param] dr\"\n\nres$Rules\n\n  Subgrps                                     Rules\n1       3                X1 &lt;= 0.016 & X2 &lt;= -0.565\n2       5 X1 &lt;= 0.016 & X2 &gt; -0.565 & X50 &lt;= -0.401\n3       6  X1 &lt;= 0.016 & X2 &gt; -0.565 & X50 &gt; -0.401\n4       9  X1 &gt; 0.016 & X2 &lt;= 0.693 & X26 &lt;= -0.383\n5      10   X1 &gt; 0.016 & X2 &lt;= 0.693 & X26 &gt; -0.383\n6      11                   X1 &gt; 0.016 & X2 &gt; 0.693\n\n\n四行代码背后是 glmnet 过滤 → ranger X-learner → MOB(OLS) 建树 → 双稳健估计。每个亚组的治疗效应：\n\nres$param.dat[, c(\"Subgrps\", \"N\", \"est\", \"SE\", \"LCL\", \"UCL\", \"pval\")]\n\n   Subgrps   N         est         SE         LCL       UCL         pval\n36      10 168  0.19151898 0.13142924 -0.06607760 0.4491156 1.450606e-01\n31      11 107  0.71421202 0.17615333  0.36895784 1.0594662 5.024367e-05\n32       3 149 -0.03455829 0.15390914 -0.33621465 0.2670981 8.223395e-01\n33       5 110  0.21574566 0.15871224 -0.09532461 0.5268159 1.740354e-01\n34       6 167 -0.14148159 0.13025175 -0.39677032 0.1138071 2.773832e-01\n35       9  99  0.63457338 0.18793030  0.26623676 1.0029100 7.337644e-04\n3     ovrl 800  0.20796757 0.06333733  0.08382867 0.3321065 1.025299e-03\n\n\n真值是 \\(X_1, X_2\\) 两个变量按中位数切出四个亚组、效应分别为 0、0.25、0.45、0.65。上面这棵树切对了 \\(X_1\\) 和 \\(X_2\\)， 但也多切了 X50 和 X26 两刀——这是第 8 页 要解释的问题。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine.html#官方资料",
+    "href": "notes/stratifiedmedicine.html#官方资料",
+    "title": "StratifiedMedicine 包函数手册",
+    "section": "官方资料",
+    "text": "官方资料\n\n\n\n资源\n位置\n\n\n\n\nCRAN 页面与参考手册\nhttps://cran.r-project.org/package=StratifiedMedicine\n\n\n方法论文\nJemielita T, Mehrotra D. PRISM: Patient Response Identifiers for Stratified Medicine. arXiv:1912.03337\n\n\nMOB（模型基础递归分割）\nZeileis, Hothorn & Hornik (2008), JCGS 17(2), 492–514\n\n\n子组分析中的 MOB\nSeibold, Zeileis & Hothorn (2016), Int J Biostat 12, 45–63\n\n\nMeta-learner\nKünzel et al. (2019), PNAS，S/T/X-learner\n\n\n随机森林变量重要性的 p 值\nIshwaran & Lu (2019), Statistics in Medicine\n\n\n总体估计的 maxZ 加权\nMehrotra & Marceau-West (2021)\n\n\n\n包自带两份 vignette：\n\nvignette(package = \"StratifiedMedicine\")$results[, c(\"Item\", \"Title\")]\n\n     Item             Title                                                 \n[1,] \"SM_PRISM\"       \"An Introduction to StratifiedMedicine (source, html)\"\n[2,] \"SM_User_Models\" \"User Specific Models (source, html)\"",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine.html#与本书其它页面的关系",
+    "href": "notes/stratifiedmedicine.html#与本书其它页面的关系",
+    "title": "StratifiedMedicine 包函数手册",
+    "section": "与本书其它页面的关系",
+    "text": "与本书其它页面的关系\n\n观察性研究中的效应修饰变量识别—— StratifiedMedicine 在整个方法谱系中的位置；\n快速筛选效应修饰变量的 R 包—— filter_train() 与其它 17 个包的能力对照；\n筛选软件与方法核查—— 本包 interaction = TRUE 这一默认设置常被误读的来龙去脉；\n效应修饰的效应尺度—— param = \"cox\" 与 param = \"rmst\" 在同一份数据上给出不同结论的原因。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/01-overview.html",
+    "href": "notes/stratifiedmedicine/01-overview.html",
+    "title": "1. 总览、对象结构与数据生成",
+    "section": "",
+    "text": "包的边界\n本页先把包的边界说清楚：它依赖什么、导出了什么、四个步骤各自返回什么形状的对象； 再逐项说明 generate_subgrp_data()——后面七页的所有例子都建在它生成的数据上， 而它的真值在源码里是写死的，因此可以用来判断某个方法是找对了还是找错了。\npackageVersion(\"StratifiedMedicine\")\n#&gt; [1] '1.0.7'\nsort(getNamespaceExports(\"StratifiedMedicine\"))\n#&gt;  [1] \"filter_train\"         \"generate_subgrp_data\" \"param_combine\"       \n#&gt;  [4] \"param_est\"            \"ple_train\"            \"plot_dependence\"     \n#&gt;  [7] \"plot_importance\"      \"plot_ple\"             \"plot_tree\"           \n#&gt; [10] \"PRISM\"                \"submod_train\"\n11 个导出函数，加上 6 个 S3 方法（predict/summary/plot 各自的 PRISM、ple_train、submod_train 方法），正好是 CRAN 参考手册里的 17 个帮助主题。\n依赖关系值得单独看一眼，因为它决定了哪些选项”装了包才有”：\n也就是说，submod = \"rpart_cate\" 和 param = \"rmst\" 在只装了主包的机器上会缺依赖， 而它们分别是”两阶段 CATE 建树”和”生存结局的相加尺度”这两条重要路线的入口。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>200</span>  <span class='chapter-title'>1. 总览、对象结构与数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/01-overview.html#包的边界",
+    "href": "notes/stratifiedmedicine/01-overview.html#包的边界",
+    "title": "1. 总览、对象结构与数据生成",
+    "section": "",
+    "text": "类别\n包\n影响哪个选项\n\n\n\n\nImports（必装）\nglmnet\nfilter = \"glmnet\"、ple = \"glmnet\"\n\n\n\nranger\nfilter = \"ranger\"、ple = \"ranger\"（默认）\n\n\n\npartykit\nsubmod = \"lmtree\"/\"glmtree\"/\"ctree\"/\"ctree_cate\"/\"mob_weib\"/\"otr\"\n\n\n\ncoin\n生存结局下 lmtree 用的 log-rank 变换\n\n\n\nsurvival\nfamily = \"survival\"、param = \"cox\"\n\n\n\nggplot2、ggparty\n全部绘图函数\n\n\n\nmvtnorm\ngenerate_subgrp_data()\n\n\nSuggests（可选）\nrpart\nsubmod = \"rpart\"、\"rpart_cate\"\n\n\n\nsurvRM2\nparam = \"rmst\"\n\n\n\nBART\nple = \"bart\"\n\n\n\nsandwich\n部分方差估计",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>200</span>  <span class='chapter-title'>1. 总览、对象结构与数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/01-overview.html#sec-objects",
+    "href": "notes/stratifiedmedicine/01-overview.html#sec-objects",
+    "title": "1. 总览、对象结构与数据生成",
+    "section": "四步流水线的对象结构",
+    "text": "四步流水线的对象结构\n四个步骤可以单独调用，也可以由 PRISM() 串起来。各自返回的对象如下：\n\n\n\n\n\n\n\n\n函数\n返回类\n关键字段\n\n\n\n\nfilter_train()\nfilter_train\nmod（模型）、filter.vars（留下的变量名）、filter\n\n\nple_train()\nple_train\nfit（拟合对象）、mu_train、mu_test、ple、meta、family\n\n\nsubmod_train()\nsubmod_train\nfit、Subgrps.train、Subgrps.test、Rules、trt_eff、out.train\n\n\nparam_est()\ndata.frame\nSubgrps、N、estimand、est、SE、LCL、UCL、pval、alpha\n\n\nPRISM()\nPRISM\n上面全部，外加 param.dat、resamp_dist、trt_assign\n\n\n\n\n\n\n\n\n\n注记帮助页的 Value 段落与实际字段名对不上\n\n\n\n三个 *_train 函数的帮助页都把拟合对象写作 mod，实际字段是 fit：\n\ndat &lt;- generate_subgrp_data(family = \"gaussian\")\np &lt;- ple_train(dat$Y, dat$A, dat$X, ple = \"ranger\", meta = \"X-learner\")\nnames(p)                 # 帮助页写的是 mod / mu_train / mu_test\n#&gt; [1] \"fit\"      \"mu_train\" \"mu_test\"  \"ple\"      \"meta\"     \"family\"\n\nsubmod_train() 的帮助页还写了 pred.train / pred.test 两个字段，实际不存在； 真正能用的是 Subgrps.train / Subgrps.test 与 trt_eff。 只有 filter_train() 的 mod 名副其实。写代码时以 names() 为准。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>200</span>  <span class='chapter-title'>1. 总览、对象结构与数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/01-overview.html#sec-data",
+    "href": "notes/stratifiedmedicine/01-overview.html#sec-data",
+    "title": "1. 总览、对象结构与数据生成",
+    "section": "generate_subgrp_data()",
+    "text": "generate_subgrp_data()\ngenerate_subgrp_data(n = 800, seed = 513413, family, null = FALSE, ...)\n\n\n\n\n\n\n\n\n参数\n默认值\n说明\n\n\n\n\nn\n800\n样本量\n\n\nseed\n513413\n随机种子。函数内部直接 set.seed(seed)，因此默认调用永远给出同一份数据\n\n\nfamily\n无默认，必填\n\"gaussian\"、\"binomial\"；\"survival\" 见下文\n\n\nnull\nFALSE\nTRUE 时治疗效应恒为 0，且不存在任何亚组\n\n\n...\n—\n不传递任何东西\n\n\n\n返回一个五元素列表：\n\ndat &lt;- generate_subgrp_data(family = \"gaussian\")\nstr(dat, max.level = 1)\n#&gt; List of 5\n#&gt;  $ Y      : num [1:800] 1.11 2.31 2.66 1.04 1.94 ...\n#&gt;  $ A      : int [1:800] 1 0 1 0 0 0 1 1 1 1 ...\n#&gt;  $ X      :'data.frame': 800 obs. of  50 variables:\n#&gt;  $ subgrps: chr [1:800] \"[X1+ X2+]\" \"[X1+ X2+]\" \"[X1+ X2-]\" \"[X1- X2-]\" ...\n#&gt;  $ PLE    : num [1:800] 0.65 0.65 0.45 0 0.45 0.25 0.45 0.65 0.65 0.25 ...\n\nsubgrps 与 PLE 是真值，正式分析里当然没有，但用来判断方法对错非常方便。\n\n真值是什么\n源码（StratifiedMedicine:::generate_subgrp_data）把结构写死了，这里摘出来：\n\n\\(X\\) 是 50 维多元正态，\\(\\Sigma = 0.9 I + 0.1 J\\)，即任意两个协变量相关系数 0.1；\n\\(A \\sim \\text{Bernoulli}(0.5)\\)，与 \\(X\\) 独立——这是一份 RCT 数据，没有混杂；\n按 \\(X_1, X_2\\) 的中位数（\\(\\Phi^{-1}(0.5) = 0\\)）切成四个亚组。\n\n连续结局：\n\\[\n\\mu = 1.5 + \\tau(X_1, X_2)\\cdot A\n+ 0.15\\tilde X_1 + 0.20\\tilde X_2 + 0.10\\tilde X_3 + 0.10\\tilde X_5 + 0.10\\tilde X_7,\n\\qquad Y \\sim N(\\mu, 1)\n\\]\n其中 \\(\\tilde X\\) 是标准化后的协变量，\\(\\tau\\) 就是真 CATE：\n\ntable(dat$subgrps)\n#&gt; \n#&gt; [X1- X2-] [X1- X2+] [X1+ X2-] [X1+ X2+] \n#&gt;       219       201       178       202\ntapply(dat$PLE, dat$subgrps, unique)\n#&gt; [X1- X2-] [X1- X2+] [X1+ X2-] [X1+ X2+] \n#&gt;      0.00      0.25      0.45      0.65\n\n于是真值可以列成一张表——这张表是后面所有”找对了没有”判断的依据：\n\n\n\n变量\n预后作用（影响基线 \\(\\mu\\)）\n效应修饰作用（影响 \\(\\tau\\)）\n\n\n\n\nX1\n✅ 0.15\n✅\n\n\nX2\n✅ 0.20\n✅\n\n\nX3、X5、X7\n✅ 0.10\n❌\n\n\n其余 45 个\n❌\n❌\n\n\n\n注意 X3、X5、X7 是纯预后变量：它们跟结局有关，但跟治疗效应无关。 一个工具如果把它们报成”重要”，说明它测的是预后而不是效应修饰。\n二值结局用同一套亚组结构，但效应定义在 logit 尺度上 （\\(b_0 = \\text{logit}(0.3)\\)，三个亚组的 log-OR 分别是 1.3 / 0.9 / 0.5）， PLE 字段给的是换算到风险差尺度之后的值：\n\ndatb &lt;- generate_subgrp_data(family = \"binomial\")\ntapply(datb$PLE, datb$subgrps, unique)\n#&gt; [X1- X2-] [X1- X2+] [X1+ X2-] [X1+ X2+] \n#&gt; 0.0000000 0.1140378 0.2131725 0.3112815\nmean(datb$Y)\n#&gt; [1] 0.39875\n\n预后系数也更大（0.5 / 0.5 / 0.3 / 0.3 / 0.3），因为二值结局信息量更低。\n\n\nfamily = \"survival\" 会报错\n帮助页写 family 的取值是 \"gaussian\"、\"binomial\"、\"survival\"。 但源码里生存那一支是空的：\nif (family == \"survival\") {\n}\nreturn(list(Y = Y, A = A, X = X, subgrps = subgrps, PLE = PLE))\n于是 Y、PLE 从未被赋值，函数在 return() 处失败：\n\ngenerate_subgrp_data(family = \"survival\")\n#&gt; Error in generate_subgrp_data(family = \"survival\"): object 'Y' not found\n\n要做生存结局的例子，只能自己找数据。 官方帮助页的生存示例用的是 TH.data::GBSG2（德国乳腺癌研究组第 2 号试验，n = 686，299 个事件）， 本手册后面也沿用它：\n\nlibrary(survival)\ndata(\"GBSG2\", package = \"TH.data\")\nY_surv &lt;- with(GBSG2, Surv(time, cens))\nX_surv &lt;- GBSG2[, !(colnames(GBSG2) %in% c(\"time\", \"cens\", \"horTh\"))]\nA_surv &lt;- GBSG2$horTh          # 真实的内分泌治疗分配\nstr(X_surv)\n#&gt; 'data.frame':    686 obs. of  7 variables:\n#&gt;  $ age     : int  70 56 58 59 73 32 59 65 80 66 ...\n#&gt;  $ menostat: Factor w/ 2 levels \"Pre\",\"Post\": 2 2 2 2 2 1 2 2 2 2 ...\n#&gt;  $ tsize   : int  21 12 35 17 35 57 8 16 39 18 ...\n#&gt;  $ tgrade  : Ord.factor w/ 3 levels \"I\"&lt;\"II\"&lt;\"III\": 2 2 2 2 2 3 2 2 2 2 ...\n#&gt;  $ pnodes  : int  3 7 9 4 1 24 2 1 30 7 ...\n#&gt;  $ progrec : int  48 61 52 60 26 0 181 192 0 0 ...\n#&gt;  $ estrec  : int  66 77 271 29 65 13 0 25 59 3 ...\n\n\n\n\n\n\n\n警告官方生存示例里的治疗是随机生成的\n\n\n\nPRISM 帮助页的生存示例是这么写的：\nX = surv.dat[, !(colnames(surv.dat) %in% c(\"time\", \"cens\"))]\nset.seed(513)\nA = rbinom(n = dim(X)[1], size = 1, prob = 0.5)\n也就是说，它把 horTh 留在了 X 里，然后另外掷硬币造了一个治疗变量。 这个 A 与结局完全独立，任何”亚组治疗效应”都只可能是噪声。 本手册在需要展示真实信号时改用 A = GBSG2$horTh，并把它从 X 中移除； 只有在复现帮助页输出时才沿用随机 A，并会明确标注。\n\n\n\n\nnull = TRUE：一份没有任何信号的数据\n\ndnull &lt;- generate_subgrp_data(family = \"gaussian\", null = TRUE)\nunique(dnull$PLE)\n#&gt; [1] 0\n\n这份数据的用途是做阴性对照。任何在它上面”找到”的亚组都是假阳性。 第 8 页会用它来量化默认配置的假阳性率—— 剧透一下：默认 PRISM() 在完全没有信号的数据上照样报出 5 个亚组， 其中两个在 \\(\\alpha = 0.05\\) 下”显著”。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>200</span>  <span class='chapter-title'>1. 总览、对象结构与数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/01-overview.html#一次完整的流水线",
+    "href": "notes/stratifiedmedicine/01-overview.html#一次完整的流水线",
+    "title": "1. 总览、对象结构与数据生成",
+    "section": "一次完整的流水线",
+    "text": "一次完整的流水线\n把四步拆开写一遍，能看清 PRISM() 内部到底发生了什么：\n\nY &lt;- dat$Y; A &lt;- dat$A; X &lt;- dat$X\n\n## ① filter：50 → 16\nf &lt;- filter_train(Y, A, X, filter = \"glmnet\")\nf$filter.vars\n#&gt;  [1] \"X1\"  \"X2\"  \"X3\"  \"X5\"  \"X7\"  \"X8\"  \"X10\" \"X12\" \"X16\" \"X18\" \"X24\" \"X26\"\n#&gt; [13] \"X31\" \"X40\" \"X46\" \"X50\"\n\n## ② ple：每人一行反事实量\nset.seed(1)\np &lt;- ple_train(Y, A, X, ple = \"ranger\", meta = \"X-learner\")\nhead(round(p$mu_train, 3), 3)\n#&gt;    mu_0  mu_1 diff_1_0  pi_0  pi_1\n#&gt; 1 1.765 1.862    0.130 0.511 0.489\n#&gt; 2 2.159 2.436    0.353 0.511 0.489\n#&gt; 3 2.037 2.376    0.072 0.511 0.489\n\n## ③ submod：把人群切成亚组（这里故意用全部 50 个变量）\ns &lt;- submod_train(Y, A, X, submod = \"lmtree\")\ns$Rules\n#&gt;   Subgrps                      Rules\n#&gt; 1       3 X1 &lt;= 0.016 & X2 &lt;= -0.565\n#&gt; 2       4  X1 &lt;= 0.016 & X2 &gt; -0.565\n#&gt; 3       6   X1 &gt; 0.016 & X2 &lt;= 0.693\n#&gt; 4       7    X1 &gt; 0.016 & X2 &gt; 0.693\n\n## ④ param：逐亚组估计\nparam_est(Y, A, X, param = \"dr\", mu_hat = p$mu_train,\n          Subgrps = s$Subgrps.train)\n#&gt;    Subgrps   N  estimand         est        SE         LCL       UCL\n#&gt; 3     ovrl 800 mu_1-mu_0  0.21047594 0.0634353  0.08614503 0.3348068\n#&gt; 34       3 149 mu_1-mu_0 -0.04105560 0.1572455 -0.34925107 0.2671399\n#&gt; 31       4 277 mu_1-mu_0  0.02099182 0.1000709 -0.17514363 0.2171273\n#&gt; 32       6 267 mu_1-mu_0  0.36092223 0.1084859  0.14829387 0.5735506\n#&gt; 33       7 107 mu_1-mu_0  0.67586042 0.1798809  0.32330033 1.0284205\n#&gt;            pval alpha\n#&gt; 3  0.0009067677  0.05\n#&gt; 34 0.7940212382  0.05\n#&gt; 31 0.8338476855  0.05\n#&gt; 32 0.0008781599  0.05\n#&gt; 33 0.0001717798  0.05\n\n四步手工拼出来的结果，与 PRISM() 的差别只有一处： PRISM() 会把第 ① 步过滤后的 X* 喂给第 ③ 步，而上面第 ③ 步用的是全部 50 个变量。 就这一处差别，把 4 个亚组变成了 6 个——见 第 8 页。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>200</span>  <span class='chapter-title'>1. 总览、对象结构与数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/01-overview.html#本页涉及的帮助主题",
+    "href": "notes/stratifiedmedicine/01-overview.html#本页涉及的帮助主题",
+    "title": "1. 总览、对象结构与数据生成",
+    "section": "本页涉及的帮助主题",
+    "text": "本页涉及的帮助主题\n\ngenerate_subgrp_data\n\n下一页开始逐个展开四个步骤：2. filter_train。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>200</span>  <span class='chapter-title'>1. 总览、对象结构与数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/02-filter-train.html",
+    "href": "notes/stratifiedmedicine/02-filter-train.html",
+    "title": "2. filter_train()：变量过滤",
+    "section": "",
+    "text": "glmnet 分支（默认）\n第 ① 步。输入 \\((Y, A, X)\\)，输出一个更短的变量名向量， 后面三步只在这些变量上工作。\n返回一个 filter_train 对象：$mod（拟合好的模型）、 $filter.vars（留下的变量名）、$filter（用了哪个过滤器）。\n拟合 elastic net，系数为 0 的变量被扔掉。 family 决定用 LM / logistic / Cox 版本的 glmnet。\n默认超参数：",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>201</span>  <span class='chapter-title'>2. filter_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/02-filter-train.html#glmnet-分支默认",
+    "href": "notes/stratifiedmedicine/02-filter-train.html#glmnet-分支默认",
+    "title": "2. filter_train()：变量过滤",
+    "section": "",
+    "text": "hyper = list(lambda = \"lambda.min\", family = \"gaussian\", alpha = 0.5, interaction = FALSE)\n\n\n\n\n\n\n\n\n字段\n默认值\n作用\n\n\n\n\nlambda\n\"lambda.min\"\n取 10 折 CV 的哪个 \\(\\lambda\\)。改成 \"lambda.1se\" 会得到稀疏得多的结果\n\n\nalpha\n0.5\nelastic net 混合比。传一个向量（如 c(0, 0.5, 1)）时用 CV 在这些值里选\n\n\ninteraction\nFALSE\nFALSE 跑 \\(Y \\sim \\text{ENET}(X)\\)；TRUE 跑 \\(Y \\sim \\text{ENET}(X, A, X \\times A)\\)\n\n\n\n\n默认设置找的是预后变量\n这是本包最容易被误用的一处。默认 interaction = FALSE 回归的是 \\(Y \\sim \\text{ENET}(X)\\)——治疗 \\(A\\) 根本没进模型：\n\nf_def &lt;- filter_train(Y, A, X, filter = \"glmnet\")\nf_def$filter.vars\n#&gt;  [1] \"X1\"  \"X2\"  \"X3\"  \"X5\"  \"X7\"  \"X8\"  \"X10\" \"X12\" \"X16\" \"X18\" \"X24\" \"X26\"\n#&gt; [13] \"X31\" \"X40\" \"X46\" \"X50\"\nlength(f_def$filter.vars)\n#&gt; [1] 16\n\n留下 16 个变量。真值里 X1–X2（既预后又修饰）和 X3/X5/X7（纯预后） 全部留下，这没问题；问题是它们混在一起，谁是修饰变量看不出来， 另外还混进了 11 个纯噪声变量。\n要找效应修饰变量，必须显式打开交互：\n\nf_int &lt;- filter_train(Y, A, X, filter = \"glmnet\",\n                      hyper = list(interaction = TRUE))\nlength(f_int$filter.vars)\n#&gt; [1] 21\n\n\n\nfilter.vars 看不出谁是修饰变量\n打开 interaction = TRUE 之后，filter.vars 里仍然只有变量名， 因为源码做了一次去重：\nfilter.vars &lt;- unique(sub(\"_trtA\", \"\", filter.vars))\n主效应项 X3 和交互项 X5_trtA 被折叠成同一批名字，信息丢了。 要把两类分开，必须自己挖系数：\n\ncf &lt;- coef(f_int$mod, s = f_int$mod$sel.lambda)[, 1]\ncf &lt;- cf[cf != 0]\n\n## 主效应（预后）\nround(cf[!grepl(\"_trtA$\", names(cf))], 4)\n#&gt; (Intercept)          X1          X2          X3          X5          X7 \n#&gt;      1.7343      0.1666      0.1709      0.0483      0.0493      0.0687 \n#&gt;          X8         X12         X16         X18         X23         X24 \n#&gt;      0.0201      0.0159     -0.0352      0.0206      0.0053     -0.0524 \n#&gt;         X26         X31         X46         X50           A \n#&gt;      0.0075      0.0082      0.0303      0.0575      0.0780\n\n## 交互项（效应修饰候选）\nround(sort(abs(cf[grepl(\"_trtA$\", names(cf))]), decreasing = TRUE), 4)\n#&gt;  X1_trtA  X2_trtA X40_trtA X39_trtA X37_trtA X17_trtA X10_trtA X20_trtA \n#&gt;   0.0917   0.0695   0.0637   0.0313   0.0290   0.0283   0.0171   0.0132 \n#&gt;  X5_trtA  X8_trtA X46_trtA X24_trtA X31_trtA \n#&gt;   0.0110   0.0090   0.0090   0.0070   0.0024\n\nX1_trtA 与 X2_trtA 排前两位，正是真值里的两个效应修饰变量。 排第三的 X40_trtA 是假阳性——弹性网不做推断，这里没有 p 值可以卡。\n\n\n\n\n\n\n提示一条可照抄的”找修饰变量”写法\n\n\n\nf  &lt;- filter_train(Y, A, X, filter = \"glmnet\", hyper = list(interaction = TRUE))\ncf &lt;- coef(f$mod, s = f$mod$sel.lambda)[, 1]\ncf &lt;- cf[cf != 0]\ncf[grepl(\"_trtA$\", names(cf))]          # 按 |系数| 排序即为候选\n如果走的是 PRISM()，等价写法是 PRISM(..., filter.hyper = list(interaction = TRUE)) 再 plot_importance()——这时图里才会出现 X1_trtA 这类条目。 见第 7 页。\n\n\n\n\nlambda 与 alpha 的影响\n\nfilter_train(Y, A, X, filter = \"glmnet\",\n             hyper = list(lambda = \"lambda.1se\"))$filter.vars\n#&gt; [1] \"X1\"  \"X2\"  \"X3\"  \"X5\"  \"X7\"  \"X46\" \"X50\"\n\nf_a &lt;- filter_train(Y, A, X, filter = \"glmnet\",\n                    hyper = list(alpha = c(0, 0.5, 1)))\nf_a$mod$sel.alpha\n#&gt; [1] 1\nlength(f_a$filter.vars)\n#&gt; [1] 16\n\nlambda.1se 把 16 个砍到 4 个（X1、X2、X7、X50）， 代价是丢掉了 X3、X5 两个真预后变量。 没有”正确”的档位：lambda.min 宁滥勿缺，lambda.1se 宁缺勿滥， 选哪个取决于下游是做发现还是做确认。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>201</span>  <span class='chapter-title'>2. filter_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/02-filter-train.html#ranger-分支",
+    "href": "notes/stratifiedmedicine/02-filter-train.html#ranger-分支",
+    "title": "2. filter_train()：变量过滤",
+    "section": "ranger 分支",
+    "text": "ranger 分支\n随机森林变量重要性 + subsampling 得到的 p 值（Ishwaran & Lu 2019）。 对每个变量 \\(j\\) 做 \\(T_j = VI_j / \\widehat{SE}(VI_j)\\) 的单侧检验， \\(p \\ge\\) pval.thres 的被扔掉。\n默认超参数：\nhyper = list(b = 0.66, K = 200, DF2 = FALSE, FDR = FALSE, pval.thres = 0.10)\n\n\n\n\n\n\n\n\n字段\n默认值\n作用\n\n\n\n\nb\n0.66\n每个子样本抽多少比例的数据\n\n\nK\n200\n子样本个数。这是主要的耗时来源，K = 200 在 n=800、p=50 上约 5–6 秒\n\n\nDF2\nFALSE\nTRUE 时拟合 \\(Y \\sim \\text{ranger}(X, XA)\\)，用 \\(VI_X + VI_{XA}\\) 做 2 自由度联合检验\n\n\nFDR\nFALSE\nTRUE 时对 p 值做 FDR 校正\n\n\npval.thres\n0.10\n过滤阈值\n\n\n\n\nset.seed(1)\nf_rf &lt;- filter_train(Y, A, X, filter = \"ranger\", hyper = list(K = 50))\nf_rf$filter.vars\n#&gt;  [1] \"X1\"  \"X2\"  \"X5\"  \"X23\" \"X24\" \"X25\" \"X26\" \"X27\" \"X30\" \"X31\" \"X34\"\n\n$mod 里存的是一张完整的变量重要性表，比 filter.vars 有用得多：\n\nvi &lt;- f_rf$mod$VI.dat\nhead(vi[order(vi$rank), c(\"Variables\", \"est\", \"SE\", \"Tstat\", \"pval\", \"pval.fdr\", \"rank\")], 8)\n#&gt;    Variables         est          SE    Tstat         pval    pval.fdr rank\n#&gt; 2         X2 0.048183399 0.012866913 3.744752 9.028596e-05 0.002459671    1\n#&gt; 1         X1 0.085309248 0.022913358 3.723123 9.838684e-05 0.002459671    2\n#&gt; 31       X31 0.014774473 0.006128521 2.410773 7.959372e-03 0.094165118    3\n#&gt; 23       X23 0.006276724 0.002630249 2.386361 8.508012e-03 0.094165118    4\n#&gt; 26       X26 0.008944004 0.003807872 2.348820 9.416512e-03 0.094165118    5\n#&gt; 5         X5 0.013350692 0.007604154 1.755710 3.956895e-02 0.299986184    6\n#&gt; 25       X25 0.007104428 0.004135433 1.717941 4.290371e-02 0.299986184    7\n#&gt; 30       X30 0.006358166 0.003819670 1.664585 4.799779e-02 0.299986184    8\n\n\n三个开关的实测差别\n\nset.seed(1)\nsapply(list(\n  `默认 (pval&lt;0.10)` = list(K = 50),\n  `FDR = TRUE`       = list(K = 50, FDR = TRUE),\n  `pval.thres = 0.01`= list(K = 50, pval.thres = 0.01),\n  `DF2 = TRUE`       = list(K = 50, DF2 = TRUE)\n), function(h) {\n  v &lt;- filter_train(Y, A, X, filter = \"ranger\", hyper = h)$filter.vars\n  paste0(length(v), \" 个: \", paste(head(v, 6), collapse = \", \"))\n})\n#&gt;                   默认 (pval&lt;0.10)                         FDR = TRUE \n#&gt; \"11 个: X1, X2, X5, X23, X24, X25\"                 \"3 个: X1, X2, X5\" \n#&gt;                  pval.thres = 0.01                         DF2 = TRUE \n#&gt;            \"4 个: X1, X2, X5, X31\" \"13 个: X1, X2, X7, X11, X17, X24\"\n\nFDR = TRUE 是这一批里唯一几乎不放假阳性的设置（只剩 X1、X2、X5）， 但它同样漏掉了 X3 和 X7。 DF2 = TRUE 名义上是”主效应 + 交互”的联合检验，实测在这份数据上 反而放进了 X4、X14、X23 等一批噪声—— 联合检验的自由度换来了更松的阈值。\n\n\n\n\n\n\n注记ranger 分支的 p 值是”重要性 &gt; 0”，不是”效应修饰”\n\n\n\n即使 DF2 = TRUE，检验的也是 \\(VI_X + VI_{XA} &gt; 0\\)，主效应那一项照样贡献信号。 想要只针对效应修饰做筛选，glmnet + interaction = TRUE 的交互系数 是本包里更直接的路径。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>201</span>  <span class='chapter-title'>2. filter_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/02-filter-train.html#a-null只找预后变量",
+    "href": "notes/stratifiedmedicine/02-filter-train.html#a-null只找预后变量",
+    "title": "2. filter_train()：变量过滤",
+    "section": "A = NULL：只找预后变量",
+    "text": "A = NULL：只找预后变量\n\nidentical(\n  filter_train(Y, A = NULL, X = X, filter = \"glmnet\")$filter.vars,\n  filter_train(Y, A, X, filter = \"glmnet\")$filter.vars\n)\n#&gt; [1] TRUE\n\n结果完全相同——因为默认的 interaction = FALSE 本来就没用到 A。 这反过来印证了上一节的结论： 默认过滤器对治疗变量视而不见。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>201</span>  <span class='chapter-title'>2. filter_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/02-filter-train.html#其它-family",
+    "href": "notes/stratifiedmedicine/02-filter-train.html#其它-family",
+    "title": "2. filter_train()：变量过滤",
+    "section": "其它 family",
+    "text": "其它 family\n二值结局走 logistic elastic net：\n\ndatb &lt;- generate_subgrp_data(family = \"binomial\")\nfilter_train(datb$Y, datb$A, datb$X, family = \"binomial\",\n             filter = \"glmnet\")$filter.vars\n#&gt;  [1] \"X1\"  \"X2\"  \"X3\"  \"X5\"  \"X7\"  \"X13\" \"X22\" \"X23\" \"X26\" \"X29\" \"X37\" \"X44\"\n#&gt; [13] \"X46\"\n\n生存结局走 Cox elastic net。用 GBSG2 的真实治疗变量 horTh：\n\nlibrary(survival)\ndata(\"GBSG2\", package = \"TH.data\")\nYs &lt;- with(GBSG2, Surv(time, cens))\nXs &lt;- GBSG2[, !(colnames(GBSG2) %in% c(\"time\", \"cens\", \"horTh\"))]\n\nfilter_train(Ys, GBSG2$horTh, Xs, family = \"survival\",\n             filter = \"glmnet\")$filter.vars\n#&gt; [1] \"tsize\"   \"tgrade\"  \"pnodes\"  \"progrec\"\n\nfilter_train(Ys, GBSG2$horTh, Xs, family = \"survival\", filter = \"glmnet\",\n             hyper = list(interaction = TRUE))$filter.vars\n#&gt; [1] \"menostat\" \"tsize\"    \"tgrade\"   \"pnodes\"   \"progrec\"\n\n前者是纯预后筛选，留下 tsize、tgrade、pnodes、progrec—— 都是乳腺癌预后的经典变量。打开交互后多出 menostat。 注意这里的 8 个候选变量本来就不多，过滤的意义有限； 过滤真正的价值在 \\(p \\gg n\\) 或 \\(p\\) 上百的场景。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>201</span>  <span class='chapter-title'>2. filter_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/02-filter-train.html#小结",
+    "href": "notes/stratifiedmedicine/02-filter-train.html#小结",
+    "title": "2. filter_train()：变量过滤",
+    "section": "小结",
+    "text": "小结\n\n\n\n\n\n\n\n想找什么\n怎么调\n\n\n\n\n预后变量（与结局相关）\n默认 filter = \"glmnet\" 即可\n\n\n效应修饰变量\nhyper = list(interaction = TRUE)，然后自己读交互系数\n\n\n带 p 值的重要性排名\nfilter = \"ranger\"，读 $mod$VI.dat\n\n\n严格控制假阳性\nfilter = \"ranger\", hyper = list(FDR = TRUE)\n\n\n不过滤\n只能在 PRISM(filter = \"None\") 里用\n\n\n\n\n\n\n\n\n\n警告过滤本身会改变下游结论\n\n\n\n把候选变量从 50 个砍到 16 个，会放松 MOB 分裂检验的多重性校正， 实测反而让树多切出两个假亚组。这不是本页的问题，但会在 第 8 页被量化—— 先记住”过滤 ≠ 无害的预处理”。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>201</span>  <span class='chapter-title'>2. filter_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/02-filter-train.html#本页涉及的帮助主题",
+    "href": "notes/stratifiedmedicine/02-filter-train.html#本页涉及的帮助主题",
+    "title": "2. filter_train()：变量过滤",
+    "section": "本页涉及的帮助主题",
+    "text": "本页涉及的帮助主题\n\nfilter_train\n\n下一页：3. ple_train。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>201</span>  <span class='chapter-title'>2. filter_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/03-ple-train.html",
+    "href": "notes/stratifiedmedicine/03-ple-train.html",
+    "title": "3. ple_train()：个体水平估计",
+    "section": "",
+    "text": "返回什么\n第 ② 步。输入 \\((Y, A, X)\\)，输出每人一行的反事实量 \\(\\hat\\mu(0, x)\\)、\\(\\hat\\mu(1, x)\\) 及其差，也就是 CATE 的估计。\nset.seed(1)\np &lt;- ple_train(Y, A, X, ple = \"ranger\", meta = \"X-learner\")\nclass(p)\n#&gt; [1] \"ple_train\"\nnames(p)\n#&gt; [1] \"fit\"      \"mu_train\" \"mu_test\"  \"ple\"      \"meta\"     \"family\"\nhead(round(p$mu_train, 4), 3)\n#&gt;     mu_0   mu_1 diff_1_0   pi_0   pi_1\n#&gt; 1 1.7648 1.8615   0.1297 0.5112 0.4888\n#&gt; 2 2.1591 2.4359   0.3527 0.5112 0.4888\n#&gt; 3 2.0373 2.3756   0.0721 0.5112 0.4888\nmu_train 的列名由治疗水平决定：\n治疗是因子时列名跟着变（mu_no、mu_yes、diff_yes_no）， 下游代码不要写死列名，用 grepl(\"diff\", names(mu)) 去取。\n三个以上治疗臂也支持，此时以第一个水平为参照：\nset.seed(1)\nA3 &lt;- sample(c(\"a\", \"b\", \"c\"), length(Y), replace = TRUE)\nnames(ple_train(Y, A3, X, ple = \"ranger\", meta = \"T-learner\")$mu_train)\n#&gt; [1] \"mu_a\"     \"mu_b\"     \"mu_c\"     \"diff_b_a\" \"diff_c_a\" \"pi_a\"     \"pi_b\"    \n#&gt; [8] \"pi_c\"\nA = NULL 时退化成纯预测模型，此时 mu_train 是一个数值向量而不是数据框：\nstr(ple_train(Y, A = NULL, X = X, ple = \"ranger\")$mu_train)\n#&gt;  num [1:800] 1.82 2.29 2.27 1.41 1.91 ...",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>202</span>  <span class='chapter-title'>3. ple_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/03-ple-train.html#返回什么",
+    "href": "notes/stratifiedmedicine/03-ple-train.html#返回什么",
+    "title": "3. ple_train()：个体水平估计",
+    "section": "",
+    "text": "列\n含义\n\n\n\n\nmu_0, mu_1\n\\(\\hat E(Y \\mid X, A = a)\\)；二值结局是概率，生存 + ranger 是 RMST\n\n\ndiff_1_0\n\\(\\hat\\mu_1 - \\hat\\mu_0\\)，即 CATE\n\n\npi_0, pi_1\n倾向性。默认是边际比例（常数列），不是 \\(P(A\\mid X)\\)",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>202</span>  <span class='chapter-title'>3. ple_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/03-ple-train.html#base-learner",
+    "href": "notes/stratifiedmedicine/03-ple-train.html#base-learner",
+    "title": "3. ple_train()：个体水平估计",
+    "section": "base-learner",
+    "text": "base-learner\n\n\"linear\"\n无超参数。family 决定用 lm() / glm(binomial) / coxph()。\n\n\n\"ranger\"（默认）\nhyper = list(mtry = NULL, min.node.pct = 0.10)\nmtry 默认 \\(\\sqrt{p}\\)；min.node.pct 是终末节点的最小占比。\n\nset.seed(1)\np_small &lt;- ple_train(Y, A, X, ple = \"ranger\", meta = \"X-learner\",\n                     hyper = list(min.node.pct = 0.01))\nc(default = sd(p$mu_train$diff_1_0),\n  min.node.pct.01 = sd(p_small$mu_train$diff_1_0))\n#&gt;         default min.node.pct.01 \n#&gt;       0.1624443       0.4771078\n\n节点越小，CATE 的离散度越大——这不代表估得更准，见下一节。\n\n\n\"glmnet\"：已弃用\nhyper = list(lambda = \"lambda.min\")\n帮助页仍把它列为第 3 个选项，但源码里第一行就是 .Deprecated(\"ranger, linear, or bart\")。它仍能跑，只是每次调用都会抛一个 把整个函数体打印出来的弃用警告：\n\nw &lt;- tryCatch(ple_train(Y, A, X, ple = \"glmnet\", meta = \"T-learner\"),\n              warning = function(w) conditionMessage(w))\nsubstr(w, 1, 90)\n#&gt; [1] \"'function (Y, X, family = \\\"gaussian\\\", lambda = \\\"lambda.min\\\", ...) \\n{\\n    .Deprecated(\\\"rang\"\n\n\n\n\"bart\"\nhyper = list(sparse = FALSE)\n需要 BART 包（Suggests）。三种 meta-learner 的支持程度不一样， 这一点文档完全没写：\n\n## T-learner：可用\ninvisible(capture.output(\n  p_bart &lt;- ple_train(Y, A, X, ple = \"bart\", meta = \"T-learner\")\n))\nround(cor(p_bart$mu_train$diff_1_0, dat$PLE), 3)\n#&gt; [1] 0.354\n\n## X-learner 不带 Xtest：失败\ninvisible(capture.output(\n  ple_train(Y, A, X, ple = \"bart\", meta = \"X-learner\")\n))\n#&gt; Error in if (check) check = ((is.na(x.train[j, i]) && is.na(x.test[j, : missing value where TRUE/FALSE needed\n\n\n## X-learner 带上 Xtest：可用\ninvisible(capture.output(\n  p_bx &lt;- ple_train(Y, A, X, Xtest = X, ple = \"bart\", meta = \"X-learner\")\n))\ndim(p_bx$mu_test)\n#&gt; [1] 800   5\n\nmeta = \"S-learner\" 则必定失败——S_learner() 不给 ple_bart() 传 Xtest， 报 argument \"Xtest\" is missing, with no default。\n规则：用 bart 时要么 meta = \"T-learner\"，要么补上 Xtest。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>202</span>  <span class='chapter-title'>3. ple_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/03-ple-train.html#meta-learner",
+    "href": "notes/stratifiedmedicine/03-ple-train.html#meta-learner",
+    "title": "3. ple_train()：个体水平估计",
+    "section": "meta-learner",
+    "text": "meta-learner\n\n\n\n\n\n\n\n取值\n做法\n\n\n\n\n\"T-learner\"\n两个臂各拟合一个模型，差值即 CATE\n\n\n\"S-learner\"\n一个模型，把 \\(A\\) 当普通协变量，反事实预测取差\n\n\n\"X-learner\"\n两阶段：先 T-learner 算插补的个体效应，再对它建模（Künzel et al. 2019）\n\n\n\"DR-learner\"\n文档里没有，但源码的 meta_avail 里有，可以用\n\n\n\n\n八种组合的实测质量\n这份模拟数据的真 CATE 存在 dat$PLE 里，可以直接对照。 只看相关系数会被骗，所以下表同时给出量纲信息：\n\nset.seed(1)\ncombos &lt;- expand.grid(ple = c(\"linear\", \"ranger\"),\n                      meta = c(\"T-learner\", \"S-learner\", \"X-learner\", \"DR-learner\"),\n                      stringsAsFactors = FALSE)\nq &lt;- t(mapply(function(b, m) {\n  d &lt;- ple_train(Y, A, X, ple = b, meta = m)$mu_train$diff_1_0\n  c(cor = cor(d, dat$PLE), mean = mean(d), sd = sd(d),\n    rmse = sqrt(mean((d - dat$PLE)^2)))\n}, combos$ple, combos$meta))\nout &lt;- data.frame(combos, round(q, 3))\nout[order(out$rmse), ]\n#&gt;             ple       meta    cor  mean    sd  rmse\n#&gt; linear.1 linear  S-learner -0.053 0.215 0.000 0.270\n#&gt; ranger.2 ranger  X-learner  0.211 0.207 0.161 0.290\n#&gt; ranger   ranger  T-learner  0.368 0.206 0.355 0.370\n#&gt; linear.2 linear  X-learner  0.214 0.215 0.321 0.377\n#&gt; ranger.1 ranger  S-learner  0.680 0.012 0.010 0.395\n#&gt; ranger.3 ranger DR-learner  0.228 0.213 0.387 0.424\n#&gt; linear   linear  T-learner  0.313 0.219 0.557 0.545\n#&gt; linear.3 linear DR-learner  0.313 0.219 0.557 0.545\n\nc(真值均值 = mean(dat$PLE), 真值标准差 = sd(dat$PLE))\n#&gt;   真值均值 真值标准差 \n#&gt;  0.3270625  0.2460618\n\n三条互相矛盾的读法，恰好说明了 CATE 估计的评价有多脆弱：\n\nlinear + S-learner 的 RMSE 最低，但它的 CATE 是个常数 （sd = 0，实际是 \\(5\\times10^{-16}\\)）。S-learner 把 \\(A\\) 当成一个普通的可加协变量， 线性模型里没有 \\(A \\times X\\) 项，结构上就不可能表示异质性。 它那个 \\(-0.053\\) 的相关系数是浮点噪声，不是信号。 真 CATE 的标准差只有 0.246，用一个常数去猜当然不容易输。\nranger + S-learner 的相关系数最高（0.68），但均值只有 0.012—— 森林几乎没用上 \\(A\\) 这一列，把效应整体收缩到了 0。 它能给出排序，不能给出大小。\n默认的 ranger + X-learner 相关系数只有 0.21，但均值和离散度都在合理范围， RMSE 排第二。\n\n\n\n\n\n\n\n警告n = 800、p = 50 时，CATE 估计本身就很弱\n\n\n\n最高的相关系数 0.68 还伴随着量级失真；其余都在 0.2–0.37。 这不是本包的实现问题，而是小样本 + 弱信号 + 高维噪声下的通病。\n它的直接后果是——凡是”先估 CATE 再对 CATE 建树”的 submod （rpart_cate、ctree_cate、otr）在这份数据上都会切错变量， 见第 4 页。\n一阶段的 MOB（lmtree）不消费 mu_train，直接对模型参数做检验， 因此不受这条影响——这也是它在小样本上更可靠的原因。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>202</span>  <span class='chapter-title'>3. ple_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/03-ple-train.html#sec-propensity",
+    "href": "notes/stratifiedmedicine/03-ple-train.html#sec-propensity",
+    "title": "3. ple_train()：个体水平估计",
+    "section": "propensity = TRUE 恒报错",
+    "text": "propensity = TRUE 恒报错\n文档说：默认 FALSE 用边际比例 \\(P(A=a)\\)（适用于 RCT）； TRUE 则用 ple 指定的 base-learner 去估 \\(P(A=a\\mid X)\\)—— 这正是把本包用在观察性数据上所必需的开关。\n实测它在 1.0.7 里一定失败：\n\nple_train(Y, A, X, ple = \"ranger\", propensity = TRUE)\n#&gt; Error in learner == \"ranger\": comparison (==) is possible only for atomic and list types\n\n根因在源码里一眼可见。ple_train() 内部先把字符串解析成函数：\nple_fn &lt;- get(ple, envir = parent.frame())          # ple_fn 现在是一个函数\n...\npfit &lt;- prop_learner(A = A, X = X, learner = ple_fn, hyper = hyper)\n而 prop_learner() 拿到的 learner 应当是字符串：\nif (learner == \"ranger\" | learner == \"ple_ranger\") { ... }\n拿函数对象去和字符串比较，就有了那句 comparison (==) is possible only for atomic and list types。 PRISM(propensity = TRUE) 走同一条路，报错信息不同但同样失败：\n\nPRISM(Y = Y, A = A, X = X, propensity = TRUE, verbose = FALSE)\n#&gt; Error in rep(1, dim(Xtest)[1]): invalid 'times' argument\n\n\n\n\n\n\n\n重要观察性数据怎么办\n\n\n\n在修复之前，StratifiedMedicine 的双稳健估计（param = \"dr\"）只能用边际倾向性， 也就是只对随机化数据成立。观察性数据上有两条退路：\n\n自己在外面估好 \\(\\hat\\pi(x)\\)，把权重加到数据里（例如先做 IPW 匹配/加权， 再把加权后的样本喂给 PRISM()）；\n改用 param = \"gcomp\"（G-计算），它只依赖结局模型 mu_0/mu_1， 不碰 pi_0/pi_1——代价是失去双稳健性。\n\n无论哪条，都要在报告里写清楚”倾向性没有按协变量校正”。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>202</span>  <span class='chapter-title'>3. ple_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/03-ple-train.html#生存结局两个-base-learner-给的不是同一个量",
+    "href": "notes/stratifiedmedicine/03-ple-train.html#生存结局两个-base-learner-给的不是同一个量",
+    "title": "3. ple_train()：个体水平估计",
+    "section": "生存结局：两个 base-learner 给的不是同一个量",
+    "text": "生存结局：两个 base-learner 给的不是同一个量\n生存结局下默认 meta = \"T-learner\"；即使显式传 \"X-learner\" 也会被静默改回 \"T-learner\"（源码 if (family == \"survival\" & meta == \"X-learner\") meta &lt;- \"T-learner\"）：\n\nlibrary(survival)\ndata(\"GBSG2\", package = \"TH.data\")\nYs &lt;- with(GBSG2, Surv(time, cens))\nXs &lt;- GBSG2[, !(colnames(GBSG2) %in% c(\"time\", \"cens\", \"horTh\"))]\nAs &lt;- GBSG2$horTh\n\nset.seed(1)\nm_rf &lt;- ple_train(Ys, As, Xs, family = \"survival\", ple = \"ranger\", meta = \"X-learner\")\nm_rf$meta            # 被改回 T-learner\n#&gt; [1] \"T-learner\"\nhead(round(m_rf$mu_train, 1), 3)\n#&gt;    mu_no mu_yes diff_yes_no pi_no pi_yes\n#&gt; 1 1636.4 1837.9       201.5   0.6    0.4\n#&gt; 2 1426.0 1760.1       334.1   0.6    0.4\n#&gt; 3 1454.1 1346.3      -107.8   0.6    0.4\n\nmu_no / mu_yes 是 RMST（限制平均生存时间，单位与 time 相同，这里是天）， diff_yes_no 就是 RMST 差。均值与朴素 RMST 差几乎一致：\n\nmean(m_rf$mu_train$diff_yes_no)\n#&gt; [1] 224.9472\n\n换成 ple = \"linear\" 之后，同名的列装的是完全不同的东西：\n\nm_lin &lt;- ple_train(Ys, As, Xs, family = \"survival\", ple = \"linear\",\n                   meta = \"T-learner\")\nhead(round(m_lin$mu_train, 3), 3)\n#&gt;   mu_no mu_yes diff_yes_no pi_no pi_yes\n#&gt; 1 0.064  0.294       0.229 0.641  0.359\n#&gt; 2 0.313  0.455       0.142 0.641  0.359\n#&gt; 3 0.530  0.885       0.355 0.641  0.359\nmean(m_lin$mu_train$diff_yes_no)\n#&gt; [1] 0.09421355\ncoef(coxph(Ys ~ As))          # 真实的边际治疗效应（log HR）\n#&gt;      Asyes \n#&gt; -0.3640099\n\n\n\n\n\n\n\n重要ple = \"linear\" + 生存 + T-learner 的 diff 不是治疗效应\n\n\n\nple_linear() 在 family = \"survival\" 下返回的是 coxph() 的 linear predictor，而 coxph() 的线性预测值是 按本次拟合的协变量均值居中的。T-learner 分两臂各拟合一次， 于是 mu_no 和 mu_yes 各自以不同的中心为原点，两者相减没有因果含义。\n数字上：上面这份数据的 mean(diff_yes_no) = +0.094， 而真实的边际 log HR 是 −0.364——符号都是反的。\n结论：生存结局请用 ple = \"ranger\"（RMST，可解释、量纲清楚）， 或者干脆不做 ple（PRISM 生存默认的 param = \"cox\" 不需要 mu_train）。 同一个 diff_* 列在不同配置下分别是”天数”“log HR”“风险差”， 报告时必须写明尺度——这一点在 效应修饰的效应尺度一页有更系统的讨论。\n\n\n\ntau 传了不生效\n帮助页：tau 是 RMST 的最大随访时间，默认取 \\(\\min_a \\max(\\text{time}_a)\\)。 但只要 A 不是 NULL，内部就会重新算一遍并覆盖用户传进来的值：\nif (survival::is.Surv(Y)) {\n  tau &lt;- NULL\n  for (a in unique(A)) tau &lt;- c(tau, max(Y[, 1][A == a]))\n  tau &lt;- min(tau)\n}\n实测：\n\nset.seed(7); a1 &lt;- ple_train(Ys, As, Xs, family = \"survival\", ple = \"ranger\")\nset.seed(7); a2 &lt;- ple_train(Ys, As, Xs, family = \"survival\", ple = \"ranger\", tau = 500)\nidentical(a1$mu_train, a2$mu_train)\n#&gt; [1] TRUE\nmax(a2$mu_train$mu_yes)        # 远大于 500\n#&gt; [1] 2425.133\nmin(tapply(GBSG2$time, As, max))   # 内部实际用的 tau\n#&gt; [1] 2563\n\n想换 \\(\\tau\\) 只能在调用前自己把数据在 \\(\\tau\\) 处截断 （time &lt;- pmin(time, tau); cens[time &gt; tau] &lt;- 0）。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>202</span>  <span class='chapter-title'>3. ple_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/03-ple-train.html#sec-predict",
+    "href": "notes/stratifiedmedicine/03-ple-train.html#sec-predict",
+    "title": "3. ple_train()：个体水平估计",
+    "section": "predict.ple_train()",
+    "text": "predict.ple_train()\n## S3 method for class 'ple_train'\npredict(object, newdata = NULL, ...)\nnewdata = NULL 时返回训练集上的估计。返回的数据框列与 mu_train 一致：\n\npredict(p, newdata = X[1:4, ])\n#&gt;       mu_0     mu_1   diff_1_0    pi_0    pi_1\n#&gt; 1 1.764792 1.861516 0.12972055 0.51125 0.48875\n#&gt; 2 2.159053 2.435942 0.35273968 0.51125 0.48875\n#&gt; 3 2.037326 2.375558 0.07213772 0.51125 0.48875\n#&gt; 4 1.500726 1.370954 0.08894428 0.51125 0.48875\n\nXtest 与 predict() 的区别只在于时机：Xtest 在拟合时一次算好放进 mu_test， predict() 是事后算。两者结果相同。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>202</span>  <span class='chapter-title'>3. ple_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/03-ple-train.html#小结",
+    "href": "notes/stratifiedmedicine/03-ple-train.html#小结",
+    "title": "3. ple_train()：个体水平估计",
+    "section": "小结",
+    "text": "小结\n\n\n\n\n\n\n\n场景\n推荐配置\n\n\n\n\n连续/二值，要点估计的大小\n默认 ranger + X-learner（本页 RMSE 与量纲都合格）\n\n\n只要 CATE 的排序（如做 OTR）\nranger + S-learner 相关系数最高，但绝对值被收缩，不能当效应量报告\n\n\n永远不要\nlinear + S-learner——结构上给出常数 CATE\n\n\n生存\nple = \"ranger\"（RMST）。不要用 \"linear\"\n\n\n观察性数据\n先在外部处理混杂；propensity = TRUE 在 1.0.7 里不可用\n\n\n用 BART\n配 meta = \"T-learner\"，或补 Xtest",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>202</span>  <span class='chapter-title'>3. ple_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/03-ple-train.html#本页涉及的帮助主题",
+    "href": "notes/stratifiedmedicine/03-ple-train.html#本页涉及的帮助主题",
+    "title": "3. ple_train()：个体水平估计",
+    "section": "本页涉及的帮助主题",
+    "text": "本页涉及的帮助主题\n\nple_train\npredict.ple_train\n\n下一页：4. submod_train。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>202</span>  <span class='chapter-title'>3. ple_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/04-submod-train.html",
+    "href": "notes/stratifiedmedicine/04-submod-train.html",
+    "title": "4. submod_train()：亚组识别",
+    "section": "",
+    "text": "七种 submod\n第 ③ 步，也是本包的核心。输入 \\((Y, A, X)\\)（可选 mu_train）， 输出每个人的亚组编号和一组可读的规则。\n参数多，但可以按用途分成四组：\nset.seed(1)\nfor (m in c(\"lmtree\", \"ctree\", \"ctree_cate\", \"rpart\", \"rpart_cate\")) {\n  r &lt;- submod_train(Y, A, X, submod = m)\n  cat(sprintf(\"%-11s %d 个亚组 | 切在: %s\\n\", m, nrow(r$Rules),\n              summary(r)$`Variables that Define the Subgroups`))\n}\n#&gt; lmtree      4 个亚组 | 切在: X1, X2\n#&gt; ctree       6 个亚组 | 切在: X2, X1, X26\n#&gt; ctree_cate  5 个亚组 | 切在: X40, X9, X3, X21\n#&gt; rpart       5 个亚组 | 切在: X1, X2, X50\n#&gt; rpart_cate  6 个亚组 | 切在: X1, X19, X11, X13, X18\n真值是 \\(X_1\\)、\\(X_2\\)：只有 lmtree 干干净净地只切这两个变量。\n按”检验什么”分成三类：\n默认值随 family 变：\"gaussian\" → lmtree，\"binomial\" → glmtree， \"survival\" → lmtree（先对生存结局做 log-rank 变换 coin::logrank_trafo()， 再拟合 MOB-OLS）。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>203</span>  <span class='chapter-title'>4. submod_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/04-submod-train.html#七种-submod",
+    "href": "notes/stratifiedmedicine/04-submod-train.html#七种-submod",
+    "title": "4. submod_train()：亚组识别",
+    "section": "",
+    "text": "submod\n底层函数\n拟合的是\n找到的是\n\n\n\n\nlmtree\npartykit::lmtree\n\\(Y \\sim \\text{MOB-OLS}(A \\mid X)\\)\n预后 + 效应修饰（默认两者不分）\n\n\nglmtree\npartykit::glmtree\n\\(Y \\sim \\text{MOB-GLM}(A \\mid X)\\)\n同上，二值结局\n\n\nmob_weib\npartykit::mob + Weibull\n\\(Y \\sim \\text{MOB-WEIB}(A \\mid X)\\)\n同上，生存结局\n\n\nctree_cate\npartykit::ctree\n\\(\\widehat{\\text{CATE}}(X) \\sim \\text{CTREE}(X)\\)\n效应修饰（两阶段）\n\n\nrpart_cate\nrpart::rpart\n\\(\\widehat{\\text{CATE}}(X) \\sim \\text{rpart}(X)\\)\n效应修饰（两阶段）\n\n\nctree\npartykit::ctree\n\\(Y \\sim \\text{CTREE}(X)\\)\n纯预后\n\n\nrpart\nrpart::rpart\n\\(Y \\sim \\text{rpart}(X)\\)\n纯预后\n\n\notr\npartykit::ctree + 权重\n\\(\\mathbb 1(\\widehat{\\text{CATE}} &gt; \\delta) \\sim \\text{CTREE}(X)\\)，权重 \\(\\lvert\\widehat{\\text{CATE}}-\\delta\\rvert\\)\n最优治疗方案\n\n\n\n\n\n\n\n\n\n\n注记submod = \"None\" 同样只在 PRISM() 里存在\n\n\n\n\nsubmod_train(Y, A, X, submod = \"None\")\n#&gt; Error in get(submod, envir = parent.frame()): object 'None' not found\n\n和 filter_train() 一样，submod_train() 用 get() 找同名函数。 不过 PRISM(submod = \"None\") 在 1.0.7 里也是坏的， 见第 8 页。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>203</span>  <span class='chapter-title'>4. submod_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/04-submod-train.html#默认树mobols",
+    "href": "notes/stratifiedmedicine/04-submod-train.html#默认树mobols",
+    "title": "4. submod_train()：亚组识别",
+    "section": "默认树：MOB(OLS)",
+    "text": "默认树：MOB(OLS)\n\ns &lt;- submod_train(Y, A, X, submod = \"lmtree\")\ns$Rules\n#&gt;   Subgrps                      Rules\n#&gt; 1       3 X1 &lt;= 0.016 & X2 &lt;= -0.565\n#&gt; 2       4  X1 &lt;= 0.016 & X2 &gt; -0.565\n#&gt; 3       6   X1 &gt; 0.016 & X2 &lt;= 0.693\n#&gt; 4       7    X1 &gt; 0.016 & X2 &gt; 0.693\ntable(s$Subgrps.train)\n#&gt; \n#&gt;   3   4   6   7 \n#&gt; 149 277 267 107\n\n$fit$mod 是一个标准的 partykit 对象，可以直接 print / plot：\n\ns$fit$mod\n#&gt; Linear model tree\n#&gt; \n#&gt; Model formula:\n#&gt; Y ~ A | .\n#&gt; \n#&gt; Fitted party:\n#&gt; [1] root\n#&gt; |   [2] X1 &lt;= 0.01601\n#&gt; |   |   [3] X2 &lt;= -0.56481: n = 149\n#&gt; |   |       (Intercept)           A \n#&gt; |   |        1.16373717 -0.07454093 \n#&gt; |   |   [4] X2 &gt; -0.56481: n = 277\n#&gt; |   |        (Intercept)            A \n#&gt; |   |        1.617769135 -0.002507699 \n#&gt; |   [5] X1 &gt; 0.01601\n#&gt; |   |   [6] X2 &lt;= 0.69256: n = 267\n#&gt; |   |       (Intercept)           A \n#&gt; |   |         1.6661292   0.3929782 \n#&gt; |   |   [7] X2 &gt; 0.69256: n = 107\n#&gt; |   |       (Intercept)           A \n#&gt; |   |         2.2204071   0.7350799 \n#&gt; \n#&gt; Number of inner nodes:    3\n#&gt; Number of terminal nodes: 4\n#&gt; Number of parameters per node: 2\n#&gt; Objective function (residual sum of squares): 836.587\n\n每个终末节点里的 A 系数就是该亚组的治疗效应估计： \\(-0.075\\)、\\(-0.003\\)、\\(0.393\\)、\\(0.735\\)。 真值是 0 / 0.25 / 0.45 / 0.65——树把 \\(X_1\\)、\\(X_2\\) 两个真变量都切对了， 四个节点的效应排序也对，只是最低那两档没区分开。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>203</span>  <span class='chapter-title'>4. submod_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/04-submod-train.html#hyper各树的超参数",
+    "href": "notes/stratifiedmedicine/04-submod-train.html#hyper各树的超参数",
+    "title": "4. submod_train()：亚组识别",
+    "section": "hyper：各树的超参数",
+    "text": "hyper：各树的超参数\n\n\n\n\n\n\n重要帮助页写的 alpha = 0.05 与源码的 alpha = 0.1 不一致\n\n\n\nsubmod_train 帮助页对 lmtree 和 glmtree 都写：\n\nDefault hyper-parameters are: hyper = list(alpha=0.05, maxdepth=4, parm=NULL, minsize=floor(dim(X)[1]*0.10))\n\n而源码是：\nStratifiedMedicine:::submod_lmtree\n#&gt; function (Y, A, X, alpha = 0.1, minsize = floor(dim(X)[1] * 0.1),\n#&gt;     maxdepth = 4, parm = NULL, ...)\n实际默认是 0.1。这不是小事：本页后面那两个假亚组，其中一个的分裂 p 值是 0.062——在 0.05 下会被拒绝，在 0.1 下则被接受。\n\n\n源码里的真实默认值：\n\n\n\n\n\n\n\n\n\n\nsubmod\nalpha\n大小约束\nmaxdepth\n其它\n\n\n\n\nlmtree\n0.1\nminsize = floor(0.10n)\n4\nparm = NULL\n\n\nglmtree\n0.1\nminsize = floor(0.10n)\n4\nparm = NULL、link = \"identity\"、glm.fam = binomial\n\n\nmob_weib\n0.1\nminsize = floor(0.10n)\n4\nparm = NULL\n\n\nctree / ctree_cate\n0.1\nminbucket = floor(0.10n)\n4\n—\n\n\nrpart / rpart_cate\n无此参数\nminbucket = floor(0.10n)\n4\n帮助页写了 alpha，源码签名里没有\n\n\notr\n0.1\nminbucket = floor(0.10n)\n4\ndelta = \"&gt;0\"\n\n\n\n调参的效果：\n\nrules_of &lt;- function(...) paste(submod_train(Y, A, X, submod = \"lmtree\", ...)$Rules$Rules,\n                                collapse = \" | \")\nrules_of(hyper = list(alpha = 0.01))\n#&gt; [1] \"X1 &lt;= 0.016 | X1 &gt; 0.016 & X2 &lt;= 0.693 | X1 &gt; 0.016 & X2 &gt; 0.693\"\nrules_of(hyper = list(maxdepth = 2))\n#&gt; [1] \"X1 &lt;= 0.016 | X1 &gt; 0.016\"\nrules_of(hyper = list(minsize = 250))\n#&gt; [1] \"X1 &lt;= 0.016 | X1 &gt; 0.016\"\n\nmaxdepth = 1 会让树一刀不切，而没有分裂的树会让 extract_rules() 崩溃：\n\nsubmod_train(Y, A, X, submod = \"lmtree\", hyper = list(maxdepth = 1))\n#&gt; Error in data.frame(Subgrps = names(rules_vec), Rules = rules_rounded, : arguments imply differing number of rows: 0, 1\n\n这意味着“没找到任何亚组”这件正常的事，在本包里表现为一个报错。 做阴性对照或严格调参时要用 tryCatch() 兜住。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>203</span>  <span class='chapter-title'>4. submod_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/04-submod-train.html#sec-parm",
+    "href": "notes/stratifiedmedicine/04-submod-train.html#sec-parm",
+    "title": "4. submod_train()：亚组识别",
+    "section": "parm：把 MOB 从”找预后”扳成”找效应修饰”",
+    "text": "parm：把 MOB 从”找预后”扳成”找效应修饰”\n这是本页最有用的一条。\nMOB 的分裂检验基于模型的得分函数。默认检验所有参数， 对 Y ~ A 这个节点模型来说就是 \\((\\beta_0, \\beta_1)\\)—— 其中 \\(\\beta_0\\) 是截距，它不稳定意味着基线水平在变，那是预后差异。 parm = 2 只保留治疗系数那一列，于是分裂检验只对效应修饰敏感。\nsubmod_lmtree() 把 parm 原样转发给 partykit::lmtree(parm = )，所以它真的生效：\n\nsubmod_train(Y, A, X, submod = \"lmtree\")$Rules$Rules\n#&gt; [1] \"X1 &lt;= 0.016 & X2 &lt;= -0.565\" \"X1 &lt;= 0.016 & X2 &gt; -0.565\" \n#&gt; [3] \"X1 &gt; 0.016 & X2 &lt;= 0.693\"   \"X1 &gt; 0.016 & X2 &gt; 0.693\"\nsubmod_train(Y, A, X, submod = \"lmtree\", hyper = list(parm = 2))$Rules$Rules\n#&gt; [1] \"X1 &lt;= 0.016\" \"X1 &gt; 0.016\"\n\n在 GBSG2 上对比更清楚。这份数据里 progrec（孕激素受体）是公认的效应修饰变量， pnodes（阳性淋巴结数）是强预后但非修饰因子：\n\nlibrary(survival)\ndata(\"GBSG2\", package = \"TH.data\")\nYs &lt;- with(GBSG2, Surv(time, cens))\nXs &lt;- GBSG2[, !(colnames(GBSG2) %in% c(\"time\", \"cens\", \"horTh\"))]\nAs &lt;- GBSG2$horTh\n\nsubmod_train(Ys, As, Xs, family = \"survival\", submod = \"lmtree\")$Rules\n#&gt;   Subgrps                       Rules\n#&gt; 1       3 pnodes &lt;= 3 & progrec &lt;= 90\n#&gt; 2       4  pnodes &lt;= 3 & progrec &gt; 90\n#&gt; 3       6  pnodes &gt; 3 & progrec &lt;= 20\n#&gt; 4       7   pnodes &gt; 3 & progrec &gt; 20\nsubmod_train(Ys, As, Xs, family = \"survival\", submod = \"lmtree\",\n             hyper = list(parm = 2))$Rules\n#&gt;   Subgrps         Rules\n#&gt; 1       2 progrec &lt;= 21\n#&gt; 2       3  progrec &gt; 21\n\n默认切出 pnodes + progrec 四个亚组——pnodes 那一刀来自基线风险； 加上 parm = 2 之后只剩 progrec ≤ 21 / &gt; 21， 正是文献里公认的那个效应修饰变量，切点由数据决定。\n\n\n\n\n\n\n提示与 model4you::pmtree() 的对比\n\n\n\nmodel4you 的内部函数 .modelfit() 同样有 parm 参数， 但 pmtree() 不转发它——传了不报错也不生效 （见model4you 手册）。 StratifiedMedicine::submod_train() 是这一族包里少数把 parm 真正接通的。\n代价是功效下降：上面模拟数据里，parm = 2 只找到了 \\(X_1\\)， 漏掉了 \\(X_2\\)。检验的自由度从 2 降到 1，信号弱的修饰变量会被漏掉。 “只找修饰变量”和”把修饰变量找全”是一对权衡。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>203</span>  <span class='chapter-title'>4. submod_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/04-submod-train.html#sec-mu-dependency",
+    "href": "notes/stratifiedmedicine/04-submod-train.html#sec-mu-dependency",
+    "title": "4. submod_train()：亚组识别",
+    "section": "哪些 submod 需要 mu_train",
+    "text": "哪些 submod 需要 mu_train\n源码里的条件是 if (cate_ind | param == \"dr\")—— 只有两阶段的 *_cate 方法，或者 param = \"dr\"，才会去拟合 ple 模型。 otr 不在 cate_ind 里，于是它默认就是坏的：\n\nsubmod_train(Y, A, X, submod = \"otr\")\n#&gt; Error in data.frame(ind_PLE, X): arguments imply differing number of rows: 0, 800\n\n两种修法，任选其一：\n\nset.seed(2)\nmu &lt;- ple_train(Y, A, X, ple = \"ranger\", meta = \"X-learner\")$mu_train\n\n## ① 显式传 mu_train\nsubmod_train(Y, A, X, submod = \"otr\", mu_train = mu)$Rules\n#&gt;   Subgrps                      Rules\n#&gt; 1       2               X19 &lt;= 0.840\n#&gt; 2       4 X19 &gt; 0.840 & X13 &lt;= 0.153\n#&gt; 3       5  X19 &gt; 0.840 & X13 &gt; 0.153\n\n## ② 或者让 param=\"dr\" 顺带把 ple 拟合出来\nset.seed(2)\nsubmod_train(Y, A, X, submod = \"otr\", param = \"dr\")$Rules\n#&gt;   Subgrps                      Rules\n#&gt; 1       2               X19 &lt;= 0.840\n#&gt; 2       4 X19 &gt; 0.840 & X13 &lt;= 0.153\n#&gt; 3       5  X19 &gt; 0.840 & X13 &gt; 0.153\n\n\n\n\n\n\n\n警告otr 在这份数据上有四成的概率”一刀未切”，而那也是报错\n\n\n\n换五个种子重跑：\n\nsapply(1:5, function(s) {\n  set.seed(s)\n  r &lt;- tryCatch(submod_train(Y, A, X, submod = \"otr\", param = \"dr\"),\n                error = function(e) NULL)\n  if (is.null(r)) \"一刀未切（报错）\" else paste(nrow(r$Rules), \"个亚组\")\n})\n#&gt; [1] \"一刀未切（报错）\" \"3 个亚组\"         \"一刀未切（报错）\" \"4 个亚组\"        \n#&gt; [5] \"3 个亚组\"\n\notr 的树建在 \\(\\mathbb 1(\\widehat{\\text{CATE}} &gt; 0)\\) 上，权重是 \\(|\\widehat{\\text{CATE}}|\\)。CATE 估计一噪声化，这棵树就切不动—— 而”切不动”在本包里是报错不是空结果，见第 8 页。\n\n\n\n两阶段树在这份数据上切错了变量\n\nset.seed(1)\nfor (m in c(\"rpart_cate\", \"ctree_cate\")) {\n  cat(m, \":\\n  \", paste(submod_train(Y, A, X, submod = m)$Rules$Rules,\n                        collapse = \"\\n  \"), \"\\n\", sep = \"\")\n}\n#&gt; rpart_cate:\n#&gt;   X1 &lt; 0.001 & X19 &gt;= 0.819\n#&gt;   X1 &lt; 0.001 & X19 &lt; 0.819 & X11 &gt;= -0.233\n#&gt;   X1 &lt; 0.001 & X19 &lt; 0.819 & X11 &lt; -0.233\n#&gt;   X1 &gt;= 0.001 & X13 &lt; -0.427\n#&gt;   X1 &gt;= 0.001 & X13 &gt;= -0.427 & X18 &gt;= -0.441\n#&gt;   X1 &gt;= 0.001 & X13 &gt;= -0.427 & X18 &lt; -0.441\n#&gt; ctree_cate:\n#&gt;   X1 &lt;= 0.001 & X19 &lt;= 0.816 & X11 &lt;= 0.119\n#&gt;   X1 &lt;= 0.001 & X19 &lt;= 0.816 & X11 &gt; 0.119\n#&gt;   X1 &lt;= 0.001 & X19 &gt; 0.816\n#&gt;   X1 &gt; 0.001 & X40 &lt;= 0.312\n#&gt;   X1 &gt; 0.001 & X40 &gt; 0.312\n\n第一刀切在 X1（rpart_cate）或 X40（ctree_cate）上， 后续几刀是 X19、X11、X13、X30、X21——全是噪声变量。 原因在上一页已经给出： 这份数据上的 CATE 估计与真值的相关只有 0.21–0.37， 对它建树等于在噪声上建树。\n同一份数据、同一批变量，一阶段的 lmtree 切对了 \\(X_1\\)、\\(X_2\\)， 两阶段的 rpart_cate / ctree_cate 全切在噪声上。 样本量不大时优先 MOB，这是本手册最实用的一条结论。\n两阶段方法对 ple 的选择极其敏感。在 GBSG2 上做一次受控对比—— 只换 base-learner，树的方法不变：\n\nfor (b in c(\"linear\", \"ranger\")) {\n  set.seed(1)\n  r &lt;- submod_train(Ys, As, Xs, family = \"survival\",\n                    submod = \"rpart_cate\", ple = b)\n  cat(sprintf(\"ple = %-7s 切在: %s\\n\", b,\n              summary(r)$`Variables that Define the Subgroups`))\n}\n#&gt; ple = linear  切在: progrec, tgrade, pnodes\n#&gt; ple = ranger  切在: estrec, progrec, tsize\n\n参数型的 linear（Cox）把 progrec 排在第一刀——对； 换成 ranger 之后第一刀切到了 estrec（雌激素受体）， 它与 progrec 高度共线（Spearman \\(\\rho \\approx 0.6\\)），是个典型的替身变量。\n作为阴性对照，一阶段的 MOB 对 ple 完全不敏感——它根本不消费 mu_train：\n\nidentical(\n  submod_train(Ys, As, Xs, family = \"survival\", submod = \"lmtree\", ple = \"linear\")$Rules,\n  submod_train(Ys, As, Xs, family = \"survival\", submod = \"lmtree\", ple = \"ranger\")$Rules\n)\n#&gt; [1] TRUE",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>203</span>  <span class='chapter-title'>4. submod_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/04-submod-train.html#sec-param-default",
+    "href": "notes/stratifiedmedicine/04-submod-train.html#sec-param-default",
+    "title": "4. submod_train()：亚组识别",
+    "section": "param：建完树顺手估效应",
+    "text": "param：建完树顺手估效应\nsubmod_train() 会把各亚组的效应估计放进 $trt_eff：\n\ns$trt_eff\n#&gt;    Subgrps   N  estimand          est         SE         LCL       UCL\n#&gt; 3        3 149 mu_1-mu_0 -0.074540934 0.17749849 -0.42529970 0.2762178\n#&gt; 31       4 277 mu_1-mu_0 -0.002507699 0.11778878 -0.23438626 0.2293709\n#&gt; 32       6 267 mu_1-mu_0  0.392978208 0.12852946  0.13991368 0.6460427\n#&gt; 33       7 107 mu_1-mu_0  0.735079896 0.19631153  0.34587320 1.1242866\n#&gt; 1     ovrl 800 mu_1-mu_0  0.214721873 0.07270356  0.07200932 0.3574344\n#&gt;            pval alpha\n#&gt; 3  0.6751291856  0.05\n#&gt; 31 0.9830298696  0.05\n#&gt; 32 0.0024593995  0.05\n#&gt; 33 0.0002942317  0.05\n#&gt; 1  0.0032352410  0.05\n\n\n\n\n\n\n\n重要默认 param 是 \"lm\"，不是帮助页写的 \"dr\"\n\n\n\nparam 的那段说明文字被 PRISM()、submod_train()、param_est() 三个帮助页共用， 写的是”gaussian / binomial 默认 dr“。但 submod_train() 的源码是：\nif (is.null(param)) {\n  if (family == \"survival\") param &lt;- \"cox\"\n  else                      param &lt;- \"lm\"\n}\n而 PRISM() 的默认确实是 \"dr\"。同一棵树、同一份数据，两者给出不同的数字：\n\ncbind(lm = round(s$trt_eff$est, 4),\n      dr = round(submod_train(Y, A, X, submod = \"lmtree\", param = \"dr\")$trt_eff$est, 4))\n#&gt;           lm      dr\n#&gt; [1,] -0.0745 -0.0364\n#&gt; [2,] -0.0025  0.0212\n#&gt; [3,]  0.3930  0.3631\n#&gt; [4,]  0.7351  0.6819\n#&gt; [5,]  0.2147  0.2129\n\n差别不大（这是 RCT 数据，双稳健没什么可校正的），但不一致本身足以让 “我用 submod_train 复现 PRISM 结果”这件事失败。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>203</span>  <span class='chapter-title'>4. submod_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/04-submod-train.html#pool把亚组合并成治疗方案",
+    "href": "notes/stratifiedmedicine/04-submod-train.html#pool把亚组合并成治疗方案",
+    "title": "4. submod_train()：亚组识别",
+    "section": "pool：把亚组合并成治疗方案",
+    "text": "pool：把亚组合并成治疗方案\npool 不改变树，只是给每个亚组打一个 dopt 标签（该不该给治疗）， 再把同标签的亚组合并估计。\n\n\n\n\n\n\n\npool\n判定方式\n\n\n\n\n\"no\"（默认）\n不合并\n\n\n\"trteff\"\n用亚组的朴素效应估计与阈值 delta 比较\n\n\n\"trteff_boot\"\n同上，但用 Bootstrap 估计\n\n\n\"otr:logistic\"\n以 \\(\\mathbb 1(\\hat\\mu_1-\\hat\\mu_0&gt;\\delta)\\) 为结局、亚组为自变量的加权 logistic\n\n\n\"otr:rf\"\n同上，换成加权随机森林，并把 \\(X\\) 也放进去\n\n\n\n\nsp &lt;- submod_train(Y, A, X, submod = \"lmtree\", pool = \"trteff\", param = \"dr\")\nunique(sp$trt_assign)         # 每个亚组归到哪个 dopt\n#&gt;    Subgrps   dopt\n#&gt; 1        7 dopt=1\n#&gt; 3        6 dopt=1\n#&gt; 4        4 dopt=1\n#&gt; 11       3 dopt=0\nsp$trt_eff_dopt               # 合并之后的估计\n#&gt;     N  estimand Subgrps         est         SE         LCL       UCL\n#&gt; 3 149 mu_1-mu_0  dopt=0 -0.03521099 0.15753424 -0.34651794 0.2760960\n#&gt; 2 651 mu_1-mu_0  dopt=1  0.26739273 0.06820248  0.13346895 0.4013165\n#&gt; 1 800 mu_1-mu_0    ovrl  0.21103279 0.06277822  0.08780308 0.3342625\n#&gt;           pval alpha\n#&gt; 3 8.234443e-01  0.05\n#&gt; 2 9.771766e-05  0.05\n#&gt; 1 8.118613e-04  0.05\n\n4 个亚组被合成 2 组：dopt = 0（149 人，效应 \\(-0.045\\)，不显著）与 dopt = 1（651 人，效应 \\(0.270\\)，\\(p &lt; 0.001\\)）。 注意 trt_assign 是逐观测的数据框（800 行），要看亚组层面的归属得 unique()。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>203</span>  <span class='chapter-title'>4. submod_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/04-submod-train.html#resample给估计加上-bootstrap-区间",
+    "href": "notes/stratifiedmedicine/04-submod-train.html#resample给估计加上-bootstrap-区间",
+    "title": "4. submod_train()：亚组识别",
+    "section": "resample：给估计加上 Bootstrap 区间",
+    "text": "resample：给估计加上 Bootstrap 区间\n\nset.seed(1)\nsb &lt;- submod_train(Y, A, X, submod = \"lmtree\", resample = \"Bootstrap\", R = 20)\n#&gt; Bootstrap Resampling (full submod_train process); R=20\nsb$trt_eff\n#&gt;   Subgrps   N  estimand         est         SE         LCL       UCL alpha\n#&gt; 1       3 149 mu_1-mu_0 0.002526099 0.17183304 -0.33850484 0.2544201  0.05\n#&gt; 2       4 277 mu_1-mu_0 0.036996195 0.14268677 -0.23661639 0.2742304  0.05\n#&gt; 3       6 267 mu_1-mu_0 0.331037518 0.17634077  0.07583203 0.6574466  0.05\n#&gt; 4       7 107 mu_1-mu_0 0.567698268 0.18928065  0.27824024 0.9212643  0.05\n#&gt; 5    ovrl 800 mu_1-mu_0 0.196141796 0.08347098  0.06371622 0.3660375  0.05\n\nstratify 控制重抽样时按什么分层，默认 \"trt\"（按治疗分层）； 其它取值 \"sub\"、\"trt_sub\"、\"no\"。 注意这里重抽样的是整个 submod_train 过程（包括重新建树）， 所以区间里包含了”树本身不稳定”这部分不确定性—— 这正是第 6 页要展开的话题。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>203</span>  <span class='chapter-title'>4. submod_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/04-submod-train.html#sec-predict",
+    "href": "notes/stratifiedmedicine/04-submod-train.html#sec-predict",
+    "title": "4. submod_train()：亚组识别",
+    "section": "predict.submod_train()",
+    "text": "predict.submod_train()\n## S3 method for class 'submod_train'\npredict(object, newdata = NULL, ...)\n返回一个两元素列表：\n\nout &lt;- predict(s, newdata = X[1:6, ])\nout\n#&gt; $Subgrps\n#&gt; [1] 7 7 6 4 6 4\n#&gt; \n#&gt; $pred\n#&gt; NULL\n\n\n\n\n\n\n\n注记$pred 对 lmtree 恒为 NULL\n\n\n\n帮助页的 Value 段写着”pred - Predictions, depends on subgroup model”。 实测树类模型走的是 pred.fun(..., type = \"subgrp\") 这条分支， 只填 Subgrps，pred 留空。要拿节点内的 \\(\\hat\\mu_0,\\hat\\mu_1\\)， 只能自己从 summary(object$fit$mod) 里取，或者用 param_est() 重算。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>203</span>  <span class='chapter-title'>4. submod_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/04-submod-train.html#sec-summary",
+    "href": "notes/stratifiedmedicine/04-submod-train.html#sec-summary",
+    "title": "4. submod_train()：亚组识别",
+    "section": "summary.submod_train()",
+    "text": "summary.submod_train()\n## S3 method for class 'submod_train'\nsummary(object, round_est = 4, round_SE = 4, round_CI = 4, ...)\n\nsummary(s)\n#&gt; $submod_call\n#&gt; submod_train(Y = Y, A = A, X = X, submod = \"lmtree\")\n#&gt; \n#&gt; $`Number of Identified Subgroups`\n#&gt; [1] 4\n#&gt; \n#&gt; $`Variables that Define the Subgroups`\n#&gt; [1] \"X1, X2\"\n#&gt; \n#&gt; $`Subgroup Definitions`\n#&gt; [1] \"Node 3: X1 &lt;= 0.016 & X2 &lt;= -0.565\" \"Node 4: X1 &lt;= 0.016 & X2 &gt; -0.565\" \n#&gt; [3] \"Node 6: X1 &gt; 0.016 & X2 &lt;= 0.693\"   \"Node 7: X1 &gt; 0.016 & X2 &gt; 0.693\"   \n#&gt; \n#&gt; $`Treatment Effect Estimates (observed)`\n#&gt;    Subgrps   N  estimand     est     SE     LCL    UCL         pval alpha\n#&gt; 3        3 149 mu_1-mu_0 -0.0745 0.1775 -0.4253 0.2762 0.6751291856  0.05\n#&gt; 31       4 277 mu_1-mu_0 -0.0025 0.1178 -0.2344 0.2294 0.9830298696  0.05\n#&gt; 32       6 267 mu_1-mu_0  0.3930 0.1285  0.1399 0.6460 0.0024593995  0.05\n#&gt; 33       7 107 mu_1-mu_0  0.7351 0.1963  0.3459 1.1243 0.0002942317  0.05\n#&gt; 1     ovrl 800 mu_1-mu_0  0.2147 0.0727  0.0720 0.3574 0.0032352410  0.05\n#&gt; \n#&gt; attr(,\"class\")\n#&gt; [1] \"summary.submod_train\"\n\n四块：调用、亚组个数、定义亚组的变量、效应表。 第三块 Variables that Define the Subgroups 是快速判断”树切在了哪些变量上” 最方便的出口，做方法对比时直接读它。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>203</span>  <span class='chapter-title'>4. submod_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/04-submod-train.html#小结",
+    "href": "notes/stratifiedmedicine/04-submod-train.html#小结",
+    "title": "4. submod_train()：亚组识别",
+    "section": "小结",
+    "text": "小结\n\n\n\n\n\n\n\n目标\n配置\n\n\n\n\n找效应修饰变量，样本量一般\nsubmod = \"lmtree\" + hyper = list(parm = 2)\n\n\n找效应修饰变量，样本量大、非线性强\nrpart_cate / ctree_cate，但先验证 CATE 质量\n\n\n只找预后亚组\nsubmod = \"ctree\" 或 \"rpart\"\n\n\n做治疗方案\nsubmod = \"otr\" + mu_train，或 pool = \"otr:logistic\"\n\n\n生存结局\nlmtree（log-rank 变换）或 mob_weib；两者结论通常接近",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>203</span>  <span class='chapter-title'>4. submod_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/04-submod-train.html#本页涉及的帮助主题",
+    "href": "notes/stratifiedmedicine/04-submod-train.html#本页涉及的帮助主题",
+    "title": "4. submod_train()：亚组识别",
+    "section": "本页涉及的帮助主题",
+    "text": "本页涉及的帮助主题\n\nsubmod_train\npredict.submod_train\nsummary.submod_train\n\n下一页：5. param_est 与 param_combine。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>203</span>  <span class='chapter-title'>4. submod_train()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/06-prism.html",
+    "href": "notes/stratifiedmedicine/06-prism.html",
+    "title": "6. PRISM()：四步流水线",
+    "section": "",
+    "text": "参数全表\nPRISM() 把前四页的四个步骤串起来，并加上重抽样、合并与推断。 它有 34 个参数，但绝大多数是把子函数的参数原样透传。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>205</span>  <span class='chapter-title'>6. PRISM()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/06-prism.html#参数全表",
+    "href": "notes/stratifiedmedicine/06-prism.html#参数全表",
+    "title": "6. PRISM()：四步流水线",
+    "section": "",
+    "text": "PRISM(Y, A = NULL, X, Xtest = NULL, mu_train = NULL, family = \"gaussian\",\n      filter = \"glmnet\", ple = \"ranger\", submod = NULL, param = NULL,\n      meta = ifelse(family == \"survival\", \"T-learner\", \"X-learner\"),\n      pool = \"no\", delta = \"&gt;0\", propensity = FALSE, combine = \"SS\",\n      alpha_ovrl = 0.05, alpha_s = 0.05,\n      filter.hyper = NULL, ple.hyper = NULL, submod.hyper = NULL,\n      resample = NULL, stratify = ifelse(!is.null(A), \"trt\", \"no\"), R = NULL,\n      resample_submod = NULL, R_submod = NULL,\n      resample_pool = NULL, R_pool = NULL,\n      calibrate = FALSE, alpha.mat = NULL,\n      filter.resamp = NULL, ple.resamp = NULL,\n      verbose = TRUE, verbose.resamp = FALSE, seed = 777, efficient = TRUE)\n\n数据\n\n\n\n参数\n默认值\n说明\n\n\n\n\nY\n—\n数值向量或 Surv 对象\n\n\nA\nNULL\n治疗。NULL 时整条流水线切换成”只找预后亚组”\n\n\nX\n—\n协变量数据框\n\n\nXtest\nNULL\n测试集，结果放在 out.test / mu_test\n\n\nmu_train\nNULL\n外部算好的个体水平估计，传了就跳过第 ② 步\n\n\nfamily\n\"gaussian\"\n传 Surv 时会自动切换\n\n\n\n\n\n四个步骤\n\n\n\n参数\n默认值\n透传给\n\n\n\n\nfilter\n\"glmnet\"\nfilter_train()；\"None\" 跳过\n\n\nple\n\"ranger\"\nple_train()；\"None\" 跳过（但要同时改 param）\n\n\nsubmod\nNULL（按 family 定）\nsubmod_train()\n\n\nparam\nNULL（按 family 定）\nparam_est()\n\n\nmeta\n见签名\nple_train()\n\n\nfilter.hyper / ple.hyper / submod.hyper\nNULL\n各自的 hyper\n\n\npropensity\nFALSE\n1.0.7 里恒报错，见第 3 页\n\n\n\n默认配置随 family 与 A 变化：\n\n\n\n场景\nfilter\nple\nsubmod\nparam\n\n\n\n\ngaussian + A\nglmnet\nranger（X-learner）\nlmtree\ndr\n\n\nbinomial + A\nglmnet\nranger（X-learner）\nglmtree\ndr\n\n\nsurvival + A\nglmnet\nranger（T-learner）\nlmtree\ncox\n\n\nA = NULL\nglmnet\nranger\nctree\nlm\n\n\n\n\nres &lt;- PRISM(Y = Y, A = A, X = X, verbose = FALSE)\nsummary(res)$`PRISM Configuration`\n#&gt; [1] \"[Filter] glmnet =&gt; [PLE] ranger =&gt; [Subgroups] lmtree =&gt; [Param] dr\"\n\nPRISM(Y = Y, X = X, verbose = FALSE)$submod      # A = NULL\n#&gt; No Treatment Variable (A) Provided: Searching for Prognostic Effects\n#&gt; [1] \"ctree\"\n\nverbose = TRUE（默认）会把这四步逐行打出来：\n\ninvisible(PRISM(Y = Y, A = A, X = X))\n#&gt; Observed Data\n#&gt; Filtering: glmnet\n#&gt; Counterfactual Estimation: ranger (X-learner)\n#&gt; Subgroup Identification: lmtree\n#&gt; Treatment Effect Estimation: dr\n\n\n\n合并与推断\n\n\n\n\n\n\n\n\n参数\n默认值\n说明\n\n\n\n\npool\n\"no\"\n\"trteff\"、\"trteff_boot\"、\"otr:logistic\"、\"otr:rf\"\n\n\ndelta\n\"&gt;0\"\n获益阈值，供 pool 与 submod = \"otr\" 使用\n\n\ncombine\n\"SS\"\n合成总体估计：样本量加权或 \"maxZ\"\n\n\nalpha_ovrl / alpha_s\n0.05\n总体与亚组各自的 \\(\\alpha\\)\n\n\n\n\n\n重抽样\n\n\n\n参数\n默认值\n说明\n\n\n\n\nresample\nNULL\n\"Bootstrap\" 或 \"CV\"。重抽样的是整条流水线（包括重新过滤、重新建树）\n\n\nR\nNULL\nBootstrap 默认 100，CV 默认 5\n\n\nstratify\n\"trt\"\n\"trt\" / \"sub\" / \"trt_sub\" / \"no\"\n\n\nresample_submod、R_submod\nNULL\n只对 submod 一步做 Bootstrap，比整条流水线便宜得多\n\n\nresample_pool、R_pool\nNULL\n只对 pooling 一步做重抽样\n\n\nfilter.resamp、ple.resamp\nNULL\n设成 \"None\" 时重抽样过程中不重新训练这一步，省时间\n\n\ncalibrate、alpha.mat\nFALSE、NULL\nBootstrap 校准 \\(\\alpha\\)。1.0.7 里是空操作，见下文\n\n\nverbose.resamp\nFALSE\n打印每次重抽样的进度\n\n\n\n\n\n其它\n\n\n\n\n\n\n\n\n参数\n默认值\n说明\n\n\n\n\nseed\n777\n整个 PRISM 过程的种子。不传也可复现\n\n\nefficient\nTRUE\n文档说”存更少的输出以提速”。实测在默认配置下对象大小与内容完全相同",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>205</span>  <span class='chapter-title'>6. PRISM()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/06-prism.html#返回对象",
+    "href": "notes/stratifiedmedicine/06-prism.html#返回对象",
+    "title": "6. PRISM()：四步流水线",
+    "section": "返回对象",
+    "text": "返回对象\n\nnames(res)\n#&gt;  [1] \"call\"                  \"filter.mod\"            \"filter.vars\"          \n#&gt;  [4] \"ple.fit\"               \"mu_train\"              \"mu_test\"              \n#&gt;  [7] \"submod.fit\"            \"out.train\"             \"out.test\"             \n#&gt; [10] \"Rules\"                 \"param.dat\"             \"pool\"                 \n#&gt; [13] \"trt_assign\"            \"trt_eff\"               \"trt_eff_obs\"          \n#&gt; [16] \"trt_eff_pool\"          \"trt_eff_dopt\"          \"trt_eff_resamp\"       \n#&gt; [19] \"resample\"              \"resamp_dist\"           \"resamp_subgrps\"       \n#&gt; [22] \"resamp_calib\"          \"submod_rdist\"          \"resamp_subgrps_submod\"\n#&gt; [25] \"family\"                \"filter\"                \"ple\"                  \n#&gt; [28] \"submod\"                \"param\"                 \"meta\"                 \n#&gt; [31] \"combine\"               \"alpha_ovrl\"            \"alpha_s\"              \n#&gt; [34] \"filter.hyper\"          \"ple.hyper\"             \"submod.hyper\"\n\n常用的几个：\n\n\n\n\n\n\n\n字段\n内容\n\n\n\n\nfilter.mod / filter.vars\n过滤模型与留下的变量\n\n\nple.fit / mu_train / mu_test\n第 ② 步的模型与个体估计\n\n\nsubmod.fit\n第 ③ 步；submod.fit$mod 是 partykit / rpart 对象\n\n\nout.train / out.test\n原始数据 + Subgrps 列\n\n\nRules\n亚组规则表\n\n\nparam.dat\n主结果：各亚组与总体的效应估计\n\n\ntrt_eff_obs\n观测数据上的效应（重抽样时与 param.dat 不同，见下）\n\n\ntrt_assign / trt_eff_pool / trt_eff_dopt\npool 的产物\n\n\nresamp_dist / resamp_subgrps\n重抽样分布与逐观测的亚组归属\n\n\n\n\nhead(res$out.train[, c(\"Y\", \"A\", \"X1\", \"X2\", \"Subgrps\")], 4)\n#&gt;          Y A         X1         X2 Subgrps\n#&gt; 1 1.111561 1  0.7939807  0.7992306      11\n#&gt; 2 2.308208 0  0.6427361  2.2890763      11\n#&gt; 3 2.662106 1  2.3239631 -0.1881782      10\n#&gt; 4 1.037235 0 -0.8963944 -0.2761870       5\ntable(res$out.train$Subgrps)\n#&gt; \n#&gt;  10  11   3   5   6   9 \n#&gt; 168 107 149 110 167  99",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>205</span>  <span class='chapter-title'>6. PRISM()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/06-prism.html#sec-summary",
+    "href": "notes/stratifiedmedicine/06-prism.html#sec-summary",
+    "title": "6. PRISM()：四步流水线",
+    "section": "summary.PRISM()",
+    "text": "summary.PRISM()\n## S3 method for class 'PRISM'\nsummary(object, round_est = 4, round_SE = 4, round_CI = 4, ...)\n\nsummary(res)\n#&gt; $call\n#&gt; PRISM(Y = Y, A = A, X = X, verbose = FALSE)\n#&gt; \n#&gt; $`PRISM Configuration`\n#&gt; [1] \"[Filter] glmnet =&gt; [PLE] ranger =&gt; [Subgroups] lmtree =&gt; [Param] dr\"\n#&gt; \n#&gt; $`Variables that Pass Filter`\n#&gt;  [1] \"X1\"  \"X2\"  \"X3\"  \"X5\"  \"X7\"  \"X8\"  \"X10\" \"X12\" \"X16\" \"X18\" \"X24\" \"X26\"\n#&gt; [13] \"X31\" \"X40\" \"X46\" \"X50\"\n#&gt; \n#&gt; $`Number of Identified Subgroups`\n#&gt; [1] 6\n#&gt; \n#&gt; $`Variables that Define the Subgroups`\n#&gt; [1] \"X1, X2, X50, X26\"\n#&gt; \n#&gt; $`Subgroup Definitions`\n#&gt; [1] \"Node 3: X1 &lt;= 0.016 & X2 &lt;= -0.565\"               \n#&gt; [2] \"Node 5: X1 &lt;= 0.016 & X2 &gt; -0.565 & X50 &lt;= -0.401\"\n#&gt; [3] \"Node 6: X1 &lt;= 0.016 & X2 &gt; -0.565 & X50 &gt; -0.401\" \n#&gt; [4] \"Node 9: X1 &gt; 0.016 & X2 &lt;= 0.693 & X26 &lt;= -0.383\" \n#&gt; [5] \"Node 10: X1 &gt; 0.016 & X2 &lt;= 0.693 & X26 &gt; -0.383\" \n#&gt; [6] \"Node 11: X1 &gt; 0.016 & X2 &gt; 0.693\"                 \n#&gt; \n#&gt; $`Treatment Effect Estimates (observed)`\n#&gt;    Subgrps   N  estimand     est     SE     LCL    UCL         pval alpha\n#&gt; 36      10 168 mu_1-mu_0  0.1915 0.1314 -0.0661 0.4491 1.450606e-01  0.05\n#&gt; 31      11 107 mu_1-mu_0  0.7142 0.1762  0.3690 1.0595 5.024367e-05  0.05\n#&gt; 32       3 149 mu_1-mu_0 -0.0346 0.1539 -0.3362 0.2671 8.223395e-01  0.05\n#&gt; 33       5 110 mu_1-mu_0  0.2157 0.1587 -0.0953 0.5268 1.740354e-01  0.05\n#&gt; 34       6 167 mu_1-mu_0 -0.1415 0.1303 -0.3968 0.1138 2.773832e-01  0.05\n#&gt; 35       9  99 mu_1-mu_0  0.6346 0.1879  0.2662 1.0029 7.337644e-04  0.05\n#&gt; 3     ovrl 800 mu_1-mu_0  0.2080 0.0633  0.0838 0.3321 1.025299e-03  0.05\n#&gt; \n#&gt; attr(,\"class\")\n#&gt; [1] \"summary.PRISM\"\n\n五块：调用、配置、通过过滤的变量、亚组个数与定义、效应表。 $Variables that Define the Subgroups`` 是做方法对比时最方便的出口。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>205</span>  <span class='chapter-title'>6. PRISM()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/06-prism.html#sec-predict",
+    "href": "notes/stratifiedmedicine/06-prism.html#sec-predict",
+    "title": "6. PRISM()：四步流水线",
+    "section": "predict.PRISM()",
+    "text": "predict.PRISM()\n## S3 method for class 'PRISM'\npredict(object, newdata = NULL, type = \"all\", ...)\ntype 三个取值：\n\nhead(predict(res, X[1:3, ], type = \"ple\"), 3)\n#&gt;       mu_0     mu_1    diff_1_0    pi_0    pi_1\n#&gt; 1 1.708914 1.882839 0.139879965 0.51125 0.48875\n#&gt; 2 2.254321 2.810736 0.458499352 0.51125 0.48875\n#&gt; 3 1.945814 2.428611 0.002846365 0.51125 0.48875\nhead(predict(res, X[1:3, ], type = \"submod\"), 3)\n#&gt;   Subgrps\n#&gt; 1      11\n#&gt; 2      11\n#&gt; 3      10\nhead(predict(res, X[1:3, ]), 3)                 # type = \"all\"\n#&gt;   Subgrps     mu_0     mu_1    diff_1_0    pi_0    pi_1\n#&gt; 1      11 1.708914 1.882839 0.139879965 0.51125 0.48875\n#&gt; 2      11 2.254321 2.810736 0.458499352 0.51125 0.48875\n#&gt; 3      10 1.945814 2.428611 0.002846365 0.51125 0.48875\n\n注意 type = \"submod\" 只返回节点编号，不带效应估计—— 帮助页写的”submod predictions with associated parameter estimates” 在 1.0.7 的输出里看不到。要拿效应，用 Subgrps 去 merge() 一下 param.dat。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>205</span>  <span class='chapter-title'>6. PRISM()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/06-prism.html#sec-resample",
+    "href": "notes/stratifiedmedicine/06-prism.html#sec-resample",
+    "title": "6. PRISM()：四步流水线",
+    "section": "重抽样",
+    "text": "重抽样\n\nBootstrap\n\nset.seed(1)\nres_b &lt;- PRISM(Y = Y, A = A, X = X, resample = \"Bootstrap\", R = 30, verbose = FALSE)\nres_b$param.dat[, c(\"Subgrps\", \"N\", \"est\", \"SE\", \"LCL\", \"UCL\", \"Prob(&gt;0)\")]\n#&gt;   Subgrps   N        est         SE         LCL       UCL  Prob(&gt;0)\n#&gt; 1      10 168 0.31727759 0.14913359  0.03150952 0.5413780 0.9833096\n#&gt; 2      11 107 0.56269661 0.18610019  0.18219534 0.8363919 0.9987512\n#&gt; 3       3 149 0.04260569 0.13343715 -0.18719307 0.3155280 0.6252482\n#&gt; 4       5 110 0.08710966 0.13372037 -0.15493442 0.3551798 0.7426160\n#&gt; 5       6 167 0.01087193 0.12536796 -0.23415905 0.2093686 0.5345530\n#&gt; 6       9  99 0.30271859 0.16139248  0.04665052 0.5710001 0.9696495\n#&gt; 7    ovrl 800 0.19922834 0.06351895  0.06513560 0.3142912 0.9991452\n\n与不做重抽样的结果并排看：\n\ndata.frame(\n  Subgrps  = res_b$trt_eff_obs$Subgrps,\n  观测估计 = round(res_b$trt_eff_obs$est, 3),\n  重抽样估计 = round(res_b$param.dat$est[match(res_b$trt_eff_obs$Subgrps,\n                                               res_b$param.dat$Subgrps)], 3)\n)\n#&gt;   Subgrps 观测估计 重抽样估计\n#&gt; 1      10    0.192      0.317\n#&gt; 2      11    0.714      0.563\n#&gt; 3       3   -0.035      0.043\n#&gt; 4       5    0.216      0.087\n#&gt; 5       6   -0.141      0.011\n#&gt; 6       9    0.635      0.303\n#&gt; 7    ovrl    0.208      0.199\n\n\n\n\n\n\n\n重要重抽样之后 param.dat$est 不再是观测估计，而是去偏估计\n\n\n\n效应最大的那个亚组从 0.714 缩到 0.563，效应最小的从 \\(-0.141\\) 抬到 0.011—— 两端一起往中间收。这正是”亚组是从同一份数据里找出来的”所导致的 选择性偏倚（winner’s curse），resamp_dist 里的 bias 列记录了每次重抽样的偏差。\n观测估计仍然留在 trt_eff_obs 里。报告时该用哪个？ 做发现用观测值、做效应量声明用去偏值，并且两个都披露。\n另外注意 pval 在重抽样之后变成 NA，取而代之的是 Prob(&gt;0) （Bootstrap 分布中大于 0 的比例）。这不是 p 值，别当 p 值报。\n\n\n\n\n树结构本身有多不稳定\nresamp_dist 的 numb_subs 列记录了每次重抽样找到几个亚组：\n\ntab &lt;- aggregate(numb_subs ~ R, data = res_b$resamp_dist, FUN = function(x) x[1])\ntable(tab$numb_subs)\n#&gt; \n#&gt;  5  6  7 \n#&gt;  7 20  3\n\n30 次重抽样里亚组个数在 5–7 之间浮动。也就是说， “这份数据里有 6 个亚组”这个结论本身的稳定性只有中等。\nresamp_subgrps 是一个 \\(n \\times (1+R)\\) 的表，记录每个观测在每次重抽样中落到哪个节点：\n\ndim(res_b$resamp_subgrps)\n#&gt; [1] 800  31\nres_b$resamp_subgrps[1:3, 1:6]\n#&gt;   id   X1   X2   X3   X4 X5\n#&gt; 1  1 &lt;NA&gt; &lt;NA&gt;   11 &lt;NA&gt; 10\n#&gt; 2  2    9 &lt;NA&gt; &lt;NA&gt;    9 11\n#&gt; 3  3    5    5   11    8 10\nmean(is.na(as.matrix(res_b$resamp_subgrps[, -1])))\n#&gt; [1] 0.36825\n\n\n\n\n\n\n\n警告resamp_subgrps 的列名 X1、X2…… 不是协变量\n\n\n\n它们是 data.frame() 给未命名列自动生成的名字，实际含义是第 1、2、…… 次重抽样。 NA 表示该观测在那一次没被抽到（比例 ≈ 0.368，正是 Bootstrap 的袋外比例）。\n包里有内部函数 subgrp_stability() 和 plot_stability() 会用这张表算 “每个人稳定落在某个亚组里的概率”，但它们没有被导出，plot() 也没有对应的 type， 只能用 StratifiedMedicine::: 调。\n\n\n\n\n交叉验证\n\nset.seed(1)\nres_cv &lt;- PRISM(Y = Y, A = A, X = X, resample = \"CV\", R = 5, verbose = FALSE)\nres_cv$param.dat[, c(\"Subgrps\", \"est\", \"LCL\", \"UCL\", \"Prob(&gt;0)\")]\n#&gt;   Subgrps         est         LCL       UCL  Prob(&gt;0)\n#&gt; 1      10  0.31277746  0.05883237 0.5667225 0.9921115\n#&gt; 2      11  0.72836721  0.36220334 1.0945311 0.9999517\n#&gt; 3       3 -0.04091455 -0.36366390 0.2818348 0.4018884\n#&gt; 4       5  0.07810876 -0.13345352 0.2896710 0.7653500\n#&gt; 5       6  0.03597376 -0.19121640 0.2631639 0.6218506\n#&gt; 6       9  0.27962115 -0.01532411 0.5745664 0.9684249\n#&gt; 7    ovrl  0.20833464  0.06468686 0.3519824 0.9977624\n\nCV 的逻辑不同：每折在训练部分重跑整条流水线，在留出部分估效应， 因此它回答的是”这套流程在新数据上还成立吗”，而不是”估计有多不确定”。\n\n\n省时间的两个开关\n整条流水线重抽样很贵。filter.resamp = \"None\" 与 ple.resamp = \"None\" 让重抽样时复用观测数据上训练好的过滤器与 ple 模型：\n\nt_full &lt;- system.time(\n  PRISM(Y = Y, A = A, X = X, resample = \"Bootstrap\", R = 20, verbose = FALSE)\n)[[\"elapsed\"]]\n\nt_fast &lt;- system.time(\n  PRISM(Y = Y, A = A, X = X, resample = \"Bootstrap\", R = 20,\n        filter.resamp = \"None\", ple.resamp = \"None\", verbose = FALSE)\n)[[\"elapsed\"]]\n\nc(整条流水线 = t_full, 复用前两步 = t_fast)\n#&gt; 整条流水线 复用前两步 \n#&gt;      12.44       3.61\n\n快 3 倍多。代价是区间不再包含”过滤和 ple 也会变”这部分不确定性， 因此偏窄。做探索时可以开，做最终报告时不建议。\n另一个中间档是 resample_submod，只对建树那一步做 Bootstrap：\n\nset.seed(1)\nres_rs &lt;- PRISM(Y = Y, A = A, X = X, resample_submod = \"Bootstrap\", R_submod = 20,\n                verbose = FALSE)\n#&gt; Bootstrap Resampling (full submod_train process); R=20\nres_rs$param.dat[, c(\"Subgrps\", \"est\", \"LCL\", \"UCL\")]\n#&gt;   Subgrps          est         LCL       UCL\n#&gt; 1      10  0.314929565  0.08386361 0.4741001\n#&gt; 2      11  0.589335006  0.30473753 0.8740775\n#&gt; 3       3 -0.008339882 -0.23217609 0.2395543\n#&gt; 4       5  0.101693361 -0.04843926 0.3643958\n#&gt; 5       6 -0.033800760 -0.25849288 0.2523065\n#&gt; 6       9  0.389973901  0.07324786 0.7709488\n#&gt; 7    ovrl  0.198792808  0.12551298 0.3123801\n\n\n\ncalibrate = TRUE 是空操作\n文档：\n\nBootstrap calibration for nominal alpha (Loh et al 2016). Default=FALSE. For TRUE, outputs the calibrated alpha level and calibrated CIs…\n\n实测两者的输出逐字节相同：\n\nr0 &lt;- PRISM(Y = Y, A = A, X = X, resample = \"Bootstrap\", R = 20,\n            calibrate = FALSE, verbose = FALSE, seed = 777)\nr1 &lt;- PRISM(Y = Y, A = A, X = X, resample = \"Bootstrap\", R = 20,\n            calibrate = TRUE,  verbose = FALSE, seed = 777)\n\nisTRUE(all.equal(r0$param.dat, r1$param.dat))\n#&gt; [1] TRUE\nis.null(r1$resamp_calib)\n#&gt; [1] TRUE\n\n根因在 PRISM() 的函数体里：\nresamp_calib &lt;- NULL                       # 写死\n...\nreturn(list(..., resamp_calib = resamp_calib, ...))\n算校准表的代码在 resampler_general() 里确实存在 （coverage_counter() → calibrate_alpha()），但 PRISM() 从来没把它取回来。 alpha.mat 参数同理，传了也不会有任何效果。\n结论：在 1.0.7 里，亚组水平的多重性问题没有任何内建的校正手段。 要控制假阳性，只能自己在 alpha_s 上做文章，或用 下一节那样的阴性对照来标定。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>205</span>  <span class='chapter-title'>6. PRISM()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/06-prism.html#sec-null",
+    "href": "notes/stratifiedmedicine/06-prism.html#sec-null",
+    "title": "6. PRISM()：四步流水线",
+    "section": "阴性对照：完全没有信号时会发生什么",
+    "text": "阴性对照：完全没有信号时会发生什么\n\ndnull &lt;- generate_subgrp_data(family = \"gaussian\", null = TRUE)\nres_null &lt;- PRISM(Y = dnull$Y, A = dnull$A, X = dnull$X, verbose = FALSE)\n\nnrow(res_null$Rules)\n#&gt; [1] 5\nres_null$param.dat[, c(\"Subgrps\", \"N\", \"est\", \"pval\")]\n#&gt;    Subgrps   N         est        pval\n#&gt; 35       4 275  0.08545738 0.443604154\n#&gt; 31       5 123 -0.46597925 0.002909426\n#&gt; 32       6 235 -0.22549708 0.047045397\n#&gt; 33       8  87  0.06254672 0.706617949\n#&gt; 34       9  80 -0.03268176 0.868281686\n#&gt; 3     ovrl 800 -0.10497432 0.093916771\n\n这份数据里真实的治疗效应恒为 0，不存在任何亚组。 默认配置照样报出好几个亚组，其中有亚组的 \\(p &lt; 0.05\\)。\n这不是本包独有的问题——任何”先找亚组再在同一份数据上检验”的流程都会这样。 但它说明：param.dat 里的 p 值不能按名义水平解读。 可行的做法是把上面这段跑若干次，得到”默认配置在零假设下报出显著亚组的经验频率”， 再用它来折算你手上那份真实数据的结果。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>205</span>  <span class='chapter-title'>6. PRISM()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/06-prism.html#三条在-1.0.7-里走不通的配置",
+    "href": "notes/stratifiedmedicine/06-prism.html#三条在-1.0.7-里走不通的配置",
+    "title": "6. PRISM()：四步流水线",
+    "section": "三条在 1.0.7 里走不通的配置",
+    "text": "三条在 1.0.7 里走不通的配置\n\n## ① ple = \"None\" 时 param 的默认值 \"dr\" 需要 mu_train\nPRISM(Y = Y, A = A, X = X, ple = \"None\", verbose = FALSE)\n#&gt; Error in rep(1, dim(Xtest)[1]): invalid 'times' argument\n\n\n## 改掉 param 就能跑\nPRISM(Y = Y, A = A, X = X, ple = \"None\", param = \"lm\",\n      verbose = FALSE)$param.dat[, c(\"Subgrps\", \"est\", \"SE\")]\n#&gt;    Subgrps         est         SE\n#&gt; 3       10  0.18017749 0.15032727\n#&gt; 31      11  0.73507990 0.19631153\n#&gt; 32       3 -0.07454093 0.17749849\n#&gt; 33       5  0.20029697 0.18457487\n#&gt; 34       6 -0.22146877 0.14993699\n#&gt; 35       9  0.66904547 0.22075765\n#&gt; 1     ovrl  0.18637456 0.07175626\n\n\n## ② submod = \"None\"：换任何 param、加不加 Xtest 都失败\nPRISM(Y = Y, A = A, X = X, submod = \"None\", param = \"lm\", verbose = FALSE)\n#&gt; Error in order(param.dat$Subgrps, param.dat$estimand): argument lengths differ\n\n\n## ③ propensity = TRUE\nPRISM(Y = Y, A = A, X = X, propensity = TRUE, verbose = FALSE)\n#&gt; Error in rep(1, dim(Xtest)[1]): invalid 'times' argument\n\n生存结局下 param = \"cox\" 不需要 mu_train，所以帮助页里那条 PRISM(..., ple = \"None\", submod = \"ctree\", resample = \"Bootstrap\") 示例是能跑的—— 巧合而已，换成连续结局同样的写法就会失败。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>205</span>  <span class='chapter-title'>6. PRISM()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/06-prism.html#本页涉及的帮助主题",
+    "href": "notes/stratifiedmedicine/06-prism.html#本页涉及的帮助主题",
+    "title": "6. PRISM()：四步流水线",
+    "section": "本页涉及的帮助主题",
+    "text": "本页涉及的帮助主题\n\nPRISM\npredict.PRISM\nsummary.PRISM\n\n下一页：7. 可视化。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>205</span>  <span class='chapter-title'>6. PRISM()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/05-param-est.html",
+    "href": "notes/stratifiedmedicine/05-param-est.html",
+    "title": "5. param_est() 与 param_combine()：效应估计",
+    "section": "",
+    "text": "五个 param\n第 ④ 步。输入亚组划分，输出每个亚组的效应点估计与区间， 外加一行 ovrl（总体）。\nSubgrps 可以自定义这一点很有用——它让 param_est() 变成一个通用的 “按任意分组做效应估计”工具，不必走本包的树：\n真值是 0 / 0.25 / 0.45 / 0.65。四个估计单调递增、排序完全正确， 但每组只有约 200 人，SE 在 0.14 上下，只有效应最大的那一组显著。\n这条基线很重要：即使分组完全正确，这份数据也只够”看出排序”， 不够”每组都做出显著结论”。后面任何方法报出一堆显著亚组， 都应该先怀疑是多重比较，而不是信号强。\ns &lt;- submod_train(Y, A, X, submod = \"lmtree\")\nsg &lt;- s$Subgrps.train\nset.seed(1)\nmu &lt;- ple_train(Y, A, X, ple = \"ranger\", meta = \"X-learner\")$mu_train\n\ncmp &lt;- function(p) param_est(Y, A, X, param = p, mu_hat = mu, Subgrps = sg)\nres &lt;- data.frame(\n  Subgrps = cmp(\"lm\")$Subgrps,\n  lm      = round(cmp(\"lm\")$est, 4),\n  dr      = round(cmp(\"dr\")$est, 4),\n  gcomp   = round(cmp(\"gcomp\")$est, 4)\n)\nres\n#&gt;   Subgrps      lm      dr  gcomp\n#&gt; 1    ovrl  0.2147  0.2105 0.2061\n#&gt; 2       3 -0.0745 -0.0411 0.0825\n#&gt; 3       4 -0.0025  0.0210 0.0837\n#&gt; 4       6  0.3930  0.3609 0.2991\n#&gt; 5       7  0.7351  0.6759 0.4627\n三者在这份 RCT 数据上差别不大，但方向性很清楚： gcomp 是纯模型外推（直接平均 mu_1 - mu_0）， 被 ranger 的收缩偏倚拉向 0； dr 用残差项把这部分偏倚纠回来，所以更接近 lm； lm 无偏但方差最大。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>204</span>  <span class='chapter-title'>5. param_est() 与 param_combine()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/05-param-est.html#五个-param",
+    "href": "notes/stratifiedmedicine/05-param-est.html#五个-param",
+    "title": "5. param_est() 与 param_combine()：效应估计",
+    "section": "",
+    "text": "param\n做什么\n需要 mu_hat\n适用 family\n\n\n\n\n\"lm\"\n亚组内 \\(Y \\sim A\\) 的无校正回归\n否\ngaussian / binomial\n\n\n\"dr\"\n双稳健（AIPW）估计\n是\ngaussian / binomial\n\n\n\"gcomp\"\nG-计算：亚组内对 \\(\\hat\\mu_1-\\hat\\mu_0\\) 求平均\n是\ngaussian / binomial\n\n\n\"cox\"\n亚组内 Cox 回归，输出 log HR\n否\nsurvival\n\n\n\"rmst\"\n限制平均生存时间之差（survRM2）\n否\nsurvival\n\n\n\n\n\n\n\n\n\n\n\n重要param = \"dr\" 忘了传 mu_hat 不报错，而是静默返回 NaN\n\n\n\n\nparam_est(Y, A, X, param = \"dr\", Subgrps = sg)\n#&gt;    Subgrps   N  estimand est SE LCL UCL pval alpha\n#&gt; 3     ovrl 800 mu_1-mu_0 NaN  0 NaN NaN  NaN  0.05\n#&gt; 34       3 149 mu_1-mu_0 NaN  0 NaN NaN  NaN  0.05\n#&gt; 31       4 277 mu_1-mu_0 NaN  0 NaN NaN  NaN  0.05\n#&gt; 32       6 267 mu_1-mu_0 NaN  0 NaN NaN  NaN  0.05\n#&gt; 33       7 107 mu_1-mu_0 NaN  0 NaN NaN  NaN  0.05\n\nSE 是 0、其余全是 NaN。如果下游只看 est &gt; 0 之类的判断， 这种失败会一路传下去而不报错。凡是用 \"dr\" 或 \"gcomp\"， 先 stopifnot(!is.null(mu_hat))。\n走 PRISM() 时不会遇到这个坑（它自己会把 mu_train 接上）， 但 submod_train(param = \"dr\") 与手工调用 param_est() 都可能踩。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>204</span>  <span class='chapter-title'>5. param_est() 与 param_combine()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/05-param-est.html#生存结局cox-与-rmst-是两个不同的量",
+    "href": "notes/stratifiedmedicine/05-param-est.html#生存结局cox-与-rmst-是两个不同的量",
+    "title": "5. param_est() 与 param_combine()：效应估计",
+    "section": "生存结局：cox 与 rmst 是两个不同的量",
+    "text": "生存结局：cox 与 rmst 是两个不同的量\n\nlibrary(survival)\ndata(\"GBSG2\", package = \"TH.data\")\nYs  &lt;- with(GBSG2, Surv(time, cens))\nXs  &lt;- GBSG2[, !(colnames(GBSG2) %in% c(\"time\", \"cens\", \"horTh\"))]\nAnum &lt;- as.numeric(GBSG2$horTh == \"yes\")     # 注意：数值型\nss  &lt;- submod_train(Ys, Anum, Xs, family = \"survival\", submod = \"lmtree\")\n\nparam_est(Ys, Anum, Xs, param = \"cox\", Subgrps = ss$Subgrps.train)\n#&gt;   Subgrps   N        estimand        est        SE        LCL         UCL\n#&gt; 1    ovrl 686 logHR_1-logHR_0 -0.5458904 0.1527166 -0.8457393 -0.24604153\n#&gt; 2       3 240 logHR_1-logHR_0 -0.2726010 0.2302693 -0.7239205  0.17871842\n#&gt; 3       4 136 logHR_1-logHR_0 -1.4811052 0.5415535 -2.5425305 -0.41967977\n#&gt; 4       6 144 logHR_1-logHR_0 -0.1004515 0.2059410 -0.5040884  0.30318535\n#&gt; 5       7 166 logHR_1-logHR_0 -0.5612125 0.2422613 -1.0360359 -0.08638903\n#&gt;           pval alpha\n#&gt; 1 0.0003754959  0.05\n#&gt; 2 0.2364780043  0.05\n#&gt; 3 0.0062395574  0.05\n#&gt; 4 0.6257137973  0.05\n#&gt; 5 0.0205277986  0.05\n\n估计量名叫 logHR_1-logHR_0：相乘尺度，负值表示治疗降低风险。 换成 rmst：\n\nparam_est(Ys, Anum, Xs, param = \"rmst\", Subgrps = ss$Subgrps.train)\n#&gt;   Subgrps   N  estimand       est        SE        LCL      UCL         pval\n#&gt; 1    ovrl 686 mu_1-mu_0 215.31209  67.26982   83.23229 347.3919 0.0014341420\n#&gt; 2       3 240 mu_1-mu_0 140.54276 127.04400 -108.45891 389.5444 0.2686171829\n#&gt; 3       4 136 mu_1-mu_0 376.57882 105.73561  169.34084 583.8168 0.0003687228\n#&gt; 4       6 144 mu_1-mu_0  67.29579 154.14157 -234.81614 369.4077 0.6624128642\n#&gt; 5       7 166 mu_1-mu_0 319.68985 134.75878   55.56749 583.8122 0.0176771654\n#&gt;   alpha\n#&gt; 1  0.05\n#&gt; 2  0.05\n#&gt; 3  0.05\n#&gt; 4  0.05\n#&gt; 5  0.05\n\n估计量名仍是 mu_1-mu_0，但单位是天（相加尺度），正值表示治疗延长生存。 同一份数据、同一批亚组：节点 4 的 log HR 是 \\(-1.48\\)（\\(p = 0.006\\)）， RMST 差是 \\(+377\\) 天（\\(p = 0.0004\\)）——结论一致，但 符号方向相反、量纲不同，报告时必须写明用的是哪个。\n关于同一批 R 包在生存结局下目标量不一致的系统讨论，见 效应修饰的效应尺度。\n\nparam = \"rmst\" 不接受因子型治疗\n\nparam_est(Ys, GBSG2$horTh, Xs, param = \"rmst\", Subgrps = ss$Subgrps.train)\n#&gt; Warning in max(tt): no non-missing arguments to max; returning -Inf\n#&gt; Warning in min(ss[tt == tt0max]): no non-missing arguments to min; returning\n#&gt; Inf\n#&gt; Warning in max(tt): no non-missing arguments to max; returning -Inf\n#&gt; Warning in min(ss[tt == tt1max]): no non-missing arguments to min; returning\n#&gt; Inf\n#&gt; Error in param_rmst(Y = structure(c(1814, 772, 1842, 1684, 1701, 1693, : object 'summ' not found\n\n报的是 object 'summ' not found——一个与病因毫无关系的错误。 源码解释了全部：\nobj &lt;- tryCatch(survRM2::rmst2(time, status, arm), error = function(e) \"param error\")\nif (is.character(obj)) {           # 失败分支\n  est = NA; SE = NA; pval = NA; LCL = NA; UCL = NA\n}                                   # ← 没有构造 summ\nif (is.list(obj)) {\n  ...\n  summ &lt;- data.frame(N = n, estimand = estimands, est, SE, LCL, UCL, pval)\n}\nreturn(summ)                        # ← 失败时 summ 不存在\nsurvRM2::rmst2() 要求 arm 是 0/1 数值向量，传因子会失败； tryCatch 把失败吞掉了，却没有把 summ 补上，于是抛出上面那个错误。\n规则：用 param = \"rmst\" 前先 A &lt;- as.numeric(A == \"&lt;treated level&gt;\")。 本包其它所有 param 都接受因子，只有这一个不接受。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>204</span>  <span class='chapter-title'>5. param_est() 与 param_combine()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/05-param-est.html#两个未写进文档的取值",
+    "href": "notes/stratifiedmedicine/05-param-est.html#两个未写进文档的取值",
+    "title": "5. param_est() 与 param_combine()：效应估计",
+    "section": "两个未写进文档的取值",
+    "text": "两个未写进文档的取值\n\nhead(param_est(Y, A, X, param = \"ple\", mu_hat = mu, Subgrps = sg), 3)\n#&gt;    Subgrps   N  estimand        est        SE         LCL       UCL        pval\n#&gt; 3     ovrl 800 mu_1-mu_0 0.20605993 0.0634355  0.08172864 0.3303912 0.001160813\n#&gt; 34       3 149 mu_1-mu_0 0.08246335 0.1575707 -0.22636961 0.3912963 0.600736420\n#&gt; 31       4 277 mu_1-mu_0 0.08374982 0.1001420 -0.11252483 0.2800245 0.402980027\n#&gt;    alpha\n#&gt; 3   0.05\n#&gt; 34  0.05\n#&gt; 31  0.05\n\nparam = \"ple\" 仍可用，但每次调用都抛 'param_ple' is deprecated. Use 'param_gcomp' instead.—— 数值与 \"gcomp\" 完全相同。命名空间里还有一个 param_aft（AFT 模型）， param = \"aft\" 能跑通，但它没有出现在任何帮助页里， 输出也伴随 min(w): no non-missing arguments 警告，不建议使用。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>204</span>  <span class='chapter-title'>5. param_est() 与 param_combine()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/05-param-est.html#alpha_ovrl-与-alpha_s",
+    "href": "notes/stratifiedmedicine/05-param-est.html#alpha_ovrl-与-alpha_s",
+    "title": "5. param_est() 与 param_combine()：效应估计",
+    "section": "alpha_ovrl 与 alpha_s",
+    "text": "alpha_ovrl 与 alpha_s\n两个 \\(\\alpha\\) 是分开的：总体行用 alpha_ovrl，亚组行用 alpha_s。 设计意图是”总体结论要严、亚组探索可以松”：\n\nparam_est(Y, A, X, param = \"lm\", Subgrps = sg,\n          alpha_ovrl = 0.01, alpha_s = 0.20)[, c(\"Subgrps\", \"LCL\", \"UCL\", \"alpha\")]\n#&gt;    Subgrps         LCL       UCL alpha\n#&gt; 1     ovrl  0.02700152 0.4024422  0.01\n#&gt; 3        3 -0.30303437 0.1539525  0.20\n#&gt; 31       4 -0.15382228 0.1488069  0.20\n#&gt; 32       6  0.22785097 0.5581054  0.20\n#&gt; 33       7  0.48191866 0.9882411  0.20\n\n注意输出里 alpha 这一列是逐行的，读结果时别把两种区间混着比较。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>204</span>  <span class='chapter-title'>5. param_est() 与 param_combine()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/05-param-est.html#sec-combine",
+    "href": "notes/stratifiedmedicine/05-param-est.html#sec-combine",
+    "title": "5. param_est() 与 param_combine()：效应估计",
+    "section": "param_combine()",
+    "text": "param_combine()\n把亚组特异的估计合成一个总体估计。param_est() 内部就是调用它来生成 ovrl 行的， 但它也可以单独用——比如把别的软件算出来的亚组结果合起来。\n输入必须是一个含 est、SE、N 三列的数据框：\n\npl &lt;- param_est(Y, A, X, param = \"lm\", Subgrps = sg)\nsub &lt;- pl[pl$Subgrps != \"ovrl\", ]\n\nparam_combine(sub, combine = \"SS\")\n#&gt;   Subgrps   N       est         SE        LCL       UCL        pval alpha\n#&gt; 1    ovrl 800 0.2147219 0.07270356 0.07200932 0.3574344 0.003235241  0.05\nparam_combine(sub, combine = \"maxZ\")\n#&gt;   Subgrps   N       est         SE        LCL       UCL        pval\n#&gt; 1    ovrl 800 0.2147219 0.07270356 0.06736631 0.3620774 0.003866797\n\n\n\n\n\n\n\n\ncombine\n做法\n\n\n\n\n\"SS\"\n样本量加权：\\(\\hat\\theta = \\sum_s (n_s/n)\\hat\\theta_s\\)，方差按独立处理\n\n\n\"maxZ\"\nMehrotra & Marceau-West (2021) 的自适应加权，对”最大 Z”做了校正\n\n\n\n两者的点估计和 SE 相同，差别在区间与 p 值：maxZ 的区间更宽 （\\([0.067,\\ 0.362]\\) vs \\([0.072,\\ 0.357]\\)），p 值更保守 （0.0039 vs 0.0032）。这是为”亚组是数据里找出来的”这件事付的钱。\nalpha 参数控制区间宽度：\n\nparam_combine(sub, combine = \"SS\", alpha = 0.10)[, c(\"est\", \"LCL\", \"UCL\", \"alpha\")]\n#&gt;         est        LCL       UCL alpha\n#&gt; 1 0.2147219 0.09499634 0.3344474   0.1\n\n\n\n\n\n\n\n注记combine 对 \"dr\" 不生效\n\n\n\n帮助页在 combine 的说明里写着”Not applicable for param = \"dr\", \"ple\"“。 原因是双稳健估计本身就是在全样本上算的影响函数均值， ovrl 行直接由全样本影响函数得到，不经过亚组加权这条路。 所以在 param = \"dr\" 下改 combine 不会有任何变化。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>204</span>  <span class='chapter-title'>5. param_est() 与 param_combine()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/05-param-est.html#返回结构",
+    "href": "notes/stratifiedmedicine/05-param-est.html#返回结构",
+    "title": "5. param_est() 与 param_combine()：效应估计",
+    "section": "返回结构",
+    "text": "返回结构\n无论哪个 param，返回的都是同一套列：\n\n\n\n\n\n\n\n列\n含义\n\n\n\n\nSubgrps\n亚组编号，\"ovrl\" 表示总体\n\n\nN\n该亚组样本量\n\n\nestimand\n估计量名称：mu_1-mu_0、logHR_1-logHR_0……列名会随治疗水平变\n\n\nest、SE\n点估计与标准误\n\n\nLCL、UCL\n置信限（对应该行的 alpha）\n\n\npval\n双侧 p 值\n\n\nalpha\n该行用的 \\(\\alpha\\)\n\n\n\nPRISM() 会在此基础上再加 Prob(&gt;0)（正态近似或 Bootstrap 经验概率） 和生存结局下的 events 列。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>204</span>  <span class='chapter-title'>5. param_est() 与 param_combine()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/05-param-est.html#小结",
+    "href": "notes/stratifiedmedicine/05-param-est.html#小结",
+    "title": "5. param_est() 与 param_combine()：效应估计",
+    "section": "小结",
+    "text": "小结\n\n\n\n\n\n\n\n情况\n用哪个 param\n\n\n\n\nRCT，连续/二值\n\"dr\"（记得传 mu_hat）；想要完全无模型依赖就用 \"lm\"\n\n\n观察性数据\n\"gcomp\"——因为 propensity = TRUE 在 1.0.7 里坏掉了，\"dr\" 只能用边际倾向性\n\n\n生存，相乘尺度\n\"cox\"\n\n\n生存，相加尺度\n\"rmst\"，且治疗必须转成数值 0/1\n\n\n已有别处算好的亚组结果\n直接喂给 param_combine()",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>204</span>  <span class='chapter-title'>5. param_est() 与 param_combine()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/05-param-est.html#本页涉及的帮助主题",
+    "href": "notes/stratifiedmedicine/05-param-est.html#本页涉及的帮助主题",
+    "title": "5. param_est() 与 param_combine()：效应估计",
+    "section": "本页涉及的帮助主题",
+    "text": "本页涉及的帮助主题\n\nparam_est\nparam_combine\n\n下一页：6. PRISM。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>204</span>  <span class='chapter-title'>5. param_est() 与 param_combine()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/07-plots.html",
+    "href": "notes/stratifiedmedicine/07-plots.html",
+    "title": "7. 可视化：五个绘图函数",
+    "section": "",
+    "text": "plot.PRISM()：统一入口\n包里有五个绘图函数，全部返回 ggplot2 对象，可以继续用 + 叠加图层。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>206</span>  <span class='chapter-title'>7. 可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/07-plots.html#plot.prism统一入口",
+    "href": "notes/stratifiedmedicine/07-plots.html#plot.prism统一入口",
+    "title": "7. 可视化：五个绘图函数",
+    "section": "",
+    "text": "## S3 method for class 'PRISM'\nplot(x, type = \"tree\", target = NULL, grid.data = NULL, grid.thres = \"&gt;0\",\n     prob.thres = \"&gt;0\", tree.plots = \"outcome\",\n     nudge_out = 0.1, width_out = 0.5,\n     nudge_dens = ifelse(tree.plots == \"both\", 0.3, 0.1), width_dens = 0.5, ...)\n\n\n\ntype\n画什么\n状态\n\n\n\n\n\"tree\"（默认）\n树结构 + 各节点估计\n✅\n\n\n\"forest\"\n总体与各亚组的森林图\n✅\n\n\n\"PLE:waterfall\"\nCATE 瀑布图\n✅\n\n\n\"PLE:density\"\nCATE 密度图\n✅\n\n\n\"resample\"\n重抽样分布\n✅（必须先做重抽样）\n\n\n\"heatmap\"\n二维热图\n❌ 已弃用且已损坏，见下文\n\n\n\n\ntype = \"tree\"\n\n\nplot(res)\n\n\n\n\n\n\n\n\n\n每个节点里画的是什么，由 tree.plots 控制：\n\n\n\n\n\n\n\ntree.plots\n节点里画\n\n\n\n\n\"outcome\"（默认）\nparam = \"dr\" 时是双稳健的反事实估计箱线图；param = \"lm\" 或 ple = \"None\" 时是观测 \\(Y\\) 按 \\(A\\) 分组；生存结局是 Kaplan–Meier 曲线\n\n\n\"density\"\n该节点治疗效应的概率密度（正态近似，或重抽样分布）\n\n\n\"both\"\n两者都画\n\n\n\"none\"\n只画树结构\n\n\n\n\n\nplot(res, tree.plots = \"both\")\n#&gt; Warning: Removed 1874 rows containing missing values or values outside the scale range\n#&gt; (`geom_area()`).\n#&gt; Warning: Removed 468 rows containing missing values or values outside the scale range\n#&gt; (`geom_area()`).\n#&gt; Warning: Removed 2034 rows containing missing values or values outside the scale range\n#&gt; (`geom_area()`).\n#&gt; Warning: Removed 930 rows containing missing values or values outside the scale range\n#&gt; (`geom_area()`).\n\n\n\n\n\n\n\n\n\nprob.thres 控制密度图的着色阈值与图例里的 \\(P(\\cdot)\\)： \"&gt;0\" 时高于 0 的部分用绿色；写成 \"&lt;1\" 会把配色反过来 （生存结局下 param = \"cox\" 的默认就是 \"&lt;1\"，因为 HR &lt; 1 才是获益）。\nnudge_out / width_out / nudge_dens / width_dens 是把节点里的子图 往上/下推和缩放的参数，直接透传给 ggparty。树很深、节点很多时需要调它们。\n\n\ntype = \"forest\"\n\nplot(res, type = \"forest\")\n\n\n\n\n\n\n\n\n森林图给的是 param.dat 的图形版：一行总体 + 每个亚组一行。 没做重抽样时用的是正态近似区间；做了 Bootstrap 则是百分位区间。\n\n\ntype = \"PLE:waterfall\" 与 \"PLE:density\"\n\nplot(res, type = \"PLE:waterfall\")\n\n\n\n\n\n\n\nplot(res, type = \"PLE:density\")\n\n\n\n\n\n\n\n\n瀑布图把每个人的 CATE 从小到大排开。它非常容易被过度解读： 即使真实效应完全同质，估计出来的 CATE 也会因为噪声而呈现出一条斜线。 判断异质性是否真实，要看第 6 页的重抽样， 或者干脆做一次阴性对照再画一张同样的瀑布图对比。\n\n\ntype = \"resample\"\n\nset.seed(1)\nres_b &lt;- PRISM(Y = Y, A = A, X = X, resample = \"Bootstrap\", R = 30, verbose = FALSE)\nplot(res_b, type = \"resample\", target = \"mu_1-mu_0\") +\n  geom_vline(xintercept = 0, linetype = 2)\n\n\n\n\n\n\n\n\ntarget 必须显式给出估计量的名字（从 param.dat$estimand 里取）。 没做重抽样就调用会报一个与病因无关的 UseMethod(\"left_join\") 错误：\n\nplot(res, type = \"resample\", target = \"mu_1-mu_0\")\n#&gt; Error in UseMethod(\"left_join\"): no applicable method for 'left_join' applied to an object of class \"NULL\"\n\n\n\ntype = \"heatmap\" 已经坏了\n\ngrid &lt;- expand.grid(X1 = seq(-2, 2, by = 0.5), X2 = seq(-2, 2, by = 0.5))\nplot(res, type = \"heatmap\", grid.data = grid)\n#&gt; Warning in plot_heatmap(x = x, grid.data = grid.data, grid.thres = grid.thres): 'plot_heatmap' is deprecated.\n#&gt; Use 'plot_dependence' instead.\n#&gt; See help(\"Deprecated\")\n#&gt; Error in `$&lt;-.data.frame`(`*tmp*`, \"ind.ple\", value = integer(0)): replacement has 0 rows, data has 64800\n\n内部函数 plot_heatmap() 第一行就是 .Deprecated(\"plot_dependence\")， 而且它调用 predict(x, newdata = ..., type = \"ple\") 之后去取一个叫 PLE 的列—— 这个列名在现在的 predict.PRISM() 输出里已经不存在了（现在叫 diff_1_0）， 于是后续的 $&lt;- 拿到长度 0 的向量而失败。\n替代品是 plot_dependence(..., grid.data = )，见下文。 grid.thres 参数只服务于这条已废的路径，可以忽略。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>206</span>  <span class='chapter-title'>7. 可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/07-plots.html#sec-tree-fn",
+    "href": "notes/stratifiedmedicine/07-plots.html#sec-tree-fn",
+    "title": "7. 可视化：五个绘图函数",
+    "section": "plot_tree()",
+    "text": "plot_tree()\nplot_tree(object, prob.thres = \"&gt;0\", plots = \"outcome\",\n          nudge_out = 0.1, width_out = 0.5,\n          nudge_dens = ifelse(plots == \"both\", 0.3, 0.1), width_dens = 0.5,\n          dens_title = NULL, node_label = NULL, ...)\nplot(prism_obj, type = \"tree\") 内部就是调它。直接用它的好处有两个：\n\n它也接受 submod_train 对象，不必跑完整条 PRISM()；\n它比 plot.PRISM() 多两个参数——dens_title 与 node_label， 可以改密度图标题和节点标注文字。\n\n\n\ns &lt;- submod_train(Y, A, X, submod = \"lmtree\")\nplot_tree(s, node_label = \"治疗效应\")\n\n\n\n\n\n\n\n\n\n注意这棵树用的是全部 50 个协变量（没经过过滤），只切了 X1、X2， 比上面 PRISM() 那棵 6 节点的树干净——原因见 第 8 页。\n\n\n\n\n\n\n警告plot_tree() 接受 submod_train 对象，但 param = \"dr\" 时会崩\n\n\n\n\nplot_tree(submod_train(Y, A, X, submod = \"lmtree\", param = \"dr\"))\n#&gt; Error in data.frame(estimand = mu_A0, est = eif_0, Subgrps = object$out.train$Subgrps): arguments imply differing number of rows: 1, 0, 800\n\n节点面板的绘制代码去 object$out.train 里找双稳健的影响函数列， 而 submod_train 对象里没有 PRISM 那一套字段，于是 data.frame() 拿到长度 1、0、800 三个不等长的向量。\nsubmod_train 对象请用默认的 param = \"lm\" 再画； 想看双稳健估计的节点图，走完整的 PRISM()。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>206</span>  <span class='chapter-title'>7. 可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/07-plots.html#sec-importance",
+    "href": "notes/stratifiedmedicine/07-plots.html#sec-importance",
+    "title": "7. 可视化：五个绘图函数",
+    "section": "plot_importance()",
+    "text": "plot_importance()\nplot_importance(object, top_n = NULL, ...)\nobject 可以是 PRISM 对象，也可以直接是 filter_train 对象 （帮助页只写了前者，但示例用的是后者）。\n\nplot_importance(res)\n\n\n\n\n\n\n\n\n画的是 elastic net 的非零系数。默认设置下这是一张”预后重要性”图， 因为过滤器跑的是 \\(Y \\sim \\text{ENET}(X)\\)，治疗根本没进模型。\n打开交互项之后才会出现 _trtA 条目，那些才是效应修饰候选：\n\nres_i &lt;- PRISM(Y = Y, A = A, X = X,\n               filter.hyper = list(interaction = TRUE), verbose = FALSE)\nplot_importance(res_i)\n\n\n\n\n\n\n\n\nX1_trtA、X2_trtA 出现在图上，正是真值里的两个效应修饰变量。\n\n\n\n\n\n\n警告top_n 对 glmnet 分支无效\n\n\n\nplot_importance() 的帮助页说 top_n 会”只显示最重要的 top_n 个变量”。 这只对 filter = \"ranger\" 成立——ranger 分支按 p 值排序后取前 top_n 个。 glmnet 分支的源码是：\nVI.dat &lt;- VI.dat[VI.dat$est != 0, ]\nVI.dat$rank &lt;- 1                      # 所有变量的 rank 都写成 1\nrank 被硬编码成 1，top_n 的筛选条件恒成立，于是全部非零系数都会画出来：\n\nnrow(plot_importance(res_i, top_n = 5)$data)\n#&gt; [1] 29\n\nranger 分支则正常：\n\nset.seed(1)\nf_rf &lt;- filter_train(Y, A, X, filter = \"ranger\", hyper = list(K = 50))\nplot_importance(f_rf, top_n = 8)\n\n\n\n\n\n\n\n\n另外 glmnet 图的 y 轴标签写的是 “Beta (standardized)”， 但取的是 coef(cv.glmnet)——glmnet 内部标准化后会把系数变换回原始尺度， 所以那是原尺度的系数，坐标轴标签有误导。变量量纲不同时不能直接横向比较柱长。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>206</span>  <span class='chapter-title'>7. 可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/07-plots.html#sec-ple",
+    "href": "notes/stratifiedmedicine/07-plots.html#sec-ple",
+    "title": "7. 可视化：五个绘图函数",
+    "section": "plot_ple()",
+    "text": "plot_ple()\nplot_ple(object, target = NULL, type = \"waterfall\", ...)\n只接受 ple_train 对象（不是 PRISM 对象）。 target 选 mu_train 里的哪一列，默认是治疗差。\n\nset.seed(1)\np &lt;- ple_train(Y, A, X, ple = \"ranger\", meta = \"X-learner\")\nplot_ple(p)\n\n\n\n\n\n\n\nplot_ple(p, type = \"density\")\n\n\n\n\n\n\n\nplot_ple(p, target = \"mu_1\")\n\n\n\n\n\n\n\n\n第三张图展示了 target 的用处：看某个臂下的绝对水平分布， 而不是效应差。做临床解释时”治疗组的预期结局有多高”往往比”效应差”更好沟通。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>206</span>  <span class='chapter-title'>7. 可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/07-plots.html#sec-dependence",
+    "href": "notes/stratifiedmedicine/07-plots.html#sec-dependence",
+    "title": "7. 可视化：五个绘图函数",
+    "section": "plot_dependence()",
+    "text": "plot_dependence()\nplot_dependence(object, X = NULL, target = NULL, vars, grid.data = NULL, ...)\n偏依赖图（PDP）：把某个变量在取值网格上逐点替换， 对全样本预测后取平均，看 CATE 随该变量怎么变。 接受 ple_train 与 PRISM 两种对象。\n\n单变量\n\nplot_dependence(p, X = X, vars = \"X1\")\n\n\n\n\n\n\n\n\n同样的图对一个纯预后变量（X3，真值里对 CATE 毫无影响）画出来：\n\nplot_dependence(p, X = X, vars = \"X3\")\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n警告每张图的 y 轴各算各的，噪声会被放大到和信号一样高\n\n\n\nX3 那张图看起来同样”有结构”，因为纵轴范围是按它自己的数据定的。 判读时必须比较 y 轴跨度：\n\nsapply(c(\"X1\", \"X2\", \"X3\"), function(v) {\n  d &lt;- plot_dependence(p, X = X, vars = v)$data\n  round(diff(range(d[[\"est\"]])), 4)\n})\n#&gt;     X1     X2     X3 \n#&gt; 0.1015 0.0393 0.0261\n\nX1 的跨度是 X3 的四倍。只看形状不看刻度，很容易把噪声读成信号。\n\n\n\n\n两个变量：热图\n给两个变量时画的是热图，横纵轴各一个变量，填色是平均 CATE：\n\nplot_dependence(p, X = X, vars = c(\"X1\", \"X2\"))\n\n\n\n\n\n\n\n\n也可以自己指定取值网格（grid.data 优先于 vars）， 用来把范围限制在数据的主体区间内，避免边缘外推：\n\ngrid2 &lt;- expand.grid(X1 = seq(-2, 2, by = 0.4), X2 = seq(-2, 2, by = 0.4))\nplot_dependence(p, X = X, grid.data = grid2)\n\n\n\n\n\n\n\n\n左下角（\\(X_1\\)、\\(X_2\\) 都低）估计效应最小，右上角最大—— 与真值（0 / 0.25 / 0.45 / 0.65 按 \\(X_1\\)、\\(X_2\\) 的中位数切）完全一致。 这是本包里最能把”两个变量的联合修饰作用”讲清楚的一张图。\n\n\n三个变量会失败\n帮助页写”2 到 3 个变量，若为 3 个则最后一个不能是连续变量”。 实测 vars 给三个变量时直接报错：\n\nplot_dependence(p, X = X, vars = c(\"X1\", \"X2\", \"X3\"))\n#&gt; Error in data.frame(grid.data, var3 = v): arguments imply differing number of rows: 441, 800\n\n走 grid.data 也一样——第三列若是字符/因子，函数会把它写进 X 里的数值列， 分面变量随后拿到 NA，ggplot2 报 scale_id must not contain any \"NA\"：\n\nplot_dependence(p, X = X, grid.data =\n                  expand.grid(X1 = c(-1, 0, 1), X2 = c(-1, 0, 1),\n                              X3 = c(\"low\", \"high\")))\n#&gt; Error in `scale_apply()`:\n#&gt; ! `scale_id` must not contain any \"NA\".\n\n要用三变量分面，必须先把那个变量在 X 里就造成因子再重新拟合 ple 模型。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>206</span>  <span class='chapter-title'>7. 可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/07-plots.html#小结",
+    "href": "notes/stratifiedmedicine/07-plots.html#小结",
+    "title": "7. 可视化：五个绘图函数",
+    "section": "小结",
+    "text": "小结\n\n\n\n\n\n\n\n想看什么\n用哪个\n\n\n\n\n亚组结构与各组效应\nplot(res) / plot_tree()\n\n\n各亚组效应的并排比较\nplot(res, type = \"forest\")\n\n\n个体效应的分布\nplot_ple()（注意过度解读风险）\n\n\n哪些变量重要\nplot_importance()，且必须配 filter.hyper = list(interaction = TRUE)\n\n\n某变量如何调节效应\nplot_dependence(vars = )，比较 y 轴跨度\n\n\n两变量的联合调节\nplot_dependence(grid.data = )\n\n\n估计有多不稳\nplot(res_b, type = \"resample\")",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>206</span>  <span class='chapter-title'>7. 可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/07-plots.html#本页涉及的帮助主题",
+    "href": "notes/stratifiedmedicine/07-plots.html#本页涉及的帮助主题",
+    "title": "7. 可视化：五个绘图函数",
+    "section": "本页涉及的帮助主题",
+    "text": "本页涉及的帮助主题\n\nplot.PRISM\nplot_tree\nplot_importance\nplot_ple\nplot_dependence\n\n下一页：8. 实测清单与工作流。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>206</span>  <span class='chapter-title'>7. 可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/08-pitfalls.html",
+    "href": "notes/stratifiedmedicine/08-pitfalls.html",
+    "title": "8. 实测清单与工作流",
+    "section": "",
+    "text": "失效路径清单\n前七页逐个函数展开。这一页把所有会咬人的地方集中起来， 再给一套可以照抄的工作流。\n在 1.0.7 + R 4.4.3 上实测，下列写法必定失败：\n静默失败（不报错但结果是错的）更危险：",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>207</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/08-pitfalls.html#文档与实现不一致清单",
+    "href": "notes/stratifiedmedicine/08-pitfalls.html#文档与实现不一致清单",
+    "title": "8. 实测清单与工作流",
+    "section": "文档与实现不一致清单",
+    "text": "文档与实现不一致清单\n\n\n\n\n\n\n\n帮助页写的\n实际\n\n\n\n\nsubmod_train 默认 param = \"dr\"\n实际 \"lm\"（生存 \"cox\"）；只有 PRISM 是 \"dr\"\n\n\nlmtree / glmtree 默认 alpha = 0.05\n源码是 alpha = 0.1\n\n\nrpart / rpart_cate 有 alpha 超参\n函数签名里没有这个参数\n\n\n*_train 返回 mod\n实际是 fit（filter_train 除外）\n\n\nsubmod_train 返回 pred.train / pred.test\n不存在；实际是 Subgrps.train / Subgrps.test / trt_eff\n\n\npredict.submod_train 返回 pred\n树类模型恒为 NULL\n\n\npredict.PRISM(type = \"submod\") 带效应估计\n只有 Subgrps 一列\n\n\ngenerate_subgrp_data 支持 \"survival\"\n分支为空，报错\n\n\nmeta 可选 T/S/X\n源码里还有 \"DR-learner\"\n\n\nparam 可选 lm/dr/gcomp/cox/rmst\n还有已弃用的 \"ple\" 和未文档化的 \"aft\"\n\n\nple 可选 linear/ranger/glmnet/bart\n\"glmnet\" 已 .Deprecated()",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>207</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/08-pitfalls.html#sec-filter-harm",
+    "href": "notes/stratifiedmedicine/08-pitfalls.html#sec-filter-harm",
+    "title": "8. 实测清单与工作流",
+    "section": "过滤反而制造假亚组",
+    "text": "过滤反而制造假亚组\n这是本手册最重要的一条方法学结论，也是默认 PRISM() 与手工拼流水线 结果不同的唯一来源。\n\ns_full &lt;- submod_train(Y, A, X, submod = \"lmtree\")          # 全部 50 个\nfv     &lt;- filter_train(Y, A, X, filter = \"glmnet\")$filter.vars\ns_filt &lt;- submod_train(Y, A, X[, fv], submod = \"lmtree\")    # 过滤后 16 个\n\ns_full$Rules\n#&gt;   Subgrps                      Rules\n#&gt; 1       3 X1 &lt;= 0.016 & X2 &lt;= -0.565\n#&gt; 2       4  X1 &lt;= 0.016 & X2 &gt; -0.565\n#&gt; 3       6   X1 &gt; 0.016 & X2 &lt;= 0.693\n#&gt; 4       7    X1 &gt; 0.016 & X2 &gt; 0.693\ns_filt$Rules\n#&gt;   Subgrps                                     Rules\n#&gt; 1       3                X1 &lt;= 0.016 & X2 &lt;= -0.565\n#&gt; 2       5 X1 &lt;= 0.016 & X2 &gt; -0.565 & X50 &lt;= -0.401\n#&gt; 3       6  X1 &lt;= 0.016 & X2 &gt; -0.565 & X50 &gt; -0.401\n#&gt; 4       9  X1 &gt; 0.016 & X2 &lt;= 0.693 & X26 &lt;= -0.383\n#&gt; 5      10   X1 &gt; 0.016 & X2 &lt;= 0.693 & X26 &gt; -0.383\n#&gt; 6      11                   X1 &gt; 0.016 & X2 &gt; 0.693\n\n真值只有 X1、X2 两个效应修饰变量。 用全部 50 个变量时树只切 X1、X2；过滤到 16 个之后反而多切出 X50 和 X26。\n把每一刀的分裂 p 值挖出来，原因一目了然：\n\nlibrary(partykit)\nsplit_p &lt;- function(tr) {\n  m &lt;- tr$fit$mod\n  inner &lt;- setdiff(nodeids(m), nodeids(m, terminal = TRUE))\n  do.call(rbind, lapply(inner, function(i) {\n    info &lt;- nodeapply(m, i, function(n) n$info)[[1]]\n    data.frame(node = i,\n               var  = names(info$test[1, ])[which.min(info$test[\"p.value\", ])],\n               p    = signif(min(info$test[\"p.value\", ], na.rm = TRUE), 2))\n  }))\n}\nsplit_p(s_full)\n#&gt;   node var       p\n#&gt; 1    1  X1 1.8e-12\n#&gt; 2    2  X2 2.5e-02\n#&gt; 3    5  X2 1.8e-05\nsplit_p(s_filt)\n#&gt;   node var       p\n#&gt; 1    1  X1 5.6e-13\n#&gt; 2    2  X2 8.0e-03\n#&gt; 3    4 X50 6.2e-02\n#&gt; 4    7  X2 5.8e-06\n#&gt; 5    8 X26 3.4e-02\n\n\n\n\n\n\n\n重要为什么少给变量反而切得更碎\n\n\n\nMOB 的分裂检验对候选变量个数做 Bonferroni 校正。 候选从 50 个降到 16 个，等于把校正放松了 3 倍多， 原本过不了阈值的边缘变量就挤了进来。\n再加上本包 lmtree 的默认 alpha 是 0.1（不是帮助页写的 0.05）， X50 那一刀的 p 值是 0.062——在 0.05 下会被拒绝，在 0.1 下被接受。\n判别办法：真分裂的 p 值通常小几个数量级（这里是 \\(10^{-13}\\)、\\(10^{-6}\\)）， 挤进来的在 0.03–0.06 之间。用上面的 split_p() 把 p 值打出来， 比看树图可靠得多。\n推荐做法：想找效应修饰变量时不要过滤（filter = \"None\"）， 把全部候选变量交给 MOB，让它自己的多重性校正发挥作用。 过滤留给 \\(p \\gg n\\) 的场景，或者只用来做”看一眼有哪些变量相关”的探索。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>207</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/08-pitfalls.html#sec-null",
+    "href": "notes/stratifiedmedicine/08-pitfalls.html#sec-null",
+    "title": "8. 实测清单与工作流",
+    "section": "默认配置在零假设下的表现",
+    "text": "默认配置在零假设下的表现\ngenerate_subgrp_data(null = TRUE) 生成的数据里， 治疗效应恒为 0，不存在任何亚组。跑 20 次看默认 PRISM() 报什么：\n\nset.seed(99)\nsim &lt;- t(sapply(1:20, function(i) {\n  d &lt;- generate_subgrp_data(n = 800, seed = 1000 + i, family = \"gaussian\", null = TRUE)\n  r &lt;- PRISM(Y = d$Y, A = d$A, X = d$X, verbose = FALSE)\n  pd &lt;- r$param.dat[r$param.dat$Subgrps != \"ovrl\", ]\n  c(亚组数 = nrow(pd), 显著亚组数 = sum(pd$pval &lt; 0.05, na.rm = TRUE))\n}))\ntable(sim[, \"亚组数\"])\n#&gt; \n#&gt; 3 4 5 6 \n#&gt; 5 8 5 2\ncolMeans(sim)\n#&gt;     亚组数 显著亚组数 \n#&gt;       4.20       0.75\nmean(sim[, \"显著亚组数\"] &gt; 0)\n#&gt; [1] 0.45\n\n\n\n\n\n\n\n警告三个必须记住的数字\n\n\n\n\n20 次里没有一次报告”没有亚组”——树总是切得出东西来；\n平均每份数据报出 4.2 个亚组；\n45% 的数据里至少有一个亚组 \\(p &lt; 0.05\\)。\n\nparam.dat$pval 是在同一份数据上找完亚组之后算的，没有任何多重性校正， 也没有对”亚组是选出来的”这件事做修正。它不能按名义水平解读。\n而 1.0.7 里唯一的内建修正手段 calibrate = TRUE 是空操作。 所以实践中只有三条路： ① 用外部验证集；② 用 resample = \"CV\"； ③ 像上面这样自己做阴性对照，把经验阈值标定出来。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>207</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/08-pitfalls.html#sec-modifier",
+    "href": "notes/stratifiedmedicine/08-pitfalls.html#sec-modifier",
+    "title": "8. 实测清单与工作流",
+    "section": "推荐工作流：在生存数据上找效应修饰变量",
+    "text": "推荐工作流：在生存数据上找效应修饰变量\n下面这套在 GBSG2 上跑一遍。这份数据里 progrec（孕激素受体）是文献公认的 效应修饰变量，pnodes（阳性淋巴结数）是强预后但非修饰因子—— 正好用来检验流程是否分得清两者。\n\ndata(\"GBSG2\", package = \"TH.data\")\nYs   &lt;- with(GBSG2, Surv(time, cens))\nXs   &lt;- GBSG2[, !(colnames(GBSG2) %in% c(\"time\", \"cens\", \"horTh\"))]\nAnum &lt;- as.numeric(GBSG2$horTh == \"yes\")   # 数值 0/1，rmst 需要\n\n\n第 1 步：用交互项筛一遍，看排序\n\nf  &lt;- filter_train(Ys, Anum, Xs, family = \"survival\", filter = \"glmnet\",\n                   hyper = list(interaction = TRUE))\ncf &lt;- coef(f$mod, s = f$mod$sel.lambda)[, 1]\ncf &lt;- cf[cf != 0]\n\nround(cf[!grepl(\"_trtA$\", names(cf))], 4)     # 主效应 = 预后\n#&gt;               age menostat_lvl_Post             tsize     tgrade_lvl_.L \n#&gt;           -0.0019            0.0381            0.0918            0.1746 \n#&gt;     tgrade_lvl_.Q            pnodes           progrec                 A \n#&gt;           -0.0798            0.2361           -0.2645           -0.1248\nround(cf[ grepl(\"_trtA$\", names(cf))], 4)     # 交互 = 效应修饰候选\n#&gt; tgrade_lvl_.L_trtA tgrade_lvl_.Q_trtA        pnodes_trtA       progrec_trtA \n#&gt;             0.0258             0.0402             0.0808            -0.2610\n\n主效应里 pnodes 最大（0.247），交互项里 progrec_trtA 绝对值最大（0.162）。 两列的排序不同——这正是”预后”和”效应修饰”是两回事的直接证据。\n\n\n第 2 步：MOB + parm = 2，不做过滤\n\nres &lt;- PRISM(Y = Ys, A = Anum, X = Xs,\n             filter = \"None\",                        # 见上一节\n             submod.hyper = list(parm = 2),          # 只检验治疗系数\n             verbose = FALSE)\nres$Rules\n#&gt;   Subgrps         Rules\n#&gt; 1       2 progrec &lt;= 21\n#&gt; 2       3  progrec &gt; 21\n\n切点 progrec = 21 由数据决定，与文献一致。 作为对照，不加 parm = 2 的默认树会先切 pnodes（纯预后变量）。\n\n\n第 3 步：两个尺度各报一遍\n\nres$param.dat[, c(\"Subgrps\", \"N\", \"est\", \"SE\", \"LCL\", \"UCL\", \"pval\", \"events\")]\n#&gt;   Subgrps   N        est        SE        LCL        UCL         pval events\n#&gt; 1       2 281 -0.1009184 0.1667928 -0.4278263  0.2259894 0.5451440302    157\n#&gt; 2       3 405 -0.6639970 0.1916349 -1.0395945 -0.2883995 0.0005304167    142\n#&gt; 3    ovrl 686 -0.4333482 0.1321662 -0.6928477 -0.1738487 0.0010951599    299\n\nparam_est(Ys, Anum, Xs, param = \"rmst\",\n          Subgrps = res$out.train$Subgrps)[, c(\"Subgrps\", \"N\", \"est\", \"SE\", \"pval\")]\n#&gt;   Subgrps   N       est        SE         pval\n#&gt; 1    ovrl 686 238.86945  74.70658 0.0014503466\n#&gt; 2       2 281  79.61037 123.94379 0.5206717513\n#&gt; 3       3 405 349.36773  92.82856 0.0001674981\n\n\n\n\n\n\n\n\n\n\n亚组\nn\nlog HR\nRMST 差（天）\n\n\n\n\nprogrec ≤ 21\n281\n\\(-0.10\\)（\\(p = 0.55\\)）\n\\(+80\\)（\\(p = 0.52\\)）\n\n\nprogrec &gt; 21\n405\n\\(-0.66\\)（\\(p &lt; 0.001\\)）\n\\(+349\\)（\\(p &lt; 0.001\\)）\n\n\n\n两个尺度结论一致——这是一个好迹象。 如果相乘尺度显著而相加尺度不显著，往往说明”修饰效应”其实来自基线风险的差异， 见效应修饰的效应尺度。\n\n\n第 4 步：重抽样，看这个结论有多稳\n\nset.seed(2)\nres_b &lt;- PRISM(Y = Ys, A = Anum, X = Xs, filter = \"None\",\n               submod.hyper = list(parm = 2),\n               resample = \"Bootstrap\", R = 30, verbose = FALSE)\n\nres_b$param.dat[, c(\"Subgrps\", \"est\", \"LCL\", \"UCL\", \"Prob(&gt;0)\")]\n#&gt;   Subgrps        est        LCL         UCL    Prob(&gt;0)\n#&gt; 1       2 -0.2186014 -0.5451876  0.07574433 0.123364471\n#&gt; 2       3 -0.8205067 -1.4657263 -0.36145502 0.002602438\n#&gt; 3    ovrl -0.5735963 -1.0078677 -0.30963966 0.001215297\ntable(aggregate(numb_subs ~ R, data = res_b$resamp_dist,\n                FUN = function(x) x[1])$numb_subs)\n#&gt; \n#&gt;  2  3  4  5  6  7 \n#&gt;  5  7  5 10  1  1\n\n区间仍然把 progrec &gt; 21 那一组的获益排除在 0 之外，这是支持性证据。 但 numb_subs 的分布说明树的大小在重抽样之间波动很大： 观测数据上只切 1 刀，重抽样里常常切出 4–5 个亚组。\n\n\n\n\n\n\n注记resamp_dist 的行标签是观测亚组\n\n\n\n每次重抽样对每一个观测亚组各给一行估计（\\(R \\times\\) 亚组数 + \\(R\\) 行 ovrl）， 而 numb_subs 记录的是那一次重抽样自己的树切出了几个亚组。 两者不相等说明：重抽样区间回答的是 “在重抽样数据上重新估计这批人的效应”有多不确定， 不是”重抽样能不能找到同样的亚组”。\n后一个问题要看 numb_subs（树的大小是否稳定） 与 resamp_subgrps（每个人是否稳定落在同一组）。 包里有内部函数 subgrp_stability() 处理后者，但没有导出。\n\n\n\n\n完整脚本\nlibrary(StratifiedMedicine); library(survival)\ndata(\"GBSG2\", package = \"TH.data\")\nYs   &lt;- with(GBSG2, Surv(time, cens))\nXs   &lt;- GBSG2[, !(colnames(GBSG2) %in% c(\"time\", \"cens\", \"horTh\"))]\nAnum &lt;- as.numeric(GBSG2$horTh == \"yes\")\n\n## 1. 交互筛选：看候选排序，不用它做过滤\nf  &lt;- filter_train(Ys, Anum, Xs, family = \"survival\", filter = \"glmnet\",\n                   hyper = list(interaction = TRUE))\ncf &lt;- coef(f$mod, s = f$mod$sel.lambda)[, 1]; cf &lt;- cf[cf != 0]\nsort(abs(cf[grepl(\"_trtA$\", names(cf))]), decreasing = TRUE)\n\n## 2. MOB 只检验治疗系数，不过滤\nres &lt;- PRISM(Ys, Anum, Xs, filter = \"None\",\n             submod.hyper = list(parm = 2), verbose = FALSE)\nsummary(res)\n\n## 3. 两个尺度\nres$param.dat                                             # log HR\nparam_est(Ys, Anum, Xs, param = \"rmst\", Subgrps = res$out.train$Subgrps)\n\n## 4. 稳定性\nres_b &lt;- PRISM(Ys, Anum, Xs, filter = \"None\", submod.hyper = list(parm = 2),\n               resample = \"Bootstrap\", R = 200, verbose = FALSE)\nres_b$param.dat\ntable(aggregate(numb_subs ~ R, data = res_b$resamp_dist, FUN = function(x) x[1])$numb_subs)\n\n## 5. 置换对照：跑几十次，统计\"切出东西\"的频率\n##    注意必须 tryCatch——一刀未切时本包报错而不是返回空结果\nset.seed(11)\nperm &lt;- replicate(50, {\n  r &lt;- tryCatch(PRISM(Ys, sample(Anum), Xs, filter = \"None\",\n                      submod.hyper = list(parm = 2), verbose = FALSE),\n                error = function(e) NULL)\n  if (is.null(r)) 0L else nrow(r$Rules)\n})\nmean(perm &gt; 0)          # 置换零假设下\"找到亚组\"的经验频率\n\n\n第 5 步：置换对照\n把治疗标签随机打乱，真实的效应修饰信号应当消失。本包没有提供这一步， 但它是这套流程里最便宜也最有说服力的一环：\n\nset.seed(11)\nperm &lt;- sapply(1:10, function(i) {\n  ap &lt;- sample(Anum)\n  r &lt;- tryCatch(PRISM(Y = Ys, A = ap, X = Xs, filter = \"None\",\n                      submod.hyper = list(parm = 2), verbose = FALSE),\n                error = function(e) NULL)\n  if (is.null(r)) \"一刀未切\" else paste(nrow(r$Rules), \"个亚组:\", r$Rules$Rules[1])\n})\ntable(perm)\n#&gt; perm\n#&gt; 一刀未切 \n#&gt;       10\n\n10 次置换里 10 次都一刀未切——这正是正确答案： 治疗被打乱之后确实不存在效应修饰。\n\n\n\n\n\n\n重要“没有亚组”这个正确答案，在本包里是一个报错\n\n\n\n上面那 10 次全都走了 tryCatch 的错误分支。裸跑是这样：\n\nset.seed(11); A_p &lt;- sample(Anum)\nPRISM(Y = Ys, A = A_p, X = Xs, filter = \"None\",\n      submod.hyper = list(parm = 2), verbose = FALSE)\n#&gt; Error in rep(1, dim(Xtest)[1]): invalid 'times' argument\n\n树没有分裂时 extract_rules() 拿到零行规则， PRISM() 随后走进一条需要 Xtest 的分支（补上 Xtest 也救不了）。 和 maxdepth = 1 是同一个根因，但这一次 它触发在最正常的使用场景里：数据中本来就没有效应修饰。\n所以任何批量运行（模拟、置换、交叉验证）都必须用 tryCatch() 包住 PRISM()， 并把错误当成”未发现亚组”来统计，否则整个循环会在第一次遇到阴性结果时中断。\n\n\n并不是每次置换都这么干净。换一个种子：\n\nset.seed(1)\nr_fp &lt;- PRISM(Y = Ys, A = sample(Anum), X = Xs, filter = \"None\",\n              submod.hyper = list(parm = 2), verbose = FALSE)\nr_fp$Rules\n#&gt;   Subgrps       Rules\n#&gt; 1       2 estrec &lt;= 8\n#&gt; 2       3  estrec &gt; 8\nr_fp$param.dat[, c(\"Subgrps\", \"N\", \"est\", \"SE\", \"pval\")]\n#&gt;   Subgrps   N         est        SE        pval\n#&gt; 1       2 179  0.56557928 0.2012576 0.004950674\n#&gt; 2       3 507 -0.08911965 0.1501065 0.552706379\n#&gt; 3    ovrl 686  0.08171287 0.1227404 0.505803047\n\n这一次它切在 estrec 上，而且其中一个”亚组”的 \\(p = 0.005\\)—— 比真实数据上那棵树的分裂 p 值（0.010）还小。 11 次置换里出现 1 次，与 lmtree 默认的 \\(\\alpha = 0.1\\) 大致相符。\n这就是为什么置换对照要跑几十次而不是一次： 单次阴性说明不了什么，单次阳性更说明不了什么，要看频率。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>207</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/08-pitfalls.html#本包在方法谱系里的位置",
+    "href": "notes/stratifiedmedicine/08-pitfalls.html#本包在方法谱系里的位置",
+    "title": "8. 实测清单与工作流",
+    "section": "本包在方法谱系里的位置",
+    "text": "本包在方法谱系里的位置\n\n\n\n\n\n\n\n\n能力\nStratifiedMedicine\n对照\n\n\n\n\n把 MOB 的 parm 接通\n✅ submod.hyper = list(parm = 2)\nmodel4you::pmtree() 接受但不生效\n\n\n直接给出可读的亚组规则\n✅ $Rules\ngrf 只给 CATE，规则要自己提取\n\n\n亚组效应的正式推断\n✅ 五种 param，两种尺度\ngrf 靠 RATE / BLP\n\n\n效应修饰变量的重要性 + p 值\n⚠️ filter = \"ranger\" 测的是预后重要性\ntidyhte::calculate_vimp() 给 VIMP 及标准误\n\n\n混杂校正\n❌ propensity = TRUE 在 1.0.7 里坏了\ngrf、tmle3 内建\n\n\n多重性校正\n❌ calibrate 是空操作\n需自己做置换/CV\n\n\n\n一句话：StratifiedMedicine 是”从候选变量到可读亚组 + 正式效应表”这段路上最顺手的包， 但它的混杂校正和多重性校正都要在包外自己解决。\n更系统的横向比较见 观察性研究中的效应修饰变量识别 与快速筛选效应修饰变量的 R 包。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>207</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/08-pitfalls.html#本手册覆盖的-17-个帮助主题",
+    "href": "notes/stratifiedmedicine/08-pitfalls.html#本手册覆盖的-17-个帮助主题",
+    "title": "8. 实测清单与工作流",
+    "section": "本手册覆盖的 17 个帮助主题",
+    "text": "本手册覆盖的 17 个帮助主题\n\n\n\n主题\n页\n\n\n\n\ngenerate_subgrp_data\n1\n\n\nfilter_train\n2\n\n\nple_train、predict.ple_train\n3\n\n\nsubmod_train、predict.submod_train、summary.submod_train\n4\n\n\nparam_est、param_combine\n5\n\n\nPRISM、predict.PRISM、summary.PRISM\n6\n\n\nplot.PRISM、plot_tree、plot_importance、plot_ple、plot_dependence\n7\n\n\n\n回到手册首页。",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>207</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/stratifiedmedicine/08-pitfalls.html#sec-broken",
+    "href": "notes/stratifiedmedicine/08-pitfalls.html#sec-broken",
+    "title": "8. 实测清单与工作流",
+    "section": "",
+    "text": "写法\n错误信息\n根因\n\n\n\n\npropensity = TRUE（ple_train / submod_train / PRISM）\ncomparison (==) is possible only for atomic and list types\nprop_learner(learner = ) 收到函数对象，却拿去和字符串比\n\n\nPRISM(submod = \"None\")\norder(param.dat$Subgrps, ...) argument lengths differ\n未拟合 submod 时后续代码仍按有亚组处理\n\n\nPRISM(ple = \"None\")（不改 param）\n同上\n默认 param = \"dr\" 需要 mu_train。改成 param = \"lm\" 即可\n\n\nparam_est(param = \"rmst\") 且 A 是因子\nobject 'summ' not found\nsurvRM2::rmst2() 要 0/1 数值；失败分支没构造返回对象\n\n\nsubmod_train(submod = \"otr\")（不传 mu_train）\ndata.frame(ind_PLE, X) ... 0, 800\notr 不在触发 ple 拟合的条件里\n\n\n树一刀未切（真的没有亚组，或 maxdepth = 1）\nsubmod_train：data.frame(Subgrps = names(rules_vec), ...) ... 0, 1；PRISM：rep(1, dim(Xtest)[1])\n零分裂的树让 extract_rules() 崩溃。这是阴性结果的正常表现，见下文\n\n\nfilter_train(filter = \"None\") / submod_train(submod = \"None\")\nobject 'None' not found\n\"None\" 只在 PRISM() 外层有特判\n\n\nplot(res, type = \"heatmap\")\n$&lt;-.data.frame ... value = integer(0)\n已弃用；内部找一个叫 PLE 的列，现在叫 diff_1_0\n\n\nplot_tree(submod_train(..., param = \"dr\"))\ndata.frame(...) ... 1, 0, 800\n节点面板代码要 PRISM 才有的字段\n\n\nplot_dependence(vars = &lt;3 个&gt;)\ndata.frame(grid.data, var3 = v) ... 441, 800\n三变量分面路径与 X 的列类型冲突\n\n\nplot(res, type = \"resample\") 而未重抽样\nUseMethod(\"left_join\")\n没有 resamp_dist 可合并\n\n\ngenerate_subgrp_data(family = \"survival\")\nobject 'Y' not found\n源码里生存分支是空的\n\n\nple_train(ple = \"bart\", meta = \"S-learner\")\nargument \"Xtest\" is missing\nS_learner() 不给 ple_bart() 传 Xtest\n\n\n\n\n\n\n\n\n\n\n\n写法\n表现\n\n\n\n\nparam_est(param = \"dr\") 不传 mu_hat\n全部返回 NaN，SE = 0\n\n\ncalibrate = TRUE\n空操作，输出与 FALSE 逐字节相同\n\n\nple_train(tau = ) 且 A 非空\ntau 被内部重算覆盖\n\n\nplot_importance(top_n = ) + glmnet 过滤\nrank 被硬编码成 1，top_n 无效\n\n\nple = \"linear\" + 生存 + T-learner\ndiff 是两个各自居中的 Cox 线性预测值之差，符号都可能是反的\n\n\nefficient = TRUE/FALSE\n实测对象大小与内容相同",
+    "crumbs": [
+      "StratifiedMedicine 包函数手册",
+      "<span class='chapter-number'>207</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
   }
 ]

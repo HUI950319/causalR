@@ -1,0 +1,260 @@
+---
+title: "5. param_est() 与 param_combine()：效应估计"
+subtitle: "StratifiedMedicine 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(StratifiedMedicine)
+dat <- generate_subgrp_data(family = "gaussian")
+Y <- dat$Y; A <- dat$A; X <- dat$X
+```
+
+第 ④ 步。输入亚组划分，输出**每个亚组的效应点估计与区间**，
+外加一行 `ovrl`（总体）。
+
+```r
+param_est(Y, A, X, param, mu_hat = NULL, Subgrps,
+          alpha_ovrl = 0.05, alpha_s = 0.05, combine = "SS", ...)
+
+param_combine(param.dat, combine = "SS", alpha = 0.05, ...)
+```
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `param` | **无默认，必填** | `"lm"` / `"dr"` / `"gcomp"` / `"cox"` / `"rmst"` |
+| `mu_hat` | `NULL` | `ple_train()$mu_train`。`"dr"` 与 `"gcomp"` 需要它 |
+| `Subgrps` | — | 长度为 $n$ 的亚组编号向量。**可以是自己预先指定的**，不必来自 `submod_train()` |
+| `alpha_ovrl` | `0.05` | 总体行的双侧 $\alpha$ |
+| `alpha_s` | `0.05` | 各亚组行的双侧 $\alpha$ |
+| `combine` | `"SS"` | 怎么把亚组估计合成总体估计：`"SS"`（样本量加权）或 `"maxZ"` |
+
+`Subgrps` 可以自定义这一点很有用——它让 `param_est()` 变成一个通用的
+"**按任意分组做效应估计**"工具，不必走本包的树：
+
+```{r}
+#| label: custom-subgrps
+## 直接用真实的亚组标签
+param_est(Y, A, X, param = "lm", Subgrps = dat$subgrps)
+```
+
+真值是 0 / 0.25 / 0.45 / 0.65。四个估计单调递增、排序完全正确，
+但每组只有约 200 人，SE 在 0.14 上下，**只有效应最大的那一组显著**。
+
+这条基线很重要：**即使分组完全正确**，这份数据也只够"看出排序"，
+不够"每组都做出显著结论"。后面任何方法报出一堆显著亚组，
+都应该先怀疑是多重比较，而不是信号强。
+
+## 五个 `param`
+
+| `param` | 做什么 | 需要 `mu_hat` | 适用 `family` |
+|---|---|---|---|
+| `"lm"` | 亚组内 $Y \sim A$ 的无校正回归 | 否 | gaussian / binomial |
+| `"dr"` | 双稳健（AIPW）估计 | **是** | gaussian / binomial |
+| `"gcomp"` | G-计算：亚组内对 $\hat\mu_1-\hat\mu_0$ 求平均 | **是** | gaussian / binomial |
+| `"cox"` | 亚组内 Cox 回归，输出 log HR | 否 | survival |
+| `"rmst"` | 限制平均生存时间之差（`survRM2`） | 否 | survival |
+
+```{r}
+#| label: three-params
+s <- submod_train(Y, A, X, submod = "lmtree")
+sg <- s$Subgrps.train
+set.seed(1)
+mu <- ple_train(Y, A, X, ple = "ranger", meta = "X-learner")$mu_train
+
+cmp <- function(p) param_est(Y, A, X, param = p, mu_hat = mu, Subgrps = sg)
+res <- data.frame(
+  Subgrps = cmp("lm")$Subgrps,
+  lm      = round(cmp("lm")$est, 4),
+  dr      = round(cmp("dr")$est, 4),
+  gcomp   = round(cmp("gcomp")$est, 4)
+)
+res
+```
+
+三者在这份 RCT 数据上差别不大，但方向性很清楚：
+`gcomp` 是**纯模型外推**（直接平均 `mu_1 - mu_0`），
+被 `ranger` 的收缩偏倚拉向 0；
+`dr` 用残差项把这部分偏倚纠回来，所以更接近 `lm`；
+`lm` 无偏但方差最大。
+
+::: {.callout-important}
+## `param = "dr"` 忘了传 `mu_hat` 不报错，而是**静默返回 NaN** {#sec-dr-nan}
+
+```{r}
+#| label: dr-nan
+param_est(Y, A, X, param = "dr", Subgrps = sg)
+```
+
+`SE` 是 0、其余全是 `NaN`。如果下游只看 `est > 0` 之类的判断，
+这种失败会一路传下去而不报错。**凡是用 `"dr"` 或 `"gcomp"`，
+先 `stopifnot(!is.null(mu_hat))`。**
+
+走 `PRISM()` 时不会遇到这个坑（它自己会把 `mu_train` 接上），
+但 `submod_train(param = "dr")` 与手工调用 `param_est()` 都可能踩。
+:::
+
+## 生存结局：`cox` 与 `rmst` 是两个不同的量
+
+```{r}
+#| label: surv-setup
+#| message: false
+library(survival)
+data("GBSG2", package = "TH.data")
+Ys  <- with(GBSG2, Surv(time, cens))
+Xs  <- GBSG2[, !(colnames(GBSG2) %in% c("time", "cens", "horTh"))]
+Anum <- as.numeric(GBSG2$horTh == "yes")     # 注意：数值型
+ss  <- submod_train(Ys, Anum, Xs, family = "survival", submod = "lmtree")
+
+param_est(Ys, Anum, Xs, param = "cox", Subgrps = ss$Subgrps.train)
+```
+
+估计量名叫 `logHR_1-logHR_0`：**相乘尺度**，负值表示治疗降低风险。
+换成 `rmst`：
+
+```{r}
+#| label: surv-rmst
+param_est(Ys, Anum, Xs, param = "rmst", Subgrps = ss$Subgrps.train)
+```
+
+估计量名仍是 `mu_1-mu_0`，但单位是**天**（**相加尺度**），正值表示治疗延长生存。
+同一份数据、同一批亚组：节点 4 的 log HR 是 $-1.48$（$p = 0.006$），
+RMST 差是 $+377$ 天（$p = 0.0004$）——结论一致，但
+**符号方向相反、量纲不同**，报告时必须写明用的是哪个。
+
+关于同一批 R 包在生存结局下目标量不一致的系统讨论，见
+[效应修饰的效应尺度](../sources/effect-modifier-effect-scale.qmd)。
+
+### `param = "rmst"` 不接受因子型治疗 {#sec-rmst}
+
+```{r}
+#| label: rmst-factor
+#| error: true
+param_est(Ys, GBSG2$horTh, Xs, param = "rmst", Subgrps = ss$Subgrps.train)
+```
+
+报的是 `object 'summ' not found`——一个与病因毫无关系的错误。
+源码解释了全部：
+
+```r
+obj <- tryCatch(survRM2::rmst2(time, status, arm), error = function(e) "param error")
+if (is.character(obj)) {           # 失败分支
+  est = NA; SE = NA; pval = NA; LCL = NA; UCL = NA
+}                                   # ← 没有构造 summ
+if (is.list(obj)) {
+  ...
+  summ <- data.frame(N = n, estimand = estimands, est, SE, LCL, UCL, pval)
+}
+return(summ)                        # ← 失败时 summ 不存在
+```
+
+`survRM2::rmst2()` 要求 `arm` 是 0/1 数值向量，传因子会失败；
+`tryCatch` 把失败吞掉了，却没有把 `summ` 补上，于是抛出上面那个错误。
+
+**规则**：用 `param = "rmst"` 前先 `A <- as.numeric(A == "<treated level>")`。
+本包其它所有 `param` 都接受因子，只有这一个不接受。
+
+## 两个未写进文档的取值
+
+```{r}
+#| label: undocumented
+#| warning: false
+head(param_est(Y, A, X, param = "ple", mu_hat = mu, Subgrps = sg), 3)
+```
+
+`param = "ple"` 仍可用，但每次调用都抛
+`'param_ple' is deprecated. Use 'param_gcomp' instead.`——
+数值与 `"gcomp"` 完全相同。命名空间里还有一个 `param_aft`（AFT 模型），
+`param = "aft"` 能跑通，但它没有出现在任何帮助页里，
+输出也伴随 `min(w): no non-missing arguments` 警告，**不建议使用**。
+
+## `alpha_ovrl` 与 `alpha_s`
+
+两个 $\alpha$ 是分开的：总体行用 `alpha_ovrl`，亚组行用 `alpha_s`。
+设计意图是"总体结论要严、亚组探索可以松"：
+
+```{r}
+#| label: alphas
+param_est(Y, A, X, param = "lm", Subgrps = sg,
+          alpha_ovrl = 0.01, alpha_s = 0.20)[, c("Subgrps", "LCL", "UCL", "alpha")]
+```
+
+注意输出里 `alpha` 这一列是**逐行**的，读结果时别把两种区间混着比较。
+
+## `param_combine()` {#sec-combine}
+
+把亚组特异的估计合成一个总体估计。`param_est()` 内部就是调用它来生成 `ovrl` 行的，
+但它也可以单独用——比如把**别的软件**算出来的亚组结果合起来。
+
+输入必须是一个含 `est`、`SE`、`N` 三列的数据框：
+
+```{r}
+#| label: combine
+pl <- param_est(Y, A, X, param = "lm", Subgrps = sg)
+sub <- pl[pl$Subgrps != "ovrl", ]
+
+param_combine(sub, combine = "SS")
+param_combine(sub, combine = "maxZ")
+```
+
+| `combine` | 做法 |
+|---|---|
+| `"SS"` | 样本量加权：$\hat\theta = \sum_s (n_s/n)\hat\theta_s$，方差按独立处理 |
+| `"maxZ"` | Mehrotra & Marceau-West (2021) 的自适应加权，对"最大 Z"做了校正 |
+
+两者的**点估计和 SE 相同**，差别在区间与 p 值：`maxZ` 的区间更宽
+（$[0.067,\ 0.362]$ vs $[0.072,\ 0.357]$），p 值更保守
+（0.0039 vs 0.0032）。这是为"亚组是数据里找出来的"这件事付的钱。
+
+`alpha` 参数控制区间宽度：
+
+```{r}
+#| label: combine-alpha
+param_combine(sub, combine = "SS", alpha = 0.10)[, c("est", "LCL", "UCL", "alpha")]
+```
+
+::: {.callout-note}
+## `combine` 对 `"dr"` 不生效
+
+帮助页在 `combine` 的说明里写着"Not applicable for `param = "dr"`, `"ple"`"。
+原因是双稳健估计本身就是在全样本上算的影响函数均值，
+`ovrl` 行直接由全样本影响函数得到，不经过亚组加权这条路。
+所以在 `param = "dr"` 下改 `combine` 不会有任何变化。
+:::
+
+## 返回结构
+
+无论哪个 `param`，返回的都是同一套列：
+
+| 列 | 含义 |
+|---|---|
+| `Subgrps` | 亚组编号，`"ovrl"` 表示总体 |
+| `N` | 该亚组样本量 |
+| `estimand` | 估计量名称：`mu_1-mu_0`、`logHR_1-logHR_0`……**列名会随治疗水平变** |
+| `est`、`SE` | 点估计与标准误 |
+| `LCL`、`UCL` | 置信限（对应该行的 `alpha`） |
+| `pval` | 双侧 p 值 |
+| `alpha` | 该行用的 $\alpha$ |
+
+`PRISM()` 会在此基础上再加 `Prob(>0)`（正态近似或 Bootstrap 经验概率）
+和生存结局下的 `events` 列。
+
+## 小结
+
+| 情况 | 用哪个 `param` |
+|---|---|
+| RCT，连续/二值 | `"dr"`（记得传 `mu_hat`）；想要完全无模型依赖就用 `"lm"` |
+| 观察性数据 | `"gcomp"`——因为 `propensity = TRUE` 在 1.0.7 里坏掉了，`"dr"` 只能用边际倾向性 |
+| 生存，相乘尺度 | `"cox"` |
+| 生存，相加尺度 | `"rmst"`，且治疗必须转成数值 0/1 |
+| 已有别处算好的亚组结果 | 直接喂给 `param_combine()` |
+
+## 本页涉及的帮助主题
+
+- `param_est`
+- `param_combine`
+
+下一页：[6. PRISM](06-prism.qmd)。
