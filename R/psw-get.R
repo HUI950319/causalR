@@ -124,26 +124,29 @@
     smd_over  = as.numeric(smd_over))
 }
 
-# Resolve the exposure to a 0/1 integer. A two-level factor or character
-# column is read as "the second level is the treated arm", which is also what
-# WeightIt scores, so the score and the weights cannot disagree about
-# direction.
+# Resolve the exposure to a 0/1 integer and name the arm that became 1. A
+# two-level factor or character column is read as "the second level is the
+# treated arm", which is also what WeightIt scores, so the score and the
+# weights cannot disagree about direction. A character column is ordered
+# alphabetically, which is the wrong way round for "case" / "control", so the
+# label is returned alongside the coding for print() to show.
 #' @keywords internal
 #' @noRd
 .psw_treat <- function(x, nm) {
-  if (is.logical(x)) return(as.integer(x))
+  if (is.logical(x)) return(list(z = as.integer(x), treated = "TRUE"))
   if (is.factor(x) || is.character(x)) {
     lv <- if (is.factor(x)) levels(droplevels(x)) else sort(unique(x))
     if (length(lv) != 2L)
       stop(sprintf("`treat` column `%s` must have exactly 2 levels; found %d.",
                    nm, length(lv)), call. = FALSE)
-    return(as.integer(match(as.character(x), lv) - 1L))
+    return(list(z = as.integer(match(as.character(x), lv) - 1L),
+                treated = lv[[2L]]))
   }
   u <- sort(unique(x))
   if (!all(u %in% c(0, 1)))
     stop(sprintf("`treat` column `%s` must be 0/1, logical, or a two-level factor or character column.",
                  nm), call. = FALSE)
-  as.integer(x)
+  list(z = as.integer(x), treated = "1")
 }
 
 
@@ -338,7 +341,13 @@
 #' @param data A data frame holding every column named below.
 #' @param treat Length-1 character. The binary exposure column: `0`/`1`,
 #'   logical, or a two-level factor or character column whose **second** level
-#'   (alphabetically, for a character column) is the treated one.
+#'   is the treated one. A character column is ordered alphabetically, so
+#'   `"case"` / `"control"` would make `"control"` the treated arm; convert
+#'   such a column to a factor with the control level first. The arm actually
+#'   taken as treated is recorded in `attr(x, "analysis")$treated` and shown
+#'   by `print()`. The column is returned in `$data` exactly as supplied: the
+#'   0/1 coding is used internally, so neither the direction of the score nor
+#'   the balance table depends on the labels.
 #' @param adj_var Character vector of covariates the propensity model adjusts
 #'   for. Required unless `ps` is supplied, and required either way when
 #'   `balance = TRUE`.
@@ -553,10 +562,16 @@ get_PSW <- function(data,
     stop(sprintf("`data` already has column(s) %s, which get_PSW() writes. Rename them first.",
                  paste0("`", clash, "`", collapse = ", ")), call. = FALSE)
 
-  z <- .psw_treat(data[[treat]], treat)
+  tz <- .psw_treat(data[[treat]], treat)
+  z  <- tz$z
   if (length(unique(z)) != 2L)
     stop(sprintf("`treat` column `%s` has only one arm after dropping incomplete rows.",
                  treat), call. = FALSE)
+  # The model and the balance table see the 0/1 coding, so the direction of
+  # the score and the signs in the balance table cannot depend on how the arms
+  # were labelled. The column goes back into the returned data as it came in.
+  treat_col     <- data[[treat]]
+  data[[treat]] <- z
 
   if (is.null(ps)) {
     f  <- .psw_fit(data, treat, adj_var, method, ps_args)
@@ -608,6 +623,7 @@ get_PSW <- function(data,
   }
 
   bal <- if (balance) .psw_balance(data, adj_var, treat, wcols, keep) else NULL
+  data[[treat]] <- treat_col
   smd <- function(col) {
     if (is.null(bal)) return(c(NA_real_, NA_real_))
     s <- abs(bal$estimate[bal$metric == "smd" & bal$method == col])
@@ -626,7 +642,7 @@ get_PSW <- function(data,
     list(data = data, stats = st, balance = bal, fit = ft),
     class = c("psw_res", "list"),
     analysis = list(
-      treat = treat, adj_var = adj_var, ps = ps,
+      treat = treat, treated = tz$treated, adj_var = adj_var, ps = ps,
       estimand = estimand, wcols = wcols,
       method = if (is.null(ps)) method else NA_character_,
       stabilize = stabilize,
@@ -644,8 +660,8 @@ get_PSW <- function(data,
 #' @noRd
 print.psw_res <- function(x, ...) {
   a <- attr(x, "analysis")
-  cat(sprintf("<psw_res> n = %d (%d trimmed), treat = %s, score %s\n",
-              a$n, a$n_trimmed, a$treat,
+  cat(sprintf("<psw_res> n = %d (%d trimmed), treat = %s (treated = %s), score %s\n",
+              a$n, a$n_trimmed, a$treat, a$treated,
               if (is.na(a$method)) paste0("supplied (", a$ps, ")")
               else paste0("from method = \"", a$method, "\"")))
   cat(sprintf("  range %s%s%s%s\n",

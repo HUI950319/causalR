@@ -88,7 +88,7 @@
 .psm_plt_weight <- function(x, wcols, title) {
   a   <- attr(x, "analysis")
   lab <- .psm_labels(wcols)
-  arm <- factor(x$data[[a$treat]], levels = c(0L, 1L),
+  arm <- factor(.psw_treat(x$data[[a$treat]], a$treat)$z, levels = c(0L, 1L),
                 labels = c("Control", "Treated"))
 
   long <- do.call(rbind, lapply(wcols, function(w) {
@@ -121,7 +121,7 @@
          call. = FALSE)
   a   <- attr(x, "analysis")
   lab <- .psm_labels(wcols)
-  arm <- factor(x$data[[a$treat]], levels = c(0L, 1L),
+  arm <- factor(.psw_treat(x$data[[a$treat]], a$treat)$z, levels = c(0L, 1L),
                 labels = c("Control", "Treated"))
 
   long <- do.call(rbind, lapply(wcols, function(w) data.frame(

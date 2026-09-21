@@ -304,18 +304,37 @@ test_that("a supplied score bypasses the model", {
 
 
 test_that("factor and character exposures take the second level as treated", {
+  skip_if_not_installed("halfmoon")
   d    <- psw_data()
   d$zf <- factor(d$z, levels = c(0, 1), labels = c("no", "yes"))
   d$zc <- ifelse(d$z == 1, "yes", "no")
 
-  num <- get_PSW(d, treat = "z",  adj_var = psw_adj, balance = FALSE)
-  fct <- suppressMessages(
-    get_PSW(d, treat = "zf", adj_var = psw_adj, balance = FALSE))
-  chr <- suppressMessages(
-    get_PSW(d, treat = "zc", adj_var = psw_adj, balance = FALSE))
+  num <- get_PSW(d, treat = "z",  adj_var = psw_adj, estimand = "ATO")
+  fct <- get_PSW(d, treat = "zf", adj_var = psw_adj, estimand = "ATO")
+  chr <- get_PSW(d, treat = "zc", adj_var = psw_adj, estimand = "ATO")
 
   expect_equal(fct$data$w_ato, num$data$w_ato)
   expect_equal(chr$data$w_ato, num$data$w_ato)
+
+  # the balance table is computed on the 0/1 coding, so its signs do not
+  # follow the labelling, and the column comes back exactly as supplied
+  expect_equal(fct$balance$estimate, num$balance$estimate)
+  expect_equal(chr$balance$estimate, num$balance$estimate)
+  expect_s3_class(fct$data$zf, "factor")
+  expect_type(chr$data$zc, "character")
+
+  # the arm taken as treated is recorded and printed
+  expect_identical(attr(num, "analysis")$treated, "1")
+  expect_identical(attr(fct, "analysis")$treated, "yes")
+  expect_match(paste(utils::capture.output(print(chr)), collapse = "\n"),
+               "treat = zc (treated = yes)", fixed = TRUE)
+
+  # alphabetical order puts "control" second; the label makes that visible
+  d$zr <- ifelse(d$z == 1, "active", "control")
+  rev  <- get_PSW(d, treat = "zr", adj_var = psw_adj, balance = FALSE,
+                  estimand = "ATT")
+  expect_identical(attr(rev, "analysis")$treated, "control")
+  expect_identical(rev$stats$n_treat, sum(d$z == 0))
 })
 
 

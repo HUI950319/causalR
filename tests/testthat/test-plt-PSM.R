@@ -59,6 +59,25 @@ test_that("the weight figure shows only matched units", {
 })
 
 
+test_that("the arm-split figures read a factor exposure back", {
+  skip_if_not_installed("halfmoon")
+  set.seed(20260921)
+  n <- 200L
+  d <- data.frame(x1 = stats::rnorm(n), x2 = stats::rbinom(n, 1, 0.4),
+                  x3 = stats::runif(n))
+  d$z <- factor(stats::rbinom(n, 1, stats::plogis(-0.9 - 1.1 * d$x1)),
+                levels = c(0, 1), labels = c("no", "yes"))
+  res <- get_PSM(d, treat = "z", adj_var = c("x1", "x2", "x3"),
+                 balance = FALSE)
+  expect_s3_class(res$data$z, "factor")
+
+  for (ty in c("weight", "ps"))
+    expect_no_error(ggplot2::ggplot_build(plt_PSM(res, ty)))
+  b <- ggplot2::ggplot_build(plt_PSM(res, "weight"))$plot$data
+  expect_setequal(as.character(unique(b$arm)), c("Control", "Treated"))
+})
+
+
 test_that("method selects which schemes are drawn", {
   skip_if_not_installed("optmatch")
   res <- plt_psm_res(balance = FALSE, method = c("nearest", "full"))

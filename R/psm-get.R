@@ -37,7 +37,8 @@
 #   * A character or 1/2-coded exposure makes matchit()'s internal glm fail
 #     with "y values must be 0 <= y <= 1", and a factor whose levels are
 #     reversed silently swaps the arms. .psw_treat() settles the coding
-#     before matchit() ever sees it.
+#     before matchit() ever sees it; the returned $data carries the column
+#     as supplied, and the arm taken as treated is recorded and printed.
 #   * "discarded" (outside common support) and "unmatched" (no partner
 #     found) are different things and are reported in separate columns.
 # =============================================================================
@@ -241,9 +242,14 @@
 #' @param data A data frame holding every column named below.
 #' @param treat Length-1 character. The binary exposure column: `0`/`1`,
 #'   logical, or a two-level factor or character column whose **second** level
-#'   is the treated one. The coding is settled here, before MatchIt sees it,
+#'   is the treated one. A character column is ordered alphabetically, so
+#'   `"case"` / `"control"` would make `"control"` the treated arm; convert
+#'   such a column to a factor with the control level first. The arm actually
+#'   taken as treated is recorded in `attr(x, "analysis")$treated` and shown
+#'   by `print()`. The 0/1 coding is settled here, before MatchIt sees it,
 #'   because a character exposure makes MatchIt's internal model fail and a
-#'   reversed factor silently swaps the arms.
+#'   reversed factor silently swaps the arms; the column is returned in
+#'   `$data` exactly as supplied.
 #' @param adj_var Character vector of covariates to match on and to report
 #'   balance for.
 #' @param ps Length-1 character or `NULL` (default). Column holding an
@@ -287,9 +293,10 @@
 #'
 #' @return An object of class `psm_res`: a list of
 #'   \describe{
-#'     \item{`data`}{The input data plus `ps`, and per method a weight column
-#'       `w_<method>` (`0` for a unit that was not matched) and a subclass
-#'       column `s_<method>` (`NA` where unmatched). Every input row is kept,
+#'     \item{`data`}{The input data, with `treat` exactly as supplied, plus
+#'       `ps`, and per method a weight column `w_<method>` (`0` for a unit
+#'       that was not matched) and a subclass column `s_<method>` (`NA` where
+#'       unmatched). Every input row is kept,
 #'       so the columns stay aligned and several schemes fit in one frame; the
 #'       `w_` prefix is what
 #'       `halfmoon::plot_ess(.weights = starts_with("w_"))` selects on, and
@@ -306,7 +313,9 @@
 #'       `method` column holds the weight column name or `"observed"`. `NULL`
 #'       when `balance = FALSE`.}
 #'     \item{`fit`}{Named list of the `matchit` objects, one per method, for
-#'       `summary()`, `plot()` or `cobalt::bal.tab()`.}
+#'       `summary()`, `plot()`, `cobalt::bal.tab()` or
+#'       [MatchIt::match.data()], which finds the data on its own and returns
+#'       the exposure recoded to 0/1.}
 #'   }
 #'   Analysis metadata is attached as `attr(x, "analysis")`, including the
 #'   matchit arguments each method actually received.
@@ -427,10 +436,14 @@ get_PSM <- function(data,
     stop(sprintf("`data` already has column(s) %s, which get_PSM() writes. Rename them first.",
                  paste0("`", hit, "`", collapse = ", ")), call. = FALSE)
 
-  z <- .psw_treat(data[[treat]], treat)
+  tz <- .psw_treat(data[[treat]], treat)
+  z  <- tz$z
   if (length(unique(z)) != 2L)
     stop(sprintf("`treat` column `%s` has only one arm after dropping incomplete rows.",
                  treat), call. = FALSE)
+  # matchit() and the balance table see the 0/1 coding; the column goes back
+  # into the returned data as it came in.
+  treat_col     <- data[[treat]]
   data[[treat]] <- z
 
   if (is.null(ps)) {
@@ -462,6 +475,7 @@ get_PSM <- function(data,
   }
 
   bal <- if (balance) .psm_balance(data, adj_var, treat, wcols) else NULL
+  data[[treat]] <- treat_col
   smd <- function(col) {
     if (is.null(bal)) return(c(NA_real_, NA_real_))
     s <- abs(bal$estimate[bal$metric == "smd" & bal$method == col])
@@ -484,7 +498,7 @@ get_PSM <- function(data,
     list(data = data, stats = st, balance = bal, fit = fits),
     class = c("psm_res", "list"),
     analysis = list(
-      treat = treat, adj_var = adj_var, ps = ps,
+      treat = treat, treated = tz$treated, adj_var = adj_var, ps = ps,
       method = method, estimand = estimand,
       wcols = wcols, scols = scols,
       ratio = ratio, caliper = caliper, replace = replace,
@@ -501,8 +515,8 @@ get_PSM <- function(data,
 #' @noRd
 print.psm_res <- function(x, ...) {
   a <- attr(x, "analysis")
-  cat(sprintf("<psm_res> n = %d, treat = %s, estimand = %s, score %s\n",
-              a$n, a$treat, a$estimand,
+  cat(sprintf("<psm_res> n = %d, treat = %s (treated = %s), estimand = %s, score %s\n",
+              a$n, a$treat, a$treated, a$estimand,
               if (is.na(a$ps_method)) paste0("supplied (", a$ps, ")")
               else paste0("from ps_method = \"", a$ps_method, "\"")))
   cat(sprintf("  range %s, ratio = %s, caliper = %s%s\n",

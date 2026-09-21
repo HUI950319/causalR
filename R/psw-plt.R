@@ -88,7 +88,7 @@
   a   <- attr(x, "analysis")
   lab <- .psw_labels(wcols)
   d   <- x$data[!x$data$.trimmed, , drop = FALSE]
-  arm <- factor(.psw_treat(d[[a$treat]], a$treat), levels = c(0L, 1L),
+  arm <- factor(.psw_treat(d[[a$treat]], a$treat)$z, levels = c(0L, 1L),
                 labels = c("Control", "Treated"))
 
   long <- do.call(rbind, lapply(wcols, function(w) data.frame(
@@ -117,7 +117,7 @@
   a   <- attr(x, "analysis")
   lab <- .psw_labels(wcols)
   d   <- x$data[!x$data$.trimmed, , drop = FALSE]
-  arm <- factor(.psw_treat(d[[a$treat]], a$treat), levels = c(0L, 1L),
+  arm <- factor(.psw_treat(d[[a$treat]], a$treat)$z, levels = c(0L, 1L),
                 labels = c("Control", "Treated"))
 
   long <- do.call(rbind, lapply(wcols, function(w) data.frame(

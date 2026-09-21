@@ -311,6 +311,25 @@ test_that("factor and character exposures take the second level as treated", {
   expect_equal(fct$data$w_nearest, num$data$w_nearest)
   expect_equal(chr$data$w_nearest, num$data$w_nearest)
 
+  # the column comes back as supplied; the 0/1 coding stays internal, and
+  # match.data() sees that internal coding
+  expect_s3_class(fct$data$zf, "factor")
+  expect_type(chr$data$zc, "character")
+  expect_setequal(unique(MatchIt::match.data(fct$fit$nearest)$zf), c(0L, 1L))
+
+  # the arm taken as treated is recorded and printed
+  expect_identical(attr(num, "analysis")$treated, "1")
+  expect_identical(attr(fct, "analysis")$treated, "yes")
+  expect_match(paste(utils::capture.output(print(chr)), collapse = "\n"),
+               "treat = zc (treated = yes)", fixed = TRUE)
+
+  # alphabetical order puts "control" second; the label makes that visible
+  d$zr <- ifelse(d$z == 1, "active", "control")
+  rev  <- suppressWarnings(
+    get_PSM(d, treat = "zr", adj_var = psm_adj, balance = FALSE))
+  expect_identical(attr(rev, "analysis")$treated, "control")
+  expect_identical(.psw_treat(d$zr, "zr")$z, 1L - d$z)
+
   # MatchIt on its own cannot take a character exposure at all
   expect_error(MatchIt::matchit(zc ~ x1 + x2 + x3, data = d,
                                 method = "nearest"),
