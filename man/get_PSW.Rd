@@ -23,7 +23,8 @@ get_PSW(
 \item{data}{A data frame holding every column named below.}
 
 \item{treat}{Length-1 character. The binary exposure column: \code{0}/\code{1},
-logical, or a two-level factor whose \strong{second} level is the treated one.}
+logical, or a two-level factor or character column whose \strong{second} level
+(alphabetically, for a character column) is the treated one.}
 
 \item{adj_var}{Character vector of covariates the propensity model adjusts
 for. Required unless \code{ps} is supplied, and required either way when
@@ -37,11 +38,12 @@ skips the modelling step, so \code{method} and \code{ps_args} no longer apply.}
 \code{"ATO"}, \code{"ATM"}, \code{"EW"}. All six by default; each produces one weight
 column and one \verb{$stats} row.}
 
-\item{method}{Propensity model backend. \code{"glm"} (default) fits
-\code{\link[stats:glm]{stats::glm()}} with a binomial family; \code{"gbm"}, \code{"cbps"}, \code{"bart"} and
-\code{"super"} are passed to \code{WeightIt::weightit()} and their score taken from
-it. The balancing-weight methods (\code{"ebal"}, \code{"energy"}, \code{"optweight"})
-return no propensity score and are rejected.}
+\item{method}{Propensity model backend, passed to \code{\link[WeightIt:weightit]{WeightIt::weightit()}},
+from which only the score is taken. \code{"glm"} (default) is logistic
+regression and matches \code{stats::glm(family = binomial())} exactly; the
+others are \code{"gbm"}, \code{"cbps"}, \code{"bart"} and \code{"super"}. The
+balancing-weight methods (\code{"ebal"}, \code{"energy"}, \code{"optweight"}) return no
+propensity score and are rejected.}
 
 \item{stabilize}{Logical, default \code{FALSE}. Multiply the weight by the
 marginal probability of the observed exposure, which recentres it on 1.
@@ -73,10 +75,9 @@ unit but pulls extreme scores in. \code{method} is \code{"none"} (default), \cod
 differences of \code{adj_var} under every weight with
 \code{halfmoon::check_balance()}.}
 
-\item{ps_args}{Named list forwarded to the propensity model: \code{\link[stats:glm]{stats::glm()}}
-for \code{method = "glm"} (for example \code{list(family = binomial("probit"))}),
-otherwise \code{WeightIt::weightit()}. \code{formula}, \code{data}, \code{method} and
-\code{estimand} are managed here and rejected if supplied.}
+\item{ps_args}{Named list forwarded to \code{\link[WeightIt:weightit]{WeightIt::weightit()}}, for example
+\code{list(link = "probit")} for \code{method = "glm"}. \code{formula}, \code{data},
+\code{method} and \code{estimand} are managed here and rejected if supplied.}
 
 \item{verbose}{Logical, default \code{FALSE}. Report how many units trimming
 removed and how many rows were dropped as incomplete.}
@@ -102,8 +103,9 @@ those above 0.1. Both are \code{NA} when \code{balance = FALSE}.}
 covers the retained units only, because a weight column containing
 any \code{NA} makes \code{check_balance()} report \code{NA} for that whole weight.
 \code{NULL} when \code{balance = FALSE}.}
-\item{\code{fit}}{The propensity model (\code{glm} or \code{weightit}), or \code{NULL} when
-the score was supplied through \code{ps}.}
+\item{\code{fit}}{The \code{weightit} object the score came from, or \code{NULL} when
+the score was supplied through \code{ps}. Only its \verb{$ps} is used; the
+weights it carries are its own, not the ones in \verb{$data}.}
 }
 Analysis metadata is attached as \code{attr(x, "analysis")}.
 }

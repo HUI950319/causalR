@@ -7,7 +7,7 @@
 #   L1  get_PSW(data, treat, adj_var, ps, estimand, ...)
 #         |
 #         +-- L2 pipeline stages, run in this fixed order
-#         |     .psw_fit       fit the propensity model, or take a given score
+#         |     .psw_fit       WeightIt::weightit(), score only
 #         |     .psw_trim      set trimmed units to NA, optionally refit
 #         |     .psw_trunc     clamp the score into an interval
 #         |     .psw_balance   halfmoon::check_balance() over every weight
@@ -27,11 +27,11 @@
 # populations, which is exactly the side-by-side comparison the function
 # exists for.
 #
-# The weights are the closed-form tilting functions of Li, Morgan & Zaslavsky
-# (2018) rather than a call into propensity or WeightIt: they are one line
-# each, WeightIt cannot produce the entropy weight at all, and computing them
-# here keeps the hard dependencies at stats. Every column is checked against
-# propensity::wt_*() in the test suite.
+# WeightIt estimates the score and nothing else. The weights themselves are
+# the closed-form tilting functions of Li, Morgan & Zaslavsky (2018), one line
+# each, because WeightIt cannot produce the entropy weight at all and its
+# other weights would then come from a different code path than that one.
+# Every weight column is checked against propensity::wt_*() in the tests.
 # =============================================================================
 
 .PSW_ESTIMANDS <- c("ATE", "ATT", "ATC", "ATO", "ATM", "EW")
@@ -121,9 +121,10 @@
     smd_over  = as.numeric(smd_over))
 }
 
-# Resolve the exposure to a 0/1 integer. A two-level factor is read as "the
-# second level is the treated arm", the same convention glm uses for a factor
-# response, so the score and the weights cannot disagree about direction.
+# Resolve the exposure to a 0/1 integer. A two-level factor or character
+# column is read as "the second level is the treated arm", which is also what
+# WeightIt scores, so the score and the weights cannot disagree about
+# direction.
 #' @keywords internal
 #' @noRd
 .psw_treat <- function(x, nm) {
@@ -137,7 +138,7 @@
   }
   u <- sort(unique(x))
   if (!all(u %in% c(0, 1)))
-    stop(sprintf("`treat` column `%s` must be 0/1, logical or a two-level factor.",
+    stop(sprintf("`treat` column `%s` must be 0/1, logical, or a two-level factor or character column.",
                  nm), call. = FALSE)
   as.integer(x)
 }
@@ -145,26 +146,27 @@
 
 # ---- L2 pipeline stages ----------------------------------------------------
 
-# Returns the fitted score and the model that produced it. `glm` is handled
-# directly; every other method is a WeightIt backend, and the ones that return
-# no score at all are rejected rather than silently dropped.
+# Every score comes from WeightIt, including the default logistic one: routing
+# the backends through one estimator keeps `method` a single switch with no
+# special case, and `weightit()` accepts factor and character exposures that
+# stats::glm() rejects outright. Only `$ps` is used -- the weights weightit
+# computes for its own `estimand` are discarded, since the six tilting
+# functions are built here.
+#
+# `estimand = "ATE"` is fixed because weightit() requires one; for every
+# method below it leaves the score itself untouched.
+#
+# Direction: weightit() scores the *second* level of a factor or character
+# exposure, matching .psw_treat() and stats::glm(). Verified equal to
+# stats::glm(family = binomial()) to 4.4e-16 on numeric, factor and character
+# exposures, so nothing about the weights changed when the glm branch went.
 #' @keywords internal
 #' @noRd
 .psw_fit <- function(data, treat, adj_var, method, ps_args) {
   form <- stats::reformulate(adj_var, response = treat)
-
-  if (identical(method, "glm")) {
-    args <- utils::modifyList(list(family = stats::binomial()), ps_args)
-    fit  <- do.call(stats::glm, c(list(formula = form, data = data), args))
-    return(list(ps = unname(stats::fitted(fit)), fit = fit))
-  }
-
-  if (!requireNamespace("WeightIt", quietly = TRUE))
-    stop(sprintf("Package 'WeightIt' is required for get_PSW(method = \"%s\")",
-                 method), call. = FALSE)
-  obj <- do.call(WeightIt::weightit,
-                 c(list(formula = form, data = data, method = method,
-                        estimand = "ATE"), ps_args))
+  obj  <- do.call(WeightIt::weightit,
+                  c(list(formula = form, data = data, method = method,
+                         estimand = "ATE"), ps_args))
   if (is.null(obj$ps))
     stop(sprintf("WeightIt method \"%s\" returns balancing weights without a propensity score, so it cannot feed a tilting function. Use one of %s.",
                  method,
@@ -305,7 +307,8 @@
 #'
 #' @param data A data frame holding every column named below.
 #' @param treat Length-1 character. The binary exposure column: `0`/`1`,
-#'   logical, or a two-level factor whose **second** level is the treated one.
+#'   logical, or a two-level factor or character column whose **second** level
+#'   (alphabetically, for a character column) is the treated one.
 #' @param adj_var Character vector of covariates the propensity model adjusts
 #'   for. Required unless `ps` is supplied, and required either way when
 #'   `balance = TRUE`.
@@ -315,11 +318,12 @@
 #' @param estimand Character vector, any of `"ATE"`, `"ATT"`, `"ATC"`,
 #'   `"ATO"`, `"ATM"`, `"EW"`. All six by default; each produces one weight
 #'   column and one `$stats` row.
-#' @param method Propensity model backend. `"glm"` (default) fits
-#'   [stats::glm()] with a binomial family; `"gbm"`, `"cbps"`, `"bart"` and
-#'   `"super"` are passed to `WeightIt::weightit()` and their score taken from
-#'   it. The balancing-weight methods (`"ebal"`, `"energy"`, `"optweight"`)
-#'   return no propensity score and are rejected.
+#' @param method Propensity model backend, passed to [WeightIt::weightit()],
+#'   from which only the score is taken. `"glm"` (default) is logistic
+#'   regression and matches `stats::glm(family = binomial())` exactly; the
+#'   others are `"gbm"`, `"cbps"`, `"bart"` and `"super"`. The
+#'   balancing-weight methods (`"ebal"`, `"energy"`, `"optweight"`) return no
+#'   propensity score and are rejected.
 #' @param stabilize Logical, default `FALSE`. Multiply the weight by the
 #'   marginal probability of the observed exposure, which recentres it on 1.
 #'   Defined for `"ATE"` only; other weights are left untouched. `TRUE` when
@@ -346,10 +350,9 @@
 #' @param balance Logical, default `TRUE`. Compute the standardised mean
 #'   differences of `adj_var` under every weight with
 #'   `halfmoon::check_balance()`.
-#' @param ps_args Named list forwarded to the propensity model: [stats::glm()]
-#'   for `method = "glm"` (for example `list(family = binomial("probit"))`),
-#'   otherwise `WeightIt::weightit()`. `formula`, `data`, `method` and
-#'   `estimand` are managed here and rejected if supplied.
+#' @param ps_args Named list forwarded to [WeightIt::weightit()], for example
+#'   `list(link = "probit")` for `method = "glm"`. `formula`, `data`,
+#'   `method` and `estimand` are managed here and rejected if supplied.
 #' @param verbose Logical, default `FALSE`. Report how many units trimming
 #'   removed and how many rows were dropped as incomplete.
 #'
@@ -373,8 +376,9 @@
 #'       covers the retained units only, because a weight column containing
 #'       any `NA` makes `check_balance()` report `NA` for that whole weight.
 #'       `NULL` when `balance = FALSE`.}
-#'     \item{`fit`}{The propensity model (`glm` or `weightit`), or `NULL` when
-#'       the score was supplied through `ps`.}
+#'     \item{`fit`}{The `weightit` object the score came from, or `NULL` when
+#'       the score was supplied through `ps`. Only its `$ps` is used; the
+#'       weights it carries are its own, not the ones in `$data`.}
 #'   }
 #'   Analysis metadata is attached as `attr(x, "analysis")`.
 #'

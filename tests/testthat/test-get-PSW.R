@@ -30,7 +30,7 @@ test_that("get_PSW returns the documented structure", {
   expect_s3_class(res, "psw_res")
   expect_named(res, c("data", "stats", "balance", "fit"))
   expect_null(res$balance)
-  expect_s3_class(res$fit, "glm")
+  expect_s3_class(res$fit, "weightit")
 
   expect_named(res$stats, stats_cols)
   expect_identical(res$stats$estimand,
@@ -211,12 +211,41 @@ test_that("a supplied score bypasses the model", {
 })
 
 
-test_that("a two-level factor exposure takes the second level as treated", {
-  d      <- psw_data()
-  d$zf   <- factor(d$z, levels = c(0, 1), labels = c("no", "yes"))
-  num    <- get_PSW(d, treat = "z",  adj_var = psw_adj, balance = FALSE)
-  fct    <- get_PSW(d, treat = "zf", adj_var = psw_adj, balance = FALSE)
+test_that("factor and character exposures take the second level as treated", {
+  d    <- psw_data()
+  d$zf <- factor(d$z, levels = c(0, 1), labels = c("no", "yes"))
+  d$zc <- ifelse(d$z == 1, "yes", "no")
+
+  num <- get_PSW(d, treat = "z",  adj_var = psw_adj, balance = FALSE)
+  fct <- suppressMessages(
+    get_PSW(d, treat = "zf", adj_var = psw_adj, balance = FALSE))
+  chr <- suppressMessages(
+    get_PSW(d, treat = "zc", adj_var = psw_adj, balance = FALSE))
+
   expect_equal(fct$data$w_ato, num$data$w_ato)
+  expect_equal(chr$data$w_ato, num$data$w_ato)
+})
+
+
+test_that("the default score still equals stats::glm's", {
+  # method = "glm" routes through WeightIt like every other backend; this pins
+  # it to the logistic fit users expect, and `ps_args` to WeightIt's own knobs.
+  d   <- psw_data()
+  res <- get_PSW(d, treat = "z", adj_var = psw_adj, balance = FALSE)
+  expect_equal(
+    res$data$ps,
+    unname(stats::fitted(stats::glm(z ~ x1 + x2 + x3, stats::binomial(),
+                                    data = d))),
+    tolerance = 1e-10)
+
+  probit <- get_PSW(d, treat = "z", adj_var = psw_adj, balance = FALSE,
+                    ps_args = list(link = "probit"))
+  expect_equal(
+    probit$data$ps,
+    unname(stats::fitted(stats::glm(z ~ x1 + x2 + x3,
+                                    stats::binomial("probit"), data = d))),
+    tolerance = 1e-10)
+  expect_false(isTRUE(all.equal(probit$data$ps, res$data$ps)))
 })
 
 
@@ -225,7 +254,7 @@ test_that("invalid input is rejected rather than absorbed", {
 
   expect_error(get_PSW(d, treat = "x1", adj_var = c("x2", "x3"),
                        balance = FALSE),
-               "must be 0/1, logical or a two-level factor")
+               "must be 0/1, logical")
   expect_error(get_PSW(d, treat = "z", adj_var = "nope", balance = FALSE),
                "not found in `data`")
   expect_error(get_PSW(d, treat = "z", adj_var = psw_adj, balance = FALSE,
