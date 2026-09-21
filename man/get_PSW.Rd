@@ -41,9 +41,16 @@ column and one \verb{$stats} row.}
 \item{method}{Propensity model backend, passed to \code{\link[WeightIt:weightit]{WeightIt::weightit()}},
 from which only the score is taken. \code{"glm"} (default) is logistic
 regression and matches \code{stats::glm(family = binomial())} exactly; the
-others are \code{"gbm"}, \code{"cbps"}, \code{"bart"} and \code{"super"}. The
+others are \code{"gbm"}, \code{"cbps"}, \code{"bart"} and \code{"super"}; \code{"super"} needs its
+learners named through \code{ps_args}, as in
+\code{ps_args = list(SL.library = c("SL.glm", "SL.mean"))}. The
 balancing-weight methods (\code{"ebal"}, \code{"energy"}, \code{"optweight"}) return no
-propensity score and are rejected.}
+propensity score and are rejected.
+
+Every \code{method} works with every \code{estimand}, including combinations
+\code{WeightIt::weightit()} refuses -- \code{"cbps"} with \code{"ATM"}, and any method
+with \code{"EW"} -- because the score is taken from WeightIt but the weight is
+built here.}
 
 \item{stabilize}{Logical, default \code{FALSE}. Multiply the weight by the
 marginal probability of the observed exposure, which recentres it on 1.

@@ -340,9 +340,16 @@
 #' @param method Propensity model backend, passed to [WeightIt::weightit()],
 #'   from which only the score is taken. `"glm"` (default) is logistic
 #'   regression and matches `stats::glm(family = binomial())` exactly; the
-#'   others are `"gbm"`, `"cbps"`, `"bart"` and `"super"`. The
+#'   others are `"gbm"`, `"cbps"`, `"bart"` and `"super"`; `"super"` needs its
+#'   learners named through `ps_args`, as in
+#'   `ps_args = list(SL.library = c("SL.glm", "SL.mean"))`. The
 #'   balancing-weight methods (`"ebal"`, `"energy"`, `"optweight"`) return no
 #'   propensity score and are rejected.
+#'
+#'   Every `method` works with every `estimand`, including combinations
+#'   `WeightIt::weightit()` refuses -- `"cbps"` with `"ATM"`, and any method
+#'   with `"EW"` -- because the score is taken from WeightIt but the weight is
+#'   built here.
 #' @param stabilize Logical, default `FALSE`. Multiply the weight by the
 #'   marginal probability of the observed exposure, which recentres it on 1.
 #'   Defined for `"ATE"` only; other weights are left untouched. `TRUE` when
