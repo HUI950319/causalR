@@ -24,7 +24,13 @@ get_PSW(
 
 \item{treat}{Length-1 character. The binary exposure column: \code{0}/\code{1},
 logical, or a two-level factor or character column whose \strong{second} level
-(alphabetically, for a character column) is the treated one.}
+is the treated one. A character column is ordered alphabetically, so
+\code{"case"} / \code{"control"} would make \code{"control"} the treated arm; convert
+such a column to a factor with the control level first. The arm actually
+taken as treated is recorded in \code{attr(x, "analysis")$treated} and shown
+by \code{print()}. The column is returned in \verb{$data} exactly as supplied: the
+0/1 coding is used internally, so neither the direction of the score nor
+the balance table depends on the labels.}
 
 \item{adj_var}{Character vector of covariates the propensity model adjusts
 for. Required unless \code{ps} is supplied, and required either way when
@@ -64,13 +70,17 @@ in every weight column.
 \item{\code{method}}{\code{"none"} (default), \code{"ps"} (absolute score bounds,
 defaulting to 0.1 and 0.9), \code{"pctl"} (score quantiles, defaulting to
 0.01 and 0.99), or \code{"cr"} (the Crump et al. 2009 optimal symmetric
-cut-off computed from the data, which ignores \code{lower} and \code{upper}).}
+cut-off computed from the data, which takes no \code{lower} or \code{upper}
+and rejects them rather than ignoring them).}
 \item{\code{lower},\code{upper}}{Numeric bounds or quantile probabilities, or
 \code{NULL} (default) for the per-method defaults above.}
 \item{\code{refit}}{Logical, default \code{TRUE}. Re-estimate the propensity
 model on the retained units, which is what trimming is meant to be
 followed by. Checked only when trimming is actually requested, and an
-error when the score came from \code{ps} and there is no model to refit.}
+error when the score came from \code{ps} and there is no model to refit.
+The refitted score is not trimmed again, so a retained unit can end
+up with a score outside the window: \code{.trimmed} records the first
+pass, and \code{print()} shows the window next to the final range.}
 }}
 
 \item{trunc_args}{Named list controlling score truncation, which keeps every
@@ -109,7 +119,12 @@ those above 0.1. Both are \code{NA} when \code{balance = FALSE}.}
 \code{method} column holds the weight column name or \code{"observed"}. It
 covers the retained units only, because a weight column containing
 any \code{NA} makes \code{check_balance()} report \code{NA} for that whole weight.
-\code{NULL} when \code{balance = FALSE}.}
+\code{NULL} when \code{balance = FALSE}. The standardised difference is
+halfmoon's, through \code{smd::smd()}: the weighted mean difference over
+the pooled standard deviation of the two arms. \code{cobalt::bal.tab()}
+picks its denominator from the estimand (the treated arm's standard
+deviation for ATT, for instance), so its numbers can differ
+slightly.}
 \item{\code{fit}}{The \code{weightit} object the score came from, or \code{NULL} when
 the score was supplied through \code{ps}. Only its \verb{$ps} is used; the
 weights it carries are its own, not the ones in \verb{$data}.}

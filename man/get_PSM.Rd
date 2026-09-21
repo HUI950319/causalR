@@ -26,9 +26,14 @@ get_PSM(
 
 \item{treat}{Length-1 character. The binary exposure column: \code{0}/\code{1},
 logical, or a two-level factor or character column whose \strong{second} level
-is the treated one. The coding is settled here, before MatchIt sees it,
+is the treated one. A character column is ordered alphabetically, so
+\code{"case"} / \code{"control"} would make \code{"control"} the treated arm; convert
+such a column to a factor with the control level first. The arm actually
+taken as treated is recorded in \code{attr(x, "analysis")$treated} and shown
+by \code{print()}. The 0/1 coding is settled here, before MatchIt sees it,
 because a character exposure makes MatchIt's internal model fail and a
-reversed factor silently swaps the arms.}
+reversed factor silently swaps the arms; the column is returned in
+\verb{$data} exactly as supplied.}
 
 \item{adj_var}{Character vector of covariates to match on and to report
 balance for.}
@@ -51,10 +56,11 @@ not accept it.}
 
 \item{caliper}{\code{NULL} (default) for no caliper, or a number in \strong{standard
 deviations of the propensity score}, which is the probability scale, not
-the logit scale. 0.1 to 0.2 is the usual range. Note that Austin's
-0.2-standard-deviation rule is stated on the logit scale; to reproduce it
-exactly, pass the logit score yourself through \code{ps}. Used by \code{"nearest"},
-\code{"optimal"}, \code{"genetic"} and \code{"full"}.}
+the logit scale; 0.1 to 0.2 is the usual range. Austin's
+0.2-standard-deviation rule is stated on the logit scale and cannot be
+reproduced here, because \code{ps} must be a probability and the matching
+distance is that probability. Used by \code{"nearest"}, \code{"full"} and
+\code{"genetic"}; \code{"optimal"} does not accept one.}
 
 \item{replace}{Logical, default \code{FALSE}. Allow a control to be matched more
 than once. Used by \code{"nearest"} and \code{"genetic"}. With replacement the
@@ -85,9 +91,10 @@ per-method matched counts.}
 \value{
 An object of class \code{psm_res}: a list of
 \describe{
-\item{\code{data}}{The input data plus \code{ps}, and per method a weight column
-\verb{w_<method>} (\code{0} for a unit that was not matched) and a subclass
-column \verb{s_<method>} (\code{NA} where unmatched). Every input row is kept,
+\item{\code{data}}{The input data, with \code{treat} exactly as supplied, plus
+\code{ps}, and per method a weight column \verb{w_<method>} (\code{0} for a unit
+that was not matched) and a subclass column \verb{s_<method>} (\code{NA} where
+unmatched). Every input row is kept,
 so the columns stay aligned and several schemes fit in one frame; the
 \code{w_} prefix is what
 \code{halfmoon::plot_ess(.weights = starts_with("w_"))} selects on, and
@@ -98,13 +105,26 @@ columns: \code{method}, \code{estimand}, \code{n}, \code{n_treat}, \code{n_ctrl}
 \code{ess_treat}, \code{ess_ctrl}, \code{ess_pct}, \code{w_max}, \code{w_cv}, \code{smd_max},
 \code{smd_over}. \code{n} and the two arm counts are of matched units;
 \code{n_unmatched} and \code{n_discarded} are separate because failing to find
-a partner and falling outside common support are different things.}
+a partner and falling outside common support are different things.
+\code{n_pairs} is the number of matched sets: pairs under 1:1 nearest
+matching, strata under \code{"subclass"}, \code{"cem"} and \code{"exact"}, sets of
+varying size under \code{"full"}. \code{smd_max} is the largest absolute
+standardised mean difference across \code{adj_var} and \code{smd_over} counts
+those above 0.1, the line \code{\link[=plt_PSM]{plt_PSM()}} draws by default; both are
+\code{NA} when \code{balance = FALSE}.}
 \item{\code{balance}}{The \code{\link[halfmoon:check_balance]{halfmoon::check_balance()}} long table
 (\code{variable}, \code{group_level}, \code{method}, \code{metric}, \code{estimate}), whose
 \code{method} column holds the weight column name or \code{"observed"}. \code{NULL}
-when \code{balance = FALSE}.}
+when \code{balance = FALSE}. The standardised difference is halfmoon's,
+through \code{smd::smd()}: the weighted mean difference over the pooled
+standard deviation of the two arms. \code{cobalt::bal.tab()} divides by
+the treated arm's standard deviation for an ATT estimand by default,
+so its numbers differ slightly (measured: -0.333 here against -0.357
+there for the same nearest-neighbour match).}
 \item{\code{fit}}{Named list of the \code{matchit} objects, one per method, for
-\code{summary()}, \code{plot()} or \code{cobalt::bal.tab()}.}
+\code{summary()}, \code{plot()}, \code{cobalt::bal.tab()} or
+\code{\link[MatchIt:match_data]{MatchIt::match.data()}}, which finds the data on its own and returns
+the exposure recoded to 0/1.}
 }
 Analysis metadata is attached as \code{attr(x, "analysis")}, including the
 matchit arguments each method actually received.
@@ -145,7 +165,8 @@ an error naming the offending method, rather than MatchIt's own message,
 which does not say that another method would work.
 
 \code{"optimal"} and \code{"full"} need \pkg{optmatch}; \code{"genetic"} needs
-\pkg{rgenoud} and is slow. \code{"cem"} is built into MatchIt and needs nothing.
+\pkg{Matching} and \pkg{rgenoud} and is slow. \code{"cem"} is built into
+MatchIt and needs nothing.
 
 Not every method takes every knob, and MatchIt warns once per ignored
 argument, so each method is handed only what it uses: \code{ratio} reaches
@@ -153,8 +174,14 @@ argument, so each method is handed only what it uses: \code{ratio} reaches
 \code{"full"} and \code{"genetic"}; \code{replace} reaches \code{"nearest"} and \code{"genetic"}.
 \code{"cem"} and \code{"exact"} ignore the propensity score altogether -- they
 coarsen or match on the covariates themselves -- so they are compared
-alongside the others rather than sharing their score. What each method
-actually received is recorded in \code{attr(x, "analysis")$specs}.
+alongside the others rather than sharing their score. \code{"exact"} matches
+on the covariate values as they are and fails on a continuous covariate
+("No exact matches were found"): give it discrete \code{adj_var} only, or use
+\code{"cem"}, which coarsens first. What each method actually received is
+recorded in \code{attr(x, "analysis")$specs}.
+
+A method that fails stops the whole call with an error naming it; the
+others are not reported partially.
 }
 
 \section{Weight normalisation}{
