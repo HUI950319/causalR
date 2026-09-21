@@ -152,6 +152,27 @@ Only those six names are accepted; the aliases are listed for orientation,
 not as arguments.
 }
 
+\section{Agreement with WeightIt}{
+
+For the default \code{method = "glm"} the score does not depend on the estimand,
+so every weight here is bit-identical to \code{WeightIt::weightit()}'s own: ATE,
+ATT, ATC, ATO and ATM all agree to 1.8e-15, in both arms and without any
+rescaling. \code{"EW"} has no WeightIt counterpart.
+
+The score-adaptive backends are a different matter. \code{"cbps"} fits the score
+so as to balance for a \emph{particular} estimand, and \code{"gbm"} tunes its trees
+against an estimand-specific criterion, so their \verb{$ps} changes with
+\code{estimand} (measured here: 3.8e-02 for cbps, 4.6e-01 for gbm). \code{get_PSW()}
+fits the score once, with \code{estimand = "ATE"}, and shares it across every
+tilting function -- weight columns built on six different scores could not
+be compared, and \code{"EW"} has no score of its own to fit against. So with
+these backends \code{get_PSW(method = "cbps")} is deliberately \emph{not} the same
+estimator as \code{WeightIt::weightit(method = "cbps", estimand = "ATO")}.
+
+\code{"gbm"} is also stochastic: two identical calls differ unless you
+\code{\link[=set.seed]{set.seed()}} first.
+}
+
 \section{Order of operations}{
 
 The score is fitted (or taken from \code{ps}), then trimmed, then optionally

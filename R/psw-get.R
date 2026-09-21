@@ -298,6 +298,25 @@
 #' Only those six names are accepted; the aliases are listed for orientation,
 #' not as arguments.
 #'
+#' @section Agreement with WeightIt:
+#' For the default `method = "glm"` the score does not depend on the estimand,
+#' so every weight here is bit-identical to `WeightIt::weightit()`'s own: ATE,
+#' ATT, ATC, ATO and ATM all agree to 1.8e-15, in both arms and without any
+#' rescaling. `"EW"` has no WeightIt counterpart.
+#'
+#' The score-adaptive backends are a different matter. `"cbps"` fits the score
+#' so as to balance for a *particular* estimand, and `"gbm"` tunes its trees
+#' against an estimand-specific criterion, so their `$ps` changes with
+#' `estimand` (measured here: 3.8e-02 for cbps, 4.6e-01 for gbm). `get_PSW()`
+#' fits the score once, with `estimand = "ATE"`, and shares it across every
+#' tilting function -- weight columns built on six different scores could not
+#' be compared, and `"EW"` has no score of its own to fit against. So with
+#' these backends `get_PSW(method = "cbps")` is deliberately *not* the same
+#' estimator as `WeightIt::weightit(method = "cbps", estimand = "ATO")`.
+#'
+#' `"gbm"` is also stochastic: two identical calls differ unless you
+#' [set.seed()] first.
+#'
 #' @section Order of operations:
 #' The score is fitted (or taken from `ps`), then trimmed, then optionally
 #' refitted on the retained units, then truncated, and only then turned into

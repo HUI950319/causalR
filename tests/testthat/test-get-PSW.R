@@ -69,6 +69,56 @@ test_that("the six weights match propensity::wt_*()", {
 })
 
 
+test_that("the five shared estimands equal WeightIt's own weights", {
+  # With method = "glm" the score does not depend on the estimand, so our
+  # tilting functions must reproduce weightit()'s weights exactly -- same
+  # values, not merely proportional. EW has no WeightIt counterpart.
+  d    <- psw_data()
+  res  <- get_PSW(d, treat = "z", adj_var = psw_adj, balance = FALSE)
+  form <- stats::as.formula(paste("z ~", paste(psw_adj, collapse = " + ")))
+
+  for (e in c("ATE", "ATT", "ATC", "ATO", "ATM")) {
+    o <- suppressMessages(
+      WeightIt::weightit(form, data = d, method = "glm", estimand = e))
+    expect_equal(res$data$ps, unname(as.numeric(o$ps)),
+                 tolerance = 1e-12, info = e)
+    expect_equal(res$data[[paste0("w_", tolower(e))]], unname(o$weights),
+                 tolerance = 1e-10, info = e)
+  }
+
+  expect_error(
+    suppressMessages(
+      WeightIt::weightit(form, data = d, method = "glm", estimand = "EW")),
+    "allowable estimand")
+})
+
+
+test_that("score-adaptive backends deliberately share one ATE-fitted score", {
+  # cbps refits the score per estimand, so get_PSW() and weightit() are not
+  # the same estimator there. This pins that the divergence comes from the
+  # score, not from the weight formula. (No skip_on_cran(): under test_dir()
+  # NOT_CRAN is unset, so it would skip locally and never run at all.)
+  d    <- psw_data()
+  form <- stats::as.formula(paste("z ~", paste(psw_adj, collapse = " + ")))
+
+  ps_ate <- suppressMessages(
+    WeightIt::weightit(form, data = d, method = "cbps", estimand = "ATE"))$ps
+  ps_ato <- suppressMessages(
+    WeightIt::weightit(form, data = d, method = "cbps", estimand = "ATO"))$ps
+  expect_false(isTRUE(all.equal(unname(as.numeric(ps_ate)),
+                                unname(as.numeric(ps_ato)))))
+
+  res <- suppressMessages(
+    get_PSW(d, treat = "z", adj_var = psw_adj, method = "cbps",
+            estimand = c("ATE", "ATO"), balance = FALSE))
+  expect_equal(res$data$ps, unname(as.numeric(ps_ate)), tolerance = 1e-10)
+  # and the weights are still our closed form applied to that one score
+  expect_equal(res$data$w_ato,
+               ifelse(d$z == 1, 1 - res$data$ps, res$data$ps),
+               tolerance = 1e-12)
+})
+
+
 test_that("overlap weights balance the covariate means exactly", {
   # Li, Morgan & Zaslavsky (2018): with a logistic score fitted on exactly
   # these covariates, ATO weights equalise their two-arm means to machine
