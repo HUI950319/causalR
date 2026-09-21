@@ -211,6 +211,32 @@ test_that("trimming keeps rows, blanks the weights and refits the score", {
 })
 
 
+test_that("the Crump cut-off equals its alpha-by-alpha definition", {
+  # The one-pass implementation is checked against the literal rule: the
+  # smallest observed alpha whose retained set satisfies the criterion.
+  crump_ref <- function(ps) {
+    v <- 1 / (ps * (1 - ps))
+    for (a in sort(unique(pmin(ps, 1 - ps)))) {
+      if (a >= 0.5) break
+      keep <- ps >= a & ps <= 1 - a
+      if (1 / (a * (1 - a)) <= 2 * mean(v[keep])) return(a)
+    }
+    0
+  }
+
+  for (s in 1:5) {
+    set.seed(s)
+    e <- stats::plogis(stats::rnorm(2000, 0, 2.5))     # poor overlap
+    expect_identical(.psw_crump(e), crump_ref(e), info = paste("seed", s))
+    expect_gt(.psw_crump(e), 0)
+  }
+  set.seed(6)
+  e <- stats::plogis(stats::rnorm(2000, 0, 0.5))       # good overlap
+  expect_identical(.psw_crump(e), crump_ref(e))
+  expect_identical(.psw_crump(rep(0.5, 10)), 0)         # nothing to cut
+})
+
+
 test_that("truncation clamps the score without dropping anyone", {
   d   <- psw_data()
   raw <- get_PSW(d, treat = "z", adj_var = psw_adj, balance = FALSE)
