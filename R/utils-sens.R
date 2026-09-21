@@ -66,8 +66,8 @@
 .sens_complete <- function(data, cols, verbose = FALSE) {
   keep <- stats::complete.cases(data[, cols, drop = FALSE])
   if (!any(keep))
-    stop("No complete cases remain across `treat`, `outcome` and `adj_var`.",
-         call. = FALSE)
+    stop(sprintf("No complete cases remain across %s.",
+                 paste0("`", cols, "`", collapse = ", ")), call. = FALSE)
   if (isTRUE(verbose) && any(!keep))
     cli::cli_inform(c("i" = "Dropped {sum(!keep)} incomplete row{?s}."))
   data[keep, , drop = FALSE]

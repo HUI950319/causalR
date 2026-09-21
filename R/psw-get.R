@@ -381,13 +381,17 @@
 #'     \item{`method`}{`"none"` (default), `"ps"` (absolute score bounds,
 #'       defaulting to 0.1 and 0.9), `"pctl"` (score quantiles, defaulting to
 #'       0.01 and 0.99), or `"cr"` (the Crump et al. 2009 optimal symmetric
-#'       cut-off computed from the data, which ignores `lower` and `upper`).}
+#'       cut-off computed from the data, which takes no `lower` or `upper`
+#'       and rejects them rather than ignoring them).}
 #'     \item{`lower`,`upper`}{Numeric bounds or quantile probabilities, or
 #'       `NULL` (default) for the per-method defaults above.}
 #'     \item{`refit`}{Logical, default `TRUE`. Re-estimate the propensity
 #'       model on the retained units, which is what trimming is meant to be
 #'       followed by. Checked only when trimming is actually requested, and an
-#'       error when the score came from `ps` and there is no model to refit.}
+#'       error when the score came from `ps` and there is no model to refit.
+#'       The refitted score is not trimmed again, so a retained unit can end
+#'       up with a score outside the window: `.trimmed` records the first
+#'       pass, and `print()` shows the window next to the final range.}
 #'   }
 #' @param trunc_args Named list controlling score truncation, which keeps every
 #'   unit but pulls extreme scores in. `method` is `"none"` (default), `"ps"`
@@ -421,7 +425,12 @@
 #'       `method` column holds the weight column name or `"observed"`. It
 #'       covers the retained units only, because a weight column containing
 #'       any `NA` makes `check_balance()` report `NA` for that whole weight.
-#'       `NULL` when `balance = FALSE`.}
+#'       `NULL` when `balance = FALSE`. The standardised difference is
+#'       halfmoon's, through `smd::smd()`: the weighted mean difference over
+#'       the pooled standard deviation of the two arms. `cobalt::bal.tab()`
+#'       picks its denominator from the estimand (the treated arm's standard
+#'       deviation for ATT, for instance), so its numbers can differ
+#'       slightly.}
 #'     \item{`fit`}{The `weightit` object the score came from, or `NULL` when
 #'       the score was supplied through `ps`. Only its `$ps` is used; the
 #'       weights it carries are its own, not the ones in `$data`.}
@@ -551,6 +560,10 @@ get_PSW <- function(data,
       !is.null(ps))
     stop("`trim_args$refit = TRUE` needs a propensity model to refit, but the score came from `ps`. Use refit = FALSE.",
          call. = FALSE)
+  if (identical(trim_args$method, "cr") &&
+      (!is.null(trim_args$lower) || !is.null(trim_args$upper)))
+    stop("`trim_args$lower` / `upper` do not apply to method = \"cr\", which computes its own symmetric cut-off. Drop them, or use method = \"ps\" / \"pctl\".",
+         call. = FALSE)
 
   # Trimming keeps its rows, so incomplete cases are the only rows dropped.
   used <- c(treat, adj_var, ps)
@@ -664,16 +677,19 @@ print.psw_res <- function(x, ...) {
               a$n, a$n_trimmed, a$treat, a$treated,
               if (is.na(a$method)) paste0("supplied (", a$ps, ")")
               else paste0("from method = \"", a$method, "\"")))
-  cat(sprintf("  range %s%s%s%s\n",
-              .sens_fmt_vec(a$ps_range),
-              if (is.null(a$trim_bounds)) "" else
-                paste0(", trim ", a$trim$method, " ",
-                       .sens_fmt_vec(a$trim_bounds),
-                       if (isTRUE(a$trim$refit)) " + refit" else ""),
-              if (is.null(a$trunc_bounds)) "" else
-                paste0(", truncate ", a$trunc$method, " ",
-                       .sens_fmt_vec(a$trunc_bounds)),
-              if (isTRUE(a$stabilize)) ", stabilized" else ""))
+  # The processing steps come first and the range last, because a refit can
+  # move retained scores outside the trimming window.
+  steps <- c(
+    if (!is.null(a$trim_bounds))
+      paste0("trim ", a$trim$method, " ", .sens_fmt_vec(a$trim_bounds),
+             if (isTRUE(a$trim$refit)) " + refit" else ""),
+    if (!is.null(a$trunc_bounds))
+      paste0("truncate ", a$trunc$method, " ", .sens_fmt_vec(a$trunc_bounds)),
+    if (isTRUE(a$stabilize)) "stabilized")
+  cat(sprintf("  %sscore range %s\n",
+              if (length(steps)) paste0(paste(steps, collapse = ", "),
+                                        "; final ") else "",
+              .sens_fmt_vec(a$ps_range)))
   cat("\n")
   print(x$stats)
   cat("\n# ESS is (sum w)^2 / sum w^2.",

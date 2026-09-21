@@ -378,6 +378,14 @@ test_that("invalid input is rejected rather than absorbed", {
                        ps_args = list(formula = z ~ x1)), "may not set")
   expect_error(get_PSW(d, treat = "z", balance = FALSE),
                "Supply `adj_var`")
+  expect_error(get_PSW(d, treat = "z", adj_var = psw_adj, balance = FALSE,
+                       trim_args = list(method = "cr", lower = 0.2)),
+               "do not apply to method = \"cr\"")
+
+  none <- d
+  none$x1[] <- NA
+  expect_error(get_PSW(none, treat = "z", adj_var = psw_adj, balance = FALSE),
+               "across `z`, `x1`, `x2`, `x3`", fixed = TRUE)
 
   supplied <- d
   supplied$myps <- stats::fitted(
@@ -454,4 +462,12 @@ test_that("print reports the table and echoes a plt_PSW call", {
   expect_match(out, "<psw_res>")
   expect_match(out, "plt_PSW: type = \"ess\"")
   expect_match(out, "ATO")
+  expect_match(out, "\n  score range c\\(")
+
+  # after trimming the window is listed before the final range, which the
+  # refit can push outside it
+  tr <- get_PSW(d, treat = "z", adj_var = psw_adj, balance = FALSE,
+                trim_args = list(method = "ps", lower = 0.3, upper = 0.7))
+  out <- paste(utils::capture.output(print(tr)), collapse = "\n")
+  expect_match(out, "trim ps c\\(.*\\) \\+ refit; final score range c\\(")
 })
