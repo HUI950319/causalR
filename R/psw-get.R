@@ -417,8 +417,14 @@
 #' overlap in estimation of average treatment effects. \emph{Biometrika}
 #' 96(1):187-199.
 #'
-#' @seealso [plt_PSW()] for the matching plots; [get_sens()] for sensitivity
-#'   to unmeasured confounding.
+#' @seealso [plt_PSW()] for the matching plots; [get_PSM()] for the matching
+#'   dual; [get_sens()] for sensitivity to unmeasured confounding.
+#'
+#'   One name differs between the two propensity functions. Here `method`
+#'   selects the **propensity model**, because the weighting scheme is what
+#'   `estimand` selects. In [get_PSM()] `method` selects the **matching
+#'   algorithm**, which is MatchIt's own meaning, and the propensity model
+#'   moves to `ps_method`.
 #'
 #' @examples
 #' set.seed(20260921)

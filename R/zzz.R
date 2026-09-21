@@ -21,5 +21,9 @@ utils::globalVariables(c(
   "estimand",  # .psw_plt_ess:      bar identity
   "weight",    # .psw_plt_weight:   the weight itself
   "arm",       # .psw_plt_weight:   treated / control
-  "ps"         # .psw_plt_ps:       propensity score
+  "ps",        # .psw_plt_ps:       propensity score
+  # psm-plt.R (reuses smd / variable / ess / weight / arm / ps above)
+  "Matching",  # .psm_plt_love:     matching scheme, shown in the legend
+  "method",    # .psm_plt_ess:      bar identity
+  "n"          # .psm_plt_ess:      matched count in the bar label
 ))

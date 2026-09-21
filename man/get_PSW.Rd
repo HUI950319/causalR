@@ -227,6 +227,12 @@ overlap in estimation of average treatment effects. \emph{Biometrika}
 96(1):187-199.
 }
 \seealso{
-\code{\link[=plt_PSW]{plt_PSW()}} for the matching plots; \code{\link[=get_sens]{get_sens()}} for sensitivity
-to unmeasured confounding.
+\code{\link[=plt_PSW]{plt_PSW()}} for the matching plots; \code{\link[=get_PSM]{get_PSM()}} for the matching
+dual; \code{\link[=get_sens]{get_sens()}} for sensitivity to unmeasured confounding.
+
+One name differs between the two propensity functions. Here \code{method}
+selects the \strong{propensity model}, because the weighting scheme is what
+\code{estimand} selects. In \code{\link[=get_PSM]{get_PSM()}} \code{method} selects the \strong{matching
+algorithm}, which is MatchIt's own meaning, and the propensity model
+moves to \code{ps_method}.
 }
