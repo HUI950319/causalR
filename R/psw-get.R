@@ -7,6 +7,7 @@
 #   L1  get_PSW(data, treat, adj_var, ps, estimand, ...)
 #         |
 #         +-- L2 pipeline stages, run in this fixed order
+#         |     .psw_score     the score: .psw_fit() or the `ps` column
 #         |     .psw_fit       WeightIt::weightit(), score only
 #         |     .psw_trim      set trimmed units to NA, optionally refit
 #         |     .psw_trunc     clamp the score into an interval
@@ -15,12 +16,15 @@
 #         +-- L3 helpers
 #               .psw_tilt        the tilting function h(e) of one estimand
 #               .psw_crump       Crump et al. optimal symmetric trim point
+#               .psw_ess         effective sample size of a weight vector
+#               .psw_smd         smd_max / smd_over of one weight column
 #               .psw_stats_row   the 15-column standardised $stats row
 #               .psw_treat       resolve the exposure to a 0/1 integer
 #               .psw_plt_spec    plt_PSW() arguments echoed by print()
 #
 #   print.psw_res reports the diagnostics table and the matching plt_PSW()
-#   call.
+#   call. .psw_score, .psw_fit, .psw_balance, .psw_ess, .psw_smd and
+#   .psw_treat are shared with get_PSM(), the matching dual in psm-get.R.
 #
 # Every estimand shares one processed propensity score. Trimming or truncating
 # per estimand would leave the weight columns describing different analysis
@@ -96,25 +100,43 @@
   if (any(ok)) ms[k[which(ok)[1L]]] else 0
 }
 
+# Effective sample size (sum w)^2 / sum w^2 of the units that carry weight:
+# NA (trimmed) and 0 (unmatched) contribute nothing either way.
+#' @keywords internal
+#' @noRd
+.psw_ess <- function(w) {
+  w <- w[is.finite(w) & w > 0]
+  if (!length(w)) return(NA_real_)
+  sum(w)^2 / sum(w^2)
+}
+
+# The two balance summaries of one weight column: the largest absolute
+# standardised mean difference across adj_var, and how many sit above 0.1,
+# the line the love plot draws by default.
+#' @keywords internal
+#' @noRd
+.psw_smd <- function(bal, col) {
+  if (is.null(bal)) return(c(NA_real_, NA_real_))
+  s <- abs(bal$estimate[bal$metric == "smd" & bal$method == col])
+  s <- s[is.finite(s)]
+  if (!length(s)) return(c(NA_real_, NA_real_))
+  c(max(s), sum(s > 0.1))
+}
+
 #' @keywords internal
 #' @noRd
 .psw_stats_row <- function(estimand, w, z, keep, smd_max = NA_real_,
                            smd_over = NA_real_) {
-  ess <- function(x) {
-    x <- x[is.finite(x)]
-    if (!length(x)) return(NA_real_)
-    sum(x)^2 / sum(x^2)
-  }
   wk <- w[keep]
   tibble::tibble(
     estimand  = estimand,
     n         = sum(keep),
     n_treat   = sum(keep & z == 1L),
     n_ctrl    = sum(keep & z == 0L),
-    ess       = ess(wk),
-    ess_treat = ess(w[keep & z == 1L]),
-    ess_ctrl  = ess(w[keep & z == 0L]),
-    ess_pct   = ess(wk) / sum(keep),
+    ess       = .psw_ess(wk),
+    ess_treat = .psw_ess(w[keep & z == 1L]),
+    ess_ctrl  = .psw_ess(w[keep & z == 0L]),
+    ess_pct   = .psw_ess(wk) / sum(keep),
     w_min     = min(wk),
     w_max     = max(wk),
     w_mean    = mean(wk),
@@ -189,6 +211,19 @@
   list(ps = unname(as.numeric(obj$ps)), fit = obj)
 }
 
+# The score, fitted through WeightIt or taken from the `ps` column, validated
+# either way: a supplied score can carry NA or sit on 0 / 1.
+#' @keywords internal
+#' @noRd
+.psw_score <- function(data, treat, adj_var, ps, method, ps_args) {
+  f <- if (is.null(ps)) .psw_fit(data, treat, adj_var, method, ps_args)
+       else list(ps = as.numeric(data[[ps]]), fit = NULL)
+  if (anyNA(f$ps) || any(f$ps <= 0 | f$ps >= 1))
+    stop("The propensity score must be non-missing and strictly between 0 and 1.",
+         call. = FALSE)
+  f
+}
+
 # Trimming removes units from the analysis population but not rows from the
 # data: a trimmed unit's score becomes NA, so every weight column stays
 # aligned with the input and downstream code sees one NA pattern. Same
@@ -241,18 +276,21 @@
 # rlang::enquo() and resolved by name, so it has to reach check_balance() as a
 # literal string rather than as the symbol `treat`; do.call() inlines the
 # values and is also the only form tidyselect takes for `.vars` / `.weights`
-# without a deprecation warning. And the trimmed rows are dropped here: a
-# weight column with any NA makes check_balance() return NA for that whole
-# weight -- silently, and even with na.rm = TRUE. Balance belongs to the
-# analysis population in any case, which is exactly the retained set.
+# without a deprecation warning. And get_PSW() drops the trimmed rows through
+# `keep`: a weight column with any NA makes check_balance() return NA for
+# that whole weight -- silently, and even with na.rm = TRUE. Balance belongs
+# to the analysis population in any case, which is exactly the retained set.
+# get_PSM() passes the whole cohort; its call site says why.
 #' @keywords internal
 #' @noRd
-.psw_balance <- function(data, adj_var, treat, wcols, keep) {
+.psw_balance <- function(data, adj_var, treat, wcols, keep = NULL,
+                         caller = "get_PSW") {
   if (!requireNamespace("halfmoon", quietly = TRUE))
-    stop("Package 'halfmoon' is required for get_PSW(balance = TRUE); use balance = FALSE to skip the balance table.",
-         call. = FALSE)
+    stop(sprintf("Package 'halfmoon' is required for %s(balance = TRUE); use balance = FALSE to skip the balance table.",
+                 caller), call. = FALSE)
+  if (!is.null(keep)) data <- data[keep, , drop = FALSE]
   do.call(halfmoon::check_balance,
-          list(.data     = data[keep, , drop = FALSE],
+          list(.data     = data,
                .vars     = adj_var,
                .exposure = treat,
                .weights  = wcols,
@@ -586,17 +624,9 @@ get_PSW <- function(data,
   treat_col     <- data[[treat]]
   data[[treat]] <- z
 
-  if (is.null(ps)) {
-    f  <- .psw_fit(data, treat, adj_var, method, ps_args)
-    e  <- f$ps
-    ft <- f$fit
-  } else {
-    e  <- as.numeric(data[[ps]])
-    ft <- NULL
-  }
-  if (anyNA(e) || any(e <= 0 | e >= 1))
-    stop("The propensity score must be non-missing and strictly between 0 and 1.",
-         call. = FALSE)
+  f  <- .psw_score(data, treat, adj_var, ps, method, ps_args)
+  e  <- f$ps
+  ft <- f$fit
 
   tr      <- .psw_trim(e, trim_args)
   e       <- tr$ps
@@ -637,16 +667,9 @@ get_PSW <- function(data,
 
   bal <- if (balance) .psw_balance(data, adj_var, treat, wcols, keep) else NULL
   data[[treat]] <- treat_col
-  smd <- function(col) {
-    if (is.null(bal)) return(c(NA_real_, NA_real_))
-    s <- abs(bal$estimate[bal$metric == "smd" & bal$method == col])
-    s <- s[is.finite(s)]
-    if (!length(s)) return(c(NA_real_, NA_real_))
-    c(max(s), sum(s > 0.1))
-  }
 
   st <- do.call(rbind, lapply(seq_along(estimand), function(i) {
-    m <- smd(wcols[[i]])
+    m <- .psw_smd(bal, wcols[[i]])
     .psw_stats_row(estimand[[i]], data[[wcols[[i]]]], z, keep,
                    smd_max = m[[1L]], smd_over = m[[2L]])
   }))

@@ -13,7 +13,8 @@
 #               .psm_plt_ps       score overlap, halfmoon::geom_mirror_histogram()
 #
 # The four types mirror plt_PSW() so a weighting result and a matching result
-# can be read the same way. Two things differ, both because matching drops
+# can be read the same way, and the size / save step is plt_PSW()'s
+# .psw_save(). Two things differ, both because matching drops
 # units rather than down-weighting them: the weight figure plots only the
 # matched units and names the discarded count in the subtitle, and the score
 # histogram compares the matched sample against the whole cohort rather than
@@ -234,16 +235,5 @@ plt_PSM <- function(x,
                       ess    = c(7.5, 4.5),
                       weight = c(8, 2 + 1.6 * ceiling(length(wcols) / 2)),
                       ps     = c(8, 2 + 2.2 * ceiling(length(wcols) / 2)))
-  attr(p, "plot_size") <- stats::setNames(plot_size, c("width", "height"))
-
-  if (!is.null(save) && !is.list(save))
-    stop("`save` must be `NULL` or a list.", call. = FALSE)
-  if (!is.null(save) && length(save) > 0L) {
-    if (!requireNamespace("RegR", quietly = TRUE))
-      stop("Package 'RegR' is required for a non-empty `save`", call. = FALSE)
-    if (is.null(save$width))  save$width  <- plot_size[1L]
-    if (is.null(save$height)) save$height <- plot_size[2L]
-    do.call(RegR::save_plt, c(list(plot = p), save))
-  }
-  p
+  .psw_save(p, plot_size, save)
 }

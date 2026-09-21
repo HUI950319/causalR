@@ -7,14 +7,16 @@
 #   L1  get_PSM(data, treat, adj_var, ps, method, ...)
 #         |
 #         +-- L2 pipeline stages, run in this fixed order
-#         |     .psw_fit       the score, from WeightIt (shared with get_PSW)
+#         |     .psw_score     the score, from WeightIt or `ps` (psw-get.R)
 #         |     .psm_match     one MatchIt run per method, score held fixed
-#         |     .psm_balance   halfmoon::check_balance() over every weight
+#         |     .psw_balance   halfmoon::check_balance() over every weight,
+#         |                    on the whole cohort here (psw-get.R)
 #         |
 #         +-- L3 helpers
 #               .psm_spec        the matchit arguments one method accepts
 #               .psm_stats_row   the 16-column standardised $stats row
 #               .psm_plt_spec    plt_PSM() arguments echoed by print()
+#               .psw_treat, .psw_ess, .psw_smd   shared, from psw-get.R
 #
 #   print.psm_res reports the diagnostics table and the matching plt_PSM()
 #   call.
@@ -101,11 +103,6 @@
 .psm_stats_row <- function(method, estimand, w, z, discarded,
                            subclass, smd_max = NA_real_,
                            smd_over = NA_real_) {
-  ess <- function(x) {
-    x <- x[is.finite(x) & x > 0]
-    if (!length(x)) return(NA_real_)
-    sum(x)^2 / sum(x^2)
-  }
   keep <- w > 0
   tibble::tibble(
     method       = method,
@@ -117,10 +114,10 @@
     n_discarded  = sum(discarded),
     pct_retained = 100 * sum(keep) / length(w),
     n_pairs      = length(unique(stats::na.omit(subclass))),
-    ess          = ess(w),
-    ess_treat    = ess(w[z == 1L]),
-    ess_ctrl     = ess(w[z == 0L]),
-    ess_pct      = ess(w) / sum(keep),
+    ess          = .psw_ess(w),
+    ess_treat    = .psw_ess(w[z == 1L]),
+    ess_ctrl     = .psw_ess(w[z == 0L]),
+    ess_pct      = .psw_ess(w) / sum(keep),
     w_max        = max(w[keep]),
     w_cv         = stats::sd(w[keep]) / mean(w[keep]),
     smd_max      = as.numeric(smd_max),
@@ -172,28 +169,6 @@
     error = function(e) stop(
       sprintf("MatchIt::matchit(method = \"%s\") failed: %s",
               method, conditionMessage(e)), call. = FALSE))
-}
-
-# Unlike the NA weights trimming produces in get_PSW(), a zero weight does not
-# make check_balance() return NA, so the whole cohort is passed in. That is
-# also the right thing statistically: standardising on the matched subset's
-# own SD inflates every SMD (measured: sd 0.73 vs 1.03, a 21% difference) and
-# breaks comparability with the unmatched "observed" reference row, which is
-# the row the love plot exists to compare against. cobalt's Diff.Adj uses the
-# full-sample denominator for the same reason.
-#' @keywords internal
-#' @noRd
-.psm_balance <- function(data, adj_var, treat, wcols) {
-  if (!requireNamespace("halfmoon", quietly = TRUE))
-    stop("Package 'halfmoon' is required for get_PSM(balance = TRUE); use balance = FALSE to skip the balance table.",
-         call. = FALSE)
-  do.call(halfmoon::check_balance,
-          list(.data     = data,
-               .vars     = adj_var,
-               .exposure = treat,
-               .weights  = wcols,
-               .metrics  = "smd",
-               na.rm     = TRUE))
 }
 
 
@@ -477,15 +452,7 @@ get_PSM <- function(data,
   treat_col     <- data[[treat]]
   data[[treat]] <- z
 
-  if (is.null(ps)) {
-    f  <- .psw_fit(data, treat, adj_var, ps_method, ps_args)
-    e  <- f$ps
-  } else {
-    e  <- as.numeric(data[[ps]])
-  }
-  if (anyNA(e) || any(e <= 0 | e >= 1))
-    stop("The propensity score must be non-missing and strictly between 0 and 1.",
-         call. = FALSE)
+  e <- .psw_score(data, treat, adj_var, ps, ps_method, ps_args)$ps
   data[["ps"]] <- e
 
   fits  <- list()
@@ -505,18 +472,18 @@ get_PSM <- function(data,
         nrow(data), " unit", if (nrow(data) != 1L) "s" else "", ".")))
   }
 
-  bal <- if (balance) .psm_balance(data, adj_var, treat, wcols) else NULL
+  # Unlike the NA weights trimming produces in get_PSW(), a zero weight does
+  # not make check_balance() return NA, so the whole cohort is passed in (no
+  # `keep`). That is also the right thing statistically: standardising on the
+  # matched subset's own SD inflates every SMD (measured: sd 0.73 vs 1.03, a
+  # 21% difference) and breaks comparability with the unmatched "observed"
+  # reference row, which is the row the love plot exists to compare against.
+  bal <- if (balance)
+    .psw_balance(data, adj_var, treat, wcols, caller = "get_PSM") else NULL
   data[[treat]] <- treat_col
-  smd <- function(col) {
-    if (is.null(bal)) return(c(NA_real_, NA_real_))
-    s <- abs(bal$estimate[bal$metric == "smd" & bal$method == col])
-    s <- s[is.finite(s)]
-    if (!length(s)) return(c(NA_real_, NA_real_))
-    c(max(s), sum(s > 0.1))
-  }
 
   st <- do.call(rbind, lapply(seq_along(method), function(i) {
-    mm <- smd(wcols[[i]])
+    mm <- .psw_smd(bal, wcols[[i]])
     .psm_stats_row(method[[i]], estimand,
                    w         = data[[wcols[[i]]]],
                    z         = z,

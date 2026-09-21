@@ -7,10 +7,13 @@
 #   L1  plt_PSW(x, type, estimand, ...)
 #         |
 #         +-- L2 renderers
-#               .psw_plt_love     balance across weights, halfmoon::geom_love()
-#               .psw_plt_ess      effective sample size, native ggplot2
-#               .psw_plt_weight   weight distribution by arm, native ggplot2
-#               .psw_plt_ps       score overlap, halfmoon::geom_mirror_histogram()
+#         |     .psw_plt_love     balance across weights, halfmoon::geom_love()
+#         |     .psw_plt_ess      effective sample size, native ggplot2
+#         |     .psw_plt_weight   weight distribution by arm, native ggplot2
+#         |     .psw_plt_ps       score overlap, halfmoon::geom_mirror_histogram()
+#         |
+#         +-- .psw_save   pin the size, save through RegR::save_plt();
+#                         shared with plt_PSM()
 #
 # The love plot and the mirror histogram have established upstream geoms and
 # use them. The other two read straight off $stats and $data, which already
@@ -26,6 +29,25 @@
 .psw_labels <- function(wcols) {
   stats::setNames(c("Unweighted", toupper(sub("^w_", "", wcols))),
                   c("observed", wcols))
+}
+
+# Pin the size on the plot and, when `save` is a non-empty list, hand it to
+# RegR::save_plt() with that size as the default. `NULL` and `list()` both
+# mean no file is written.
+#' @keywords internal
+#' @noRd
+.psw_save <- function(p, plot_size, save) {
+  attr(p, "plot_size") <- stats::setNames(plot_size, c("width", "height"))
+  if (!is.null(save) && !is.list(save))
+    stop("`save` must be `NULL` or a list.", call. = FALSE)
+  if (!is.null(save) && length(save) > 0L) {
+    if (!requireNamespace("RegR", quietly = TRUE))
+      stop("Package 'RegR' is required for a non-empty `save`", call. = FALSE)
+    if (is.null(save$width))  save$width  <- plot_size[1L]
+    if (is.null(save$height)) save$height <- plot_size[2L]
+    do.call(RegR::save_plt, c(list(plot = p), save))
+  }
+  p
 }
 
 
@@ -228,16 +250,5 @@ plt_PSW <- function(x,
                       ess    = c(7, 4.5),
                       weight = c(8, 2 + 1.6 * ceiling(length(wcols) / 2)),
                       ps     = c(8, 2 + 2.2 * ceiling(length(wcols) / 2)))
-  attr(p, "plot_size") <- stats::setNames(plot_size, c("width", "height"))
-
-  if (!is.null(save) && !is.list(save))
-    stop("`save` must be `NULL` or a list.", call. = FALSE)
-  if (!is.null(save) && length(save) > 0L) {
-    if (!requireNamespace("RegR", quietly = TRUE))
-      stop("Package 'RegR' is required for a non-empty `save`", call. = FALSE)
-    if (is.null(save$width))  save$width  <- plot_size[1L]
-    if (is.null(save$height)) save$height <- plot_size[2L]
-    do.call(RegR::save_plt, c(list(plot = p), save))
-  }
-  p
+  .psw_save(p, plot_size, save)
 }
