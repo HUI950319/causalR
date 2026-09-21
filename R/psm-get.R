@@ -137,6 +137,13 @@
 
 # One matchit() run. The score comes in as `distance`, so matchit() does no
 # modelling of its own and every method in a single call scores the same way.
+#
+# `data` and `ps` enter the call as symbols, not values. do.call() would
+# inline the matchit() function body and a snapshot of the data frame into
+# `obj$call`: measured at n = 400 that is 1159 KB per method against 181 KB,
+# and summary(obj) then prints the whole data frame under "Call:". The
+# symbols resolve in this frame through the formula environment, which is
+# also how MatchIt::match.data() finds the data without being handed it.
 #' @keywords internal
 #' @noRd
 .psm_match <- function(data, treat, adj_var, ps, method, estimand,
@@ -147,11 +154,11 @@
                  pkg, method), call. = FALSE)
 
   form <- stats::reformulate(adj_var, response = treat)
-  args <- c(list(formula = form, data = data, method = method,
+  args <- c(list(formula = form, data = quote(data), method = method,
                  estimand = estimand, normalize = FALSE),
-            if (method %in% .PSM_DISTANCE) list(distance = ps),
+            if (method %in% .PSM_DISTANCE) list(distance = quote(ps)),
             .psm_spec(method, ratio, caliper, replace, match_args))
-  do.call(MatchIt::matchit, args)
+  eval(as.call(c(list(quote(MatchIt::matchit)), args)))
 }
 
 # Unlike the NA weights trimming produces in get_PSW(), a zero weight does not

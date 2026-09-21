@@ -104,6 +104,29 @@ test_that("unmatched units keep their row with weight 0 and no subclass", {
 })
 
 
+test_that("matchit objects carry a readable call, not the data", {
+  # do.call() would inline the matchit() body and a data snapshot into each
+  # $call, so summary() printed the whole data frame and the object was mostly
+  # that. match.data() must still find the data on its own.
+  d   <- psm_data()
+  res <- get_PSM(d, treat = "z", adj_var = psm_adj, balance = FALSE,
+                 caliper = 0.2)
+  cl  <- res$fit$nearest$call
+
+  expect_identical(cl[[1L]], quote(MatchIt::matchit))
+  expect_identical(cl$data, quote(data))
+  expect_identical(cl$distance, quote(ps))
+  expect_lt(sum(nchar(deparse(cl))), 300L)
+  expect_lt(as.numeric(utils::object.size(res$fit$nearest)),
+            30 * as.numeric(utils::object.size(d)))
+
+  out <- utils::capture.output(summary(res$fit$nearest))
+  expect_lt(length(out), 60L)
+  expect_identical(nrow(MatchIt::match.data(res$fit$nearest)),
+                   sum(res$data$w_nearest > 0))
+})
+
+
 test_that("unmatched and discarded are counted separately", {
   d   <- psm_data()
   res <- get_PSM(d, treat = "z", adj_var = psm_adj, balance = FALSE,

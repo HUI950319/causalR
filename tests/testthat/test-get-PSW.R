@@ -267,6 +267,22 @@ test_that("estimand selects columns and rows", {
 })
 
 
+test_that("the weightit object carries a readable call, not the data", {
+  # do.call() would inline the function body and the data frame into $call;
+  # the object is then mostly that, and printing the call dumps the data.
+  d   <- psw_data()
+  res <- get_PSW(d, treat = "z", adj_var = psw_adj, balance = FALSE)
+  cl  <- res$fit$call
+
+  expect_identical(cl[[1L]], quote(WeightIt::weightit))
+  expect_identical(cl$data, quote(data))
+  expect_lt(sum(nchar(deparse(cl))), 200L)
+  expect_lt(as.numeric(utils::object.size(res$fit)),
+            20 * as.numeric(utils::object.size(d)))
+  expect_no_error(summary(res$fit))
+})
+
+
 test_that("a supplied score bypasses the model", {
   d      <- psw_data()
   d$myps <- stats::fitted(stats::glm(z ~ x1 + x2 + x3, binomial, data = d))

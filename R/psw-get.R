@@ -163,13 +163,21 @@
 # exposure, matching .psw_treat() and stats::glm(). Verified equal to
 # stats::glm(family = binomial()) to 4.4e-16 on numeric, factor and character
 # exposures, so nothing about the weights changed when the glm branch went.
+#
+# The call is assembled with `data` as a symbol rather than do.call()'d:
+# do.call() inlines the function body and the whole data frame into
+# `obj$call`, which then makes up most of the object (measured at n = 400:
+# 665 KB against 113 KB) and is what any printed call would show. The symbol
+# resolves in this frame, which the formula environment keeps reachable.
 #' @keywords internal
 #' @noRd
 .psw_fit <- function(data, treat, adj_var, method, ps_args) {
   form <- stats::reformulate(adj_var, response = treat)
-  obj  <- do.call(WeightIt::weightit,
-                  c(list(formula = form, data = data, method = method,
-                         estimand = "ATE"), ps_args))
+  cl   <- as.call(c(list(quote(WeightIt::weightit)),
+                    list(formula = form, data = quote(data), method = method,
+                         estimand = "ATE"),
+                    ps_args))
+  obj  <- eval(cl)
   if (is.null(obj$ps))
     stop(sprintf("WeightIt method \"%s\" returns balancing weights without a propensity score, so it cannot feed a tilting function. Use one of %s.",
                  method,
