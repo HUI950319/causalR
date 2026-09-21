@@ -70,9 +70,11 @@
 # comparing against, but the score is not what they share with the others.
 .PSM_DISTANCE <- c("nearest", "optimal", "full", "genetic", "subclass")
 
-# Methods that need a package beyond MatchIt itself. "cem" is implemented
-# inside MatchIt 4.x and does not need the cem package.
-.PSM_PKG <- c(optimal = "optmatch", full = "optmatch", genetic = "rgenoud")
+# Methods that need packages beyond MatchIt itself, read off MatchIt's own
+# check_installed() calls. "cem" is implemented inside MatchIt 4.x and does
+# not need the cem package.
+.PSM_PKG <- list(optimal = "optmatch", full = "optmatch",
+                 genetic = c("Matching", "rgenoud"))
 
 # Arguments the function manages itself and will not forward to matchit().
 .PSM_MANAGED <- c("formula", "data", "method", "estimand", "distance",
@@ -149,17 +151,27 @@
 #' @noRd
 .psm_match <- function(data, treat, adj_var, ps, method, estimand,
                        ratio, caliper, replace, match_args) {
-  pkg <- if (method %in% names(.PSM_PKG)) .PSM_PKG[[method]] else NULL
-  if (!is.null(pkg) && !requireNamespace(pkg, quietly = TRUE))
-    stop(sprintf("Package '%s' is required for get_PSM(method = \"%s\").",
-                 pkg, method), call. = FALSE)
+  pkg  <- .PSM_PKG[[method]]
+  miss <- pkg[!vapply(pkg, requireNamespace, logical(1), quietly = TRUE)]
+  if (length(miss))
+    stop(sprintf("Package%s %s %s required for get_PSM(method = \"%s\").",
+                 if (length(miss) > 1L) "s" else "",
+                 paste0("'", miss, "'", collapse = " and "),
+                 if (length(miss) > 1L) "are" else "is", method),
+         call. = FALSE)
 
   form <- stats::reformulate(adj_var, response = treat)
   args <- c(list(formula = form, data = quote(data), method = method,
                  estimand = estimand, normalize = FALSE),
             if (method %in% .PSM_DISTANCE) list(distance = quote(ps)),
             .psm_spec(method, ratio, caliper, replace, match_args))
-  eval(as.call(c(list(quote(MatchIt::matchit)), args)))
+  # A call naming several methods fails as a whole when one of them does;
+  # MatchIt's message does not say which, so it is prefixed here.
+  tryCatch(
+    eval(as.call(c(list(quote(MatchIt::matchit)), args))),
+    error = function(e) stop(
+      sprintf("MatchIt::matchit(method = \"%s\") failed: %s",
+              method, conditionMessage(e)), call. = FALSE))
 }
 
 # Unlike the NA weights trimming produces in get_PSW(), a zero weight does not
@@ -220,7 +232,8 @@
 #' which does not say that another method would work.
 #'
 #' `"optimal"` and `"full"` need \pkg{optmatch}; `"genetic"` needs
-#' \pkg{rgenoud} and is slow. `"cem"` is built into MatchIt and needs nothing.
+#' \pkg{Matching} and \pkg{rgenoud} and is slow. `"cem"` is built into
+#' MatchIt and needs nothing.
 #'
 #' Not every method takes every knob, and MatchIt warns once per ignored
 #' argument, so each method is handed only what it uses: `ratio` reaches
@@ -228,8 +241,14 @@
 #' `"full"` and `"genetic"`; `replace` reaches `"nearest"` and `"genetic"`.
 #' `"cem"` and `"exact"` ignore the propensity score altogether -- they
 #' coarsen or match on the covariates themselves -- so they are compared
-#' alongside the others rather than sharing their score. What each method
-#' actually received is recorded in `attr(x, "analysis")$specs`.
+#' alongside the others rather than sharing their score. `"exact"` matches
+#' on the covariate values as they are and fails on a continuous covariate
+#' ("No exact matches were found"): give it discrete `adj_var` only, or use
+#' `"cem"`, which coarsens first. What each method actually received is
+#' recorded in `attr(x, "analysis")$specs`.
+#'
+#' A method that fails stops the whole call with an error naming it; the
+#' others are not reported partially.
 #'
 #' @section Weight normalisation:
 #' MatchIt's `normalize = TRUE` default rescales each arm to a mean of 1,
@@ -266,10 +285,11 @@
 #'   not accept it.
 #' @param caliper `NULL` (default) for no caliper, or a number in **standard
 #'   deviations of the propensity score**, which is the probability scale, not
-#'   the logit scale. 0.1 to 0.2 is the usual range. Note that Austin's
-#'   0.2-standard-deviation rule is stated on the logit scale; to reproduce it
-#'   exactly, pass the logit score yourself through `ps`. Used by `"nearest"`,
-#'   `"optimal"`, `"genetic"` and `"full"`.
+#'   the logit scale; 0.1 to 0.2 is the usual range. Austin's
+#'   0.2-standard-deviation rule is stated on the logit scale and cannot be
+#'   reproduced here, because `ps` must be a probability and the matching
+#'   distance is that probability. Used by `"nearest"`, `"full"` and
+#'   `"genetic"`; `"optimal"` does not accept one.
 #' @param replace Logical, default `FALSE`. Allow a control to be matched more
 #'   than once. Used by `"nearest"` and `"genetic"`. With replacement the
 #'   control weights stop being 0/1 and become the number of times each
@@ -307,11 +327,22 @@
 #'       `ess_treat`, `ess_ctrl`, `ess_pct`, `w_max`, `w_cv`, `smd_max`,
 #'       `smd_over`. `n` and the two arm counts are of matched units;
 #'       `n_unmatched` and `n_discarded` are separate because failing to find
-#'       a partner and falling outside common support are different things.}
+#'       a partner and falling outside common support are different things.
+#'       `n_pairs` is the number of matched sets: pairs under 1:1 nearest
+#'       matching, strata under `"subclass"`, `"cem"` and `"exact"`, sets of
+#'       varying size under `"full"`. `smd_max` is the largest absolute
+#'       standardised mean difference across `adj_var` and `smd_over` counts
+#'       those above 0.1, the line [plt_PSM()] draws by default; both are
+#'       `NA` when `balance = FALSE`.}
 #'     \item{`balance`}{The [halfmoon::check_balance()] long table
 #'       (`variable`, `group_level`, `method`, `metric`, `estimate`), whose
 #'       `method` column holds the weight column name or `"observed"`. `NULL`
-#'       when `balance = FALSE`.}
+#'       when `balance = FALSE`. The standardised difference is halfmoon's,
+#'       through `smd::smd()`: the weighted mean difference over the pooled
+#'       standard deviation of the two arms. `cobalt::bal.tab()` divides by
+#'       the treated arm's standard deviation for an ATT estimand by default,
+#'       so its numbers differ slightly (measured: -0.333 here against -0.357
+#'       there for the same nearest-neighbour match).}
 #'     \item{`fit`}{Named list of the `matchit` objects, one per method, for
 #'       `summary()`, `plot()`, `cobalt::bal.tab()` or
 #'       [MatchIt::match.data()], which finds the data on its own and returns

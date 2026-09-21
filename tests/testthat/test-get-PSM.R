@@ -224,6 +224,45 @@ test_that("matching improves balance and the table is computed on the cohort", {
 })
 
 
+test_that("exact matching needs discrete covariates; a failing method is named", {
+  d <- psm_data()
+
+  ex <- get_PSM(d, treat = "z", adj_var = "x2", method = "exact",
+                balance = FALSE)
+  expect_identical(ex$stats$n_pairs, 2L)
+  expect_identical(ex$stats$n, nrow(d))
+
+  # a continuous covariate has no exact matches, and the error says which
+  # method it was that failed, since the whole call stops there
+  expect_error(
+    get_PSM(d, treat = "z", adj_var = psm_adj, balance = FALSE,
+            method = c("nearest", "exact")),
+    "matchit(method = \"exact\") failed", fixed = TRUE)
+})
+
+
+test_that("ATC matches each control, and the set counts mean what they say", {
+  d <- psm_data()
+
+  atc <- suppressWarnings(
+    get_PSM(d, treat = "z", adj_var = psm_adj, balance = FALSE,
+            estimand = "ATC"))
+  w <- atc$data$w_nearest
+  expect_identical(atc$stats$estimand, "ATC")
+  expect_true(all(w[d$z == 0] %in% c(0, 1)))
+  expect_equal(sum(w[d$z == 1]), atc$stats$n_ctrl)
+
+  att <- get_PSM(d, treat = "z", adj_var = psm_adj, balance = FALSE)
+  expect_identical(att$stats$n_pairs, att$stats$n_treat)   # 1:1 pairs
+  expect_equal(att$stats$ess_pct, 1)                        # equal weights
+  expect_equal(att$stats$w_cv, 0)
+
+  sub <- get_PSM(d, treat = "z", adj_var = psm_adj, balance = FALSE,
+                 method = "subclass")
+  expect_identical(sub$stats$n_pairs, 6L)                   # MatchIt default
+})
+
+
 test_that("estimand is validated per method, naming the offender", {
   d <- psm_data()
 
