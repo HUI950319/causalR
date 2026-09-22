@@ -94,7 +94,8 @@ An object of class \code{psm_res}: a list of
 \item{\code{data}}{The input data, with \code{treat} exactly as supplied, plus
 \code{ps}, and per method a weight column \verb{w_<method>} (\code{0} for a unit
 that was not matched) and a subclass column \verb{s_<method>} (\code{NA} where
-unmatched). Every input row is kept,
+unmatched, or throughout when matching with replacement because a
+reused unit can belong to multiple sets). Every input row is kept,
 so the columns stay aligned and several schemes fit in one frame; the
 \code{w_} prefix is what
 \code{halfmoon::plot_ess(.weights = starts_with("w_"))} selects on, and
@@ -108,7 +109,8 @@ columns: \code{method}, \code{estimand}, \code{n}, \code{n_treat}, \code{n_ctrl}
 a partner and falling outside common support are different things.
 \code{n_pairs} is the number of matched sets: pairs under 1:1 nearest
 matching, strata under \code{"subclass"}, \code{"cem"} and \code{"exact"}, sets of
-varying size under \code{"full"}. \code{smd_max} is the largest absolute
+varying size under \code{"full"}. With replacement it counts non-empty
+rows of MatchIt's matching matrix. \code{smd_max} is the largest absolute
 standardised mean difference across \code{adj_var} and \code{smd_over} counts
 those above 0.1, the line \code{\link[=plt_PSM]{plt_PSM()}} draws by default; both are
 \code{NA} when \code{balance = FALSE}.}
@@ -142,7 +144,11 @@ time.
 a treatment effect. Feed \code{result$data} with the weight column of your
 choice to an outcome model, clustering on the matching subclass, as in
 \code{lm(y ~ z, data = res$data, weights = w_nearest)} with
-\code{sandwich::vcovCL(cluster = res$data$s_nearest)}.
+\code{sandwich::vcovCL(cluster = res$data$s_nearest)} for matching without
+replacement. With replacement, use \code{\link[MatchIt:match_data]{MatchIt::get_matches()}} on the
+corresponding \code{result$fit} entry to expand reused units into their
+matching sets; account for both set membership and repeated unit IDs in
+subsequent inference.
 }
 \section{Relation to get_PSW()}{
 

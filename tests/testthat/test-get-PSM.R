@@ -263,6 +263,25 @@ test_that("ATC matches each control, and the set counts mean what they say", {
 })
 
 
+test_that("replacement matching counts sets without assigning a unique subclass", {
+  d <- data.frame(z = rep(0:1, each = 10), x = rep(1:10, 2), score = 0.5)
+  res <- get_PSM(d, "z", "x", ps = "score", balance = FALSE, replace = TRUE)
+  expect_identical(res$stats$n_pairs, 10L)
+  expect_identical(res$stats$n, 11L)
+  expect_true(all(is.na(res$data$s_nearest)))
+  expanded <- MatchIt::get_matches(res$fit$nearest)
+  expect_equal(length(unique(expanded$subclass)), res$stats$n_pairs)
+
+  d <- data.frame(z = c(0, 0, 0, 1, 1, 1), x = 1:6,
+                  score = c(0.2, 0.21, 0.22, 0.2, 0.2, 0.8))
+  res <- get_PSM(d, "z", "x", ps = "score", balance = FALSE, replace = TRUE,
+                  caliper = 0.1, match_args = list(std.caliper = FALSE))
+  expect_identical(res$stats$n_pairs, 2L)
+  expect_identical(res$stats$n_treat, 2L)
+  expect_identical(res$stats$n_ctrl, 1L)
+})
+
+
 test_that("estimand is validated per method, naming the offender", {
   d <- psm_data()
 

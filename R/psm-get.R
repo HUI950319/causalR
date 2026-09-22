@@ -102,7 +102,7 @@
 #' @noRd
 .psm_stats_row <- function(method, estimand, w, z, discarded,
                            subclass, smd_max = NA_real_,
-                           smd_over = NA_real_) {
+                           smd_over = NA_real_, match_matrix = NULL) {
   keep <- w > 0
   tibble::tibble(
     method       = method,
@@ -113,7 +113,9 @@
     n_unmatched  = sum(!keep & !discarded),
     n_discarded  = sum(discarded),
     pct_retained = 100 * sum(keep) / length(w),
-    n_pairs      = length(unique(stats::na.omit(subclass))),
+    n_pairs      = if (is.null(match_matrix))
+                     length(unique(stats::na.omit(subclass))) else
+                     sum(rowSums(!is.na(match_matrix)) > 0L),
     ess          = .psw_ess(w),
     ess_treat    = .psw_ess(w[z == 1L]),
     ess_ctrl     = .psw_ess(w[z == 0L]),
@@ -187,7 +189,11 @@
 #' a treatment effect. Feed `result$data` with the weight column of your
 #' choice to an outcome model, clustering on the matching subclass, as in
 #' `lm(y ~ z, data = res$data, weights = w_nearest)` with
-#' `sandwich::vcovCL(cluster = res$data$s_nearest)`.
+#' `sandwich::vcovCL(cluster = res$data$s_nearest)` for matching without
+#' replacement. With replacement, use [MatchIt::get_matches()] on the
+#' corresponding `result$fit` entry to expand reused units into their
+#' matching sets; account for both set membership and repeated unit IDs in
+#' subsequent inference.
 #'
 #' @section Relation to get_PSW():
 #' The two functions are duals and share their score, their `w_` column
@@ -291,7 +297,8 @@
 #'     \item{`data`}{The input data, with `treat` exactly as supplied, plus
 #'       `ps`, and per method a weight column `w_<method>` (`0` for a unit
 #'       that was not matched) and a subclass column `s_<method>` (`NA` where
-#'       unmatched). Every input row is kept,
+#'       unmatched, or throughout when matching with replacement because a
+#'       reused unit can belong to multiple sets). Every input row is kept,
 #'       so the columns stay aligned and several schemes fit in one frame; the
 #'       `w_` prefix is what
 #'       `halfmoon::plot_ess(.weights = starts_with("w_"))` selects on, and
@@ -305,7 +312,8 @@
 #'       a partner and falling outside common support are different things.
 #'       `n_pairs` is the number of matched sets: pairs under 1:1 nearest
 #'       matching, strata under `"subclass"`, `"cem"` and `"exact"`, sets of
-#'       varying size under `"full"`. `smd_max` is the largest absolute
+#'       varying size under `"full"`. With replacement it counts non-empty
+#'       rows of MatchIt's matching matrix. `smd_max` is the largest absolute
 #'       standardised mean difference across `adj_var` and `smd_over` counts
 #'       those above 0.1, the line [plt_PSM()] draws by default; both are
 #'       `NA` when `balance = FALSE`.}
@@ -489,6 +497,7 @@ get_PSM <- function(data,
                    z         = z,
                    discarded = fits[[i]]$discarded,
                    subclass  = data[[scols[[i]]]],
+                   match_matrix = fits[[i]]$match.matrix,
                    smd_max   = mm[[1L]], smd_over = mm[[2L]])
   }))
 
