@@ -83,7 +83,7 @@
   zm <- matrix(as.numeric(surface(g$r2dz.x, g$r2yz.dx)), nrow = n)
 
   crit <- if (identical(ca$sensitivity_of, "t-value")) {
-    abs(stats::qt(alpha / 2, st$dof - 1))
+    sign(st$estimate - threshold) * abs(stats::qt(alpha / 2, st$dof - 1))
   } else threshold
 
   lines_at <- function(levels) {

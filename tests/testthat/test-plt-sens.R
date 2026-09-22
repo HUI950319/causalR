@@ -64,6 +64,29 @@ test_that("plt_sens reproduces sensemakr adjusted estimates on the contour", {
     res$bounds$adj_estimate, tolerance = 1e-8)
 })
 
+test_that("t-value contours retain the direction of the treatment effect", {
+  skip_if_not_installed("sensemakr")
+  set.seed(933)
+  d <- data.frame(z = rep(0:1, 100), x = rnorm(200))
+  d$y <- d$z + 0.2 * d$x + rnorm(200)
+  for (direction in c(-1, 1)) {
+    dd <- d
+    dd$y <- direction * d$y
+    res <- get_sens(dd, "z", "y", adj_var = "x", method = "lm")
+    p <- plt_sens(res, lim = c(0.6, 0.6),
+                  contour_args = list(sensitivity_of = "t-value"))
+    layers <- ggplot2::ggplot_build(p)$data
+    red <- Filter(function(l) "linetype" %in% names(l) &&
+      any(l$colour == "red" & l$linetype == 2, na.rm = TRUE), layers)
+    expect_length(red, 1L)
+    st <- res$sens$sensitivity_stats
+    values <- sensemakr::adjusted_t(st$estimate, st$se, st$dof,
+                                     red[[1L]]$x, red[[1L]]$y)
+    critical <- direction * abs(stats::qt(0.025, st$dof - 1))
+    expect_lt(max(abs(as.numeric(values) - critical)), 0.01)
+  }
+})
+
 test_that("plt_sens wraps the sensemakr extreme plot as a ggplot", {
   plt_test_deps("sensemakr", "ggplotify")
   p <- plt_sens(plt_lm_res(), type = "extreme", extreme_r2 = c(1, 0.5))
