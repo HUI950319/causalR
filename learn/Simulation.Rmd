@@ -1,0 +1,375 @@
+---
+title: "Simulation Codes"
+author: "Toshiaki Komura"
+date: "2025-05-27"
+---
+```{r Note}
+### This file introduces HTE analysis using machine learning algorithms.
+### This file is structured as follows: 
+### Step1: load packages 
+### Step2: test data generation
+### Step3: estimation of CATE using causal forest
+### Step4: calibration tests of causal forest
+### Step5: S-learner
+### Step6: T-learner
+### Step7: X-learner
+### Step8: DR-learner
+### Step9: R-learner
+### Step10: Bayesian causal forest
+
+### Codes for Step5-9 were adopted from: Salditt M, et al. A Tutorial Introduction to Heterogeneous Treatment Effect Estimation with Meta-learners.(Adm Policy Ment Health. doi:10.1007/s10488-023-01303-9)
+```
+
+```{r Step1: load packages}
+### Install packages
+library(tidyverse)
+library(grf)
+library(kernelshap)
+library(shapviz)
+library(lmtest)
+library(sandwich)
+library(broom)
+library(ggplot2)
+library(gtsummary)
+library(ranger)
+library(bcf)
+```
+
+```{r Step2: test data generation}
+# Sample size
+N <- 10000
+
+# Treatment
+set.seed(1)
+treatment <- rbinom(N, 1, 0.5)
+
+# Covariates
+age <- rnorm(N, 40, 10) 
+systolic.blood.pressure <- rnorm(N, 120, 10) 
+hba1c <- rnorm(N, 5, 1) 
+eGFR <- rnorm(N, 60, 20) 
+eGFR <- pmin(pmax(eGFR, 10), 120)
+medication <- rbinom(N, 1, 0.5)
+
+# Parameters for HTE
+b <- (0.1 + 0.05*hba1c + 0.05*eGFR + 0.3*medication) / 20
+
+# Outcome
+regY1 <- -0.1 + b*treatment + 0.0005*(systolic.blood.pressure - mean(systolic.blood.pressure)) + 0.01*hba1c + 0.001*(eGFR- mean(eGFR)) + 0.01*medication
+regY1 <- pmin(pmax(regY1, 0), 1)
+outcome <- rbinom(N, 1, regY1)
+
+# Create a data frame
+data <- data.frame(treatment, outcome, age, systolic.blood.pressure, hba1c,  eGFR, medication)
+```
+
+```{r Step3: estimation of CATE using causal forest}
+### Set up for cross-fitting
+num.rankings <- 5
+num.folds <- 10
+
+n = data %>% nrow()
+folds <- sort(seq(n) %% num.folds) + 1
+
+### Run causal forest ###
+Y <-  data$outcome
+W <-  data$treatment
+X <- data[, c("age", "systolic.blood.pressure", "hba1c", "eGFR", "medication")]
+X <- as.matrix(X)
+
+set.seed(1)
+cf <- causal_forest(X = X, # covariate matrix
+                           Y = Y, # outcome vector
+                           W = W, # exposure vector
+                           num.trees = 2000, # grow 2000 trees
+                           tune.parameters = "all", # tune parameters
+                           clusters = folds) 
+
+# Obtain estimated CATE
+data$tau.hat <- predict(cf, estimate.variance = F)$predictions # predict CATEs
+tau.hat = predict(cf)$predictions
+```
+
+```{r Step4: calibration tests of causal forest}
+### 1) BLP analysis ###
+test_calibration(cf) 
+
+
+
+### 2) Calibration plot ###
+# Obrain CATE quintile ranking
+ranking <- rep(NA, n)
+for (fold in seq(num.folds)){
+  tau.hat.quintiles <- quantile(tau.hat[folds == fold], probs = seq(0, 1, by=1/num.rankings))
+  ranking[folds == fold] <- cut(tau.hat[folds == fold], tau.hat.quintiles, include.lowest=TRUE,labels=seq(num.rankings))
+}
+
+# Computing AIPW scores 
+tau.hat <- data$tau.hat 
+e.hat <- cf$W.hat # P [W=1|X]
+m.hat <- cf$Y.hat # E [Y|X]
+# Estimating mu.hat(X, 1) and mu. hat (X, 0) for observations 
+mu.hat.O <- m.hat - e.hat * tau.hat 
+mu.hat.1 <- m.hat + (1 - e.hat) * tau.hat
+# AIPW scores
+aipw.scores <- tau.hat + data[,"treatment"]/(e.hat)*(data[,"outcome"] - mu.hat.1) - (1-data[,"treatment"])/(1-e.hat)*(data[,"outcome"] - mu.hat.O)
+ols <- lm(aipw.scores ~ 0 + factor(ranking))
+
+forest.ate <- data.frame ("AIPW", paste0("Q", seq(length(unique(ranking)))), coeftest(ols, vcov = vcovHC(ols, "HC2")) [,1:2])
+colnames(forest.ate) <- c("method", "ranking", "estimate", "std.err")
+rownames(forest.ate) <- NULL #forest.ate
+
+# Plot estimated ATEs by CATE quintile
+calibration.plot <- ggplot(forest.ate) +
+  aes (x = ranking, y = estimate, group = method, color = method) +
+  geom_point(position = position_dodge(0.2)) +
+  geom_errorbar(aes(ymin = estimate -2 * std.err, ymax = estimate +2 * std.err), width = .2, position = position_dodge (0.2)) +
+  ylab("ATE (percentage point)") + xlab("CATE Ranking") + 
+  theme_minimal() +
+  theme(legend.position = "bottom", legend.title = element_blank()) 
+
+print(calibration.plot)
+
+
+
+### 3) Variable importance ###
+covariate.list <- c("age", "systolic.blood.pressure", "hba1c", "eGFR", "medication")
+
+# Obtain variable importance 
+var.imp <- variable_importance(cf) %>% 
+  tidy() %>% 
+  data.frame() %>% 
+  mutate(varname = covariate.list) %>% 
+  arrange(desc(x))
+
+# Order the factor levels by value descending
+var.imp$varname <- factor(var.imp$varname, levels = var.imp$varname[order(var.imp$x, decreasing = FALSE)])
+
+# Barplot of variable importance
+ggplot(var.imp, aes(x=varname, y=x)) + 
+  geom_bar(stat = "identity") +
+  coord_flip() + 
+  ylab("Importance") + 
+  xlab("Variables") +
+  theme_bw() + 
+  theme(
+    axis.text.x = element_text(color = "black"),
+    axis.text.y = element_text(color = "black")
+  )
+
+
+
+### 4) SHAP Value ###
+# Obtain background data by random sampling 100 rows from X
+set.seed(1)
+X_bg <- X[sample(nrow(X), 100),]
+
+# Estimate SHAP values.
+shap_values <- kernelshap(
+  object = cf, # the causal forest model from above.
+  X = X, # the feature matrix 
+  bg_X = X_bg, # the background data
+  pred_fun = function(object, X) predict(object, X)$predictions # a custom prediction function to compute CATEs 
+)
+
+# Convert the output to a shapviz object for plotting
+sv <- shapviz(shap_values)
+
+# Plot SHAP values
+sv_importance(sv, bar_width = 0.6) +
+  ggtitle("SHAP Values") +
+  theme_minimal()
+
+
+
+### 5) Comparison of CATE quintile ###
+# Label CATE ranking
+data$ranking <- ranking
+
+# Summarize each CATE subgroup
+data[, c("ranking", "age", "systolic.blood.pressure", "hba1c", "eGFR", "medication")] %>% 
+  tbl_summary(statistic = list(all_continuous() ~ "{mean} ({sd})"),
+              digits = all_continuous() ~ 2,
+              by = ranking) %>% 
+  bold_labels()
+```
+
+```{r Step5: S-learner}
+# Create sample for this section
+data0 <- data[c("treatment", "outcome", "age", "systolic.blood.pressure", "hba1c", "eGFR", "medication")]
+covariates <- c("age", "systolic.blood.pressure", "hba1c", "eGFR", "medication")
+
+data.s <- data0 # Replicate data
+
+# Build outcome model with random forest 
+s_learner <- ranger(y = data.s$outcome, x = data.s[, c("treatment", covariates)], keep.inbag = TRUE, seed = 1, num.threads = 10)
+
+# Predict outcome when untreated
+data.s$treatment <- 0 
+mu0.hat.s <- rep(0, nrow(data.s))
+mu0.hat.s[data0$treatment == 0] <- s_learner$predictions[data0$treatment == 0]
+mu0.hat.s[data0$treatment == 1] <- predict(s_learner, data.s)$predictions[data0$treatment == 1]
+
+# Predict outcome when treated
+data.s$treatment <- 1
+mu1.hat.s <- rep(0,  nrow(data.s))
+mu1.hat.s[data0$treatment == 1] <- s_learner$predictions[data0$treatment == 1]
+mu1.hat.s[data0$treatment == 0] <- predict(s_learner, data.s)$predictions[data0$treatment == 0]
+
+# Calculate CATE 
+data.s$tau.hat <- mu1.hat.s - mu0.hat.s
+```
+
+```{r Step6: T-learner}
+data.t <- data0 # Replicate data
+data.t_0 <- data.t[data.t$treatment ==0,] # Control group 
+data.t_1 <- data.t[data.t$treatment ==1,] # Treatment group 
+
+# Build outcome model with random forest to predict mu0
+t_learner_m0 <- ranger(y = data.t_0$outcome, x = data.t_0[, covariates], keep.inbag = TRUE, seed = 1, num.threads = 10)
+mu0.hat.t <- rep(0, nrow(data.t))
+mu0.hat.t[data.t$treatment == 0] <- t_learner_m0$predictions
+mu0.hat.t[data.t$treatment == 1] <- predict(t_learner_m0, data.t_1)$predictions
+
+# Build outcome model with random forest to predict mu1
+t_learner_m1 <- ranger(y = data.t_1$outcome, x = data.t_1[, covariates], keep.inbag = TRUE, seed = 1, num.threads = 10)
+mu1.hat.t <- rep(0, nrow(data.t))
+mu1.hat.t[data.t$treatment == 1] <- t_learner_m1$predictions
+mu1.hat.t[data.t$treatment == 0] <- predict(t_learner_m1, data.t_0)$predictions
+
+# Calculate CATE 
+data.t$tau.hat <- mu1.hat.t - mu0.hat.t
+```
+
+```{r Step7: X-learner}
+data.x <- data0 # Replicate data
+data.x_0 <- data.x[data.x$treatment ==0,] # Control group 
+data.x_1 <- data.x[data.x$treatment ==1,] # Treatment group 
+
+# Build outcome model with random forest to predict mu0
+x_learner_m0 <- ranger(y = data.x_0$outcome, x = data.x_0[, covariates], keep.inbag = TRUE, seed = 1, num.threads = 10)
+mu0.hat.x <- rep(0, nrow(data.x))
+mu0.hat.x[data.x$treatment == 0] <- x_learner_m0$predictions
+mu0.hat.x[data.x$treatment == 1] <- predict(x_learner_m0, data.x_1)$predictions
+
+# Build outcome model with random forest to predict mu1
+x_learner_m1 <- ranger(y = data.x_1$outcome, x = data.x_1[, covariates], keep.inbag = TRUE, seed = 1, num.threads = 10)
+mu1.hat.x <- rep(0, nrow(data.x))
+mu1.hat.x[data.x$treatment == 1] <- x_learner_m1$predictions
+mu1.hat.x[data.x$treatment == 0] <- predict(x_learner_m1, data.x_0)$predictions
+
+# Compute the pseudo-outcome via the estimated outcome models 
+psi.x0 <- predict(x_learner_m1, data.x_0)$predictions - data.x_0$outcome
+psi.x1 <- data.x_1$outcome - predict(x_learner_m0, data.x_1)$predictions
+
+# Fit models for the pseudo-outcome for each treatment group
+x_learner_tau0 <- ranger(y = psi.x0, x = data.x_0[, covariates], keep.inbag = TRUE, seed = 1, num.threads = 10)
+x_learner_tau1 <- ranger(y = psi.x1, x = data.x_1[, covariates], keep.inbag = TRUE, seed = 1, num.threads = 10)
+
+# Compute treatment effect for each treatment group 
+tau0.hat.x <- rep(0, nrow(data.x))
+tau0.hat.x[treatment == 0] <- x_learner_tau0$predictions
+tau0.hat.x[treatment == 1] <- predict(x_learner_tau0, data.x_1)$predictions
+tau1.hat.x <- rep(0, nrow(data.x))
+tau1.hat.x[treatment == 1] <- x_learner_tau1$predictions
+tau1.hat.x[treatment == 0] <- predict(x_learner_tau1, data.x_0)$predictions
+
+# Calculate propensity score
+ps.x <- ranger(y = data.x$treatment, x = data.x[, covariates], probability = TRUE)
+ps.hat.x <- ps.x$predictions[,2] 
+# Ensure positivity
+epsilon <- 0.01
+ps.hat.x <- ifelse(ps.hat.x < epsilon, epsilon, ifelse(ps.hat.x > 1 - epsilon, 1 - epsilon, ps.hat.x))
+
+# Compute CATE as propensity score-weighted combination of the group-specific estimates
+data.x$tau.hat <- ps.hat.x * tau0.hat.x + (1 - ps.hat.x) * tau1.hat.x
+```
+
+```{r Step8: DR-learner}
+data.dr <- data0 # Replicate data
+data.dr_0 <- data.dr[data.dr$treatment ==0,] # Control group 
+data.dr_1 <- data.dr[data.dr$treatment ==1,] # Treatment group 
+
+# Build outcome model with random forest to predict mu0
+dr_learner_m0 <- ranger(y = data.dr_0$outcome, x = data.dr_0[, covariates], keep.inbag = TRUE, seed = 1, num.threads = 10)
+mu0.hat.dr <- rep(0, nrow(data.dr))
+mu0.hat.dr[data.dr$treatment == 0] <- dr_learner_m0$predictions
+mu0.hat.dr[data.dr$treatment == 1] <- predict(dr_learner_m0, data.dr_1)$predictions
+
+# Build outcome model with random forest to predict mu1
+dr_learner_m1 <- ranger(y = data.dr_1$outcome, x = data.dr_1[, covariates], keep.inbag = TRUE, seed = 1, num.threads = 10)
+mu1.hat.dr <- rep(0, nrow(data.dr))
+mu1.hat.dr[data.dr$treatment == 1] <- dr_learner_m1$predictions
+mu1.hat.dr[data.dr$treatment == 0] <- predict(dr_learner_m1, data.dr_0)$predictions
+
+# Calculate propensity score
+ps.dr <- ranger(y = data.dr$treatment, x = data.dr[, covariates], probability = TRUE)
+ps.hat.dr <- ps.dr$predictions[,2] 
+# Ensure positivity
+epsilon <- 0.01
+ps.hat.dr <- ifelse(ps.hat.dr < epsilon, epsilon, ifelse(ps.hat.dr > 1 - epsilon, 1 - epsilon, ps.hat.dr))
+
+# Compute the pseudo-outcome of the DR-learner
+augmented.term <- 1/ps.hat.dr * (data.dr$treatment * (data.dr$outcome - mu1.hat.dr)) -
+  1/(1 - ps.hat.dr) * ((1 - data.dr$treatment) * (data.dr$outcome - mu0.hat.dr))
+psi.dr <- mu1.hat.dr - mu0.hat.dr + augmented.term
+
+# Fit a random forest model to the pseudo-outcome
+tau.dr <- ranger(y = psi.dr, x = data.dr[, covariates], keep.inbag = TRUE, seed = 1, num.threads = 10)
+
+#Compute the CATE as the predictions from the pseudo-outcome regression
+data.dr$tau.hat <- tau.dr$predictions 
+```
+
+```{r Step9: R-learner}
+data.r <- data0 # Replicate data
+
+# Build outcome model with random forest to predict mu
+r_learner <- ranger(y = data.r$outcome, x = data.r[, covariates], keep.inbag = TRUE, seed = 1, num.threads = 10)
+m.hat <- r_learner$predictions
+
+# Calculate propensity score
+ps.r <- ranger(y = data.r$treatment, x = data.r[, covariates], probability = TRUE)
+ps.hat.r <- ps.r$predictions[,2] 
+# Ensure positivity
+epsilon <- 0.01
+ps.hat.r <- ifelse(ps.hat.r < epsilon, epsilon, ifelse(ps.hat.r > 1 - epsilon, 1 - epsilon, ps.hat.r))
+
+# Compute the pseudo-outcome 
+resid.treat <- data.r$treatment - ps.hat.r
+resid.out <- data.r$outcome - m.hat
+psi.r <- resid.out / resid.treat
+
+# Compute weight
+w <- resid.treat ^ 2
+
+# Regress pseudo-outcome on covariates using weights w
+tau.r <- ranger(y = psi.r, x = data.r[, covariates], case.weights = w, keep.inbag = TRUE, seed = 1, num.threads = 10)
+
+#Compute the CATE as the predictions from the weighted pseudo-outcome regression
+data.r$tau.hat <- tau.r$predictions
+```
+
+```{r Step10: Bayesian causal forest}
+data.bcf <- data0 # Replicate data
+
+# Calculate propensity score
+ps.bcf <- ranger(y = data.bcf$treatment, x = data.bcf[, covariates], probability = TRUE)
+ps.hat.bcf <- ps.bcf$predictions[,2] 
+# Ensure positivity
+epsilon <- 0.01
+ps.hat.bcf <- ifelse(ps.hat.bcf < epsilon, epsilon, ifelse(ps.hat.bcf > 1 - epsilon, 1 - epsilon, ps.hat.bcf))
+
+# Run Bayesian causal forest 
+bcf <- bcf(y = data.bcf$outcome, # Outcome
+           z = data.bcf$treatment, # Treatment 
+           x_control = as.matrix(data.bcf[, covariates]), # Covariates for prognostic score function 
+           x_moderate = as.matrix(data.bcf[, covariates]), # Covariates for tau function 
+           pihat = ps.hat.bcf, # Propensity score 
+           nburn = 100, # The number of burn-in iterations 
+           nsim = 100, # The number of iterations used for CATE estimation 
+           random_seed = 1, 
+           n_threads = 10)
+
+data.bcf$tau.hat <- colMeans(bcf$tau)
+```
