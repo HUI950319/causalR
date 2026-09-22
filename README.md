@@ -85,7 +85,16 @@ causalR/
 remotes::install_github("HUI950319/causalR")
 ```
 
-> 当前版本 `0.0.0.9000`，尚无导出函数。包的内容随学习进度生长，见下。
+当前版本 `0.0.0.9000`，处于实验阶段，已提供 6 个导出函数：
+
+| 分析 | 计算函数 | 绘图函数 |
+|---|---|---|
+| 倾向评分加权与平衡诊断 | `get_PSW()` | `plt_PSW()` |
+| 倾向评分匹配与匹配样本诊断 | `get_PSM()` | `plt_PSM()` |
+| 未测量混杂敏感性分析（线性模型、Cox、DML、IV） | `get_sens()` | `plt_sens()` |
+
+计算函数返回权重或敏感性分析结果，并附诊断与模型对象；绘图函数接收对应结果。参数及示例见
+`?get_PSW`、`?get_PSM`、`?get_sens` 和相应绘图函数的帮助页。
 
 ---
 
@@ -99,7 +108,7 @@ remotes::install_github("HUI950319/causalR")
 | 2 | 第二周又用到同一段逻辑 | 抽进 `R/`，写 roxygen + 测试 |
 | 3 | `R/` 攒到一组成体系的函数 | 打 tag，写 vignette |
 
-预计最先沉淀下来的（约 W14 前后）：
+后续候选函数（按实际复用情况决定）：
 
 - `ccw_*()` —— clone-censor-weight 的克隆与删失构造（W14 手写模板）
 - `diag_weights()` —— 权重诊断：ESS、极值比、SMD
@@ -114,13 +123,14 @@ remotes::install_github("HUI950319/causalR")
 
 | 包 | 位置 | 说明 |
 |---|---|---|
-| `UtilsR` | 可用 | https://github.com/HUI950319/UtilsR 公开，可以 `Imports` |
-| `RegR` | **待决** | 仓库当前私有。公开的 causalR 不能硬依赖它，否则他人装不上 |
+| `WeightIt`、`MatchIt` | `Imports` | 倾向评分建模与匹配 |
+| `halfmoon` | `Suggests` | 协变量平衡诊断及倾向评分分布图 |
+| `sensemakr`、`survival`、`tipr`、`dml.sensemakr`、`iv.sensemakr` | `Suggests` | 按所选敏感性分析方法使用相应后端 |
+| `ggplotify` | `Suggests` | 将部分后端的基础图形转换为 ggplot |
+| `RegR` | `Suggests` | 非空 `save` 参数通过 `RegR::save_plt()` 保存 PDF |
 
-**待决项（推迟到 W22 第一个需要存图的函数出现时再定）**：
-`RegR::save_plt()` / `save_tb()` 的复用在公开包里走不通，三个选择——
-① 把 RegR 转公开；② `RegR` 放 `Suggests`，缺失时降级为直接 `ggsave()`；
-③ causalR 自己实现。在做出选择前，不要在 `R/` 里引入任何 RegR 调用。
+可选依赖在调用对应功能时检查。三个绘图函数的 `save = list()` 或 `NULL`
+均不保存文件；传入非空保存参数时需要安装 `RegR`。完整依赖见 `DESCRIPTION`。
 
 依赖方向只能向下，不引入反向硬依赖。
 
