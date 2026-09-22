@@ -506,8 +506,10 @@
 #'     \item{`fit`}{The fitted model: `lm`, `coxph`, `dml` or `iv_fit`.}
 #'     \item{`sens`}{The backend sensitivity object, or `NULL` for `"cox"`.}
 #'   }
-#'   Analysis metadata is attached as `attr(x, "analysis")`. Note that dplyr
-#'   verbs drop the `method` attribute carried by `stats` and `bounds`.
+#'   Analysis metadata is attached as `attr(x, "analysis")`; `n` counts rows
+#'   used in the fitted model after missing-value exclusion (subjects,
+#'   including censored subjects, for Cox models). Note that dplyr verbs drop
+#'   the `method` attribute carried by `stats` and `bounds`.
 #'
 #' @seealso [plt_sens()] for the matching plots.
 #'
@@ -656,7 +658,7 @@ get_sens <- function(data,
       treat = treat, outcome = outcome, time = time, instrument = instrument,
       adj_var = adj_var, bench_var = bench_var, bench_args = bench_args,
       q = q, conf_level = conf_level, alpha = alpha,
-      n = nrow(data),
+      n = switch(method, lm = stats::nobs(res$fit), cox = res$fit$n, nrow(data)),
       evalue_args = if (identical(method, "cox")) evalue_args else NULL,
       rho2 = if (identical(method, "dml")) dml_args$rho2 else NULL,
       seed = if (identical(method, "dml")) dml_args$cf_seed else NULL,

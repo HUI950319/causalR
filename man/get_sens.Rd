@@ -128,8 +128,10 @@ there.}
 \item{\code{fit}}{The fitted model: \code{lm}, \code{coxph}, \code{dml} or \code{iv_fit}.}
 \item{\code{sens}}{The backend sensitivity object, or \code{NULL} for \code{"cox"}.}
 }
-Analysis metadata is attached as \code{attr(x, "analysis")}. Note that dplyr
-verbs drop the \code{method} attribute carried by \code{stats} and \code{bounds}.
+Analysis metadata is attached as \code{attr(x, "analysis")}; \code{n} counts rows
+used in the fitted model after missing-value exclusion (subjects,
+including censored subjects, for Cox models). Note that dplyr verbs drop
+the \code{method} attribute carried by \code{stats} and \code{bounds}.
 }
 \description{
 Single entry point that routes an observational estimate to one of four

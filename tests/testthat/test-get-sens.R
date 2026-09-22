@@ -114,6 +114,23 @@ test_that("get_sens reproduces the EValue square-root transform on the Cox backe
   expect_null(res$bounds)
 })
 
+test_that("analysis sample sizes count rows actually used by lm and Cox models", {
+  sens_test_deps("sensemakr", "survival", "tipr")
+  d <- lm_data()
+  d$age[1:10] <- NA_real_
+  res <- get_sens(d, "directlyharmed", "peacefactor", adj_var = lm_adj,
+                   method = "lm")
+  expect_equal(attr(res, "analysis")$n, stats::nobs(res$fit))
+  expect_lt(attr(res, "analysis")$n, nrow(d))
+
+  d <- cox_data()
+  d$age[1:10] <- NA_real_
+  res <- get_sens(d, "sex", "status", time = "time", adj_var = "age",
+                   method = "cox")
+  expect_equal(attr(res, "analysis")$n, nrow(d) - 10L)
+  expect_gt(attr(res, "analysis")$n, res$fit$nevent)
+})
+
 test_that("get_sens honours rare = TRUE on the Cox backend", {
   sens_test_deps("survival", "tipr")
   res <- get_sens(cox_data(), treat = "sex", outcome = "status", time = "time",
