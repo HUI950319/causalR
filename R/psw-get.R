@@ -289,6 +289,16 @@
     stop(sprintf("Package 'halfmoon' is required for %s(balance = TRUE); use balance = FALSE to skip the balance table.",
                  caller), call. = FALSE)
   if (!is.null(keep)) data <- data[keep, , drop = FALSE]
+  # smd's generalized inverse can turn a zero denominator into an SMD of 0.
+  separated <- adj_var[vapply(data[adj_var], function(v) {
+    arms <- split(v, data[[treat]])
+    length(arms) == 2L && all(lengths(lapply(arms, unique)) == 1L) &&
+      length(unique(v)) > 1L
+  }, logical(1))]
+  if (length(separated))
+    stop(sprintf("Covariate(s) %s have zero within-arm variation but different values between arms; their SMD is undefined, not zero. Use balance = FALSE to obtain weights without balance diagnostics.",
+                 paste0("`", separated, "`", collapse = ", ")),
+         call. = FALSE)
   do.call(halfmoon::check_balance,
           list(.data     = data,
                .vars     = adj_var,

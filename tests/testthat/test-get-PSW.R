@@ -425,6 +425,23 @@ test_that("balance diagnostics fill smd_max and smd_over", {
 })
 
 
+test_that("balance rejects separated constant covariates in weighting and matching", {
+  skip_if_not_installed("halfmoon")
+  d <- data.frame(z = rep(0:1, each = 10), x = rep(1:10, 2), score = 0.5)
+  for (separated in list(d$z, factor(d$z), as.logical(d$z))) {
+    d$separated <- separated
+    for (fun in list(get_PSW, get_PSM)) {
+      expect_error(fun(d, "z", c("x", "separated"), ps = "score"),
+                   "separated.*zero within-arm variation")
+      expect_no_error(fun(d, "z", c("x", "separated"), ps = "score",
+                          balance = FALSE))
+    }
+  }
+  d$separated <- 1
+  expect_no_error(get_PSW(d, "z", c("x", "separated"), ps = "score"))
+})
+
+
 test_that("trimming does not turn the balance table into NA", {
   skip_if_not_installed("halfmoon")
 
