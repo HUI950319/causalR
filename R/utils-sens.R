@@ -99,14 +99,25 @@
   if (length(x) == 1L) v else paste0("c(", v, ")")
 }
 
+# Map variables to their model-matrix columns without matching name prefixes.
+#' @keywords internal
+#' @noRd
+.sens_coef_terms <- function(fit, vars) {
+  mm <- stats::model.matrix(fit)
+  terms <- attr(stats::terms(fit), "term.labels")
+  stats::setNames(lapply(vars, function(v) {
+    term <- match(deparse1(as.name(v), backtick = TRUE), terms)
+    colnames(mm)[which(attr(mm, "assign") == term)]
+  }), vars)
+}
+
 # Resolve `treat` to exactly one model coefficient. A multi-level factor cannot
 # be handled by any of the four backends, so fail with the matched terms listed
 # instead of silently sensitising the first dummy.
 #' @keywords internal
 #' @noRd
 .sens_one_term <- function(fit, treat) {
-  cf <- names(stats::coef(fit))
-  hit <- cf[startsWith(cf, treat)]
+  hit <- .sens_coef_terms(fit, treat)[[1L]]
   if (length(hit) != 1L)
     stop(sprintf(
       "`treat` must resolve to exactly one model coefficient; %s matched %d (%s). Use a numeric or two-level treatment.",

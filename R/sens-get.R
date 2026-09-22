@@ -121,14 +121,12 @@
   # an arbitrary level.
   bench <- NULL
   if (!is.null(bench_var)) {
-    cf <- names(stats::coef(fit))
-    bench <- stats::setNames(lapply(bench_var, function(v) {
-      d <- cf[startsWith(cf, v)]
-      if (!length(d))
+    bench <- .sens_coef_terms(fit, bench_var)
+    for (v in bench_var) {
+      if (!length(bench[[v]]))
         stop(sprintf("`bench_var` '%s' has no coefficient in the fitted model.",
                      v), call. = FALSE)
-      d
-    }), bench_var)
+    }
     if (all(lengths(bench) == 1L)) bench <- unlist(bench, use.names = FALSE)
   }
 

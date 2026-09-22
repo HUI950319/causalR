@@ -68,6 +68,32 @@ test_that("get_sens returns sensemakr robustness values for the linear backend",
                                       "tip_effect", "tip_n")])))
 })
 
+test_that("treatment and benchmark coefficients are matched by model term", {
+  skip_if_not_installed("sensemakr")
+  set.seed(932)
+  d <- data.frame(trt = rep(0:1, 90), trt_age = rnorm(180),
+                  age = rnorm(180), age2 = rnorm(180))
+  d$y <- d$trt + 0.2 * d$age + 0.4 * d$age2 + rnorm(180)
+  for (factor_bench in c(FALSE, TRUE)) {
+    dd <- d
+    benchmark <- "age"
+    if (factor_bench) {
+      dd$trt <- factor(dd$trt)
+      dd$age <- factor(rep(c("young", "mid", "old"), 60),
+                       levels = c("young", "mid", "old"))
+      benchmark <- list(age = c("agemid", "ageold"))
+    }
+    res <- get_sens(dd, "trt", "y", adj_var = c("trt_age", "age", "age2"),
+                     bench_var = "age", method = "lm")
+    term <- if (factor_bench) "trt1" else "trt"
+    ref <- sensemakr::sensemakr(res$fit, treatment = term,
+                                benchmark_covariates = benchmark)
+    expect_identical(res$stats$term, term)
+    expect_equal(res$bounds$r2_treat, ref$bounds$r2dz.x)
+    expect_equal(res$bounds$r2_out, ref$bounds$r2yz.dx)
+  }
+})
+
 test_that("get_sens reproduces the EValue square-root transform on the Cox backend", {
   sens_test_deps("survival", "tipr")
   res <- get_sens(cox_data(), treat = "sex", outcome = "status", time = "time",
