@@ -75,10 +75,23 @@
 
 #' @keywords internal
 #' @noRd
+.sens_quote_names <- function(vars) {
+  vapply(vars, function(v) deparse1(as.name(v), backtick = TRUE),
+         character(1), USE.NAMES = FALSE)
+}
+
+#' @keywords internal
+#' @noRd
 .sens_model_matrix <- function(data, vars) {
   if (is.null(vars) || !length(vars))
     return(matrix(numeric(0), nrow = nrow(data), ncol = 0L))
-  stats::model.matrix(stats::reformulate(vars, intercept = FALSE), data = data)
+  quoted <- .sens_quote_names(vars)
+  mm <- stats::model.matrix(stats::reformulate(quoted, intercept = FALSE),
+                            data = data)
+  # Matrix backends select numeric benchmarks by the original column name.
+  hit <- match(colnames(mm), quoted)
+  colnames(mm)[!is.na(hit)] <- vars[hit[!is.na(hit)]]
+  mm
 }
 
 # VanderWeele & Ding (2017) approximation of a risk ratio from a hazard ratio

@@ -112,8 +112,9 @@
     stop("Package 'sensemakr' is required for get_sens(method = \"lm\")",
          call. = FALSE)
 
-  rhs <- paste(c(treat, adj_var), collapse = " + ")
-  fit <- stats::lm(stats::as.formula(paste(outcome, "~", rhs)), data = data)
+  form <- stats::reformulate(.sens_quote_names(c(treat, adj_var)),
+                              response = as.name(outcome))
+  fit <- stats::lm(form, data = data)
   tcol <- .sens_one_term(fit, treat)
 
   # A factor benchmark expands to several dummies; sensemakr takes those as one
@@ -182,10 +183,11 @@
                    pkg), call. = FALSE)
   }
 
-  rhs <- paste(c(treat, adj_var), collapse = " + ")
-  fit <- survival::coxph(
-    stats::as.formula(sprintf("survival::Surv(%s, %s) ~ %s", time, outcome, rhs)),
-    data = data)
+  response <- substitute(survival::Surv(TIME, OUTCOME),
+                         list(TIME = as.name(time), OUTCOME = as.name(outcome)))
+  form <- stats::reformulate(.sens_quote_names(c(treat, adj_var)),
+                              response = response)
+  fit <- survival::coxph(form, data = data)
   tcol <- .sens_one_term(fit, treat)
 
   sm <- summary(fit, conf.int = 1 - alpha)
@@ -342,6 +344,13 @@
          call. = FALSE)
 
   xm  <- .sens_model_matrix(data, adj_var)
+  # iv.sensemakr uses the same names for data columns and lm coefficients.
+  # Syntactic matrix names keep those identical, including after benchmarking.
+  original_names <- colnames(xm)
+  colnames(xm) <- make.names(original_names, unique = TRUE)
+  bench <- bench_var
+  mapped <- match(bench_var, original_names)
+  bench[!is.na(mapped)] <- colnames(xm)[mapped[!is.na(mapped)]]
   fit <- iv.sensemakr::iv_fit(y = data[[outcome]], d = data[[treat]],
                               z = data[[instrument]],
                               x = if (ncol(xm)) xm else NULL,
@@ -350,7 +359,7 @@
   bnd <- bench_args$bound
   s <- iv.sensemakr::sensemakr(
     fit,
-    benchmark_covariates = bench_var,
+    benchmark_covariates = bench,
     kz          = bench_args$k_treat,
     ky          = if (is.null(bench_args$k_out)) bench_args$k_treat
                   else bench_args$k_out,
@@ -510,6 +519,10 @@
 #'   used in the fitted model after missing-value exclusion (subjects,
 #'   including censored subjects, for Cox models). Note that dplyr verbs drop
 #'   the `method` attribute carried by `stats` and `bounds`.
+#'   Column names are treated literally, including spaces and punctuation.
+#'   The IV backend requires syntactic covariate names; it uses
+#'   [make.names()] internally, so its model and benchmark labels use those
+#'   names while the analysis metadata retains the supplied names.
 #'
 #' @seealso [plt_sens()] for the matching plots.
 #'

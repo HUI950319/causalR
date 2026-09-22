@@ -197,7 +197,7 @@
 #' @keywords internal
 #' @noRd
 .psw_fit <- function(data, treat, adj_var, method, ps_args) {
-  form <- stats::reformulate(adj_var, response = treat)
+  form <- stats::reformulate(.sens_quote_names(adj_var), response = as.name(treat))
   cl   <- as.call(c(list(quote(WeightIt::weightit)),
                     list(formula = form, data = quote(data), method = method,
                          estimand = "ATE"),

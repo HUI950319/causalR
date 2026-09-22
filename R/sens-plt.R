@@ -190,7 +190,7 @@
     iv = function() {
       bnd <- a$bench_args$bound
       iv.sensemakr::ovb_contour_plot(
-        x$fit, benchmark_covariates = a$bench_var,
+        x$fit, benchmark_covariates = x$sens$pars$benchmark_covariates,
         kz = a$bench_args$k_treat,
         ky = if (is.null(a$bench_args$k_out)) a$bench_args$k_treat
              else a$bench_args$k_out,

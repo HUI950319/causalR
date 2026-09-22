@@ -94,6 +94,61 @@ test_that("treatment and benchmark coefficients are matched by model term", {
   }
 })
 
+test_that("linear sensitivity accepts literal non-syntactic column names", {
+  sens_test_deps("sensemakr")
+  set.seed(934)
+  d <- data.frame(trt = rep(0:1, 90), x = rnorm(180), x2 = rnorm(180))
+  d$y <- d$trt + 0.5 * d$x + d$x2 + rnorm(180)
+  ref <- get_sens(d, "trt", "y", adj_var = c("x", "x2"),
+                   bench_var = "x", method = "lm")
+  names(d) <- c("treatment group", "age years", "age^2", "outcome measure")
+  res <- get_sens(d, "treatment group", "outcome measure",
+                   adj_var = c("age years", "age^2"), bench_var = "age years",
+                   method = "lm")
+  expect_equal(res$stats$estimate, ref$stats$estimate)
+  expect_equal(res$stats$rv_qa, ref$stats$rv_qa)
+  expect_equal(res$bounds$r2_treat, ref$bounds$r2_treat)
+  expect_equal(res$bounds$r2_out, ref$bounds$r2_out)
+})
+
+test_that("Cox sensitivity accepts literal non-syntactic column names", {
+  sens_test_deps("survival", "tipr")
+  d <- cox_data()[c("time", "status", "sex", "age")]
+  ref <- get_sens(d, "sex", "status", time = "time", adj_var = "age",
+                   method = "cox")
+  names(d) <- c("follow-up time", "event observed", "treatment group", "age (years)")
+  res <- get_sens(d, "treatment group", "event observed", time = "follow-up time",
+                   adj_var = "age (years)", method = "cox")
+  expect_equal(res$stats$estimate, ref$stats$estimate)
+  expect_equal(res$stats$evalue_point, ref$stats$evalue_point)
+})
+
+test_that("matrix sensitivity backends preserve non-syntactic covariate names", {
+  sens_test_deps("dml.sensemakr", "iv.sensemakr")
+  set.seed(935)
+  d <- data.frame(x = rnorm(160), x2 = rnorm(160), instrument = rnorm(160))
+  d$trt <- 0.8 * d$instrument + 0.5 * d$x + rnorm(160)
+  d$y <- 1.4 * d$trt + 0.5 * d$x + rnorm(160)
+  renamed <- d
+  names(renamed) <- c("blood pressure", "chol-level", "instrument value",
+                       "treated dose", "outcome measure")
+  for (method in c("dml", "iv")) {
+    extra <- if (method == "dml") list(dml_args = list(reg = "lm",
+      cf_folds = 2L, cf_seed = 42L, dirty_tuning = FALSE)) else
+      list(instrument = "instrument")
+    ref <- do.call(get_sens, c(list(data = d, treat = "trt", outcome = "y",
+      adj_var = c("x", "x2"), bench_var = "x", method = method), extra))
+    if (method == "iv") extra$instrument <- "instrument value"
+    res <- do.call(get_sens, c(list(data = renamed, treat = "treated dose",
+      outcome = "outcome measure", adj_var = c("blood pressure", "chol-level"),
+      bench_var = "blood pressure", method = method), extra))
+    expect_equal(res$stats$estimate, ref$stats$estimate)
+    expect_equal(res$stats$rv_qa, ref$stats$rv_qa)
+    expect_equal(res$bounds$r2_treat, ref$bounds$r2_treat)
+    expect_equal(res$bounds$r2_out, ref$bounds$r2_out)
+  }
+})
+
 test_that("get_sens reproduces the EValue square-root transform on the Cox backend", {
   sens_test_deps("survival", "tipr")
   res <- get_sens(cox_data(), treat = "sex", outcome = "status", time = "time",

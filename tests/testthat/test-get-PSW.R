@@ -47,6 +47,16 @@ test_that("get_PSW returns the documented structure", {
 })
 
 
+test_that("weighting treats non-syntactic column names as literal names", {
+  d <- psw_data()
+  ref <- get_PSW(d, "z", psw_adj, balance = FALSE)
+  names(d) <- c("blood pressure", "chol-level", "baseline score", "treated arm")
+  res <- get_PSW(d, "treated arm", names(d)[1:3], balance = FALSE)
+  expect_equal(res$data$ps, ref$data$ps)
+  expect_equal(res$data[all_wcols], ref$data[all_wcols])
+})
+
+
 test_that("the six weights match propensity::wt_*()", {
   skip_if_not_installed("propensity")
 

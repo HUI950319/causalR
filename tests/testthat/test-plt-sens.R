@@ -185,6 +185,25 @@ test_that("IV contours receive the fitted confidence level and manual scenario",
   expect_identical(received$bound_label, "Specified scenario")
 })
 
+test_that("IV contours use the benchmark names passed to the fitted backend", {
+  plt_test_deps("iv.sensemakr", "ggplotify")
+  e <- new.env()
+  utils::data("card", package = "iv.sensemakr", envir = e)
+  d <- e$card
+  names(d)[names(d) == "black"] <- "black race"
+  res <- get_sens(d, "educ", "lwage", instrument = "nearc4",
+                   adj_var = c("exper", "expersq", "black race", "south", "smsa"),
+                   bench_var = "black race", method = "iv")
+  received <- NULL
+  local_mocked_bindings(ovb_contour_plot = function(model, ...) {
+    received <<- list(...)
+    graphics::plot.new()
+  }, .package = "iv.sensemakr")
+  expect_s3_class(plt_sens(res), "ggplot")
+  expect_identical(attr(res, "analysis")$bench_var, "black race")
+  expect_identical(received$benchmark_covariates, "black.race")
+})
+
 test_that("plt_sens validates x, lim and save", {
   plt_test_deps("survival", "tipr")
   res <- plt_cox_res()

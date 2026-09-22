@@ -132,6 +132,10 @@ Analysis metadata is attached as \code{attr(x, "analysis")}; \code{n} counts row
 used in the fitted model after missing-value exclusion (subjects,
 including censored subjects, for Cox models). Note that dplyr verbs drop
 the \code{method} attribute carried by \code{stats} and \code{bounds}.
+Column names are treated literally, including spaces and punctuation.
+The IV backend requires syntactic covariate names; it uses
+\code{\link[=make.names]{make.names()}} internally, so its model and benchmark labels use those
+names while the analysis metadata retains the supplied names.
 }
 \description{
 Single entry point that routes an observational estimate to one of four

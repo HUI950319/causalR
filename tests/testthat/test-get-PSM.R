@@ -49,6 +49,18 @@ test_that("get_PSM returns the documented structure", {
 })
 
 
+test_that("matching treats non-syntactic column names as literal names", {
+  d <- psm_data()
+  ref <- get_PSM(d, "z", psm_adj, balance = FALSE)
+  names(d) <- c("blood pressure", "chol-level", "baseline score", "treated arm")
+  res <- get_PSM(d, "treated arm", names(d)[1:3], balance = FALSE)
+  expect_equal(res$data$ps, ref$data$ps)
+  expect_equal(res$data$w_nearest, ref$data$w_nearest)
+  expect_equal(res$data$s_nearest, ref$data$s_nearest)
+  expect_no_error(MatchIt::match_data(res$fit$nearest))
+})
+
+
 test_that("the weights and subclasses are MatchIt's own", {
   d   <- psm_data()
   res <- get_PSM(d, treat = "z", adj_var = psm_adj, balance = FALSE)

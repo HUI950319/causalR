@@ -159,7 +159,7 @@
                  if (length(miss) > 1L) "are" else "is", method),
          call. = FALSE)
 
-  form <- stats::reformulate(adj_var, response = treat)
+  form <- stats::reformulate(.sens_quote_names(adj_var), response = as.name(treat))
   args <- c(list(formula = form, data = quote(data), method = method,
                  estimand = estimand, normalize = FALSE),
             if (method %in% .PSM_DISTANCE) list(distance = quote(ps)),
