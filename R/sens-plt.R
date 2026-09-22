@@ -187,14 +187,21 @@
     # iv.sensemakr takes no window arguments of its own, but forwards `...`
     # to the plotter underneath, and its default 0.4 window squeezes a typical
     # IV problem into a sliver against the axes.
-    iv = function() iv.sensemakr::ovb_contour_plot(
-      x$fit, benchmark_covariates = a$bench_var,
-      kz = a$bench_args$k_treat,
-      ky = if (is.null(a$bench_args$k_out)) a$bench_args$k_treat
-           else a$bench_args$k_out,
-      sensitivity.of = so, parm = estimand,
-      lim = lim[1L], lim.y = lim[2L],
-      nlevels = contour_args$n_levels, round = contour_args$round),
+    iv = function() {
+      bnd <- a$bench_args$bound
+      iv.sensemakr::ovb_contour_plot(
+        x$fit, benchmark_covariates = a$bench_var,
+        kz = a$bench_args$k_treat,
+        ky = if (is.null(a$bench_args$k_out)) a$bench_args$k_treat
+             else a$bench_args$k_out,
+        alpha = a$alpha,
+        r2zw.x = if (is.null(bnd)) NULL else bnd[1L],
+        r2y0w.zx = if (is.null(bnd)) NULL else bnd[2L],
+        bound_label = a$bench_args$bound_label,
+        sensitivity.of = so, parm = estimand,
+        lim = lim[1L], lim.y = lim[2L],
+        nlevels = contour_args$n_levels, round = contour_args$round)
+    },
     stop(sprintf("Unsupported method: '%s'", a$method), call. = FALSE))
   .sens_grab(draw)
 }

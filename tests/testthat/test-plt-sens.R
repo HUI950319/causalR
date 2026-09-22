@@ -22,13 +22,13 @@ plt_cox_res <- function(...) {
            adj_var = "age", method = "cox", ...)
 }
 
-plt_iv_res <- function() {
+plt_iv_res <- function(...) {
   skip_if_not_installed("iv.sensemakr")
   e <- new.env()
   utils::data("card", package = "iv.sensemakr", envir = e)
   get_sens(e$card, treat = "educ", outcome = "lwage", instrument = "nearc4",
            adj_var = c("exper", "expersq", "black", "south", "smsa"),
-           bench_var = "black", method = "iv")
+           bench_var = "black", method = "iv", ...)
 }
 
 test_that("plt_sens draws a labelled native contour for the linear backend", {
@@ -148,6 +148,23 @@ test_that("plt_sens narrows sensitivity_of to what the backend supports", {
   expect_error(
     plt_sens(res, type = "contour", contour_args = list(nlevels = 4)),
     "unknown field")
+})
+
+test_that("IV contours receive the fitted confidence level and manual scenario", {
+  plt_test_deps("iv.sensemakr", "ggplotify")
+  res <- plt_iv_res(conf_level = 0.90,
+                    bench_args = list(bound = c(0.01, 0.02),
+                                      bound_label = "Specified scenario"))
+  received <- NULL
+  local_mocked_bindings(ovb_contour_plot = function(model, ...) {
+    received <<- list(...)
+    graphics::plot.new()
+  }, .package = "iv.sensemakr")
+  expect_s3_class(plt_sens(res), "ggplot")
+  expect_equal(received$alpha, 0.1)
+  expect_equal(received$r2zw.x, 0.01)
+  expect_equal(received$r2y0w.zx, 0.02)
+  expect_identical(received$bound_label, "Specified scenario")
 })
 
 test_that("plt_sens validates x, lim and save", {
