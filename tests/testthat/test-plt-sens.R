@@ -129,6 +129,24 @@ test_that("plt_sens draws the E-value curve through the reported E-value", {
   expect_equal(b * (e - 1) / (e - b), e, tolerance = 1e-6)
 })
 
+test_that("E-value plots omit the confidence-limit curve when the interval crosses one", {
+  plt_test_deps("survival", "tipr")
+  set.seed(1)
+  d <- data.frame(trt = rep(0:1, each = 80), time = rexp(160),
+                  status = rbinom(160, 1, 0.8))
+  for (reverse in c(FALSE, TRUE)) {
+    dd <- d
+    if (reverse) dd$trt <- 1 - dd$trt
+    res <- get_sens(dd, "trt", "status", time = "time", method = "cox",
+                     evalue_args = list(rare = TRUE))
+    expect_lt(res$stats$conf.low, 1)
+    expect_gt(res$stats$conf.high, 1)
+    expect_equal(res$stats$evalue_ci, 1)
+    p <- plt_sens(res, type = "evalue")
+    expect_identical(unique(as.character(p$data$which)), "Point estimate")
+  }
+})
+
 test_that("plt_sens rejects a type the backend cannot draw", {
   plt_test_deps("sensemakr", "survival", "tipr")
   expect_error(plt_sens(plt_lm_res(), type = "tip"),

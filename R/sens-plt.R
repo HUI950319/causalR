@@ -303,7 +303,9 @@
                which = label, stringsAsFactors = FALSE)
   }
   b_point <- if (rr < 1) 1 / rr else rr
-  b_ci    <- if (rr_near < 1) 1 / rr_near else rr_near
+  b_ci <- if (st$conf.low <= 1 && st$conf.high >= 1) {
+    1
+  } else if (rr_near < 1) 1 / rr_near else rr_near
   d <- do.call(rbind, Filter(Negate(is.null), list(
     curve_for(b_point, "Point estimate"),
     curve_for(b_ci, "Confidence limit nearest the null"))))
