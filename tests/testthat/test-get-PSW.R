@@ -255,6 +255,63 @@ test_that("truncation clamps the score without dropping anyone", {
 })
 
 
+test_that("trimming and truncation accept coincident score quantiles", {
+  d <- data.frame(z = rep(0:1, each = 10), score = 0.5)
+  trimmed <- get_PSW(d, "z", ps = "score", balance = FALSE,
+                     trim_args = list(method = "pctl", refit = FALSE))
+  truncated <- get_PSW(d, "z", ps = "score", balance = FALSE,
+                       trunc_args = list(method = "pctl"))
+  for (res in list(trimmed, truncated)) {
+    expect_equal(res$data$ps, d$score)
+    expect_false(any(res$data$.trimmed))
+    expect_true(all(is.finite(as.matrix(res$data[all_wcols]))))
+  }
+})
+
+
+test_that("trimming requires both treatment arms to remain", {
+  d <- data.frame(z = c(0, 0, 1, 1), score = c(0.2, 0.3, 0.7, 0.8))
+  expect_error(get_PSW(d, "z", ps = "score", balance = FALSE,
+                       trim_args = list(method = "ps", lower = 0.6,
+                                        upper = 0.9, refit = FALSE)),
+               "only one treatment arm")
+})
+
+
+test_that("refitted scores are validated before weights are computed", {
+  d <- data.frame(z = c(0, 0, 0, 1, 1, 1), x = 1:6)
+  local_mocked_bindings(weightit = function(formula, data, ...) {
+    list(ps = if (nrow(data) == 6L) c(0.05, 0.2, 0.3, 0.7, 0.8, 0.95)
+              else c(0, 0.3, 0.7, 1))
+  }, .package = "WeightIt")
+  expect_error(get_PSW(d, "z", "x", balance = FALSE,
+                       trim_args = list(method = "ps")),
+               "strictly between 0 and 1")
+})
+
+
+test_that("score bounds and refit flags are validated", {
+  d <- data.frame(z = c(0, 0, 1, 1), score = c(0.2, 0.3, 0.7, 0.8))
+  for (method in c("ps", "pctl")) {
+    for (b in list(c(1, 2), c(-0.1, 0.9), c(0.8, 0.2), c(0.5, 0.5),
+                   c(NA, 0.9), c(0, Inf))) {
+      args <- list(method = method, lower = b[1L], upper = b[2L])
+      expect_error(get_PSW(d, "z", ps = "score", balance = FALSE,
+                           trunc_args = args), "trunc_args.*0.*1")
+      args$refit <- FALSE
+      expect_error(get_PSW(d, "z", ps = "score", balance = FALSE,
+                           trim_args = args), "trim_args.*0.*1")
+    }
+  }
+  expect_error(get_PSW(d, "z", ps = "score", balance = FALSE,
+                       trunc_args = list(method = "ps", lower = c(0.1, 0.2),
+                                         upper = NULL)), "trunc_args.*0.*1")
+  expect_error(get_PSW(d, "z", ps = "score", balance = FALSE,
+                       trim_args = list(method = "ps", refit = 1)),
+               "refit.*TRUE or FALSE")
+})
+
+
 test_that("estimand selects columns and rows", {
   d   <- psw_data()
   res <- get_PSW(d, treat = "z", adj_var = psw_adj, balance = FALSE,

@@ -72,8 +72,10 @@ defaulting to 0.1 and 0.9), \code{"pctl"} (score quantiles, defaulting to
 0.01 and 0.99), or \code{"cr"} (the Crump et al. 2009 optimal symmetric
 cut-off computed from the data, which takes no \code{lower} or \code{upper}
 and rejects them rather than ignoring them).}
-\item{\code{lower},\code{upper}}{Numeric bounds or quantile probabilities, or
-\code{NULL} (default) for the per-method defaults above.}
+\item{\code{lower},\code{upper}}{Single numeric bounds or quantile probabilities
+satisfying \verb{0 <= lower < upper <= 1}, or \code{NULL} (default) for the
+per-method defaults above. Equal computed quantiles are allowed.
+Both treatment arms must remain after trimming.}
 \item{\code{refit}}{Logical, default \code{TRUE}. Re-estimate the propensity
 model on the retained units, which is what trimming is meant to be
 followed by. Checked only when trimming is actually requested, and an
@@ -86,7 +88,8 @@ pass, and \code{print()} shows the window next to the final range.}
 \item{trunc_args}{Named list controlling score truncation, which keeps every
 unit but pulls extreme scores in. \code{method} is \code{"none"} (default), \code{"ps"}
 (clamp to \code{lower}, \code{upper}) or \code{"pctl"} (clamp to those quantiles);
-\code{lower} and \code{upper} default to 0.01 and 0.99.}
+\code{lower} and \code{upper} default to 0.01 and 0.99 and must satisfy
+\verb{0 <= lower < upper <= 1}. Equal computed quantiles are allowed.}
 
 \item{balance}{Logical, default \code{TRUE}. Compute the standardised mean
 differences of \code{adj_var} under every weight with

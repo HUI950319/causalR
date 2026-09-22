@@ -224,6 +224,18 @@
   f
 }
 
+#' @keywords internal
+#' @noRd
+.psw_bounds <- function(lower, upper, arg_name) {
+  valid <- vapply(list(lower, upper), function(x)
+    is.numeric(x) && length(x) == 1L && is.finite(x) && x >= 0 && x <= 1,
+    logical(1))
+  if (!all(valid) || lower >= upper)
+    stop(sprintf("`%s` requires single numeric bounds with 0 <= lower < upper <= 1.",
+                 arg_name), call. = FALSE)
+  c(lower, upper)
+}
+
 # Trimming removes units from the analysis population but not rows from the
 # data: a trimmed unit's score becomes NA, so every weight column stays
 # aligned with the input and downstream code sees one NA pattern. Same
@@ -233,22 +245,17 @@
 .psw_trim <- function(ps, ta) {
   if (identical(ta$method, "none")) return(list(ps = ps, bounds = NULL))
 
-  b <- switch(
-    ta$method,
-    ps   = c(if (is.null(ta$lower)) 0.1 else ta$lower,
-             if (is.null(ta$upper)) 0.9 else ta$upper),
-    pctl = unname(stats::quantile(
-      ps,
-      c(if (is.null(ta$lower)) 0.01 else ta$lower,
-        if (is.null(ta$upper)) 0.99 else ta$upper))),
-    cr   = {
-      a <- .psw_crump(ps)
-      c(a, 1 - a)
-    })
-
-  if (!is.numeric(b) || length(b) != 2L || anyNA(b) || b[1L] >= b[2L])
-    stop("`trim_args` must give a lower bound strictly below the upper bound.",
-         call. = FALSE)
+  b <- if (identical(ta$method, "cr")) {
+    a <- .psw_crump(ps)
+    c(a, 1 - a)
+  } else {
+    defaults <- if (identical(ta$method, "ps")) c(0.1, 0.9) else c(0.01, 0.99)
+    bounds <- .psw_bounds(
+      if (is.null(ta$lower)) defaults[1L] else ta$lower,
+      if (is.null(ta$upper)) defaults[2L] else ta$upper, "trim_args")
+    if (identical(ta$method, "pctl")) unname(stats::quantile(ps, bounds))
+    else bounds
+  }
   ps[ps < b[1L] | ps > b[2L]] <- NA_real_
   list(ps = ps, bounds = b)
 }
@@ -258,14 +265,9 @@
 .psw_trunc <- function(ps, ua) {
   if (identical(ua$method, "none")) return(list(ps = ps, bounds = NULL))
 
-  b <- switch(
-    ua$method,
-    ps   = c(ua$lower, ua$upper),
-    pctl = unname(stats::quantile(ps, c(ua$lower, ua$upper), na.rm = TRUE)))
-
-  if (!is.numeric(b) || length(b) != 2L || anyNA(b) || b[1L] >= b[2L])
-    stop("`trunc_args` must give a lower bound strictly below the upper bound.",
-         call. = FALSE)
+  b <- .psw_bounds(ua$lower, ua$upper, "trunc_args")
+  if (identical(ua$method, "pctl"))
+    b <- unname(stats::quantile(ps, b, na.rm = TRUE))
   list(ps = pmin(pmax(ps, b[1L]), b[2L]), bounds = b)
 }
 
@@ -431,8 +433,10 @@
 #'       0.01 and 0.99), or `"cr"` (the Crump et al. 2009 optimal symmetric
 #'       cut-off computed from the data, which takes no `lower` or `upper`
 #'       and rejects them rather than ignoring them).}
-#'     \item{`lower`,`upper`}{Numeric bounds or quantile probabilities, or
-#'       `NULL` (default) for the per-method defaults above.}
+#'     \item{`lower`,`upper`}{Single numeric bounds or quantile probabilities
+#'       satisfying `0 <= lower < upper <= 1`, or `NULL` (default) for the
+#'       per-method defaults above. Equal computed quantiles are allowed.
+#'       Both treatment arms must remain after trimming.}
 #'     \item{`refit`}{Logical, default `TRUE`. Re-estimate the propensity
 #'       model on the retained units, which is what trimming is meant to be
 #'       followed by. Checked only when trimming is actually requested, and an
@@ -444,7 +448,8 @@
 #' @param trunc_args Named list controlling score truncation, which keeps every
 #'   unit but pulls extreme scores in. `method` is `"none"` (default), `"ps"`
 #'   (clamp to `lower`, `upper`) or `"pctl"` (clamp to those quantiles);
-#'   `lower` and `upper` default to 0.01 and 0.99.
+#'   `lower` and `upper` default to 0.01 and 0.99 and must satisfy
+#'   `0 <= lower < upper <= 1`. Equal computed quantiles are allowed.
 #' @param balance Logical, default `TRUE`. Compute the standardised mean
 #'   differences of `adj_var` under every weight with
 #'   `halfmoon::check_balance()`.
@@ -591,6 +596,10 @@ get_PSW <- function(data,
   trunc_args <- .merge_named_arg(trunc_args, .PSW_TRUNC_DEFAULTS, "trunc_args")
   trim_args$method  <- match.arg(trim_args$method, c("none", "ps", "pctl", "cr"))
   trunc_args$method <- match.arg(trunc_args$method, c("none", "ps", "pctl"))
+  if (!identical(trim_args$method, "none") &&
+      (!is.logical(trim_args$refit) || length(trim_args$refit) != 1L ||
+       is.na(trim_args$refit)))
+    stop("`trim_args$refit` must be TRUE or FALSE.", call. = FALSE)
   if (!is.list(ps_args) || (length(ps_args) && is.null(names(ps_args))))
     stop("`ps_args` must be a named list.", call. = FALSE)
   bad <- intersect(names(ps_args), .PSW_MANAGED)
@@ -643,6 +652,8 @@ get_PSW <- function(data,
   trimmed <- is.na(e)
   if (all(trimmed))
     stop("Trimming removed every unit; widen `trim_args`.", call. = FALSE)
+  if (length(unique(z[!trimmed])) != 2L)
+    stop("Trimming left only one treatment arm; widen `trim_args`.", call. = FALSE)
   if (isTRUE(verbose) && any(trimmed))
     cli::cli_inform(c("i" = paste0(
       "Trimmed {sum(trimmed)} unit{?s} outside [",
@@ -653,8 +664,8 @@ get_PSW <- function(data,
   # should be estimated on that population rather than carry information from
   # the units just removed.
   if (any(trimmed) && isTRUE(trim_args$refit)) {
-    f <- .psw_fit(data[!trimmed, , drop = FALSE], treat, adj_var, method,
-                  ps_args)
+    f <- .psw_score(data[!trimmed, , drop = FALSE], treat, adj_var, NULL,
+                    method, ps_args)
     e[!trimmed] <- f$ps
     ft <- f$fit
   }
