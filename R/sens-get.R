@@ -319,7 +319,7 @@
     stop("Unexpected `sensitivity_stats` layout from dml.sensemakr ",
          utils::packageVersion("dml.sensemakr"), ".", call. = FALSE)
   tg <- rownames(rv)
-  xrv <- dml.sensemakr::extreme_robustness_value(fit, alpha = alpha)
+  xrv <- dml.sensemakr::extreme_robustness_value(fit, theta = theta, alpha = alpha)
 
   list(
     fit = fit, sens = s,

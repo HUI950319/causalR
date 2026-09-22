@@ -146,6 +146,21 @@ test_that("get_sens returns a bounded confidence region for the DML backend", {
   expect_true(all(is.na(res$stats[, c("evalue_point", "evalue_ci", "r2yd_x")])))
 })
 
+test_that("DML extreme robustness values use the requested null threshold", {
+  sens_test_deps("dml.sensemakr")
+  set.seed(927)
+  d <- data.frame(x = rnorm(150), x2 = rnorm(150))
+  d$trt <- 0.5 * d$x + rnorm(150)
+  d$y <- 2 * d$trt + d$x + rnorm(150)
+  res <- get_sens(d, "trt", "y", adj_var = c("x", "x2"),
+                   method = "dml", q = 0,
+                   dml_args = list(reg = "lm", cf_folds = 2L,
+                                   cf_seed = 42L, dirty_tuning = FALSE))
+  expect_equal(res$stats$rv_q, 0)
+  expect_equal(res$stats$rv_qa, 0)
+  expect_equal(res$stats$xrv_qa, 0)
+})
+
 test_that("get_sens reports Anderson-Rubin bounds for the IV backend", {
   sens_test_deps("iv.sensemakr")
   res <- get_sens(iv_data(), treat = "educ", outcome = "lwage",
