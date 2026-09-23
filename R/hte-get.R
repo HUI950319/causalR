@@ -195,7 +195,8 @@
 #'   column per level, with no reference level dropped, so a tree can split
 #'   any single level off from the rest. Missing values are kept and left to
 #'   grf, which splits on missingness; a missing factor value leaves all of
-#'   that factor's indicator columns missing.
+#'   that factor's indicator columns missing. Other column types, such as
+#'   dates, are rejected: convert them to numbers first.
 #' @param surv Outcome selector, following [RegR::get_eff()]:
 #'   \itemize{
 #'     \item `TRUE` (default): survival outcome in the fixed columns `time`
@@ -437,6 +438,14 @@ get_hte <- function(data,
     stop(sprintf("`adj_var` / `sub_var` must not include the outcome column(s) %s.",
                  paste0("`", intersect(covars, outcome), "`", collapse = ", ")),
          call. = FALSE)
+  # Anything else -- a Date is not is.numeric() -- would be one-hot encoded
+  # into one column per distinct value.
+  odd <- covars[!vapply(data[covars], function(x) is.numeric(x) ||
+                          is.factor(x) || is.character(x) || is.logical(x),
+                        logical(1L))]
+  if (length(odd))
+    stop(sprintf("Covariate column(s) %s must be numeric, factor, character or logical; convert a date, for example, to years since a reference date.",
+                 paste0("`", odd, "`", collapse = ", ")), call. = FALSE)
   for (v in sub_var) {
     x <- data[[v]]
     if (is.numeric(x) && length(unique(x[!is.na(x)])) > 5L)

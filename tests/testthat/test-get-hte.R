@@ -344,6 +344,15 @@ test_that("grf_args naming a field get_hte() sets points to the argument", {
                fixed = TRUE)
 })
 
+test_that("a date covariate stops instead of becoming one column per date", {
+  skip_if_not_installed("grf")
+  d <- hte_bin_data(n = 200L)
+  d$dx_date <- as.Date("2010-01-01") + seq_len(nrow(d))
+  expect_error(get_hte(d, "z", adj_var = c("age", "dx_date"), surv = "y",
+                       grf_args = hte_args),
+               "`dx_date` must be numeric, factor, character or logical")
+})
+
 test_that("continuous outcomes give a ratio of means but no OR", {
   skip_if_not_installed("grf")
   d <- hte_bin_data()
