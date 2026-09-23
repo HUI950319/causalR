@@ -332,6 +332,18 @@ test_that("grf's overlap warnings collapse into one per call", {
                         capture.output(print(res)), fixed = TRUE)))
 })
 
+test_that("grf_args naming a field get_hte() sets points to the argument", {
+  skip_if_not_installed("grf")
+  expect_error(get_hte(hte_surv_data(n = 200L), "z", adj_var = "x2",
+                       surv = TRUE, time = 60, grf_args = list(horizon = 60)),
+               "`grf_args` cannot set `horizon`: get_hte() sets `horizon` from `time`.",
+               fixed = TRUE)
+  expect_error(get_hte(hte_bin_data(n = 200L), "z", adj_var = "x2", surv = "y",
+                       grf_args = list(X = matrix(0), W = 1)),
+               "cannot set `X`, `W`: get_hte() sets `X` from `adj_var` / `sub_var` and `W` from `cat_var`.",
+               fixed = TRUE)
+})
+
 test_that("continuous outcomes give a ratio of means but no OR", {
   skip_if_not_installed("grf")
   d <- hte_bin_data()

@@ -487,6 +487,16 @@ get_hte <- function(data,
 
   # ---- Backend arguments ---------------------------------------------------
   fun <- if (is_surv) grf::causal_survival_forest else grf::causal_forest
+  # Name the argument that sets a reserved field, rather than calling it
+  # "unknown" and listing every other grf argument.
+  fixed <- c(X = "`adj_var` / `sub_var`", Y = "`surv`", W = "`cat_var`",
+             D = "`surv = TRUE` (column `DSS`)", horizon = "`time`")
+  hit <- intersect(names(grf_args), names(fixed))
+  if (length(hit))
+    stop(sprintf("`grf_args` cannot set %s: get_hte() sets %s.",
+                 paste0("`", hit, "`", collapse = ", "),
+                 paste(sprintf("`%s` from %s", hit, fixed[hit]),
+                       collapse = " and ")), call. = FALSE)
   grf_args <- .merge_named_arg(
     grf_args, list(), "grf_args",
     allowed = setdiff(names(formals(fun)), c("X", "Y", "W", "D", "horizon")))
