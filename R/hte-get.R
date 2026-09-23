@@ -1,0 +1,515 @@
+# =============================================================================
+# hte-get.R -- heterogeneous treatment effects from causal forests
+# =============================================================================
+#
+# Architecture:
+#
+#   L1  get_hte()          validate, fit one grf forest, assemble the result
+#   L2  .hte_arm_scores()  arm-specific AIPW scores backed out of the forest
+#   L2  .hte_estimate()    one row per estimand x measure for a set of units
+#   L3  print.hte_res()
+#
+# =============================================================================
+
+# Estimand -> grf `target.sample`, in the order rows are reported.
+.HTE_ESTIMANDS <- c(ATE = "all", ATT = "treated", ATC = "control",
+                    ATO = "overlap")
+.HTE_MEASURES  <- c("diff", "ratio", "OR")
+
+
+# ---- L2 scores and estimates -----------------------------------------------
+
+# grf keeps m(x) = E[Y | X] (`Y.hat`), e(x) (`W.hat`) and the out-of-bag CATE,
+# and mu_w(x) = m(x) + (w - e(x)) tau(x) recovers both arms -- the identity grf
+# itself uses for its ATT / ATC estimators. The residual Y - mu_W(X) is the
+# plain outcome residual for causal_forest; causal_survival_forest keeps only
+# its censoring-adjusted form, `_psi$numerator` = (W - e) (Y* - m), whose
+# `denominator` is (W - e)^2. Either way g1 - g0 reproduces grf::get_scores()
+# to machine precision, so the ratio measures and grf's difference share one
+# set of scores.
+#' @keywords internal
+#' @noRd
+.hte_arm_scores <- function(fit) {
+  tau <- as.numeric(stats::predict(fit)$predictions)
+  e   <- fit$W.hat
+  wc  <- fit$W.orig - e
+  r   <- if (inherits(fit, "causal_survival_forest"))
+    fit[["_psi"]]$numerator / wc - wc * tau
+  else fit$Y.orig - fit$Y.hat - wc * tau
+  list(tau = tau,
+       g1  = fit$Y.hat + (1 - e) * tau + fit$W.orig / e * r,
+       g0  = fit$Y.hat - e * tau + (1 - fit$W.orig) / (1 - e) * r)
+}
+
+# `diff` is grf's own average_treatment_effect(), which also honours clusters
+# and sample weights. `ratio` and `OR` average the arm scores and take a Wald
+# interval on the log scale, the standard error coming from the influence
+# function (delta method). `event_risk` turns S(t) into the event risk
+# 1 - S(t) first, so a ratio below 1 favours treatment as a hazard ratio does.
+#' @keywords internal
+#' @noRd
+.hte_estimate <- function(fit, s, idx, grid, event_risk, z, label) {
+  w <- fit$W.orig[idx]
+  one <- function(estimand, measure) {
+    if (measure == "diff") {
+      a  <- grf::average_treatment_effect(
+        fit, target.sample = .HTE_ESTIMANDS[[estimand]], subset = which(idx))
+      est <- a[["estimate"]]
+      se  <- a[["std.err"]]
+      return(c(est, se, est - z * se, est + z * se,
+               2 * stats::pnorm(-abs(est / se))))
+    }
+    g1 <- s$g1[idx]
+    g0 <- s$g0[idx]
+    if (event_risk) {
+      g1 <- 1 - g1
+      g0 <- 1 - g0
+    }
+    a <- mean(g1)
+    b <- mean(g0)
+    if (!(a > 0 && b > 0 && (measure == "ratio" || (a < 1 && b < 1)))) {
+      warning(sprintf("%s: `%s` is undefined because an arm mean is out of range; set to NA.",
+                      label, measure), call. = FALSE)
+      return(rep(NA_real_, 5L))
+    }
+    if (measure == "ratio") {
+      th  <- log(a / b)
+      inf <- (g1 - a) / a - (g0 - b) / b
+    } else {
+      th  <- stats::qlogis(a) - stats::qlogis(b)
+      inf <- (g1 - a) / (a * (1 - a)) - (g0 - b) / (b * (1 - b))
+    }
+    se <- stats::sd(inf) / sqrt(length(inf))
+    c(exp(th), se, exp(th - z * se), exp(th + z * se),
+      2 * stats::pnorm(-abs(th / se)))
+  }
+  vals <- if (sum(w == 1) < 2L || sum(w == 0) < 2L) {
+    warning(sprintf("%s: fewer than two units in one arm; estimates set to NA.",
+                    label), call. = FALSE)
+    matrix(NA_real_, nrow(grid), 5L)
+  } else {
+    t(vapply(seq_len(nrow(grid)),
+             function(i) one(grid$estimand[i], grid$measure[i]), numeric(5L)))
+  }
+  data.frame(estimand = grid$estimand, measure = grid$measure,
+             estimate = vals[, 1L], std.error = vals[, 2L],
+             conf.low = vals[, 3L], conf.high = vals[, 4L],
+             p.value = vals[, 5L], stringsAsFactors = FALSE)
+}
+
+
+# ---- L1 public entry point -------------------------------------------------
+
+#' Heterogeneous treatment effects with causal forests
+#'
+#' Fits one generalized random forest for a binary exposure and returns, in
+#' one object, the average treatment effect on an absolute or relative scale,
+#' subgroup averages of the conditional average treatment effect (CATE), the
+#' per-row CATE and doubly robust scores for drawing CATE curves, and the
+#' fitted forest. Arguments follow [RegR::get_eff()] where the two overlap.
+#'
+#' @param data A data frame holding every column named below.
+#' @param cat_var Length-1 character. The binary exposure column: `0`/`1`,
+#'   logical, or a two-level factor or character column whose **second** level
+#'   is the treated arm, as in [get_PSW()]. Unlike [RegR::get_eff()], exactly
+#'   one exposure is analysed.
+#' @param sub_var Character vector of categorical subgroup columns, or `NULL`
+#'   (default). Each level gets one `$subgroup` row per estimand and measure.
+#'   Numeric columns with more than 5 distinct values are rejected; cut them
+#'   into groups first. Columns missing from `adj_var` are added to the forest
+#'   covariates with a message, because a subgroup estimate is only guaranteed
+#'   for variables the forest conditions on.
+#' @param adj_var Character vector of covariates the forest conditions on, or
+#'   `NULL`. Factor, character and logical columns enter as indicator columns.
+#' @param surv Outcome selector, following [RegR::get_eff()]:
+#'   \itemize{
+#'     \item `TRUE` (default): survival outcome in the fixed columns `time`
+#'       (follow-up) and `DSS` (event, 0/1), fitted with
+#'       [grf::causal_survival_forest()].
+#'     \item A single column name: binary (coded 0/1) or continuous outcome,
+#'       fitted with [grf::causal_forest()].
+#'     \item `FALSE` (competing risks in `get_eff()`) is rejected: grf has no
+#'       competing-risk forest.
+#'   }
+#' @param method Backend. Only `"grf"` is available.
+#' @param estimand Character vector, any of `"ATE"` (default), `"ATT"`,
+#'   `"ATC"`, `"ATO"`, passed to grf as `target.sample` `"all"`, `"treated"`,
+#'   `"control"` and `"overlap"`. Survival outcomes support `"ATE"` only.
+#' @param measure Character vector, any of `"diff"` (default), `"ratio"`,
+#'   `"OR"`; see the Effect measures section. `"ratio"` and `"OR"` are
+#'   computed for the ATE only.
+#' @param conf_level Confidence level of the Wald intervals. Default `0.95`.
+#' @param time Single positive number: the time point \eqn{t} of a survival
+#'   outcome, passed to grf as `horizon`. It defines the estimand and is fixed
+#'   when the forest is grown, so another time point needs another call.
+#'   Default `120`, as in [RegR::get_eff()]. Only accepted with `surv = TRUE`.
+#' @param grf_args Named list forwarded to [grf::causal_forest()] or
+#'   [grf::causal_survival_forest()], for example `num.trees`, `seed`,
+#'   `tune.parameters` or a known propensity `W.hat` (as in a trial). `X`,
+#'   `Y`, `W`, `D` and `horizon` are set by `get_hte()`. For survival outcomes
+#'   `target` defaults to `"survival.probability"` (grf's own default is
+#'   `"RMST"`); `target = "RMST"` switches to restricted mean survival time up
+#'   to `time`. Per-row fields (`W.hat`, `Y.hat`, `sample.weights`,
+#'   `clusters`) must match the complete rows analysed, and `clusters` and
+#'   `sample.weights` are only supported with `measure = "diff"`.
+#' @param verbose Logical. `TRUE` reports how many incomplete rows were
+#'   dropped. Default `FALSE`.
+#'
+#' @section Effect measures:
+#' Every measure compares the mean outcome of the two arms:
+#'
+#' | Outcome | `"diff"` | `"ratio"` | `"OR"` |
+#' |:--|:--|:--|:--|
+#' | continuous | mean difference | ratio of means (needs positive means) | -- |
+#' | binary (0/1) | risk difference | risk ratio | odds ratio |
+#' | survival, `target = "survival.probability"` | \eqn{S_1(t) - S_0(t)} | event-risk ratio \eqn{(1 - S_1(t)) / (1 - S_0(t))} | odds ratio of the event by \eqn{t} |
+#' | survival, `target = "RMST"` | RMST difference | RMST ratio | -- |
+#'
+#' `"diff"` is [grf::average_treatment_effect()] itself. `"ratio"` and `"OR"`
+#' come from arm-specific AIPW scores backed out of the forest, whose
+#' difference reproduces [grf::get_scores()] exactly. Their intervals and
+#' p-values are Wald tests on the log scale with an influence-function
+#' (delta-method) standard error, and `std.error` is reported on that log
+#' scale. For a survival probability the relative measures compare the event
+#' risk \eqn{1 - S(t)}, so a value below 1 favours treatment, as a hazard
+#' ratio would, while `"diff"` stays on the survival scale of
+#' [RegR::get_eff()]. A hazard ratio itself is not available: a causal forest
+#' estimates contrasts of mean outcomes, which a hazard ratio is not.
+#'
+#' Requested combinations that are not available -- `"OR"` for a continuous
+#' outcome or RMST, a relative measure for anything but the ATE, a survival
+#' estimand other than the ATE -- are skipped with a message; the call stops
+#' only when none remains.
+#'
+#' @section Subgroups:
+#' `estimate` is the doubly robust effect within the subgroup:
+#' [grf::average_treatment_effect()] with `subset` for `"diff"`, and the arm
+#' scores averaged over the subgroup for `"ratio"` and `"OR"`. `cate_mean` is
+#' the estimand-weighted mean of the out-of-bag CATE in the subgroup, given
+#' for `"diff"` rows only and only as a description: forest estimates are
+#' shrunk towards the overall mean, so it carries no interval. `p_inter` tests
+#' whether the subgroup estimates of one `sub_var` are equal (Wald
+#' chi-square with K - 1 degrees of freedom, on the log scale for `"ratio"`
+#' and `"OR"`).
+#'
+#' @section CATE curves:
+#' `$data` supports two univariate curves over a covariate `x`. Regressing
+#' `.dr_score` on a smooth function of `x`, for example
+#' `lm(.dr_score ~ splines::ns(x, 4), data = res$data)` with heteroskedasticity
+#' robust standard errors, estimates \eqn{E[\tau(X) \mid x]} with valid
+#' pointwise intervals. Plotting `.cate` against `x` shows the forest's own
+#' out-of-bag estimates, whose smoother bands are not confidence intervals.
+#'
+#' @return An object of class `hte_res`: a list of
+#'   \describe{
+#'     \item{`stats`}{Tibble with one row per estimand and measure: `method`,
+#'       `estimand`, `measure`, `estimate`, `std.error`, `conf.low`,
+#'       `conf.high`, `p.value`, `n`, `n_treat`.}
+#'     \item{`subgroup`}{Tibble with one row per `sub_var` level, estimand and
+#'       measure: `sub_var`, `level`, `estimand`, `measure`, `n`, `n_treat`,
+#'       `estimate`, `std.error`, `conf.low`, `conf.high`, `p.value`,
+#'       `cate_mean`, `p_inter`. `NULL` without `sub_var`.}
+#'     \item{`data`}{The complete rows analysed plus `.cate`, the out-of-bag
+#'       CATE, and `.dr_score`, the AIPW score (equal to
+#'       [grf::get_scores()]). Both are on the `"diff"` scale whatever
+#'       `measure` is.}
+#'     \item{`fit`}{The grf forest.}
+#'   }
+#'   Analysis metadata is attached as `attr(x, "analysis")`, including the
+#'   covariates actually used, the treated level and the seed of the forest.
+#'   Rows with a missing value in any column used are dropped.
+#'
+#' @references
+#' Wager S, Athey S (2018). Estimation and inference of heterogeneous
+#' treatment effects using random forests. \emph{Journal of the American
+#' Statistical Association} 113(523):1228-1242.
+#'
+#' Athey S, Tibshirani J, Wager S (2019). Generalized random forests.
+#' \emph{The Annals of Statistics} 47(2):1148-1178.
+#'
+#' Cui Y, Kosorok MR, Sverdrup E, Wager S, Zhu R (2023). Estimating
+#' heterogeneous treatment effects with right-censored data via causal
+#' survival forests. \emph{Journal of the Royal Statistical Society Series B}
+#' 85(2):179-211.
+#'
+#' @seealso [RegR::get_eff()] for regression-based effects and hazard ratios;
+#'   [get_PSW()] for the propensity score and weighting diagnostics.
+#'
+#' @examplesIf requireNamespace("grf", quietly = TRUE)
+#' \donttest{
+#' set.seed(20260923)
+#' n <- 800
+#' d <- data.frame(age = rnorm(n, 60, 10), x2 = rnorm(n),
+#'                 sex = factor(sample(c("F", "M"), n, replace = TRUE)))
+#' d$z <- rbinom(n, 1, plogis(0.3 * d$x2))
+#' d$y <- rbinom(n, 1, plogis(-1 + 0.5 * d$x2 + d$z * (0.3 + 0.8 * (d$sex == "M"))))
+#'
+#' # Binary outcome: risk difference, risk ratio and odds ratio, by sex
+#' res <- get_hte(d, cat_var = "z", sub_var = "sex", adj_var = c("age", "x2"),
+#'                surv = "y", measure = c("diff", "ratio", "OR"),
+#'                grf_args = list(num.trees = 500, seed = 1))
+#' res
+#'
+#' # CATE curve over age: AIPW scores smoothed (valid intervals) and the
+#' # out-of-bag CATE (descriptive)
+#' curve_fit <- lm(.dr_score ~ poly(age, 3), data = res$data)
+#' plot(res$data$age, res$data$.cate, xlab = "age", ylab = "CATE")
+#'
+#' # Survival: S(t) difference and event-risk ratio at t = 60
+#' ev   <- rexp(n, 0.02 * exp(0.3 * d$x2 - 0.5 * d$z))
+#' cens <- pmin(rexp(n, 0.01), 120)
+#' d$time <- pmin(ev, cens)
+#' d$DSS  <- as.integer(ev <= cens)
+#' get_hte(d, cat_var = "z", adj_var = c("age", "x2", "sex"), surv = TRUE,
+#'         time = 60, measure = c("diff", "ratio"),
+#'         grf_args = list(num.trees = 500, seed = 1))
+#' }
+#'
+#' @export
+get_hte <- function(data,
+                    cat_var,
+                    sub_var    = NULL,
+                    adj_var    = NULL,
+                    surv       = TRUE,
+                    method     = "grf",
+                    estimand   = "ATE",
+                    measure    = "diff",
+                    conf_level = 0.95,
+                    time       = 120,
+                    grf_args   = list(),
+                    verbose    = FALSE) {
+
+  method <- match.arg(method, "grf")
+  if (!requireNamespace("grf", quietly = TRUE))
+    stop("Package 'grf' is required for method = \"grf\".", call. = FALSE)
+  if (!is.numeric(conf_level) || length(conf_level) != 1L ||
+      is.na(conf_level) || conf_level <= 0 || conf_level >= 1)
+    stop("`conf_level` must be a single number strictly between 0 and 1.",
+         call. = FALSE)
+  if (!is.character(estimand) || !length(estimand))
+    stop("`estimand` must be a character vector.", call. = FALSE)
+  est_all  <- names(.HTE_ESTIMANDS)
+  estimand <- est_all[est_all %in%
+                        match.arg(toupper(estimand), est_all, several.ok = TRUE)]
+  measure  <- .HTE_MEASURES[.HTE_MEASURES %in%
+                              match.arg(measure, .HTE_MEASURES, several.ok = TRUE)]
+
+  if (!is.data.frame(data) || !nrow(data))
+    stop("`data` must be a non-empty data frame.", call. = FALSE)
+  cat_var <- .sens_check_col(cat_var, data, "cat_var", n = 1L)
+  sub_var <- setdiff(.sens_check_col(sub_var, data, "sub_var"), cat_var)
+  adj_var <- setdiff(.sens_check_col(adj_var, data, "adj_var"), cat_var)
+  if (!length(sub_var)) sub_var <- NULL
+  if (!length(adj_var)) adj_var <- NULL
+
+  # ---- Outcome: surv = TRUE reads the fixed get_eff() columns -------------
+  if (isFALSE(surv))
+    stop("`surv = FALSE` (competing risks) is not supported: grf has no competing-risk forest.",
+         call. = FALSE)
+  is_surv <- isTRUE(surv)
+  if (is_surv) {
+    outcome <- c("time", "DSS")
+    if (!all(outcome %in% names(data)))
+      stop("`surv = TRUE` requires the columns `time` and `DSS`.", call. = FALSE)
+    if (!is.numeric(time) || length(time) != 1L || is.na(time) || time <= 0)
+      stop("`time` must be a single positive number.", call. = FALSE)
+  } else {
+    if (!is.character(surv) || length(surv) != 1L || is.na(surv))
+      stop("`surv` must be TRUE (columns `time` / `DSS`) or a single outcome column name.",
+           call. = FALSE)
+    outcome <- .sens_check_col(surv, data, "surv", n = 1L)
+    if (!missing(time))
+      stop("`time` only applies to survival outcomes (`surv = TRUE`).",
+           call. = FALSE)
+  }
+
+  # ---- Covariates: subgroup variables must enter the forest ---------------
+  covars <- unique(c(adj_var, sub_var))
+  if (!length(covars))
+    stop("Supply at least one covariate through `adj_var` or `sub_var`.",
+         call. = FALSE)
+  if (any(covars %in% outcome))
+    stop(sprintf("`adj_var` / `sub_var` must not include the outcome column(s) %s.",
+                 paste0("`", intersect(covars, outcome), "`", collapse = ", ")),
+         call. = FALSE)
+  for (v in sub_var) {
+    x <- data[[v]]
+    if (is.numeric(x) && length(unique(x[!is.na(x)])) > 5L)
+      stop(sprintf("`sub_var` column `%s` is numeric with more than 5 distinct values; cut it into groups first.",
+                   v), call. = FALSE)
+  }
+  added <- setdiff(sub_var, adj_var)
+  if (length(added))
+    cli::cli_inform(c("i" = paste(
+      "Added {.field {added}} to the forest covariates: subgroup estimates",
+      "are only guaranteed for variables the forest conditions on.")))
+
+  data <- .sens_complete(data, c(cat_var, outcome, covars), verbose)
+  tz <- .psw_treat(data[[cat_var]], cat_var, arg = "cat_var")
+  W  <- tz$z
+  if (sum(W == 1L) < 2L || sum(W == 0L) < 2L)
+    stop("Both arms of `cat_var` need at least two complete rows.",
+         call. = FALSE)
+
+  if (is_surv) {
+    Y <- data[["time"]]
+    D <- data[["DSS"]]
+    if (is.logical(D)) D <- as.integer(D)
+    if (!is.numeric(Y) || !is.numeric(D) || !all(D %in% c(0, 1)))
+      stop("`surv = TRUE` needs a numeric `time` column and a `DSS` column coded 0/1.",
+           call. = FALSE)
+    type <- "survival"
+  } else {
+    Y <- data[[outcome]]
+    if (is.logical(Y)) Y <- as.integer(Y)
+    if (!is.numeric(Y))
+      stop(sprintf("Outcome column `%s` must be numeric or logical; code a binary outcome as 0/1.",
+                   outcome), call. = FALSE)
+    u <- unique(Y)
+    if (length(u) == 2L && !all(u %in% c(0, 1)))
+      stop(sprintf("Outcome column `%s` has two values; code a binary outcome as 0/1.",
+                   outcome), call. = FALSE)
+    type <- if (all(u %in% c(0, 1))) "binary" else "continuous"
+  }
+
+  # ---- Backend arguments ---------------------------------------------------
+  fun <- if (is_surv) grf::causal_survival_forest else grf::causal_forest
+  grf_args <- .merge_named_arg(
+    grf_args, list(), "grf_args",
+    allowed = setdiff(names(formals(fun)), c("X", "Y", "W", "D", "horizon")))
+  target <- NULL
+  if (is_surv) {
+    target <- match.arg(
+      if (is.null(grf_args$target)) "survival.probability" else grf_args$target,
+      c("survival.probability", "RMST"))
+    grf_args$target <- target
+  }
+
+  # ---- Requested estimand x measure grid -----------------------------------
+  grid <- expand.grid(estimand = estimand, measure = measure,
+                      stringsAsFactors = FALSE)
+  why <- vapply(seq_len(nrow(grid)), function(i) {
+    e <- grid$estimand[i]
+    m <- grid$measure[i]
+    if (is_surv && e != "ATE") "grf's survival forest estimates the ATE only"
+    else if (m != "diff" && e != "ATE") "ratio and OR are available for the ATE only"
+    else if (m == "OR" && (type == "continuous" || identical(target, "RMST")))
+      "OR needs an outcome probability"
+    else NA_character_
+  }, character(1L))
+  skipped <- sprintf("%s x %s: %s", grid$estimand, grid$measure, why)[!is.na(why)]
+  if (all(!is.na(why)))
+    stop(paste0("No requested estimand / measure combination is available:\n",
+                paste0("* ", skipped, collapse = "\n")), call. = FALSE)
+  if (length(skipped))
+    cli::cli_inform(c("i" = "Skipped {length(skipped)} combination{?s}:",
+                      stats::setNames(skipped, rep("*", length(skipped)))))
+  grid <- grid[is.na(why), , drop = FALSE]
+  if (any(grid$measure != "diff") &&
+      any(c("clusters", "sample.weights") %in% names(grf_args)))
+    stop("`ratio` and `OR` do not support `grf_args$clusters` or `grf_args$sample.weights`; use measure = \"diff\".",
+         call. = FALSE)
+
+  # ---- Fit and estimate ----------------------------------------------------
+  X   <- .sens_model_matrix(data, covars)
+  fit <- do.call(fun, c(list(X = X, Y = Y, W = W),
+                        if (is_surv) list(D = D, horizon = time),
+                        grf_args))
+  s  <- .hte_arm_scores(fit)
+  z  <- stats::qnorm(1 - (1 - conf_level) / 2)
+  event_risk <- identical(target, "survival.probability")
+
+  overall <- .hte_estimate(fit, s, rep(TRUE, length(W)), grid, event_risk, z,
+                           "Overall")
+  stats_tbl <- tibble::as_tibble(data.frame(
+    method = method, overall, n = length(W), n_treat = sum(W),
+    stringsAsFactors = FALSE))
+
+  sub_tbl <- NULL
+  if (length(sub_var)) {
+    # Plug-in weights matching each estimand, for the descriptive cate_mean.
+    h <- list(ATE = rep(1, length(W)), ATT = W, ATC = 1 - W,
+              ATO = fit$W.hat * (1 - fit$W.hat))
+    sub_tbl <- do.call(rbind, lapply(sub_var, function(v) {
+      g <- droplevels(as.factor(data[[v]]))
+      rows <- do.call(rbind, lapply(levels(g), function(lv) {
+        idx <- g == lv
+        est <- .hte_estimate(fit, s, idx, grid, event_risk, z,
+                             sprintf("%s = %s", v, lv))
+        cate_mean <- vapply(seq_len(nrow(est)), function(i) {
+          if (est$measure[i] != "diff") return(NA_real_)
+          stats::weighted.mean(s$tau[idx], h[[est$estimand[i]]][idx])
+        }, numeric(1L))
+        data.frame(sub_var = v, level = lv, est[c("estimand", "measure")],
+                   n = sum(idx), n_treat = sum(W[idx]),
+                   est[c("estimate", "std.error", "conf.low", "conf.high",
+                         "p.value")],
+                   cate_mean = cate_mean, stringsAsFactors = FALSE)
+      }))
+      # Equal subgroup effects: Wald chi-square on the analysis scale.
+      rows$p_inter <- NA_real_
+      key <- paste(rows$estimand, rows$measure)
+      for (k in unique(key)) {
+        j  <- which(key == k)
+        th <- if (rows$measure[j[1L]] == "diff") rows$estimate[j]
+              else log(rows$estimate[j])
+        se <- rows$std.error[j]
+        ok <- is.finite(th) & is.finite(se) & se > 0
+        if (sum(ok) >= 2L) {
+          wt <- 1 / se[ok]^2
+          q  <- sum(wt * (th[ok] - sum(wt * th[ok]) / sum(wt))^2)
+          rows$p_inter[j] <- stats::pchisq(q, df = sum(ok) - 1L,
+                                           lower.tail = FALSE)
+        }
+      }
+      rows
+    }))
+    rownames(sub_tbl) <- NULL
+    sub_tbl <- tibble::as_tibble(sub_tbl)
+  }
+
+  data$.cate     <- s$tau
+  data$.dr_score <- s$g1 - s$g0
+
+  structure(
+    list(stats = stats_tbl, subgroup = sub_tbl, data = data, fit = fit),
+    class = c("hte_res", "list"),
+    analysis = list(
+      method = method, backend = "grf",
+      backend_version = as.character(utils::packageVersion("grf")),
+      forest = class(fit)[1L], outcome_type = type,
+      cat_var = cat_var, treated = tz$treated, surv = surv, outcome = outcome,
+      sub_var = sub_var, adj_var = adj_var, covariates = covars,
+      estimand = estimand, measure = measure, target = target,
+      time = if (is_surv) time else NULL, conf_level = conf_level,
+      n = length(W), n_treat = sum(W), seed = fit[["seed"]],
+      call = match.call()))
+}
+
+
+# ---- L3 print --------------------------------------------------------------
+
+#' @export
+#' @noRd
+print.hte_res <- function(x, ...) {
+  a <- attr(x, "analysis")
+  cat(sprintf("<hte_res> %s (grf %s), n = %d (treated = %d), conf_level = %s\n",
+              a$forest, a$backend_version, a$n, a$n_treat,
+              format(a$conf_level)))
+  cat(sprintf("  cat_var = %s (treated: %s), outcome = %s%s\n",
+              a$cat_var, a$treated, paste(a$outcome, collapse = " / "),
+              if (is.null(a$time)) "" else
+                sprintf(", target = %s at time = %s", a$target, format(a$time))))
+  cat("\n")
+  print(x$stats)
+  if (!is.null(x$subgroup)) {
+    cat("\nSubgroups:\n")
+    print(x$subgroup)
+  }
+  cat("\n")
+  if (identical(a$target, "survival.probability") &&
+      any(x$stats$measure != "diff"))
+    cat("# ratio / OR compare the event risk 1 - S(t); diff is S1(t) - S0(t).\n")
+  cat("# $data: .cate = out-of-bag CATE, .dr_score = AIPW score (diff scale).\n")
+  invisible(x)
+}

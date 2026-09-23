@@ -154,20 +154,20 @@
 # label is returned alongside the coding for print() to show.
 #' @keywords internal
 #' @noRd
-.psw_treat <- function(x, nm) {
+.psw_treat <- function(x, nm, arg = "treat") {
   if (is.logical(x)) return(list(z = as.integer(x), treated = "TRUE"))
   if (is.factor(x) || is.character(x)) {
     lv <- if (is.factor(x)) levels(droplevels(x)) else sort(unique(x))
     if (length(lv) != 2L)
-      stop(sprintf("`treat` column `%s` must have exactly 2 levels; found %d.",
-                   nm, length(lv)), call. = FALSE)
+      stop(sprintf("`%s` column `%s` must have exactly 2 levels; found %d.",
+                   arg, nm, length(lv)), call. = FALSE)
     return(list(z = as.integer(match(as.character(x), lv) - 1L),
                 treated = lv[[2L]]))
   }
   u <- sort(unique(x))
   if (!all(u %in% c(0, 1)))
-    stop(sprintf("`treat` column `%s` must be 0/1, logical, or a two-level factor or character column.",
-                 nm), call. = FALSE)
+    stop(sprintf("`%s` column `%s` must be 0/1, logical, or a two-level factor or character column.",
+                 arg, nm), call. = FALSE)
   list(z = as.integer(x), treated = "1")
 }
 
