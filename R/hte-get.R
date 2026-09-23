@@ -211,6 +211,15 @@
 #'       measure: `sub_var`, `level`, `estimand`, `measure`, `n`, `n_treat`,
 #'       `estimate`, `std.error`, `conf.low`, `conf.high`, `p.value`,
 #'       `cate_mean`, `p_inter`. `NULL` without `sub_var`.}
+#'     \item{`importance`}{Tibble with one row per covariate, sorted by
+#'       `importance`: `variable`, `importance` ([grf::variable_importance()]
+#'       summed over the covariate's design columns, so the column sums to 1)
+#'       and `n_col` (how many design columns the covariate occupies). The
+#'       first two columns are what `MLR::plt_bar_per()` reads, so
+#'       `plt_bar_per(res$importance)` plots it directly. This is a
+#'       depth-weighted split frequency, not a test: covariates with more
+#'       columns or more distinct values score higher even without any effect
+#'       modification.}
 #'     \item{`data`}{The complete rows analysed plus `.cate`, the out-of-bag
 #'       CATE, and `.dr_score`, the AIPW score (equal to
 #'       [grf::get_scores()]). Both are on the `"diff"` scale whatever
@@ -470,11 +479,24 @@ get_hte <- function(data,
     sub_tbl <- tibble::as_tibble(sub_tbl)
   }
 
+  # grf scores one importance per design column; summing a covariate's columns
+  # gives one row per covariate, laid out for MLR::plt_bar_per() (a categorical
+  # first column, then a numeric one).
+  src <- covars[attr(X, "assign")]
+  vi  <- as.numeric(grf::variable_importance(fit))
+  imp_tbl <- tibble::tibble(
+    variable   = covars,
+    importance = vapply(covars, function(v) sum(vi[src == v]), numeric(1L),
+                        USE.NAMES = FALSE),
+    n_col      = tabulate(attr(X, "assign"), nbins = length(covars)))
+  imp_tbl <- imp_tbl[order(imp_tbl$importance, decreasing = TRUE), ]
+
   data$.cate     <- s$tau
   data$.dr_score <- s$g1 - s$g0
 
   structure(
-    list(stats = stats_tbl, subgroup = sub_tbl, data = data, fit = fit),
+    list(stats = stats_tbl, subgroup = sub_tbl, importance = imp_tbl,
+         data = data, fit = fit),
     class = c("hte_res", "list"),
     analysis = list(
       method = method, backend = "grf",
@@ -513,5 +535,6 @@ print.hte_res <- function(x, ...) {
       any(x$stats$measure != "diff"))
     cat("# ratio / OR compare the event risk 1 - S(t); diff is S1(t) - S0(t).\n")
   cat("# $data: .cate = out-of-bag CATE, .dr_score = AIPW score (diff scale).\n")
+  cat("# $importance: grf split frequency by covariate (no test); plt_bar_per()-ready.\n")
   invisible(x)
 }

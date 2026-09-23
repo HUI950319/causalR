@@ -71,7 +71,7 @@ test_that("get_hte returns the documented structure", {
   res <- hte_bin()
 
   expect_s3_class(res, "hte_res")
-  expect_named(res, c("stats", "subgroup", "data", "fit"))
+  expect_named(res, c("stats", "subgroup", "importance", "data", "fit"))
   expect_s3_class(res$fit, "causal_forest")
   expect_null(res$subgroup)
   expect_named(res$stats, c("method", "estimand", "measure", "estimate",
@@ -88,6 +88,23 @@ test_that("every factor enters the forest with one column per level", {
   expect_identical(colnames(res$fit$X.orig),
                    c("age", "x2", "sexF", "sexM", "stageI", "stageII", "stageIII"))
   expect_identical(attr(res$fit$X.orig, "assign"), c(1L, 2L, 3L, 3L, 4L, 4L, 4L))
+})
+
+test_that("$importance sums grf variable importance back to each covariate", {
+  res <- hte_bin()
+  imp <- res$importance
+  vi  <- as.numeric(grf::variable_importance(res$fit))
+  src <- c("age", "x2", "sex", "stage")[attr(res$fit$X.orig, "assign")]
+
+  expect_named(imp, c("variable", "importance", "n_col"))
+  # MLR::plt_bar_per() reads the first two columns: one categorical, one numeric
+  expect_type(imp$variable, "character")
+  expect_type(imp$importance, "double")
+  expect_setequal(imp$variable, c("age", "x2", "sex", "stage"))
+  expect_equal(imp$importance, as.numeric(tapply(vi, src, sum)[imp$variable]))
+  expect_equal(imp$n_col, unname(c(age = 1L, x2 = 1L, sex = 2L, stage = 3L)[imp$variable]))
+  expect_equal(sum(imp$importance), 1)
+  expect_false(is.unsorted(rev(imp$importance)))
 })
 
 test_that("diff reproduces grf for every estimand and $data matches grf", {

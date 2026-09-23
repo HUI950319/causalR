@@ -90,6 +90,15 @@ An object of class \code{hte_res}: a list of
 measure: \code{sub_var}, \code{level}, \code{estimand}, \code{measure}, \code{n}, \code{n_treat},
 \code{estimate}, \code{std.error}, \code{conf.low}, \code{conf.high}, \code{p.value},
 \code{cate_mean}, \code{p_inter}. \code{NULL} without \code{sub_var}.}
+\item{\code{importance}}{Tibble with one row per covariate, sorted by
+\code{importance}: \code{variable}, \code{importance} (\code{\link[grf:variable_importance]{grf::variable_importance()}}
+summed over the covariate's design columns, so the column sums to 1)
+and \code{n_col} (how many design columns the covariate occupies). The
+first two columns are what \code{MLR::plt_bar_per()} reads, so
+\code{plt_bar_per(res$importance)} plots it directly. This is a
+depth-weighted split frequency, not a test: covariates with more
+columns or more distinct values score higher even without any effect
+modification.}
 \item{\code{data}}{The complete rows analysed plus \code{.cate}, the out-of-bag
 CATE, and \code{.dr_score}, the AIPW score (equal to
 \code{\link[grf:get_scores]{grf::get_scores()}}). Both are on the \code{"diff"} scale whatever
