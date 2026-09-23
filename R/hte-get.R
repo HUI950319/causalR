@@ -50,9 +50,12 @@
 # interval on the log scale, the standard error coming from the influence
 # function (delta method). `event_risk` turns S(t) into the event risk
 # 1 - S(t) first, so a ratio below 1 favours treatment as a hazard ratio does.
+# `beyond` flags the survival patients still followed at `time`; where an arm
+# has none, grf extrapolates to a near-null effect, so the rows are NA.
 #' @keywords internal
 #' @noRd
-.hte_estimate <- function(fit, s, idx, grid, event_risk, z, label) {
+.hte_estimate <- function(fit, s, idx, grid, event_risk, z, label,
+                          beyond = NULL) {
   w <- fit$W.orig[idx]
   one <- function(estimand, measure) {
     if (measure == "diff") {
@@ -89,6 +92,11 @@
   }
   vals <- if (sum(w == 1) < 2L || sum(w == 0) < 2L) {
     warning(sprintf("%s: fewer than two units in one arm; estimates set to NA.",
+                    label), call. = FALSE)
+    matrix(NA_real_, nrow(grid), 5L)
+  } else if (!is.null(beyond) &&
+             (!any(beyond[idx] & w == 1) || !any(beyond[idx] & w == 0))) {
+    warning(sprintf("%s: no patient in one arm is followed past `time`; estimates set to NA.",
                     label), call. = FALSE)
     matrix(NA_real_, nrow(grid), 5L)
   } else {
@@ -206,6 +214,9 @@
 #'   outcome, passed to grf as `horizon`. It defines the estimand and is fixed
 #'   when the forest is grown, so another time point needs another call.
 #'   Default `120`, as in [RegR::get_eff()]. Only accepted with `surv = TRUE`.
+#'   Both arms need patients still followed beyond `time` (up to it for
+#'   RMST): with none in an arm the call stops, because grf would return a
+#'   near-null effect without warning, and with fewer than 10 it warns.
 #' @param grf_args Named list forwarded to [grf::causal_forest()] or
 #'   [grf::causal_survival_forest()], for example `num.trees`, `seed`,
 #'   `tune.parameters` or a known propensity `W.hat` (as in a trial). `X`,
@@ -253,7 +264,8 @@
 #' shrunk towards the overall mean, so it carries no interval. `p_inter` tests
 #' whether the subgroup estimates of one `sub_var` are equal (Wald
 #' chi-square with K - 1 degrees of freedom, on the log scale for `"ratio"`
-#' and `"OR"`).
+#' and `"OR"`). A subgroup in which an arm has no patient followed beyond
+#' `time` gets `NA`, like one with fewer than two patients in an arm.
 #'
 #' @section CATE curves:
 #' `$data` supports two univariate curves over a covariate `x`. Regressing
@@ -463,6 +475,33 @@ get_hte <- function(data,
     grf_args$target <- target
   }
 
+  # ---- Follow-up past the time point ----------------------------------------
+  # grf identifies S(t) or RMST(t) only from patients still followed at `time`
+  # (its source uses Y > horizon for a survival probability, Y >= horizon for
+  # RMST). With none left in an arm it returns a near-null effect without a
+  # warning -- measured 0.018 against a true 0.154 -- so stop here instead.
+  beyond <- NULL
+  if (is_surv) {
+    beyond  <- if (target == "RMST") Y >= time else Y > time
+    past    <- if (target == "RMST") "up to" else "beyond"
+    arms    <- c(1L, 0L)
+    arm_lab <- c(tz$treated,
+                 setdiff(levels(factor(data[[cat_var]])), tz$treated)[1L])
+    n_after <- vapply(arms, function(a) sum(beyond & W == a), integer(1L))
+    if (any(n_after == 0L)) {
+      k <- which(n_after == 0L)[1L]
+      stop(sprintf("No patient with `%s` = %s is followed %s `time` = %s (longest follow-up %s), so the effect at that time is not identified; choose a smaller `time`.",
+                   cat_var, arm_lab[k], past, format(time),
+                   format(max(Y[W == arms[k]]))), call. = FALSE)
+    }
+    if (any(n_after < 10L))
+      warning(sprintf("Few patients are followed %s `time` = %s: %s. The estimate at that time rests on them.",
+                      past, format(time),
+                      paste(sprintf("%d with `%s` = %s", n_after, cat_var,
+                                    arm_lab), collapse = ", ")),
+              call. = FALSE)
+  }
+
   # ---- Requested estimand x measure grid -----------------------------------
   grid <- expand.grid(estimand = estimand, measure = measure,
                       stringsAsFactors = FALSE)
@@ -498,7 +537,7 @@ get_hte <- function(data,
   event_risk <- identical(target, "survival.probability")
 
   overall <- .hte_estimate(fit, s, rep(TRUE, length(W)), grid, event_risk, z,
-                           "Overall")
+                           "Overall", beyond)
   stats_tbl <- tibble::as_tibble(data.frame(
     method = method, overall, n = length(W), n_treat = sum(W),
     stringsAsFactors = FALSE))
@@ -513,7 +552,7 @@ get_hte <- function(data,
       rows <- do.call(rbind, lapply(levels(g), function(lv) {
         idx <- g == lv
         est <- .hte_estimate(fit, s, idx, grid, event_risk, z,
-                             sprintf("%s = %s", v, lv))
+                             sprintf("%s = %s", v, lv), beyond)
         cate_mean <- vapply(seq_len(nrow(est)), function(i) {
           if (est$measure[i] != "diff") return(NA_real_)
           stats::weighted.mean(s$tau[idx], h[[est$estimand[i]]][idx])

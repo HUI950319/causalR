@@ -208,6 +208,44 @@ test_that("survival RMST is reached through grf_args$target; OR is skipped", {
   expect_equal(row_of(res$stats, "ATE", "ratio")$estimate, s[1] / s[2])
 })
 
+test_that("survival: a time point past either arm's follow-up stops", {
+  skip_if_not_installed("grf")
+  d <- hte_surv_data()                          # censoring ends at 120
+  expect_error(get_hte(d, "z", adj_var = c("age", "x2"), surv = TRUE,
+                       grf_args = hte_args),    # default time = 120
+               "followed beyond `time` = 120")
+
+  late <- d$z == 1 & d$time > 50                # treated follow-up ends at 50
+  d$time[late] <- 50
+  d$DSS[late]  <- 0L
+  expect_error(get_hte(d, "z", adj_var = c("age", "x2"), surv = TRUE,
+                       time = 60, grf_args = hte_args),
+               "No patient with `z` = 1 is followed beyond `time` = 60")
+})
+
+test_that("survival: few patients past `time` warn; a subgroup with none is NA", {
+  skip_if_not_installed("grf")
+  d   <- hte_surv_data()
+  cut <- which(d$z == 1 & d$time > 60)[-(1:3)]  # three treated stay past 60
+  d$time[cut] <- 59
+  d$DSS[cut]  <- 0L
+  expect_warning(get_hte(d, "z", adj_var = c("age", "x2"), surv = TRUE,
+                         time = 60, grf_args = hte_args),
+                 "Few patients are followed beyond `time` = 60: 3 with `z` = 1")
+
+  d   <- hte_surv_data()
+  cut <- d$z == 1 & d$sex == "M" & d$time > 50
+  d$time[cut] <- 50
+  d$DSS[cut]  <- 0L
+  expect_warning(
+    res <- get_hte(d, "z", sub_var = "sex", adj_var = c("age", "x2"),
+                   surv = TRUE, time = 60, grf_args = hte_args),
+    "sex = M: no patient in one arm")
+  sub <- res$subgroup
+  expect_true(is.na(sub$estimate[sub$level == "M"]))
+  expect_false(is.na(sub$estimate[sub$level == "F"]))
+})
+
 test_that("continuous outcomes give a ratio of means but no OR", {
   skip_if_not_installed("grf")
   d <- hte_bin_data()
