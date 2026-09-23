@@ -7,6 +7,8 @@
 #   L1  get_hte()          validate, fit one grf forest, assemble the result
 #   L2  .hte_arm_scores()  arm-specific AIPW scores backed out of the forest
 #   L2  .hte_estimate()    one row per estimand x measure for a set of units
+#   L2  .hte_dr_var()      doubly robust CATE along one covariate + p_het
+#                          (shared with plt_hte_dep())
 #   L3  print.hte_res()
 #
 # =============================================================================
@@ -15,6 +17,8 @@
 .HTE_ESTIMANDS <- c(ATE = "all", ATT = "treated", ATC = "control",
                     ATO = "overlap")
 .HTE_MEASURES  <- c("diff", "ratio", "OR")
+# Natural-spline df of the doubly robust curve for a continuous covariate.
+.HTE_SPLINE_DF <- 3L
 
 
 # ---- L2 scores and estimates -----------------------------------------------
@@ -95,6 +99,63 @@
              estimate = vals[, 1L], std.error = vals[, 2L],
              conf.low = vals[, 3L], conf.high = vals[, 4L],
              p.value = vals[, 5L], stringsAsFactors = FALSE)
+}
+
+
+# Numeric covariates with more than 5 distinct values are continuous, the
+# threshold get_hte() already applies to `sub_var`.
+#' @keywords internal
+#' @noRd
+.hte_is_num <- function(x) is.numeric(x) && length(unique(x[!is.na(x)])) > 5L
+
+# Doubly robust CATE along one covariate, from the AIPW scores in
+# `data$.dr_score`. A categorical covariate gets the score mean per level --
+# grf::average_treatment_effect(subset = level) -- and a K - 1 df Wald test
+# that the levels are equal, the subgroup p_inter of get_hte(). A continuous
+# one gets a natural spline with HC3 errors and a joint Wald test of the
+# spline terms. Either way `p_het` tests whether the CATE varies with it.
+#' @keywords internal
+#' @noRd
+.hte_dr_var <- function(data, v, w, z, spline_df) {
+  x <- data[[v]]
+  s <- data$.dr_score
+  if (.hte_is_num(x)) {
+    fit <- stats::lm(s ~ splines::ns(x, df = spline_df))
+    V   <- sandwich::vcovHC(fit, type = "HC3")
+    b   <- stats::coef(fit)[-1L]
+    g   <- data.frame(x = seq(min(x), max(x), length.out = 100L))
+    M   <- stats::model.matrix(stats::delete.response(stats::terms(fit)), g)
+    est <- drop(M %*% stats::coef(fit))
+    se  <- sqrt(rowSums((M %*% V) * M))
+    return(list(
+      type  = "continuous", df = length(b),
+      p_het = stats::pchisq(drop(b %*% solve(V[-1L, -1L], b)), length(b),
+                            lower.tail = FALSE),
+      curve = data.frame(x = g$x, estimate = est, conf.low = est - z * se,
+                         conf.high = est + z * se)))
+  }
+  g  <- droplevels(as.factor(x))
+  lv <- do.call(rbind, lapply(levels(g), function(l) {
+    i  <- which(g == l)
+    nt <- sum(w[i])
+    # the same two-per-arm floor as the get_hte() subgroup rows
+    ok  <- nt >= 2 && length(i) - nt >= 2
+    est <- if (ok) mean(s[i]) else NA_real_
+    se  <- if (ok) stats::sd(s[i]) / sqrt(length(i)) else NA_real_
+    data.frame(level = l, n = length(i), n_treat = nt, estimate = est,
+               std.error = se, conf.low = est - z * se,
+               conf.high = est + z * se, stringsAsFactors = FALSE)
+  }))
+  ok <- is.finite(lv$std.error) & lv$std.error > 0
+  if (sum(ok) < 2L)
+    return(list(type = "categorical", df = NA_integer_, p_het = NA_real_,
+                levels = lv))
+  wt <- 1 / lv$std.error[ok]^2
+  th <- lv$estimate[ok]
+  list(type = "categorical", df = sum(ok) - 1L,
+       p_het = stats::pchisq(sum(wt * (th - sum(wt * th) / sum(wt))^2),
+                             sum(ok) - 1L, lower.tail = FALSE),
+       levels = lv)
 }
 
 
@@ -214,12 +275,18 @@
 #'     \item{`importance`}{Tibble with one row per covariate, sorted by
 #'       `importance`: `variable`, `importance` ([grf::variable_importance()]
 #'       summed over the covariate's design columns, so the column sums to 1)
-#'       and `n_col` (how many design columns the covariate occupies). The
-#'       first two columns are what `MLR::plt_bar_per()` reads, so
-#'       `plt_bar_per(res$importance)` plots it directly. This is a
+#'       `n_col` (how many design columns the covariate occupies), `df` and
+#'       `p_het`. The first two columns are what `MLR::plt_bar_per()` reads,
+#'       so `plt_bar_per(res$importance)` plots it directly. `importance` is a
 #'       depth-weighted split frequency, not a test: covariates with more
 #'       columns or more distinct values score higher even without any effect
-#'       modification.}
+#'       modification. `p_het` is the test: a Wald test, on the AIPW scores,
+#'       that the CATE does not vary with the covariate -- equal level means
+#'       for a categorical covariate (`df` = levels - 1, the `p_inter` of a
+#'       `sub_var`), and zero natural-spline terms (`df` = 3, HC3 errors) for
+#'       a numeric one with more than 5 distinct values. Levels with fewer
+#'       than two patients in either arm are left out. [plt_hte_dep()] draws
+#'       the same estimates.}
 #'     \item{`data`}{The complete rows analysed plus `.cate`, the out-of-bag
 #'       CATE, and `.dr_score`, the AIPW score (equal to
 #'       [grf::get_scores()]). Both are on the `"diff"` scale whatever
@@ -479,20 +546,24 @@ get_hte <- function(data,
     sub_tbl <- tibble::as_tibble(sub_tbl)
   }
 
+  data$.cate     <- s$tau
+  data$.dr_score <- s$g1 - s$g0
+
   # grf scores one importance per design column; summing a covariate's columns
   # gives one row per covariate, laid out for MLR::plt_bar_per() (a categorical
-  # first column, then a numeric one).
+  # first column, then a numeric one). p_het is the doubly robust test that
+  # plt_hte_dep() prints in its strips.
   src <- covars[attr(X, "assign")]
   vi  <- as.numeric(grf::variable_importance(fit))
+  dr  <- lapply(covars, function(v) .hte_dr_var(data, v, W, z, .HTE_SPLINE_DF))
   imp_tbl <- tibble::tibble(
     variable   = covars,
     importance = vapply(covars, function(v) sum(vi[src == v]), numeric(1L),
                         USE.NAMES = FALSE),
-    n_col      = tabulate(attr(X, "assign"), nbins = length(covars)))
+    n_col      = tabulate(attr(X, "assign"), nbins = length(covars)),
+    df         = vapply(dr, function(r) r$df, integer(1L)),
+    p_het      = vapply(dr, function(r) r$p_het, numeric(1L)))
   imp_tbl <- imp_tbl[order(imp_tbl$importance, decreasing = TRUE), ]
-
-  data$.cate     <- s$tau
-  data$.dr_score <- s$g1 - s$g0
 
   structure(
     list(stats = stats_tbl, subgroup = sub_tbl, importance = imp_tbl,
@@ -535,6 +606,7 @@ print.hte_res <- function(x, ...) {
       any(x$stats$measure != "diff"))
     cat("# ratio / OR compare the event risk 1 - S(t); diff is S1(t) - S0(t).\n")
   cat("# $data: .cate = out-of-bag CATE, .dr_score = AIPW score (diff scale).\n")
-  cat("# $importance: grf split frequency by covariate (no test); plt_bar_per()-ready.\n")
+  cat("# $importance: grf split frequency by covariate (not a test) + p_het; plt_bar_per()-ready.\n")
+  cat("# plt_hte_dep(x) draws the CATE against each covariate.\n")
   invisible(x)
 }

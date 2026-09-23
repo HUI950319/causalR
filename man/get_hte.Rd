@@ -93,12 +93,18 @@ measure: \code{sub_var}, \code{level}, \code{estimand}, \code{measure}, \code{n}
 \item{\code{importance}}{Tibble with one row per covariate, sorted by
 \code{importance}: \code{variable}, \code{importance} (\code{\link[grf:variable_importance]{grf::variable_importance()}}
 summed over the covariate's design columns, so the column sums to 1)
-and \code{n_col} (how many design columns the covariate occupies). The
-first two columns are what \code{MLR::plt_bar_per()} reads, so
-\code{plt_bar_per(res$importance)} plots it directly. This is a
+\code{n_col} (how many design columns the covariate occupies), \code{df} and
+\code{p_het}. The first two columns are what \code{MLR::plt_bar_per()} reads,
+so \code{plt_bar_per(res$importance)} plots it directly. \code{importance} is a
 depth-weighted split frequency, not a test: covariates with more
 columns or more distinct values score higher even without any effect
-modification.}
+modification. \code{p_het} is the test: a Wald test, on the AIPW scores,
+that the CATE does not vary with the covariate -- equal level means
+for a categorical covariate (\code{df} = levels - 1, the \code{p_inter} of a
+\code{sub_var}), and zero natural-spline terms (\code{df} = 3, HC3 errors) for
+a numeric one with more than 5 distinct values. Levels with fewer
+than two patients in either arm are left out. \code{\link[=plt_hte_dep]{plt_hte_dep()}} draws
+the same estimates.}
 \item{\code{data}}{The complete rows analysed plus \code{.cate}, the out-of-bag
 CATE, and \code{.dr_score}, the AIPW score (equal to
 \code{\link[grf:get_scores]{grf::get_scores()}}). Both are on the \code{"diff"} scale whatever

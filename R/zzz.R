@@ -1,5 +1,5 @@
-# Columns of the local data frames built inside sens-plt.R and psw-plt.R
-# renderers and referenced through ggplot2::aes().
+# Columns of the local data frames built inside the sens-plt.R, psw-plt.R,
+# psm-plt.R and hte-plt.R renderers and referenced through ggplot2::aes().
 utils::globalVariables(c(
   # sens-plt.R
   "gamma",     # .sens_plt_tip:     confounder-outcome effect grid
@@ -25,5 +25,12 @@ utils::globalVariables(c(
   # psm-plt.R (reuses smd / variable / ess / weight / arm / ps above)
   "Matching",  # .psm_plt_love:     matching scheme, shown in the legend
   "method",    # .psm_plt_ess:      bar identity
-  "n"          # .psm_plt_ess:      matched count in the bar label
+  "n",         # .psm_plt_ess:      matched count in the bar label
+  # hte-plt.R (reuses x / y above)
+  "estimate",  # plt_hte_dep:       AIPW mean, spline or partial dependence
+  "conf.low",  # plt_hte_dep:       lower interval bound
+  "conf.high", # plt_hte_dep:       upper interval bound
+  "panel",     # plt_hte_dep:       strip label of a panel
+  "x1",        # plt_hte_dep:       first covariate of the heat map
+  "x2"         # plt_hte_dep:       second covariate of the heat map
 ))

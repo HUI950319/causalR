@@ -96,7 +96,7 @@ test_that("$importance sums grf variable importance back to each covariate", {
   vi  <- as.numeric(grf::variable_importance(res$fit))
   src <- c("age", "x2", "sex", "stage")[attr(res$fit$X.orig, "assign")]
 
-  expect_named(imp, c("variable", "importance", "n_col"))
+  expect_named(imp, c("variable", "importance", "n_col", "df", "p_het"))
   # MLR::plt_bar_per() reads the first two columns: one categorical, one numeric
   expect_type(imp$variable, "character")
   expect_type(imp$importance, "double")
