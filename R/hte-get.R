@@ -258,7 +258,9 @@
 #'
 #' Every measure needs overlap: if the propensity (`W.hat`, estimated or
 #' supplied) is exactly 0 or 1 for any patient, the doubly robust scores are
-#' undefined and the call stops.
+#' undefined and the call stops. Propensities at or beyond 0.05 and 0.95 give
+#' one warning with their range, which grf itself would repeat for every
+#' estimand and subgroup.
 #'
 #' Requested combinations that are not available -- `"OR"` for a continuous
 #' outcome or RMST, a relative measure for anything but the ATE, a survival
@@ -316,7 +318,8 @@
 #'     \item{`fit`}{The grf forest.}
 #'   }
 #'   Analysis metadata is attached as `attr(x, "analysis")`, including the
-#'   covariates actually used, the treated level and the seed of the forest.
+#'   covariates actually used, the treated level, the propensity range
+#'   (`ps_range`) and the seed of the forest.
 #'   Rows missing `cat_var` or the outcome are dropped. Missing covariates are
 #'   left to grf, and each subgroup row, `p_het` and [plt_hte_dep()] panel
 #'   uses the patients whose value of that covariate is observed.
@@ -571,8 +574,20 @@ get_hte <- function(data,
   z  <- stats::qnorm(1 - (1 - conf_level) / 2)
   event_risk <- identical(target, "survival.probability")
 
-  overall <- .hte_estimate(fit, s, rep(TRUE, length(W)), grid, event_risk, z,
-                           "Overall", beyond)
+  # grf repeats its overlap warning in every average_treatment_effect() call,
+  # once per estimand and subgroup (18 times in one call, measured), so the
+  # estimates below keep it quiet and one warning covers the whole sample.
+  ps_rng    <- range(fit$W.hat)
+  ps_warned <- FALSE
+  quiet_ps  <- function(expr) withCallingHandlers(expr, warning = function(w) {
+    if (startsWith(conditionMessage(w), "Estimated treatment propensities")) {
+      ps_warned <<- TRUE
+      invokeRestart("muffleWarning")
+    }
+  })
+
+  overall <- quiet_ps(.hte_estimate(fit, s, rep(TRUE, length(W)), grid,
+                                    event_risk, z, "Overall", beyond))
   stats_tbl <- tibble::as_tibble(data.frame(
     method = method, overall, n = length(W), n_treat = sum(W),
     stringsAsFactors = FALSE))
@@ -582,7 +597,7 @@ get_hte <- function(data,
     # Plug-in weights matching each estimand, for the descriptive cate_mean.
     h <- list(ATE = rep(1, length(W)), ATT = W, ATC = 1 - W,
               ATO = fit$W.hat * (1 - fit$W.hat))
-    sub_tbl <- do.call(rbind, lapply(sub_var, function(v) {
+    sub_tbl <- quiet_ps(do.call(rbind, lapply(sub_var, function(v) {
       g <- droplevels(as.factor(data[[v]]))
       rows <- do.call(rbind, lapply(levels(g), function(lv) {
         idx <- g %in% lv                 # FALSE where `v` is missing
@@ -615,10 +630,16 @@ get_hte <- function(data,
         }
       }
       rows
-    }))
+    })))
     rownames(sub_tbl) <- NULL
     sub_tbl <- tibble::as_tibble(sub_tbl)
   }
+  if (ps_warned)
+    warning(sprintf("Estimated propensities of `%s` range from %.3f to %.3f; grf flags values at or beyond 0.05 and 0.95, where effects are poorly identified. %s",
+                    cat_var, ps_rng[1L], ps_rng[2L],
+                    if (is_surv) "Trimming to the region of overlap, as get_PSW(trim_args = list(method = \"cr\")) does, is more stable."
+                    else "estimand = \"ATO\", or trimming to the region of overlap as get_PSW(trim_args = list(method = \"cr\")) does, is more stable."),
+            call. = FALSE)
 
   data$.cate     <- s$tau
   data$.dr_score <- s$g1 - s$g0
@@ -651,8 +672,8 @@ get_hte <- function(data,
       sub_var = sub_var, adj_var = adj_var, covariates = covars,
       estimand = estimand, measure = measure, target = target,
       time = if (is_surv) time else NULL, conf_level = conf_level,
-      n = length(W), n_treat = sum(W), seed = fit[["seed"]],
-      call = match.call()))
+      n = length(W), n_treat = sum(W), ps_range = ps_rng,
+      seed = fit[["seed"]], call = match.call()))
 }
 
 
@@ -669,6 +690,8 @@ print.hte_res <- function(x, ...) {
               a$cat_var, a$treated, paste(a$outcome, collapse = " / "),
               if (is.null(a$time)) "" else
                 sprintf(", target = %s at time = %s", a$target, format(a$time))))
+  cat(sprintf("  propensity range %.3f to %.3f\n", a$ps_range[1L],
+              a$ps_range[2L]))
   cat("\n")
   print(x$stats)
   if (!is.null(x$subgroup)) {

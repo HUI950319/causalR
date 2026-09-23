@@ -120,7 +120,8 @@ CATE, and \code{.dr_score}, the AIPW score (equal to
 \item{\code{fit}}{The grf forest.}
 }
 Analysis metadata is attached as \code{attr(x, "analysis")}, including the
-covariates actually used, the treated level and the seed of the forest.
+covariates actually used, the treated level, the propensity range
+(\code{ps_range}) and the seed of the forest.
 Rows missing \code{cat_var} or the outcome are dropped. Missing covariates are
 left to grf, and each subgroup row, \code{p_het} and \code{\link[=plt_hte_dep]{plt_hte_dep()}} panel
 uses the patients whose value of that covariate is observed.
@@ -156,7 +157,9 @@ estimates contrasts of mean outcomes, which a hazard ratio is not.
 
 Every measure needs overlap: if the propensity (\code{W.hat}, estimated or
 supplied) is exactly 0 or 1 for any patient, the doubly robust scores are
-undefined and the call stops.
+undefined and the call stops. Propensities at or beyond 0.05 and 0.95 give
+one warning with their range, which grf itself would repeat for every
+estimand and subgroup.
 
 Requested combinations that are not available -- \code{"OR"} for a continuous
 outcome or RMST, a relative measure for anything but the ATE, a survival

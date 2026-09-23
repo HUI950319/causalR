@@ -309,6 +309,29 @@ test_that("per-row grf_args given for every row of `data` follow the rows kept",
   expect_equal(res$fit$W.hat, rep(0.4, nrow(d) - 5L))
 })
 
+test_that("grf's overlap warnings collapse into one per call", {
+  skip_if_not_installed("grf")
+  d <- hte_bin_data()
+  e <- pmin(pmax(stats::plogis(3 * d$x2), 0.02), 0.98)  # bounded, poor overlap
+  set.seed(5)
+  d$z <- stats::rbinom(nrow(d), 1, e)
+  w <- character()
+  res <- withCallingHandlers(
+    suppressMessages(get_hte(d, "z", sub_var = c("sex", "stage"),
+                             adj_var = c("age", "x2"), surv = "y",
+                             estimand = c("ATE", "ATT", "ATC"),
+                             grf_args = c(hte_args, list(W.hat = e)))),
+    warning = function(cnd) {
+      w <<- c(w, conditionMessage(cnd))
+      invokeRestart("muffleWarning")
+    })
+  expect_length(w, 1L)
+  expect_match(w, "Estimated propensities of `z` range from 0.020 to 0.980")
+  expect_equal(attr(res, "analysis")$ps_range, c(0.02, 0.98))
+  expect_true(any(grepl("propensity range 0.020 to 0.980",
+                        capture.output(print(res)), fixed = TRUE)))
+})
+
 test_that("continuous outcomes give a ratio of means but no OR", {
   skip_if_not_installed("grf")
   d <- hte_bin_data()
