@@ -201,7 +201,11 @@
 #'   \itemize{
 #'     \item `TRUE` (default): survival outcome in the fixed columns `time`
 #'       (follow-up) and `DSS` (event, 0/1), fitted with
-#'       [grf::causal_survival_forest()].
+#'       [grf::causal_survival_forest()]. Every `DSS = 0` counts as
+#'       censoring, a death from another cause included, so \eqn{S(t)} is
+#'       net survival: the chance of no disease-specific death by \eqn{t} had
+#'       other-cause deaths not occurred, assuming they are independent of it
+#'       given the covariates. It is not one minus the cumulative incidence.
 #'     \item A single column name: binary (coded 0/1) or continuous outcome,
 #'       fitted with [grf::causal_forest()].
 #'     \item `FALSE` (competing risks in `get_eff()`) is rejected: grf has no

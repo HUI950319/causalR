@@ -47,7 +47,11 @@ dates, are rejected: convert them to numbers first.}
 \itemize{
 \item \code{TRUE} (default): survival outcome in the fixed columns \code{time}
 (follow-up) and \code{DSS} (event, 0/1), fitted with
-\code{\link[grf:causal_survival_forest]{grf::causal_survival_forest()}}.
+\code{\link[grf:causal_survival_forest]{grf::causal_survival_forest()}}. Every \code{DSS = 0} counts as
+censoring, a death from another cause included, so \eqn{S(t)} is
+net survival: the chance of no disease-specific death by \eqn{t} had
+other-cause deaths not occurred, assuming they are independent of it
+given the covariates. It is not one minus the cumulative incidence.
 \item A single column name: binary (coded 0/1) or continuous outcome,
 fitted with \code{\link[grf:causal_forest]{grf::causal_forest()}}.
 \item \code{FALSE} (competing risks in \code{get_eff()}) is rejected: grf has no
