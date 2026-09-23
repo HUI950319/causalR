@@ -291,6 +291,24 @@ test_that("missing covariates go to grf; only cat_var and the outcome drop rows"
   expect_false(is.na(imp$p_het[imp$variable == "age"]))
 })
 
+test_that("per-row grf_args given for every row of `data` follow the rows kept", {
+  skip_if_not_installed("grf")
+  d <- hte_bin_data(n = 400L)
+  d$y[1:5] <- NA
+  res <- get_hte(d, "z", adj_var = c("age", "x2"), surv = "y",
+                 grf_args = c(hte_args,
+                              list(W.hat    = rep(0.5, nrow(d)),
+                                   clusters = rep(1:40, length.out = nrow(d)))))
+  expect_identical(nrow(res$data), nrow(d) - 5L)
+  expect_equal(res$fit$W.hat, rep(0.5, nrow(d) - 5L))
+  expect_length(res$fit$clusters, nrow(d) - 5L)
+
+  # fields already matching the rows analysed pass unchanged
+  res <- get_hte(d, "z", adj_var = c("age", "x2"), surv = "y",
+                 grf_args = c(hte_args, list(W.hat = rep(0.4, nrow(d) - 5L))))
+  expect_equal(res$fit$W.hat, rep(0.4, nrow(d) - 5L))
+})
+
 test_that("continuous outcomes give a ratio of means but no OR", {
   skip_if_not_installed("grf")
   d <- hte_bin_data()

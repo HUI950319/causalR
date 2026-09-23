@@ -228,8 +228,10 @@
 #'   `target` defaults to `"survival.probability"` (grf's own default is
 #'   `"RMST"`); `target = "RMST"` switches to restricted mean survival time up
 #'   to `time`. Per-row fields (`W.hat`, `Y.hat`, `sample.weights`,
-#'   `clusters`) must match the complete rows analysed, and `clusters` and
-#'   `sample.weights` are only supported with `measure = "diff"`.
+#'   `clusters`) may be given for every row of `data` -- rows dropped for a
+#'   missing `cat_var` or outcome are dropped from them too -- or for the
+#'   rows analysed only. `clusters` and `sample.weights` are only supported
+#'   with `measure = "diff"`.
 #' @param verbose Logical. `TRUE` reports how many rows were dropped for a
 #'   missing `cat_var` or outcome. Default `FALSE`.
 #'
@@ -447,6 +449,7 @@ get_hte <- function(data,
   # Only the exposure and the outcome must be complete. grf splits on missing
   # covariates itself, so dropping those rows -- or letting a sub_var shrink
   # the overall sample -- would only throw patients away.
+  keep <- stats::complete.cases(data[c(cat_var, outcome)])
   data <- .sens_complete(data, c(cat_var, outcome), verbose)
   empty <- covars[vapply(data[covars], function(x) all(is.na(x)), logical(1L))]
   if (length(empty))
@@ -484,6 +487,12 @@ get_hte <- function(data,
   grf_args <- .merge_named_arg(
     grf_args, list(), "grf_args",
     allowed = setdiff(names(formals(fun)), c("X", "Y", "W", "D", "horizon")))
+  # A per-row field given for every row of `data` follows the rows kept above;
+  # one already matching the rows analysed passes unchanged.
+  for (f in intersect(c("W.hat", "Y.hat", "sample.weights", "clusters"),
+                      names(grf_args)))
+    if (!all(keep) && length(grf_args[[f]]) == length(keep))
+      grf_args[[f]] <- grf_args[[f]][keep]
   target <- NULL
   if (is_surv) {
     target <- match.arg(

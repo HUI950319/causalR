@@ -80,8 +80,10 @@ near-null effect without warning, and with fewer than 10 it warns.}
 \code{target} defaults to \code{"survival.probability"} (grf's own default is
 \code{"RMST"}); \code{target = "RMST"} switches to restricted mean survival time up
 to \code{time}. Per-row fields (\code{W.hat}, \code{Y.hat}, \code{sample.weights},
-\code{clusters}) must match the complete rows analysed, and \code{clusters} and
-\code{sample.weights} are only supported with \code{measure = "diff"}.}
+\code{clusters}) may be given for every row of \code{data} -- rows dropped for a
+missing \code{cat_var} or outcome are dropped from them too -- or for the
+rows analysed only. \code{clusters} and \code{sample.weights} are only supported
+with \code{measure = "diff"}.}
 
 \item{verbose}{Logical. \code{TRUE} reports how many rows were dropped for a
 missing \code{cat_var} or outcome. Default \code{FALSE}.}
