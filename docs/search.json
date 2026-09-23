@@ -13992,6 +13992,692 @@
     ]
   },
   {
+    "objectID": "notes/unihtee.html",
+    "href": "notes/unihtee.html",
+    "title": "unihtee 包函数手册",
+    "section": "",
+    "text": "核对环境与证据边界\nunihtee 回答的问题只有一个：在一堆基线协变量里，哪些变量身上的治疗效应 和平均水平不一样？ 它不建树、不切亚组、不输出个体化治疗规则， 而是对每一个候选变量单独给出一个变量重要性参数（TEM-VIP）、 一个标准误、一个 p 值和一个 BH 校正后的 p 值—— 形态上就是一张”按 p 值排序的变量表”，可以直接当作高维筛选的第一道工序。\n它与本书里其它几个包的分工是清楚的：model4you 和 StratifiedMedicine 产出的是 树与亚组，grf 产出的是个体化 CATE，而 unihtee 产出的是 逐变量的检验结果。三者互为补充，不互相替代。\n本部分是该包的函数用法手册，逐个覆盖 官方文档 与包内帮助库里的全部 23 个帮助主题——其中只有 1 个是导出函数（unihtee()）， 2 个是 S3 方法，其余 20 个是内部函数，但它们决定了这个包在你数据上的实际行为， 所以本手册一并展开。每页给出参数逐项说明、可直接运行的代码、返回对象结构， 以及本机实际运行后发现的默认值陷阱与失效路径。\n本手册核对截止 2026 年 9 月 20 日，环境为：\n证据分三级，正文中逐处标明：\n本手册不在本站渲染时执行代码：所有代码块都是静态的， 展示的输出是在上述环境中单独运行后粘贴回来的。 glmnet/ranger 一类学习器带交叉验证随机性，本手册对每处随机结果都标注了种子。",
+    "crumbs": [
+      "unihtee 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee.html#核对环境与证据边界",
+    "href": "notes/unihtee.html#核对环境与证据边界",
+    "title": "unihtee 包函数手册",
+    "section": "",
+    "text": "项目\n值\n\n\n\n\n包版本\nunihtee 0.0.3（GitHub insightsengineering/unihtee，SHA 9d68472，不在 CRAN）\n\n\nR\nWindows R 4.4.3\n\n\n关键依赖\nsl3 1.4.5、data.table 1.18.2.1、origami 1.0.8、ggplot2 4.0.2\n\n\n学习器侧\nxgboost 3.2.1.1、glmnet 5.0、ranger 0.18.0、earth 5.3.4\n\n\n示例数据\n官方 README 的模拟 DGP（n = 500，p = 10）、TH.data::GBSG2（n = 686，299 个事件）\n\n\n\n\n\n文档——包自带帮助页、DESCRIPTION/NEWS 与官方 pkgdown 站点的原文；\n源码——本机已安装包的函数体（unihtee::: 可复核）；\n实测——在上述环境下实际运行的输出。\n\n\n\n\n\n\n\n\n重要六处必须先知道的实测结论\n\n\n\n它们全部影响默认调用，且大多不报错：\n\n不传 effect 就必定报错。 函数签名写的是 effect = c(\"absolute\", \"relative\")，看上去可省略， 但 plugin_estimator() 拿到的是没有 match.arg() 过的原始向量， 于是抛 the condition has length &gt; 1。反直觉的是 cross_fit = TRUE 这条路径不受影响，因为它走的是另一个分支。 见第 2 页。\neffect = \"relative\" 不能和 outcome_type = \"continuous\" 一起用。 连续结局会被先做 min–max 缩放到 \\([0,1]\\)，相对效应分支要除以缩放后的 \\(\\hat{Q}\\)，最小的那几个观测把它除爆。实测 SE = 5 077 385， 而且估计值随结局单位线性变化（说明它压根不是一个对数尺度的量）。 不报错。见第 2 页。\n默认条件结局学习器不含交互，于是 plug-in 估计恒为 0。 帮助页写的是 “a generalized linear model with one- and two-way interactions”， 源码里却是 sl3::Lrnr_glm_fast$new()——纯主效应。 实测 plug-in CATE 的标准差是 \\(5.3\\times10^{-17}\\)， 全部 TEM-VIP plug-in 估计精确为 0。整个信号都来自 EIF 修正项。 见第 3 页。\n方差项里有一个静默的回收错误。 compute_eif() 写的是 centred_modifiers_dt^2 / modifier_vars * plugin_estimates， 而 centred_modifiers_dt 是 data.table、后两者是普通向量—— R 会按行而不是按列回收；观测数恰好是变量数的整数倍时连警告都没有。 后果：只要 plug-in 估计非 0 且各变量方差不同，报告的 SE 就是错的。 实测一个方差为 100 的变量 SE 被放大 277 倍。 默认学习器下 plug-in 恒为 0，这个项正好消失，所以平时看不出来。 见第 4 页。\n生存结局的 censoring 列是「1 = 删失、0 = 事件」，与 R 生存数据惯例相反。 传反了不报错：GBSG2 上 ACE 从 0.665 变成 0.980，排第一的变量从 progrec 变成 estrec。另外默认的 failure_hazard_estimator = sl3::Lrnr_xgboost$new() 在 xgboost ≥ 3.x 下 必定报 ALTLIST classes must provide a Set_elt method。 见第 5 页。\n灵活学习器 + 不交叉拟合 = 灾难性的乐观。 fit_cond_outcome() 在 cross_fit = FALSE 时用样本内预测，随机森林把残差压到几乎为 0， AIPW 修正项随之塌缩。实测 Lrnr_ranger 下估计 0.589（真值 1）、 SE 0.062（交叉拟合后是 0.170），p 值直接打到 0。 见第 3 页。",
+    "crumbs": [
+      "unihtee 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee.html#这个包在估计什么",
+    "href": "notes/unihtee.html#这个包在估计什么",
+    "title": "unihtee 包函数手册",
+    "section": "这个包在估计什么",
+    "text": "这个包在估计什么\n给定 \\(O = (W, A, Y) \\sim P_0\\)：\\(W\\) 是 \\(p\\) 个基线协变量，\\(A \\in \\{0,1\\}\\) 是治疗， \\(Y\\) 是结局。对每一个候选修饰变量 \\(W_j\\)，unihtee 估计\n\\[\n\\Psi_j(P_0) \\;=\\;\n\\frac{\\operatorname{Cov}_{P_0}\\!\\bigl[\\,\\tau(W),\\; W_j \\,\\bigr]}\n     {\\operatorname{Var}_{P_0}[W_j]},\n\\qquad\n\\tau(W) = \\mathbb{E}[Y \\mid A=1, W] - \\mathbb{E}[Y \\mid A=0, W].\n\\]\n分子分母合起来就是把 CATE 对单个 \\(W_j\\) 做一元最小二乘回归得到的斜率。 它回答的是”\\(W_j\\) 每增加一个单位，治疗效应平均改变多少”， 而不是”\\(W_j\\) 是不是出现在某棵树的分裂里”。\neffect = \"relative\" 把 \\(\\tau\\) 换成对数比：\n\\[\n\\Gamma_j(P_0) \\;=\\;\n\\frac{\\operatorname{Cov}_{P_0}\\!\\bigl[\\,\n  \\log \\mathbb{E}[Y \\mid A=1, W] - \\log \\mathbb{E}[Y \\mid A=0, W],\\; W_j \\bigr]}\n     {\\operatorname{Var}_{P_0}[W_j]}.\n\\]\n四种「结局类型 × 效应尺度」组合各自对应一个不同的 \\(\\tau\\)：\n\n\n\n\n\n\n\n\n\noutcome_type\neffect\n\\(\\tau(W)\\) 是什么\n可用性\n\n\n\n\n\"continuous\"\n\"absolute\"\nCATE，原始结局单位\n默认路径，最稳\n\n\n\"continuous\"\n\"relative\"\n缩放后结局的对数比\n不要用，见上面第 2 条\n\n\n\"binary\"\n\"absolute\"\n风险差\n可用\n\n\n\"binary\"\n\"relative\"\n对数风险比\n可用，常比绝对尺度更灵敏\n\n\n\"time-to-event\"\n\"absolute\"\n截至 \\(t\\) 的 RMST 之差\n可用，需分箱与标准化\n\n\n\"time-to-event\"\n\"relative\"\n\\(\\log S(t\\mid 1,W) - \\log S(t\\mid 0,W)\\)\n可用但实测最不稳\n\n\n\n一次调用内部走的是这条流水线：\ndata（宽表）\n   │  ① 连续结局 min–max 缩放到 [0,1]；生存结局展开成长表 tte_data_melt()\n   ▼\n   │  ② 拟合 nuisance：倾向评分 g(W)，以及 Q(a,W) 或 (失败风险, 删失风险)\n   ▼\n   │  ③ 造出双稳健伪结局 AIPW_i，并按每个 W_j 计算有效影响函数 EIF\n   ▼\n   │  ④ 点估计：plugin / one-step / TMLE 三选一（默认 TMLE）\n   ▼\n   │  ⑤ test_hypotheses()：SE = sd(EIF)/√n，z 检验，±1.96 区间，BH 校正\n   ▼\ntemvip_inference_tbl（按 p 值升序）+ ace_estimate + data\n\n\n\n\n\n\n注记one-step 估计量其实就是”AIPW 伪结局的一元回归斜率”\n\n\n\n源码层面可以把它写死：one_step_estimator() 返回的正是\n\\[\n\\hat\\Psi_j^{\\text{1-step}}\n= \\frac{1}{n}\\sum_{i=1}^{n}\n  \\frac{(W_{ij} - \\bar W_j)}{\\widehat{\\operatorname{Var}}(W_j)}\\,\\mathrm{AIPW}_i\n= \\frac{n-1}{n}\\cdot\n  \\frac{\\widehat{\\operatorname{Cov}}(W_j, \\mathrm{AIPW})}\n       {\\widehat{\\operatorname{Var}}(W_j)} .\n\\]\n本机手工复算与 unihtee() 的输出在 10 个变量上最大差 \\(1.95\\times10^{-3}\\)， 比值恰好是 \\(499/500\\)。推导与验证代码见 第 4 页。\n这个恒等式解释了这个包的两个特征：它天然是”每个变量一个数”的边际方法， 不做联合选择；以及它在 \\(n\\) 不大时的功效上限，就是同样一批 \\(\\mathrm{AIPW}\\) 伪结局能提供的信息量——所以不要指望换一个更花哨的学习器能把功效换出来， 能换来的是点估计的无偏性（见下面的最小例子）。",
+    "crumbs": [
+      "unihtee 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee.html#函数地图",
+    "href": "notes/unihtee.html#函数地图",
+    "title": "unihtee 包函数手册",
+    "section": "函数地图",
+    "text": "函数地图\n23 个帮助主题按角色归类如下，每行给出所在页面。\n\n唯一的导出函数\n\n\n\n函数\n作用\n页面\n\n\n\n\nunihtee()\n全部功能的唯一入口\n2. unihtee()\n\n\n\n\n\nS3 方法\n\n\n\n函数\n作用\n页面\n\n\n\n\nprint.unihtee()\n打印结果表\n6. 结果可视化\n\n\nplot.unihtee()\n单个变量的 TEM-VIP 回归线图\n6. 结果可视化\n\n\n\n\n\nnuisance 估计与交叉拟合\n\n\n\n函数\n作用\n页面\n\n\n\n\nfit_prop_score()\n倾向评分 \\(g(W)\\)，带截断\n3. nuisance 与学习器\n\n\nfit_cond_outcome()\n条件结局 \\(Q(a, W)\\) 及两个反事实预测\n3. nuisance 与学习器\n\n\nfit_failure_hazard()\n条件失败风险（生存）\n3. nuisance 与学习器\n\n\nfit_censoring_hazard()\n条件删失风险（生存）\n3. nuisance 与学习器\n\n\ncross_fit_fold()\n单折交叉拟合，origami 回调\n3. nuisance 与学习器\n\n\n\n\n\n估计量与推断\n\n\n\n函数\n作用\n页面\n\n\n\n\ncompute_eif()\n有效影响函数，全包的核心\n4. 三个估计量\n\n\nplugin_estimator()\n插值估计\n4. 三个估计量\n\n\none_step_estimator()\n一步估计\n4. 三个估计量\n\n\ntml_estimator()\n靶向极大似然估计\n4. 三个估计量\n\n\none_step_ate_estimator()、tml_ate_estimator()\n边际 ATE（非生存、绝对）\n4. 三个估计量\n\n\none_step_estimator_ate_log_outcome()、tml_estimator_ate_log_outcome()\n边际对数效应（非生存、相对）\n4. 三个估计量\n\n\none_step_rmst_diff_estimator()、tml_rmst_diff_estimator()\n边际 RMST 之差（生存、绝对）\n4. 三个估计量\n\n\none_step_estimator_rmst_log_outcome()、tml_estimator_rmst_log_outcome()\n边际对数生存比（生存、相对）\n4. 三个估计量\n\n\ntest_hypotheses()\nSE、z、95% 区间、BH 校正\n4. 三个估计量\n\n\nbound_precision()\n把 \\([0,1]\\) 的量截断到 \\([10^{-6}, 1-10^{-6}]\\)\n4. 三个估计量\n\n\n\n\n\n生存数据\n\n\n\n函数\n作用\n页面\n\n\n\n\ntte_data_melt()\n宽表展开成”人 × 时间”长表\n5. 生存结局\n\n\n\n第一页TEM-VIP 参数先把参数本身讲清楚， 最后一页实测清单与工作流汇总全部失效路径与一套可照抄的流程。",
+    "crumbs": [
+      "unihtee 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee.html#最小可运行例子",
+    "href": "notes/unihtee.html#最小可运行例子",
+    "title": "unihtee 包函数手册",
+    "section": "最小可运行例子",
+    "text": "最小可运行例子\n官方 README 的例子，逐字可跑：\nlibrary(unihtee)\nlibrary(MASS)\nlibrary(data.table)\nlibrary(sl3)\n\nset.seed(510)\n\nn_obs &lt;- 500\nw &lt;- mvrnorm(n = n_obs, mu = rep(0, 10), Sigma = diag(10))\nconfounder_names &lt;- paste0(\"w_\", seq_len(10))\ncolnames(w) &lt;- confounder_names\na &lt;- rbinom(n = n_obs, size = 1, prob = plogis(w[, 1] + w[, 2]))\ny &lt;- rnorm(n = n_obs, mean = w[, 1] + w[, 2] + a * w[, 3] - a * w[, 4])\ndt &lt;- as.data.table(cbind(w, a, y))\n\nunihtee(\n  data = dt,\n  confounders = confounder_names,\n  modifiers = confounder_names,\n  exposure = \"a\",\n  outcome = \"y\",\n  outcome_type = \"continuous\",\n  effect = \"absolute\"\n)\n    modifier     estimate        se           z      p_value    ci_lower\n 1:      w_3  1.044592804 0.1599527  6.53063474 6.549161e-11  0.73108547\n 2:      w_4 -0.869002514 0.1505155 -5.77351005 7.763697e-09 -1.16401281\n 3:      w_8  0.137803254 0.1138565  1.21032372 2.261547e-01 -0.08535554\n 4:      w_1  0.115258422 0.1168820  0.98610900 3.240796e-01 -0.11383036\n 5:      w_9  0.124150185 0.1295567  0.95826884 3.379272e-01 -0.12978102\n 6:     w_10 -0.097928234 0.1356345 -0.72200119 4.702937e-01 -0.36377176\n 7:      w_6  0.054845105 0.1157812  0.47369617 6.357166e-01 -0.17208602\n 8:      w_2 -0.064478504 0.1761998 -0.36593963 7.144101e-01 -0.40983019\n 9:      w_7 -0.014704981 0.1485610 -0.09898279 9.211519e-01 -0.30588450\n10:      w_5  0.001500152 0.1100365  0.01363321 9.891226e-01 -0.21417147\n      ci_upper  p_value_fdr\n 1:  1.3581001 6.549161e-10\n 2: -0.5739922 3.881849e-08\n 3:  0.3609620 6.758544e-01\n 4:  0.3443472 6.758544e-01\n ...\n真值是 \\(\\tau(W) = w_3 - w_4\\)，所以 \\(\\Psi_3 = 1\\)、\\(\\Psi_4 = -1\\)，其余为 0。 TMLE 给出 1.045 与 \\(-0.869\\)，BH 校正后只有这两个变量显著——这是这个包表现最好的形态。 整个调用 0.58 秒。\n为了有个尺子，同一份数据上跑 10 个 lm(y ~ a * w_j)：\n     Estimate Std. Error Pr(&gt;|t|)\nw_3    0.7602     0.1569   0.0000\nw_4   -0.8711     0.1482   0.0000\nw_1    0.1668     0.1686   0.3230\n...\n朴素 OLS 也挑出同样两个变量，SE 也相当，但 \\(w_3\\) 的系数被混杂压到 0.76—— \\(A\\) 依赖 \\(w_1, w_2\\)，\\(Y\\) 也依赖 \\(w_1, w_2\\)，一元交互模型没有调整它们。 unihtee 在这里的价值不是”找到了更多变量”，而是”点估计不偏”。 只按”真变量有没有进前几名”来评价这类方法，会正好把它唯一的优势评没了。",
+    "crumbs": [
+      "unihtee 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee.html#官方资料",
+    "href": "notes/unihtee.html#官方资料",
+    "title": "unihtee 包函数手册",
+    "section": "官方资料",
+    "text": "官方资料\n\n\n\n资源\n位置\n\n\n\n\npkgdown 站点\nhttps://insightsengineering.github.io/unihtee/main/\n\n\n源码仓库\nhttps://github.com/insightsengineering/unihtee\n\n\n唯一的 vignette\nvignette(\"using-unihtee\")，即站点的 Articles → Using unihtee\n\n\n主方法论文\nBoileau P, Leng N, Hejazi NS, van der Laan M, Dudoit S (2025). A Nonparametric Framework for Treatment Effect Modifier Discovery in High Dimensions. JRSS-B 87(1), 157–185. doi:10.1093/jrsssb/qkae084\n\n\n前作（预测性生物标志物）\nBoileau P, Qi NT, van der Laan MJ, Dudoit S, Leng N (2022). A flexible approach for predictive biomarker discovery. Biostatistics. doi:10.1093/biostatistics/kxac029\n\n\n同类参数的另一条线\nHines O, Diaz-Ordaz K, Vansteelandt S (2022). Variable importance measures for heterogeneous causal effects. arXiv:2204.06030\n\n\n学习器框架\nsl3：https://tlverse.org/sl3/；本书Super Learning 一章\n\n\n\n安装只能从 GitHub（它会连带拉 sl3，sl3 本身也不在 CRAN）：\nremotes::install_github(\"insightsengineering/unihtee\")",
+    "crumbs": [
+      "unihtee 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee.html#与本书其它页面的关系",
+    "href": "notes/unihtee.html#与本书其它页面的关系",
+    "title": "unihtee 包函数手册",
+    "section": "与本书其它页面的关系",
+    "text": "与本书其它页面的关系\n\n观察性研究中的效应修饰变量识别—— TEM-VIP 在整个方法谱系里的位置；\n快速筛选 modifier 的 R 包—— unihtee 与其它十几个包在同一批数据上的横向对照；\n筛选软件与方法核查—— “预后变量”与”效应修饰变量”被混为一谈的典型现场， unihtee 是少数在参数定义层面就只盯修饰的包；\n效应修饰的效应尺度—— effect = \"absolute\" 与 \"relative\" 在同一份数据上给出不同排序的原因；\nmodel4you 包函数手册、 StratifiedMedicine 包函数手册—— 树/亚组路线的两个对照实现。",
+    "crumbs": [
+      "unihtee 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/01-parameter.html",
+    "href": "notes/unihtee/01-parameter.html",
+    "title": "1. TEM-VIP：这个包到底在估计什么",
+    "section": "",
+    "text": "数据结构与识别假设\n在碰 unihtee() 的参数之前，必须先弄清它输出的那个数是什么。 这个包只有一个导出函数，但它能估计六个不同的参数， 而且返回表的列名对六种情形完全一样——看着一样，含义完全不同。\n观测 \\(O = (W, A, Y) \\sim P_0\\)，\\(n\\) 个独立样本：\n因果解释需要三条标准假设（官方 vignette 的表述）：",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>216</span>  <span class='chapter-title'>1. TEM-VIP 参数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/01-parameter.html#数据结构与识别假设",
+    "href": "notes/unihtee/01-parameter.html#数据结构与识别假设",
+    "title": "1. TEM-VIP：这个包到底在估计什么",
+    "section": "",
+    "text": "符号\n含义\n在 unihtee() 里的参数\n\n\n\n\n\\(W\\)\n\\(p\\) 个基线协变量（治疗前测量）\nconfounders\n\n\n\\(W_j\\)\n候选效应修饰变量，\\(\\{W_j\\} \\subseteq W\\)\nmodifiers\n\n\n\\(A \\in \\{0,1\\}\\)\n二值治疗\nexposure\n\n\n\\(Y\\)\n结局：连续 / 二分类 / 事件时间\noutcome\n\n\n\\(\\Delta\\)\n右删失指示（仅生存）\ncensoring\n\n\n\n\n\n无未测量混杂：\\(Y^{(a)} \\perp A \\mid W\\)；\n正性：\\(0 &lt; P(A = 1 \\mid W) &lt; 1\\) 几乎必然；\n删失的正性（仅生存）：在关心的时间窗内删失机制不把某类人全部删掉。\n\n\n\n\n\n\n\n注记假设不成立时，这个参数仍然是良定义的\n\n\n\nTEM-VIP 首先是一个统计参数——\\(P_0\\) 的一个泛函，不需要任何因果假设就能估计。 上面三条假设只负责把它翻译成因果语言。 所以在混杂没调干净的观察性数据上，unihtee() 照样会给你一张显著性表， 只是表里的”效应修饰”读作”在调整了你给的 confounders 之后， \\(W_j\\) 与条件结局差的边际关联”。这一区分在 筛选软件与方法核查里反复出现。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>216</span>  <span class='chapter-title'>1. TEM-VIP 参数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/01-parameter.html#绝对尺度的-tem-vip",
+    "href": "notes/unihtee/01-parameter.html#绝对尺度的-tem-vip",
+    "title": "1. TEM-VIP：这个包到底在估计什么",
+    "section": "绝对尺度的 TEM-VIP",
+    "text": "绝对尺度的 TEM-VIP\n条件平均治疗效应（CATE）：\n\\[\n\\tau(W) \\;=\\; \\mathbb{E}_{P_0}[Y \\mid A = 1, W] - \\mathbb{E}_{P_0}[Y \\mid A = 0, W].\n\\]\n对第 \\(j\\) 个候选变量：\n\\[\n\\boxed{\\;\n\\Psi_j(P_0) \\;=\\;\n\\frac{\\operatorname{Cov}_{P_0}\\bigl[\\tau(W),\\, W_j\\bigr]}\n     {\\operatorname{Var}_{P_0}\\bigl[W_j\\bigr]}\n\\;}\n\\]\n三种等价读法，任选一种记住：\n\n一元回归斜率：把（不可观测的）\\(\\tau(W)\\) 对 \\(W_j\\) 做最小二乘，斜率就是 \\(\\Psi_j\\)。\n单位解释：\\(W_j\\) 每上升一个单位，治疗效应平均改变 \\(\\Psi_j\\) 个结局单位。\n投影：\\(\\Psi_j\\) 是 \\(\\tau(W)\\) 在 \\(\\{a + b W_j\\}\\) 这个一维仿射空间上的 \\(L^2(P_0)\\) 投影的斜率系数。\n\n\n\n\n\n\n\n警告\\(\\Psi_j\\) 是边际的，不是偏效应\n\n\n\n\\(\\Psi_j\\) 里没有”控制其它修饰变量”这回事。如果 \\(W_1\\) 是真修饰变量、 \\(W_2\\) 与 \\(W_1\\) 相关但本身不修饰，那么 \\(\\Psi_2 \\neq 0\\)—— 这是参数本身的性质，不是估计误差，交叉拟合、换学习器、加样本量都消不掉。\n这一点与 grf 的变量重要性、model4you::varimp() 都不同： 那两者是在联合模型里比较变量。把 unihtee 的结果当作”独立贡献”来读是错的。 效应修饰的效应尺度一页把 unihtee/uniCATE 的”单变量投影”与 TE-VIM 一类”联合重要性”的区别讲得更细。\n\n\n\n与几种常见量的关系\n\n\n\n\n\n\n\n你熟悉的量\n和 \\(\\Psi_j\\) 的关系\n\n\n\n\nlm(Y ~ A * W_j) 的交互系数\n当 \\(\\tau\\) 真的是 \\(W_j\\) 的线性函数、且无混杂时两者一致；有混杂时 OLS 有偏而 \\(\\Psi_j\\) 无偏（落地页最小例子里 0.76 vs 0.97，真值 1）\n\n\n个体化 CATE \\(\\hat\\tau_i\\)（grf 等）\n\\(\\Psi_j\\) 是把 \\(\\hat\\tau\\) 压缩成”每变量一个数”；反过来做不到\n\n\n树的分裂变量（model4you、MOB）\n树检验的是”模型参数在哪里不稳”，包含截距，即预后差异；\\(\\Psi_j\\) 从定义上只看 \\(\\tau\\)，不看 \\(\\mathbb{E}[Y\\mid A=0,W]\\)\n\n\n\\(\\operatorname{Cor}(\\tau, W_j)\\)\n差一个 \\(\\operatorname{sd}(\\tau)/\\operatorname{sd}(W_j)\\) 的因子；unihtee 用的是回归斜率，因此有量纲\n\n\n\n最后一行有实际后果：\\(\\Psi_j\\) 的量纲是「结局单位 / \\(W_j\\) 单位」， 所以不同变量之间的 \\(\\hat\\Psi_j\\) 不可直接比大小， 除非先把 \\(W\\) 标准化。排序应当看 \\(z\\) 或 \\(p\\)，不要看 estimate。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>216</span>  <span class='chapter-title'>1. TEM-VIP 参数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/01-parameter.html#相对尺度的-tem-vip",
+    "href": "notes/unihtee/01-parameter.html#相对尺度的-tem-vip",
+    "title": "1. TEM-VIP：这个包到底在估计什么",
+    "section": "相对尺度的 TEM-VIP",
+    "text": "相对尺度的 TEM-VIP\n\\[\n\\boxed{\\;\n\\Gamma_j(P_0) \\;=\\;\n\\frac{\\operatorname{Cov}_{P_0}\\bigl[\n  \\log \\mathbb{E}[Y \\mid A=1, W] - \\log \\mathbb{E}[Y \\mid A=0, W],\\; W_j\\bigr]}\n     {\\operatorname{Var}_{P_0}\\bigl[W_j\\bigr]}\n\\;}\n\\]\n即把 \\(\\tau\\) 换成对数比。对二分类结局，\\(\\mathbb{E}[Y\\mid A,W] = P(Y=1\\mid A,W)\\)， 于是括号里就是对数风险比。官方 vignette 说二分类结局上相对尺度 “often provides greater sensitivity”——本机在一个 \\(n=500\\) 的仿真里确实看到了 排序变化，但两把尺子挑出的头部变量并不相同，见 第 2 页。\n\n\n\n\n\n\n重要effect = \"relative\" 不要用在连续结局上\n\n\n\n源码把连续结局先 min–max 缩放到 \\([0,1]\\)，相对效应分支里要除以缩放后的 \\(\\hat Q(A_i, W_i)\\)。缩放后最小的那个观测的 \\(\\hat Q\\) 贴着 0，分母一小， 整条 EIF 就炸了。实测：\n# y ~ N(10 + w1 + w2 + a*w3 - a*w4, 1)，n = 500\nunihtee(dt, cn, cn, \"a\", \"y\", outcome_type = \"continuous\", effect = \"relative\")\n  Y -&gt; (Y+  0)*1 :  w_3 estimate =     3.6930   se = 5077385.1536   ace =   0.0770\n  Y -&gt; (Y+  0)*2 :  w_3 estimate =     7.3860   se = 10154770.3072  ace =   0.0770\n  Y -&gt; (Y+100)*1 :  w_3 estimate =     3.6930   se = 5077385.1536   ace =   0.0770\n  Y -&gt; (Y+100)*2 :  w_3 estimate =     7.3860   se = 10154770.3072  ace =   0.0770\n两件事同时暴露：SE 有 7 位数；估计值随结局的乘法变换线性变化—— 一个真正的对数尺度参数不会这样。原因是 test_hypotheses() 无条件地把估计乘上 rescale_factor = max(Y) - min(Y)，而这个换算只对绝对尺度成立。 对照绝对尺度的同一组变换：\n  Y -&gt; (Y+  0)*1 :  w_3 estimate =     0.9012   se =   0.1579\n  Y -&gt; (Y+  0)*2 :  w_3 estimate =     1.8025   se =   0.3157\n  Y -&gt; (Y+100)*1 :  w_3 estimate =     0.9012   se =   0.1579\n  Y -&gt; (Y+100)*2 :  w_3 estimate =     1.8025   se =   0.3157\n位移不变、随尺度线性——这才是 \\(\\Psi_j\\) 该有的行为。\n结论：相对尺度只用在 \"binary\" 和 \"time-to-event\" 上。 连续结局如果确实想要相对解释，先自己把 \\(Y\\) 取对数再按绝对尺度跑。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>216</span>  <span class='chapter-title'>1. TEM-VIP 参数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/01-parameter.html#生存结局的两个参数",
+    "href": "notes/unihtee/01-parameter.html#生存结局的两个参数",
+    "title": "1. TEM-VIP：这个包到底在估计什么",
+    "section": "生存结局的两个参数",
+    "text": "生存结局的两个参数\n事件时间结局需要先指定一个 time_cutoff \\(= t\\)。\n绝对（effect = \"absolute\"） —— 限制平均生存时间（RMST）之差：\n\\[\n\\Psi_j^{\\text{RMST}}(P_0) =\n\\frac{\\operatorname{Cov}_{P_0}\\Bigl[\n  \\int_0^{t} S(u \\mid 1, W)\\,du - \\int_0^{t} S(u \\mid 0, W)\\,du,\\; W_j\\Bigr]}\n     {\\operatorname{Var}_{P_0}[W_j]} .\n\\]\n相对（effect = \"relative\"） —— \\(t\\) 时刻生存概率的对数比：\n\\[\n\\Gamma_j^{S}(P_0) =\n\\frac{\\operatorname{Cov}_{P_0}\\bigl[\n  \\log S(t \\mid 1, W) - \\log S(t \\mid 0, W),\\; W_j\\bigr]}\n     {\\operatorname{Var}_{P_0}[W_j]} .\n\\]\n\n\n\n\n\n\n警告相对生存参数的口径：是 \\(t\\) 时刻的比，不是 RMST 的比\n\n\n\n本书效应修饰的效应尺度 把 unihtee(..., effect = \"relative\") 记作”log RMST 比”。 按 0.0.3 的源码，一步估计与 TMLE 用的都是 \\(t\\) 时刻生存概率的对数比：\n# unihtee:::compute_eif()，effect == \"relative\" 的生存分支\ndata[, `:=`(aipws, integral + log(surv_exp_est / surv_noexp_est))]\ntime_cutoff &lt;- max(data[[outcome]])\ndata &lt;- data[get(outcome) == time_cutoff, ]     # 只取 t 这一行\n# unihtee:::tml_estimator()，生存 + relative 的收尾\ndata_mod &lt;- data_mod[data_mod[, .I[.N], by = \"id\"]$V1]   # 每人最后一行 = t\nlog_diff &lt;- log(data_mod$surv_exp_est_star / data_mod$surv_noexp_est_star)\ncov(log_diff, data_mod[[mod]]) / mod_vars[[mod]]\n对数 RMST 比会写成 \\(\\log \\int_0^t S_1 - \\log \\int_0^t S_0\\)， 而上面是 \\(\\log S_1(t) - \\log S_0(t)\\)——先取对数再积分和先积分再取对数不是一回事。 额外的一处不一致：plugin_estimator() 的同一分支写的是 cumsum(int_weight * log(surv_exp_est / surv_noexp_est))， 也就是把对数比沿时间积了一次，与另两个估计量的口径不同。 插值估计只进入方差项（见第 4 页）， 所以它影响的是相对生存参数的 SE，不影响点估计。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>216</span>  <span class='chapter-title'>1. TEM-VIP 参数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/01-parameter.html#六种组合与源码分派",
+    "href": "notes/unihtee/01-parameter.html#六种组合与源码分派",
+    "title": "1. TEM-VIP：这个包到底在估计什么",
+    "section": "六种组合与源码分派",
+    "text": "六种组合与源码分派\nunihtee() 按 outcome_type × effect 分派到不同的估计量， 边际效应（ace_estimate）也跟着换：\n\n\n\n\n\n\n\n\n\n\noutcome_type\neffect\nTEM-VIP 的 \\(\\tau\\)\nace_estimate 的含义\n分派到的边际估计量\n\n\n\n\ncontinuous\nabsolute\nCATE\nATE\none_step_ate_estimator / tml_ate_estimator\n\n\ncontinuous\nrelative\n不要用\n—\none_step_estimator_ate_log_outcome / tml_estimator_ate_log_outcome\n\n\nbinary\nabsolute\n风险差\n边际风险差\n同上（ate）\n\n\nbinary\nrelative\n对数风险比\n边际对数风险比\n同上（ate_log）\n\n\ntime-to-event\nabsolute\nRMST 差\n边际 RMST 差\none_step_rmst_diff_estimator / tml_rmst_diff_estimator\n\n\ntime-to-event\nrelative\n\\(\\log S(t\\mid1,\\cdot) - \\log S(t\\mid0,\\cdot)\\)\n其边际均值\none_step_estimator_rmst_log_outcome / tml_estimator_rmst_log_outcome\n\n\n\n这 8 个边际估计量各自有独立帮助页，逐个说明见 第 4 页。\nace_estimate 不只是”顺手给的一个数”：它被用来把 EIF 中心化， 也是 plot.unihtee() 那条回归线的截距。见 第 6 页。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>216</span>  <span class='chapter-title'>1. TEM-VIP 参数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/01-parameter.html#一张图上的三个层次",
+    "href": "notes/unihtee/01-parameter.html#一张图上的三个层次",
+    "title": "1. TEM-VIP：这个包到底在估计什么",
+    "section": "一张图上的三个层次",
+    "text": "一张图上的三个层次\n                  ┌─────────────────────────────────────┐\n  个体            │  τ(W)  —— CATE，n 个数              │  grf、X-learner\n                  └──────────────┬──────────────────────┘\n                                 │  对单个 W_j 做一元投影\n                  ┌──────────────▼──────────────────────┐\n  变量            │  Ψ_j = Cov(τ, W_j)/Var(W_j)，p 个数 │  unihtee、uniCATE\n                  └──────────────┬──────────────────────┘\n                                 │  对 W 取期望\n                  ┌──────────────▼──────────────────────┐\n  总体            │  ATE = E[τ(W)]，1 个数              │  ace_estimate\n                  └─────────────────────────────────────┘\n往下走会丢信息、但会换来可检验性：\\(p\\) 个 \\(\\Psi_j\\) 各自有渐近正态的 \\(\\sqrt n\\)-一致估计量，可以做正式检验并做 BH 校正； 而 \\(\\tau(W)\\) 本身是一个非参数函数，没有 \\(\\sqrt n\\) 的置信带。 这就是为什么筛选阶段用 unihtee，而不是先估 CATE 再看哪个变量重要。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>216</span>  <span class='chapter-title'>1. TEM-VIP 参数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/01-parameter.html#接下来",
+    "href": "notes/unihtee/01-parameter.html#接下来",
+    "title": "1. TEM-VIP：这个包到底在估计什么",
+    "section": "接下来",
+    "text": "接下来\n\n第 2 页：unihtee() 的 18 个参数逐项说明与返回对象结构；\n第 3 页：四个 nuisance 怎么拟合、交叉拟合什么时候是必须的；\n第 4 页：plugin / one-step / TMLE 的源码级差异与那个静默的方差 bug。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>216</span>  <span class='chapter-title'>1. TEM-VIP 参数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/02-unihtee.html",
+    "href": "notes/unihtee/02-unihtee.html",
+    "title": "2. unihtee()：唯一的导出函数",
+    "section": "",
+    "text": "签名\n包里只有这一个函数被 export()。它的 18 个参数分成五组： 数据与角色（5 个）、生存专用（2 个）、参数选择（3 个）、 学习器与交叉拟合（7 个）、并行（1 个）。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>217</span>  <span class='chapter-title'>2. unihtee()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/02-unihtee.html#签名",
+    "href": "notes/unihtee/02-unihtee.html#签名",
+    "title": "2. unihtee()：唯一的导出函数",
+    "section": "",
+    "text": "unihtee(\n  data,                                                  # data.frame / data.table\n  confounders,                                           # 字符向量\n  modifiers,                                             # 字符向量，应为 confounders 子集\n  exposure,                                              # 单个列名\n  outcome,                                               # 单个列名\n  censoring = NULL,                                      # 仅生存；1 = 删失\n  time_cutoff = NULL,                                    # 仅生存\n  outcome_type = c(\"continuous\", \"binary\", \"time-to-event\"),\n  effect = c(\"absolute\", \"relative\"),                    # 必须显式传，见下\n  estimator = c(\"tmle\", \"onestep\"),\n  cross_fit = FALSE,\n  cross_fit_folds = 5,\n  cond_outcome_estimator     = sl3::Lrnr_glm_fast$new(),\n  prop_score_estimator       = sl3::Lrnr_glm_fast$new(),\n  prop_score_values = NULL,                              # 列名，不是数值向量\n  failure_hazard_estimator   = sl3::Lrnr_xgboost$new(),\n  censoring_hazard_estimator = sl3::Lrnr_xgboost$new(),\n  parallel = FALSE\n)",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>217</span>  <span class='chapter-title'>2. unihtee()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/02-unihtee.html#数据与角色",
+    "href": "notes/unihtee/02-unihtee.html#数据与角色",
+    "title": "2. unihtee()：唯一的导出函数",
+    "section": "数据与角色",
+    "text": "数据与角色\n\ndata\n任何能被 data.table::as.data.table() 接住的宽表，一人一行 （生存结局也是一人一行，长表由包内部自己展开）。函数第一件事是裁列：\nto_keep &lt;- unique(c(confounders, modifiers, exposure, outcome,\n                    prop_score_values, censoring))\ndata &lt;- data[, ..to_keep]\n没被列出的列直接丢弃，所以数据里有多余的 ID 列、时间列不会出问题。\n\n\nconfounders 与 modifiers\n\nconfounders：进入所有 nuisance 模型的调整变量集合。\nmodifiers：要输出 TEM-VIP 的候选变量，帮助页要求是 confounders 的子集。\n\n\n\n\n\n\n\n警告“必须是子集”这个要求没有被检查\n\n\n\n帮助页写 “This vector must be a subset of confounders”，但源码里没有任何断言。 实测传一个超集不报错也不警告：\nunihtee(dt, confounders = cn[1:5], modifiers = cn,   # 10 个 modifier，5 个 confounder\n        exposure = \"a\", outcome = \"y\",\n        outcome_type = \"continuous\", effect = \"absolute\")\n#&gt; 正常返回，排第一的仍是 w_3\n后果是安静的：w_6…w_10 的 TEM-VIP 被计算了， 但 nuisance 模型从没见过它们，于是这几个变量的估计既不双稳健也没有有效影响函数保证。 把 modifiers 写成 confounders 的子集是你自己的责任。\n\n\n\n\n\n\n\n\n警告因子型 modifier 直接报错\n\n\n\ndtf[, grp := factor(ifelse(w_5 &gt; 0, \"hi\", \"lo\"))]\nunihtee(dtf, c(cn, \"grp\"), c(cn, \"grp\"), \"a\", \"y\",\n        outcome_type = \"continuous\", effect = \"absolute\")\n#&gt; Error: Calling var(x) on a factor x is defunct.\n#&gt;   Use something like 'all(duplicated(x)[-1L])' to test for a constant vector.\n因为 compute_eif() 要算 var(data[[modifier]])。 因子放在 confounders 里没问题（sl3 自己会处理）：\nunihtee(dtf, confounders = c(cn, \"grp\"), modifiers = cn, ...)   # OK\n分类变量要当修饰变量看，必须先自己 one-hot 成 0/1 数值列—— 官方 vignette 的 “Data Requirements” 一节也是这么说的， 只是它没提不照做会报一个看不出病因的错。\n\n\n\n\nexposure、outcome\n单个列名。exposure 必须是 0/1 数值：源码里到处是 data[[exposure]] * prop_scores + (1 - data[[exposure]]) * (1 - prop_scores) 这样的算术，因子会直接算错或报错。\noutcome 的处理随 outcome_type 变：\n\n\n\n\n\n\n\noutcome_type\n对 outcome 做了什么\n\n\n\n\n\"continuous\"\nmin–max 缩放到 \\([0,1]\\)，rescale_factor = max - min，最后在 test_hypotheses() 里乘回去\n\n\n\"binary\"\n原样使用，rescale_factor = 1\n\n\n\"time-to-event\"\n当作时间列，交给 tte_data_melt() 展开\n\n\n\n缩放这一步是 TMLE 的需要（logistic fluctuation 要求结局在 \\([0,1]\\)）。 副作用是：estimate 与 se 都会被乘回 max - min， 所以连续结局下的 ci_lower/ci_upper 是原始单位的，可以直接读。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>217</span>  <span class='chapter-title'>2. unihtee()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/02-unihtee.html#生存专用",
+    "href": "notes/unihtee/02-unihtee.html#生存专用",
+    "title": "2. unihtee()：唯一的导出函数",
+    "section": "生存专用",
+    "text": "生存专用\n\ncensoring\n\n\n\n\n\n\n重要1 = 删失、0 = 事件——与 R 生存数据惯例相反\n\n\n\nsurvival::Surv(time, status) 里 status = 1 是事件。 unihtee 反过来。tte_data_melt() 的源码：\ncensored &lt;- obs_data[[censoring]]\n...\nif (censored && event_time &lt;= time_cutoff)      obs_data[num_reps, censoring] &lt;- 1\nif (censored == 0 && event_time &lt;= time_cutoff) obs_data[num_reps, \"failure\"]  &lt;- 1\n四个人的玩具数据，time_cutoff = 5：\nd &lt;- data.table(w_1 = c(0.5,-0.5,1,0), a = c(1,0,1,0),\n                t = c(2,3,5,5), cens_flag = c(0,1,0,1))\nunihtee:::tte_data_melt(d, \"w_1\", \"a\", \"t\", \"cens_flag\", 5, NULL)\n       id   w_1     a     t cens_flag failure  keep\n 1:     1   0.5     1     2         0       1     1     &lt;- cens_flag=0 =&gt; 记为事件\n 2:     1   0.5     1     3         0       0     0\n 3:     1   0.5     1     5         0       0     0\n 4:     2  -0.5     0     2         0       0     1\n 5:     2  -0.5     0     3         1       0     1     &lt;- cens_flag=1 =&gt; 记为删失\n 6:     2  -0.5     0     5         1       0     0\n 7:     3   1.0     1     2         0       0     1\n 8:     3   1.0     1     3         0       0     1\n 9:     3   1.0     1     5         0       1     1\n10:     4   0.0     0     2         0       0     1\n11:     4   0.0     0     3         0       0     1\n12:     4   0.0     0     5         1       0     1\n所以从 GBSG2 这类标准生存数据过来，必须写 1L - cens。\n传反了不报错。GBSG2 上的对照（15 个时间分箱，time_cutoff = 12， Lrnr_glmnet，协变量已标准化）：\n  正确编码: ace = 0.6648, 排第一 = progrec (p = 0.459)\n  传反了  : ace = 0.9797, 排第一 = estrec  (p = 0.315)\n边际效应大了 47%，头名变量也换了。这类错误只能靠事先检查 sum(censoring_col) 是不是等于删失人数来发现。\n\n\n\n\ntime_cutoff\n评估 RMST / 生存概率的时间点 \\(t\\)。它同时决定长表的行数：\n\\[\n\\text{长表行数} = n \\times \\bigl(\\#\\{\\text{原始数据里} &lt; t \\text{的不同时间}\\} + 1\\bigr).\n\\]\nGBSG2 的时间以天为单位，中位数以下就有 291 个不同取值， 按中位数截断的长表是 \\(686 \\times 292 = 200\\,312\\) 行。 必须先分箱，代价实测见第 5 页。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>217</span>  <span class='chapter-title'>2. unihtee()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/02-unihtee.html#参数选择",
+    "href": "notes/unihtee/02-unihtee.html#参数选择",
+    "title": "2. unihtee()：唯一的导出函数",
+    "section": "参数选择",
+    "text": "参数选择\n\noutcome_type\nmatch.arg()，省略即 \"continuous\"。\n\n\neffect\n\n\n\n\n\n\n重要这个参数看着可省略，其实不能省\n\n\n\nunihtee(dt, cn, cn, \"a\", \"y\", outcome_type = \"continuous\")   # 不传 effect\n#&gt; Error in unihtee(...) : the condition has length &gt; 1\n原因在源码里一眼可见：函数开头做了 param_effect &lt;- match.arg(effect)，但后面调 plugin_estimator() 时 传的是没匹配过的 effect：\nplugin_estimates &lt;- plugin_estimator(data = data, outcome = outcome,\n                                     modifiers = modifiers,\n                                     effect = effect,          # &lt;- 不是 param_effect\n                                     cond_outcome_fit = cond_outcome_fit,\n                                     failure_hazard_fit = failure_hazard_fit)\nplugin_estimator() 里 if (effect == \"absolute\") 于是拿到一个长度 2 的逻辑向量， R ≥ 4.2 对此直接报错。同一行下面的 compute_eif() 拿的是 param_effect，没事。\n反直觉的例外：cross_fit = TRUE 不受影响。 交叉拟合走的是另一个分支， plugin_estimator() 在 cross_fit_fold() 里被调用，而 unihtee() 传给它的是 已经匹配好的 param_effect：\nunihtee(dt, cn, cn, \"a\", \"y\", outcome_type = \"continuous\", cross_fit = TRUE)\n#&gt; 正常返回；top = w_3, estimate = 1.081\n所以同一个”省略 effect“的写法，开不开交叉拟合结果完全不同—— 一个报错，一个默默按 \"absolute\" 跑。永远显式写 effect =。\n\n\n\n\neffect = \"relative\" + outcome_type = \"continuous\"\n不报错，但结果无意义（SE 七位数），完整证据见 第 1 页的 callout。一句话：别这么配。\n\n\nestimator\n\"tmle\"（默认）或 \"onestep\"。两者的点估计不同、SE 几乎相同：\n# README 的数据，n = 500\n    modifier  onestep_est onestep_se    onestep_p     tmle_est   tmle_se       tmle_p\n 1:      w_3  0.974943032  0.1598217 1.059410e-09  1.044592804 0.1599527 6.549161e-11\n 2:      w_4 -0.922396554  0.1507034 9.321867e-10 -0.869002514 0.1505155 7.763697e-09\n 3:      w_8  0.125695800  0.1139188 2.698620e-01  0.137803254 0.1138565 2.261547e-01\n 4:      w_1  0.110196513  0.1170283 3.463858e-01  0.115258422 0.1168820 3.240796e-01\n...\nace onestep: 0.01948085   ace tmle: 0.01738359\nSE 只差在第四位小数，因为两条路径的方差都由同一个未靶向的影响函数算出， 仅有的差别是用来中心化的 ace_estimate 不同。 详见第 4 页。\n选择建议：默认 TMLE 即可；\"onestep\" 快一些（本机 n = 2000、p = 50 时 0.14 s vs 0.55 s），且有一个便于自查的闭式解（ 第 4 页）。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>217</span>  <span class='chapter-title'>2. unihtee()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/02-unihtee.html#学习器与交叉拟合",
+    "href": "notes/unihtee/02-unihtee.html#学习器与交叉拟合",
+    "title": "2. unihtee()：唯一的导出函数",
+    "section": "学习器与交叉拟合",
+    "text": "学习器与交叉拟合\n这四个参数都接受 sl3 的学习器对象（Lrnr_*$new()）或 Stack/Pipeline。 逐项说明与实测对照在第 3 页，这里只列帮助页与源码不一致之处。\n\n\n\n\n\n\n\n\n\n参数\n帮助页写的默认\n源码里的默认\n用于\n\n\n\n\ncond_outcome_estimator\n“GLM with one- and two-way interactions among all confounders and exposure”\nsl3::Lrnr_glm_fast$new()（纯主效应）\n连续、二分类\n\n\nprop_score_estimator\n“GLM with one- and two-way interactions among all confounders”\nsl3::Lrnr_glm_fast$new()（纯主效应）\n全部\n\n\nfailure_hazard_estimator\n“an XGBoost learner”\nsl3::Lrnr_xgboost$new()\n生存\n\n\ncensoring_hazard_estimator\n“an XGBoost learner”\nsl3::Lrnr_xgboost$new()\n生存\n\n\n\n前两行的后果不是”少了点灵活性”，而是插值估计精确为 0，见 第 3 页。 后两行在 xgboost ≥ 3.x 下必定报错，见 第 5 页。\n\ncross_fit、cross_fit_folds\n默认 FALSE / 5。用任何比 GLM 灵活的学习器时必须打开， 否则 nuisance 是样本内预测，SE 会被压到不可信， 实测证据在第 3 页。\n\n\nprop_score_values\n\n\n\n\n\n\n警告是列名，不是数值向量\n\n\n\n帮助页里 unihtee() 写的是 “An optional character”，但 compute_eif() 的帮助页写的是 “A numeric vector”。源码以前者为准：\nprop_score_fit &lt;- list(estimates = data[[prop_score_values]])\n传向量的报错会把你的整条倾向评分打印出来：\nunihtee(dt2, cn, cn, \"a\", \"y\", outcome_type = \"continuous\",\n        effect = \"absolute\", prop_score_values = dt2$true_ps)\n#&gt; Error: columns not found: [0.838838367797516, 0.685288560610673,\n#&gt;   0.203513083968037, 0.302653148575963, ... ]\n正确写法是先把已知倾向评分写成一列：\ndt2[, true_ps := plogis(w_1 + w_2)]\nunihtee(dt2, cn, cn, \"a\", \"y\", outcome_type = \"continuous\",\n        effect = \"absolute\", prop_score_values = \"true_ps\")\n   modifier estimate    se  p_value p_value_fdr\n1:      w_3    1.014 0.148 7.96e-12    7.96e-11\n2:      w_4   -0.883 0.151 4.95e-09    2.48e-08\n3:      w_1    0.146 0.120 2.25e-01    7.50e-01\n4:     w_10   -0.116 0.131 3.79e-01    8.94e-01\n比默认的估计倾向评分略准（1.014 / −0.883 对 1.045 / −0.869，真值 1 / −1）。 RCT 里用它是划算的：官方 vignette 指出，已知倾向评分能让绝对尺度的估计量 在条件结局模型错误设定时仍保持渐近线性。\n给了 prop_score_values 之后，fit_prop_score() 完全不会被调用， prop_score_estimator 保持默认值即可，传什么都不影响结果。\n\n\n\n\nparallel\n只在 cross_fit = TRUE 时有意义，走 origami 的 use_future。 不设 future::plan() 也不报错，只是退化成串行：\nunihtee(dt, cn, cn, \"a\", \"y\", outcome_type = \"continuous\",\n        effect = \"absolute\", cross_fit = TRUE, parallel = TRUE)\n#&gt; OK without a future plan, 1.2 s\n要真并行得自己先 future::plan(future::multisession, workers = 5)。 以本机实测的耗时量级（连续结局 n = 2000、p = 50 只要 0.55 秒）， 并行基本只对生存结局有意义。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>217</span>  <span class='chapter-title'>2. unihtee()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/02-unihtee.html#返回对象",
+    "href": "notes/unihtee/02-unihtee.html#返回对象",
+    "title": "2. unihtee()：唯一的导出函数",
+    "section": "返回对象",
+    "text": "返回对象\nfit &lt;- unihtee(dt, cn, cn, \"a\", \"y\",\n               outcome_type = \"continuous\", effect = \"absolute\")\n\nclass(fit)\n#&gt; [1] \"unihtee\" \"list\"\nnames(fit)\n#&gt; [1] \"temvip_inference_tbl\" \"ace_estimate\"         \"data\"\n\n\n\n元素\n类型\n内容\n\n\n\n\ntemvip_inference_tbl\ndata.table，length(modifiers) 行\n推断结果，按 p_value 升序\n\n\nace_estimate\n长度 1 的 numeric\n边际效应，含义随「结局 × 尺度」变（第 1 页的表）\n\n\ndata\ndata.table\n缩放前的原始数据副本，只保留用到的列\n\n\n\ntemvip_inference_tbl 的八列：\nClasses 'data.table' and 'data.frame':  10 obs. of  8 variables:\n $ modifier   : Factor w/ 10 levels \"w_1\",\"w_2\",\"w_3\",..\n $ estimate   : num   Ψ̂_j，已乘回 rescale_factor\n $ se         : num   sqrt(var(EIF)/n)，已乘回 rescale_factor\n $ z          : num   estimate / se\n $ p_value    : num   2 * min(pnorm(z), 1 - pnorm(z))，双侧\n $ ci_lower   : num   estimate - 1.96 * se     &lt;- 1.96 是写死的常数\n $ ci_upper   : num   estimate + 1.96 * se\n $ p_value_fdr: num   p.adjust(p_value, method = \"BH\")\n三个要点：\n\nmodifier 是 factor，按输入顺序设 level。做 merge/== 比较时 先 as.character()，否则容易撞上 level 不一致。\n区间用的是 1.96，不是 qnorm(0.975)（1.959964）。差别在第四位小数， 但如果你要和别的软件对 CI，这是一条已知的偏差来源。\np_value_fdr 是在这 length(modifiers) 个检验内部做的 BH。 如果你分批跑（比如按变量块分三次调用），三张表各自 BH， 合起来并不控制整体 FDR。\n\nfit$data 保留的是原始尺度的数据，这正是 plot.unihtee() 能把横轴画成原始 单位的原因（第 6 页）。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>217</span>  <span class='chapter-title'>2. unihtee()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/02-unihtee.html#sec-binary",
+    "href": "notes/unihtee/02-unihtee.html#sec-binary",
+    "title": "2. unihtee()：唯一的导出函数",
+    "section": "两个结局类型的实测对照",
+    "text": "两个结局类型的实测对照\n同一份数据（\\(n = 500\\)，\\(p = 10\\)，\\(\\tau = w_3 - w_4\\)）， 二分类结局 \\(Y \\sim \\text{Bern}(\\text{plogis}(-1 + w_1 + w_2 + a w_3 - a w_4))\\)：\nfor (eff in c(\"absolute\", \"relative\"))\n  print(unihtee(dtb, cn, cn, \"a\", \"y\", outcome_type = \"binary\", effect = eff))\n-- absolute   ace = 0.0059\n   modifier estimate    se  p_value p_value_fdr\n1:      w_3    0.142 0.041 0.000635     0.00635\n2:     w_10   -0.127 0.045 0.004810     0.02400\n3:      w_4   -0.110 0.044 0.012100     0.04030\n4:      w_6   -0.050 0.037 0.168000     0.42000\n\n-- relative   ace = 0.0843\n   modifier estimate    se  p_value p_value_fdr\n1:      w_4   -0.620 0.181 0.000607     0.00607\n2:      w_3    0.510 0.209 0.014600     0.07290\n3:     w_10   -0.366 0.171 0.032600     0.08970\n4:      w_2   -0.312 0.149 0.035900     0.08970\n两把尺子都把噪声变量 w_10 排进前三，且绝对尺度在 FDR &lt; 0.05 下报了它。 \\(n = 500\\)、\\(p = 10\\) 的二分类结局上，这个方法的功效不足以支撑”FDR 显著即真”的读法； 把阈值当成排序用、再在独立数据上确认，是更实际的用法。\n相对尺度的 ace = 0.0843 是边际对数风险比，绝对尺度的 0.0059 是 边际风险差——两个数不该互相对照着读。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>217</span>  <span class='chapter-title'>2. unihtee()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/02-unihtee.html#接下来",
+    "href": "notes/unihtee/02-unihtee.html#接下来",
+    "title": "2. unihtee()：唯一的导出函数",
+    "section": "接下来",
+    "text": "接下来\n\n第 3 页：四个 nuisance 函数、学习器怎么选、交叉拟合什么时候是必须的；\n第 5 页：生存路径的完整流程与全部坑；\n第 7 页：一页纸的检查清单。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>217</span>  <span class='chapter-title'>2. unihtee()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/03-nuisance.html",
+    "href": "notes/unihtee/03-nuisance.html",
+    "title": "3. nuisance 拟合与 sl3 学习器",
+    "section": "",
+    "text": "四个 nuisance 的分工\nunihtee 的双稳健性全靠四个 nuisance 参数。它们各有一个内部函数， 接口高度一致：fit_*(train_data, valid_data, learners, ...)， 返回一个已经算好反事实预测的 list。\n本页逐个展开，并给出两个决定成败的实测结论： 默认条件结局学习器让插值估计恒为 0； 不交叉拟合地用灵活学习器会让 SE 塌缩到不可信。\nunihtee() 只会用到其中三个：非生存路径是 fit_prop_score + fit_cond_outcome，生存路径是 fit_prop_score + fit_failure_hazard + fit_censoring_hazard。 源码用 is.null(cond_outcome_fit) 来判断走哪条路。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>218</span>  <span class='chapter-title'>3. nuisance 与 sl3 学习器</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/03-nuisance.html#四个-nuisance-的分工",
+    "href": "notes/unihtee/03-nuisance.html#四个-nuisance-的分工",
+    "title": "3. nuisance 拟合与 sl3 学习器",
+    "section": "",
+    "text": "函数\n估计的量\n协变量\n何时用\n\n\n\n\nfit_prop_score()\n\\(g(W) = P(A=1 \\mid W)\\)\nconfounders\n总是\n\n\nfit_cond_outcome()\n\\(Q(a, W) = \\mathbb{E}[Y \\mid A=a, W]\\)\nexposure + confounders\n连续、二分类\n\n\nfit_failure_hazard()\n\\(\\lambda(t \\mid a, W)\\)\noutcome(时间) + exposure + confounders\n生存\n\n\nfit_censoring_hazard()\n\\(\\lambda_C(t \\mid a, W)\\)\n同上\n生存",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>218</span>  <span class='chapter-title'>3. nuisance 与 sl3 学习器</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/03-nuisance.html#sec-prop",
+    "href": "notes/unihtee/03-nuisance.html#sec-prop",
+    "title": "3. nuisance 拟合与 sl3 学习器",
+    "section": "fit_prop_score()",
+    "text": "fit_prop_score()\nfit_prop_score(train_data, valid_data, learners, exposure, confounders)\n返回 list(estimates, fit)。两个细节：\n（1）outcome_type = \"binomial\" 是写死的。\ntrain_data_task &lt;- sl3::sl3_Task$new(data = train_data, covariates = confounders,\n                                     outcome = exposure, outcome_type = \"binomial\")\n所以 exposure 必须是 0/1；传别的会在 sl3 层面出问题。\n（2）倾向评分被截断在 \\(1/\\min(\\sqrt n, 1000)\\)。\ntruncation &lt;- 1/min(sqrt(nrow(train_data)), 1000)\nprop_score_est[prop_score_est &lt; truncation]       &lt;- truncation\nprop_score_est[prop_score_est &gt; (1 - truncation)] &lt;- 1 - truncation\n\n\n\n\n\n\n警告这个截断比大多数人预期的更狠\n\n\n\n\n\n\n\\(n\\)\n截断界\n相当于\n\n\n\n\n200\n0.0707\n逆权重上限 14\n\n\n500\n0.0447\n逆权重上限 22\n\n\n2 000\n0.0224\n逆权重上限 45\n\n\n10 000\n0.0100\n逆权重上限 100\n\n\n\\(\\ge 10^6\\)\n0.0010\n逆权重上限 1000\n\n\n\nREADME 的数据（\\(n = 500\\)，\\(A \\sim \\text{Bern}(\\text{plogis}(w_1 + w_2))\\)）实测：\ntruncation bound 1/min(sqrt(n), 1000) = 0.04472136\nrange of estimated PS: 0.04472136  0.95527864\nn truncated: 15\n500 个人里 15 个（3%）的倾向评分被截断了。这是偏倚与方差的交换， 而且不可配置——没有参数能改它。在 overlap 很差的观察性数据上， 这个截断会把估计往 0 拉，而 SE 不会跟着变大， 结果是看起来很稳的、偏小的估计。\n诊断办法：自己先拟合一遍倾向评分，数一下有多少人落在界外。\ng &lt;- unihtee:::fit_prop_score(dt, NULL, sl3::Lrnr_glm_fast$new(), \"a\", cn)$estimates\nmean(g &lt;= 1/min(sqrt(nrow(dt)), 1000) | g &gt;= 1 - 1/min(sqrt(nrow(dt)), 1000))\n超过 5% 就该重新考虑调整集或改用已知倾向评分（prop_score_values）。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>218</span>  <span class='chapter-title'>3. nuisance 与 sl3 学习器</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/03-nuisance.html#sec-outcome",
+    "href": "notes/unihtee/03-nuisance.html#sec-outcome",
+    "title": "3. nuisance 拟合与 sl3 学习器",
+    "section": "fit_cond_outcome()",
+    "text": "fit_cond_outcome()\nfit_cond_outcome(train_data, valid_data, learners, outcome, exposure, confounders)\n返回四个元素：\n\n\n\n\n\n\n\n元素\n内容\n\n\n\n\nestimates\n\\(\\hat Q(A_i, W_i)\\)，按观测到的 \\(A_i\\)\n\n\nexp_estimates\n\\(\\hat Q(1, W_i)\\)，把整列 exposure 改成 1 后重新预测\n\n\nnoexp_estimates\n\\(\\hat Q(0, W_i)\\)\n\n\nfit\n训练好的 sl3 对象\n\n\n\n协变量集是 c(exposure, confounders)——没有交互项。\n\n默认学习器让插值估计恒为 0\n\n\n\n\n\n\n重要Lrnr_glm_fast + 无交互 ⇒ 插值 CATE 是常数 ⇒ 全部 plug-in TEM-VIP = 0\n\n\n\n帮助页写的是 “Defaults to a generalized linear model with one- and two-way interactions among all confounders and exposure variables”。 源码里的默认值是 sl3::Lrnr_glm_fast$new()，即 \\(\\hat Q(a, w) = \\hat\\beta_0 + \\hat\\beta_A a + w^\\top \\hat\\beta\\)， 于是 \\(\\hat Q(1,w) - \\hat Q(0,w) \\equiv \\hat\\beta_A\\)，与 \\(w\\) 无关。\n实测（README 数据，\\(n = 500\\)）：\nrange of plug-in CATE (on rescaled Y): 0.01947076 0.01947076\nsd of plug-in CATE: 5.323979e-17\nplug-in TEM-VIP estimates:\n w_1  w_2  w_3  w_4  w_5  w_6  w_7  w_8  w_9 w_10\n   0    0    0    0    0    0    0    0    0    0\n全部精确为 0。 三条后果：\n\nestimator 参数真正决定了一切：插值不可用， 你实际拿到的是纯粹由 EIF 修正项（一步）或靶向步（TMLE）撑起来的估计；\n方差项里那个 plugin_estimates 乘子是 0， 于是第 4 页讲的回收 bug 正好被抵消—— 这就是为什么默认路径的 SE 是对的；\n一旦你换成能表达交互的学习器，(2) 就不再成立。\n\n\n\n\n\n换成能表达交互的学习器\nlrn_int &lt;- sl3::Pipeline$new(\n  sl3::Lrnr_define_interactions$new(interactions = lapply(cn, function(m) c(\"a\", m))),\n  sl3::Lrnr_glm_fast$new()\n)\nunihtee(dt, cn, cn, \"a\", \"y\", outcome_type = \"continuous\",\n        effect = \"absolute\", cond_outcome_estimator = lrn_int)\n   modifier estimate    se  p_value p_value_fdr\n1:      w_3    1.027 0.143 7.55e-13    7.55e-12\n2:      w_4   -0.838 0.150 2.19e-08    1.09e-07\n3:      w_8    0.128 0.131 3.28e-01    8.65e-01\n4:     w_10   -0.122 0.130 3.46e-01    8.65e-01\n在这份所有协变量方差都等于 1 的数据上没什么问题。 但只要各变量方差不同，SE 就会出错——见 第 4 页那个 277 倍的例子。 换非默认学习器时，先把 modifiers 全部标准化到单位方差。\n\n\n常用学习器对照\n同一份数据，cond_outcome_estimator 与 prop_score_estimator 一起换：\n-- Lrnr_glm_fast (默认)   0.6 s\n   w_3  1.045 (se 0.160)   w_4 -0.869 (se 0.151)\n-- Lrnr_glmnet            0.2 s\n   w_3  1.016 (se 0.136)   w_4 -0.897 (se 0.131)     w_1  0.126 (p = 0.251)\n-- Lrnr_ranger            0.4 s\n   w_3  0.591 (se 0.064)   w_4 -0.575 (se 0.062)     w_2 -0.112 (p = 0.073)\nglmnet 与默认几乎一致（DGP 本来就是线性的）。 ranger 的估计只有真值的六成，SE 只有默认的四成—— 这不是 ranger 不好，是没开交叉拟合。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>218</span>  <span class='chapter-title'>3. nuisance 与 sl3 学习器</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/03-nuisance.html#sec-crossfit",
+    "href": "notes/unihtee/03-nuisance.html#sec-crossfit",
+    "title": "3. nuisance 拟合与 sl3 学习器",
+    "section": "交叉拟合 cross_fit_fold()",
+    "text": "交叉拟合 cross_fit_fold()\ncross_fit_fold(fold, data, confounders, modifiers, exposure, outcome,\n               censoring, outcome_type, effect, estimator,\n               cond_outcome_estimator, prop_score_estimator, prop_score_values,\n               failure_hazard_estimator, censoring_hazard_estimator)\norigami::cross_validate() 的回调，每折返回四样东西：\nlist(unscaled_eif_vars = nrow(eif_dt) * eif_dt[, lapply(.SD, var)],\n     tem_vip_fit       = &lt;本折的 TEM-VIP 估计&gt;,\n     ace_estimate      = &lt;本折的边际效应&gt;,\n     prop_valid_data   = nrow(valid_data) / nrow(data))\nunihtee() 把各折按验证集占比加权合并：\ntem_vip_fit &lt;- rbindlist(Map(`*`, results$tem_vip_fit, results$prop_valid_data))[\n                 , lapply(.SD, sum)]\neif_vars    &lt;- rbindlist(results$unscaled_eif_vars)[, lapply(.SD, sum)] / n_obs\n生存结局的折按 cluster_ids = data$id 划分， 保证同一个人的所有时间行落在同一折——这是对的。\n\n为什么”灵活学习器 + 不交叉拟合”是灾难\ncross_fit = FALSE 时，fit_cond_outcome(valid_data = NULL) 走的是 cond_outcome_fit$predict()，即样本内预测。 AIPW 伪结局里那一项 \\(\\frac{2A-1}{g(W)}\\bigl(Y - \\hat Q(A,W)\\bigr)\\) 的大小直接由残差决定，残差被过拟合压小，整条 EIF 的方差就跟着塌。\n实测残差规模（结局已缩放到 \\([0,1]\\)）：\nLrnr_glm_fast   sd(Y - Qhat) = 0.1024   sd(plug-in CATE) = 0.0000\nLrnr_ranger     sd(Y - Qhat) = 0.0477   sd(plug-in CATE) = 0.0500\n森林把残差压掉一半多。同一个种子，开与不开交叉拟合：\nL &lt;- sl3::Lrnr_ranger$new()\nset.seed(2); unihtee(dt, cn, cn, \"a\", \"y\", outcome_type = \"continuous\",\n                     effect = \"absolute\",\n                     cond_outcome_estimator = L, prop_score_estimator = L)\nset.seed(2); unihtee(dt, cn, cn, \"a\", \"y\", outcome_type = \"continuous\",\n                     effect = \"absolute\", cross_fit = TRUE,\n                     cond_outcome_estimator = L, prop_score_estimator = L)\n-- cross_fit = FALSE            （真值 Ψ_3 = 1, Ψ_4 = -1）\n   modifier estimate     se  p_value\n1:      w_3    0.589 0.0623 0.00e+00\n2:      w_4   -0.571 0.0608 5.86e-21\n3:      w_2   -0.095 0.0616 1.22e-01\n\n-- cross_fit = TRUE\n   modifier estimate     se  p_value\n1:      w_4   -0.945 0.1698 2.65e-08\n2:      w_3    0.895 0.1618 3.13e-08\n3:     w_10   -0.193 0.1532 2.08e-01\n\n\n\n\n\n\n重要一条硬规则\n\n\n\n只要 cond_outcome_estimator 或 prop_score_estimator 不是线性/GLM 一类的低复杂度学习器，就必须 cross_fit = TRUE。\n不开的代价是双向的：点估计向 0 缩（0.589 对真值 1）， SE 也向 0 缩（0.062 对 0.170），两者相除得到一个 \\(z = 9.5\\) 的假确定性。 这不是”保守一点”的问题——它比正确答案更显著，会把噪声变量也一起推上去。\n默认的 Lrnr_glm_fast 之所以不需要交叉拟合， 是因为低维 GLM 的样本内残差与样本外残差差别很小（\\(n \\gg p\\) 时）。 一旦 \\(p\\) 接近 \\(n\\)，即使 GLM 也该开。\n\n\n开交叉拟合的代价很低：本机 \\(n = 500\\)、\\(p = 10\\) 的 5 折只多花 0.3 秒。\n\n\n交叉拟合后的方差是怎么算的\n注意 unihtee() 在 cross_fit = TRUE 时不用 eif_dt[, lapply(.SD, var)]， 而是把各折的 n_v \\cdot \\widehat{\\operatorname{Var}}_v(\\text{EIF}) 加起来再除以 \\(n\\)：\n\\[\n\\widehat{\\operatorname{Var}}(\\text{EIF}) =\n\\frac{1}{n}\\sum_{v=1}^{V} n_v \\,\\widehat{\\operatorname{Var}}_v(\\text{EIF}).\n\\]\n这是标准的 CV-TMLE 方差写法。副作用是交叉拟合下的 SE 一般更大 （上面 0.062 → 0.170），这正是它该有的样子。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>218</span>  <span class='chapter-title'>3. nuisance 与 sl3 学习器</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/03-nuisance.html#sec-hazard",
+    "href": "notes/unihtee/03-nuisance.html#sec-hazard",
+    "title": "3. nuisance 拟合与 sl3 学习器",
+    "section": "生存的两个风险函数",
+    "text": "生存的两个风险函数\nfit_failure_hazard  (train_data, valid_data, learners, confounders, exposure, times)\nfit_censoring_hazard(train_data, valid_data, learners, confounders, exposure, times, censoring)\n两者结构相同，各返回 list(estimates, exp_estimates, noexp_estimates)—— 注意没有 fit（与 fit_cond_outcome()/fit_prop_score() 不同）， 所以拿不到训练好的模型对象。\n关键实现细节：\n\n协变量是 c(times, exposure, confounders)——时间本身作为一个协变量进模型， 这就是所谓的”把离散时间风险当成一个二分类问题”。\n训练只用 keep == 1 的行，即每个人在他自己的随访期内的行； keep == 0 的填充行不参加训练，但参加预测。\n反事实预测同样靠把整列 exposure 改成 1 / 0 后重新预测。\n\n生存条件下的存活函数由 cumprod(1 - hazard) 按 id 累乘得到， 删失分布同理，详见第 5 页。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>218</span>  <span class='chapter-title'>3. nuisance 与 sl3 学习器</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/03-nuisance.html#学习器怎么写",
+    "href": "notes/unihtee/03-nuisance.html#学习器怎么写",
+    "title": "3. nuisance 拟合与 sl3 学习器",
+    "section": "学习器怎么写",
+    "text": "学习器怎么写\nsl3 的对象都是 R6：\nlibrary(sl3)\n\n# 单个学习器\nlrn_glmnet &lt;- Lrnr_glmnet$new()\nlrn_rf     &lt;- Lrnr_ranger$new(num.trees = 500)\nlrn_earth  &lt;- Lrnr_earth$new()\n\n# Stack：一组候选\nstack &lt;- Stack$new(lrn_glmnet, lrn_rf, lrn_earth)\n\n# Super Learner：带元学习器的集成\nsl &lt;- Lrnr_sl$new(learners = stack, metalearner = Lrnr_nnls$new())\n\nunihtee(dt, cn, cn, \"a\", \"y\",\n        outcome_type = \"continuous\", effect = \"absolute\",\n        cond_outcome_estimator = sl,\n        prop_score_estimator   = Lrnr_sl$new(\n          learners    = Stack$new(Lrnr_glmnet$new(), Lrnr_ranger$new()),\n          metalearner = Lrnr_solnp$new(\n            loss_function  = loss_loglik_binomial,\n            learner_function = metalearner_logistic_binomial)),\n        cross_fit = TRUE)\n本机实测（set.seed(3)，README 数据，\\(n = 500\\)、\\(p = 10\\)）：\nelapsed: 34 s\n   modifier estimate    se  p_value\n1:      w_3    1.071 0.155 4.40e-12\n2:      w_4   -0.856 0.160 8.46e-08\n3:      w_8    0.247 0.164 1.31e-01\n4:     w_10   -0.128 0.131 3.29e-01\n比默认路径（0.58 秒）慢 58 倍，估计与 SE 都没有实质改善—— 这份数据的真实 \\(Q\\) 本来就是线性的。 Super Learner 值不值得，取决于你是否真的怀疑 nuisance 有非线性， 不要因为”更先进”就默认开。\n\n\n\n\n\n\n注记倾向评分的元学习器要用二分类的损失\n\n\n\nLrnr_sl$new() 的默认元学习器是按连续结局配的。 倾向评分是二分类问题，要显式换成 loss_loglik_binomial + metalearner_logistic_binomial（官方 vignette 的 Super Learner 一节就是这么写的）， 否则集成权重是按平方损失优化的，与后面的 logistic fluctuation 不匹配。 sl3 的完整用法见本书Super Learning 一章。\n\n\nsl3 需要的可选包：glmnet（Lrnr_glmnet）、ranger（Lrnr_ranger）、 earth（Lrnr_earth）、xgboost（Lrnr_xgboost）、Rsolnp（Lrnr_solnp）—— 全部列在 unihtee 的 Suggests 里，装 unihtee 时不会自动装。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>218</span>  <span class='chapter-title'>3. nuisance 与 sl3 学习器</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/03-nuisance.html#接下来",
+    "href": "notes/unihtee/03-nuisance.html#接下来",
+    "title": "3. nuisance 拟合与 sl3 学习器",
+    "section": "接下来",
+    "text": "接下来\n\n第 4 页：三个估计量、EIF 的闭式，以及那个会让 SE 错掉 277 倍的回收 bug；\n第 5 页：生存路径完整走一遍。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>218</span>  <span class='chapter-title'>3. nuisance 与 sl3 学习器</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/04-estimators.html",
+    "href": "notes/unihtee/04-estimators.html",
+    "title": "4. 三个估计量、EIF 与假设检验",
+    "section": "",
+    "text": "compute_eif()：一切的中心\n本页覆盖 14 个帮助主题，是这个包的算法核心。 三件事值得先说：one-step 估计量有一个精确的闭式， TMLE 有两个会静默生效的安全阀， 以及方差项里有一个静默的向量回收错误。\n返回一个 \\(n \\times p\\) 的 data.table，每列是一个候选修饰变量的有效影响函数取值。 unihtee() 调用它两次，靠最后两个参数区分：",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>219</span>  <span class='chapter-title'>4. 三个估计量与推断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/04-estimators.html#sec-eif",
+    "href": "notes/unihtee/04-estimators.html#sec-eif",
+    "title": "4. 三个估计量、EIF 与假设检验",
+    "section": "",
+    "text": "compute_eif(data, effect, confounders, exposure, outcome, modifiers,\n            prop_score_fit, prop_score_values,\n            cond_outcome_fit, failure_hazard_fit, censoring_hazard_fit,\n            ace_estimate, plugin_estimates)\n\n\n\n\n\n\n\n\n\n\n调用\nace_estimate / plugin_estimates\n得到\n用途\n\n\n\n\n第一次\nNULL / NULL\n未中心化 EIF\n喂给 one_step_estimator() 做点估计\n\n\n第二次\n实际值\n中心化 EIF\n算方差，即报告里的 se\n\n\n\n\n非生存路径的 AIPW 伪结局\nipws &lt;- (2 * A - 1) / (A * g + (1 - A) * (1 - g))\n\n# effect == \"absolute\"\naipws &lt;- ipws * (Y - Qhat) + Qhat_1 - Qhat_0\n\n# effect == \"relative\"\naipws &lt;- ipws * (Y - Qhat) / Qhat + log(Qhat_1) - log(Qhat_0)\n相对分支里那个 \\(1/\\hat Q\\) 就是第 1 页所说的 “连续结局不能用相对尺度”的元凶：结局被缩放到 \\([0,1]\\) 之后 最小的观测的 \\(\\hat Q\\) 贴着 0。源码里只给了 eps &lt;- 1e-10 的下界保护， \\(10^{-10}\\) 这个量级救不了任何东西。\n\n\nEIF 本体\nmodifier_vars       &lt;- sapply(modifiers, function(m) var(data[[m]]))\ncentred_modifiers_dt &lt;- &lt;每个 modifier 减去自己的均值&gt;\n\nif (is.null(ace_estimate)) {\n  eif_dt &lt;- tcrossprod(aipws, 1/modifier_vars) * centred_modifiers_dt\n} else {\n  eif_dt &lt;- tcrossprod(aipws, 1/modifier_vars) * centred_modifiers_dt -\n            centred_modifiers_dt^2 / modifier_vars * plugin_estimates\n}\n写成数学（\\(\\bar W_j\\)、\\(\\widehat{\\operatorname{Var}}(W_j)\\) 是样本量）：\n\\[\n\\widehat D_j(O_i) =\n\\frac{W_{ij} - \\bar W_j}{\\widehat{\\operatorname{Var}}(W_j)}\n\\Bigl(\\mathrm{AIPW}_i - \\widehat{\\mathrm{ACE}}\\Bigr)\n\\;-\\;\n\\frac{(W_{ij} - \\bar W_j)^2}{\\widehat{\\operatorname{Var}}(W_j)}\\,\\hat\\Psi_j^{\\text{plugin}} .\n\\]\n第一项是”伪结局对 \\(W_j\\) 的协方差贡献”，第二项是”因为分母 \\(\\operatorname{Var}(W_j)\\) 也要估计而产生的修正”。\n\n\n方差项里的向量回收 bug\n\n\n\n\n\n\n重要data.table / numeric 按行回收，不按列\n\n\n\n上面那句\ncentred_modifiers_dt^2 / modifier_vars * plugin_estimates\n里，centred_modifiers_dt 是 \\(n\\) 行 \\(p\\) 列的 data.table， 而 modifier_vars 和 plugin_estimates 是长度 \\(p\\) 的普通向量。 作者显然想让第 \\(j\\) 列除以 modifier_vars[j]，但 R 的 Ops.data.frame 是逐列把整个右侧向量回收下去的：\ndt &lt;- data.table(x = c(1,1,1,1), y = c(1,1,1,1))\nv  &lt;- c(10, 100)          # 意图：x 列除 10，y 列除 100\ndt / v\n       x     y\n1:  0.10  0.10\n2:  0.01  0.01\n3:  0.10  0.10\n4:  0.01  0.01\n得到的是按行交替的结果，不是按列。 更糟的是，当行数是列数的整数倍时，R 连警告都不发—— length(modifiers) 整除 \\(n\\) 的情况一点也不罕见（GBSG2 的 \\(686 = 7 \\times 98\\) 正好命中）。\n什么时候会咬人：\n\n\n\n\n\n\n\n条件\n后果\n\n\n\n\nplugin_estimates 全为 0（默认 Lrnr_glm_fast，连续/二分类）\n整项为 0，SE 正确\n\n\n各 modifier 方差相同（已标准化）\n除法无害，只剩 plugin_estimates 的错位，SE 误差在 2% 以内\n\n\n方差不同 + plug-in 非 0（换学习器，或任何生存结局）\nSE 可以错几个数量级\n\n\n\n实测。同一份数据，把 w_10 的方差设成 100、其余为 1， 条件结局用带交互的学习器（于是 plug-in 非 0）：\n-- Lrnr_glm_fast (默认) : max|plugin| = 4.615e-18\n   modifier se_pkg se_fixed ratio\n1:      w_3 0.1600   0.1600     1\n2:      w_4 0.1505   0.1505     1\n3:     w_10 0.0136   0.0136     1\n\n-- 带交互的 pipeline     : max|plugin| = 0.08384\n   modifier se_pkg se_fixed   ratio\n1:      w_3 0.1433   0.1188   1.206\n2:      w_4 0.1497   0.1322   1.133\n3:     w_10 3.4892   0.0126 277.345\nw_10 的 SE 被放大 277 倍，它的 p 值于是永远是 1。 GBSG2 上未标准化时 progrec 的 SE = 1125、estrec = 183.5 （第 5 页）就是同一个机制。\n规避办法（两选一，可以都做）：\n\n把所有 modifiers 标准化到单位方差——这样 modifier_vars 全是 1， 除法的错位无害，残留的只有 plugin_estimates 错位，实测 SE 比值 0.998–1.017；\n用默认的主效应学习器跑连续/二分类结局，plug-in 恒为 0，该项精确消失。\n\n生存结局没有第 2 条可选：plugin_estimator() 的生存分支用的是失败风险模型， 插值 CATE 永远不是常数。所以生存路径必须标准化协变量。\n自查代码（把正确的 EIF 重算一遍比 SE）：\ncorrect_eif &lt;- function(aipws, dat, mods, ace, plugin) {\n  as.data.table(lapply(mods, function(m) {\n    cw &lt;- dat[[m]] - mean(dat[[m]]); vj &lt;- var(dat[[m]])\n    (aipws - ace) * cw / vj - cw^2 / vj * plugin[[m]]\n  })) |&gt; setNames(mods)\n}",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>219</span>  <span class='chapter-title'>4. 三个估计量与推断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/04-estimators.html#sec-plugin",
+    "href": "notes/unihtee/04-estimators.html#sec-plugin",
+    "title": "4. 三个估计量、EIF 与假设检验",
+    "section": "plugin_estimator()",
+    "text": "plugin_estimator()\nplugin_estimator(data, outcome, modifiers, effect, cond_outcome_fit, failure_hazard_fit)\n\\[\n\\hat\\Psi_j^{\\text{plugin}} =\n\\frac{\\widehat{\\operatorname{Cov}}\\bigl(W_j,\\ \\hat\\tau(W)\\bigr)}\n     {\\widehat{\\operatorname{Var}}(W_j)},\n\\qquad\n\\hat\\tau(W) = \\hat Q(1,W) - \\hat Q(0,W).\n\\]\n它从不作为报告值出现——unihtee() 只把它送进第二次 compute_eif() 用于中心化。所以插值估计的一切问题都只影响 se，不影响 estimate。\n三个细节：\n\n默认学习器下它恒为 0（第 3 页）；\n它接到的 effect 参数没经过 match.arg()，这是 第 2 页那个”不传 effect 就报错”的根源；\n生存 + 相对尺度时它算的是 \\(\\int_0^t \\log\\frac{S(u\\mid1,W)}{S(u\\mid0,W)}\\,du\\)， 而一步与 TMLE 用的是 \\(\\log\\frac{S(t\\mid1,W)}{S(t\\mid0,W)}\\)—— 两者不是同一个量（第 1 页）。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>219</span>  <span class='chapter-title'>4. 三个估计量与推断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/04-estimators.html#sec-onestep",
+    "href": "notes/unihtee/04-estimators.html#sec-onestep",
+    "title": "4. 三个估计量、EIF 与假设检验",
+    "section": "one_step_estimator()",
+    "text": "one_step_estimator()\none_step_estimator(uncentered_eif_data)   # 就是 colMeans\n函数体只有一行：对未中心化 EIF 的每一列取均值。\n\n它等于 AIPW 伪结局的一元回归斜率\n把定义展开：\n\\[\n\\hat\\Psi_j^{\\text{1-step}}\n= \\frac1n \\sum_i \\frac{W_{ij} - \\bar W_j}{\\widehat{\\operatorname{Var}}(W_j)}\\mathrm{AIPW}_i\n= \\frac{\\frac1n\\sum_i (W_{ij}-\\bar W_j)\\mathrm{AIPW}_i}{\\widehat{\\operatorname{Var}}(W_j)}\n= \\frac{n-1}{n}\\cdot\n  \\frac{\\widehat{\\operatorname{Cov}}(W_j, \\mathrm{AIPW})}{\\widehat{\\operatorname{Var}}(W_j)} ,\n\\]\n最后一步是因为 cov()/var() 用的是 \\(n-1\\) 分母而 mean() 用 \\(n\\)。\n本机手工复算：\ng    &lt;- ps$estimates\nipw  &lt;- (2*d$a - 1) / (d$a*g + (1-d$a)*(1-g))\naipw &lt;- ipw * (d$y - q$estimates) + q$exp_estimates - q$noexp_estimates\nsapply(cn, function(m) cov(d[[m]], aipw) / var(d[[m]]) * rescale_factor)\n    modifier manual_ols_on_aipw unihtee_onestep          diff\n 1:      w_3        0.976896826     0.974943032 -1.953794e-03\n 2:      w_4       -0.924245044    -0.922396554  1.848490e-03\n 3:      w_8        0.125947695     0.125695800 -2.518954e-04\n 4:      w_1        0.110417348     0.110196513 -2.208347e-04\n ...\nmax abs diff: 0.001953794\n每一行的比值都恰好是 \\(499/500\\)。这个恒等式可以当作自查工具： 如果你手算的斜率和 unihtee() 的输出对不上 \\((n-1)/n\\) 这个因子， 说明 nuisance 或数据对齐出了问题。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>219</span>  <span class='chapter-title'>4. 三个估计量与推断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/04-estimators.html#sec-tmle",
+    "href": "notes/unihtee/04-estimators.html#sec-tmle",
+    "title": "4. 三个估计量、EIF 与假设检验",
+    "section": "tml_estimator()",
+    "text": "tml_estimator()\ntml_estimator(data, confounders, modifiers, exposure, outcome, effect,\n              prop_score_fit, prop_score_values = NULL,\n              cond_outcome_fit, failure_hazard_fit, censoring_hazard_fit)\n逐个 modifier 独立做一次靶向。对第 \\(j\\) 个变量， 在 logit 尺度上对 \\(\\hat Q\\) 加一个波动项：\n\\[\n\\operatorname{logit}\\hat Q^*_a = \\operatorname{logit}\\hat Q_a + \\epsilon_a H_j,\n\\qquad\nH_j = \\frac{W_j - \\bar W_j}{\\widehat{\\operatorname{Var}}(W_j)} ,\n\\]\n\\(\\epsilon_1, \\epsilon_0\\) 各由一个无截距、带权重的二项 GLM 估计， 权重分别是 \\(A/g(W)\\) 与 \\((1-A)/(1-g(W))\\)：\nq_1_tilt_fit &lt;- glm(Y ~ -1 + scaled_mod, offset = qlogis(q_star),\n                    weights = h_partial_1, family = \"binomial\", start = 0)\n迭代到得分 \\(\\bar{\\text{score}}\\) 的绝对值小于 \\(\\log(n)/n\\)，或迭代 10 次为止。 最后\n\\[\n\\hat\\Psi_j^{\\text{TMLE}} =\n\\frac{\\widehat{\\operatorname{Cov}}\\bigl(W_j,\\ \\hat Q^*_1 - \\hat Q^*_0\\bigr)}\n     {\\widehat{\\operatorname{Var}}(W_j)} .\n\\]\n\n\n\n\n\n\n警告两个安全阀会把靶向步静默关掉\n\n\n\nif (is.na(coef(q_1_tilt_fit))) {\n  q_1_tilt_fit$coefficients &lt;- 0\n} else if (!q_1_tilt_fit$converged || abs(max(coef(q_1_tilt_fit))) &gt; tilt_tol) {\n  q_1_tilt_fit$coefficients &lt;- 0     # tilt_tol &lt;- 5\n}\n\\(\\epsilon\\) 是 NA、GLM 不收敛、或 \\(|\\epsilon| &gt; 5\\) 时， 这一轮的波动被置 0——没有警告，没有返回码。 如果两个臂都被置 0 且一次都没成功过，tml_estimator() 返回的就是 未靶向的插值估计；默认学习器下那是 0。\n怎么判断自己有没有踩到：把 estimator = \"onestep\" 再跑一遍。 TMLE 与一步的差距通常在几个百分点（README 数据上 1.045 vs 0.975）。 如果 TMLE 给出的数接近 0 而一步不是，几乎可以肯定是靶向步被关掉了。\n相对尺度还多一层保护：bounded_q_star[bounded_q_star &lt; 0.1] &lt;- 0.1， 把 clever covariate 的分母硬抬到 0.1。这会让相对尺度的靶向在 \\(\\hat Q\\) 很小的区域有偏但不爆。\n\n\n\\(\\hat\\Psi^{\\text{TMLE}}\\) 的 SE 并不来自靶向后的 \\(\\hat Q^*\\)： unihtee() 里 eif_dt 用的是初始的 cond_outcome_fit。 这在渐近上无所谓，在有限样本上意味着 TMLE 的 SE 与一步的 SE 几乎相同 （实测 0.1599527 vs 0.1598217），两条路径的置信区间宽度一样。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>219</span>  <span class='chapter-title'>4. 三个估计量与推断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/04-estimators.html#sec-ace",
+    "href": "notes/unihtee/04-estimators.html#sec-ace",
+    "title": "4. 三个估计量、EIF 与假设检验",
+    "section": "8 个边际效应估计量",
+    "text": "8 个边际效应估计量\nace_estimate 按「结局 × 尺度 × 估计量」分派到 8 个函数之一：\n\n\n\n\n\n\n\n\n\n结局\n尺度\none-step\nTMLE\n\n\n\n\n连续/二分类\n绝对\none_step_ate_estimator()\ntml_ate_estimator()\n\n\n连续/二分类\n相对\none_step_estimator_ate_log_outcome()\ntml_estimator_ate_log_outcome()\n\n\n生存\n绝对\none_step_rmst_diff_estimator()\ntml_rmst_diff_estimator()\n\n\n生存\n相对\none_step_estimator_rmst_log_outcome()\ntml_estimator_rmst_log_outcome()\n\n\n\n它们签名一致（生存版不要 confounders），都返回一个数。 one_step_ate_estimator() 的实现就是标准 AIPW：\n\\[\n\\widehat{\\mathrm{ATE}} = \\frac1n\\sum_i \\Bigl[\n\\frac{2A_i-1}{g(W_i)^{A_i}(1-g(W_i))^{1-A_i}}\\bigl(Y_i - \\hat Q(A_i,W_i)\\bigr)\n+ \\hat Q(1,W_i) - \\hat Q(0,W_i)\\Bigr].\n\\]\ntml_ate_estimator() 用同一套 logistic fluctuation，clever covariate 换成 \\(A/g\\) 与 \\((1-A)/(1-g)\\)（不带 \\(W_j\\)）。\n\n\n\n\n\n\n注记两处文档 typo（不影响运行）\n\n\n\ncompute_eif() 的帮助页把两个参数的说明写反了：\ncond_outcome_fit:   A 'list' output by the 'fit_failure_hazard()' function.\nfailure_hazard_fit: A 'list' output by the 'fit_cond_outcome()' function.\n按源码，cond_outcome_fit 来自 fit_cond_outcome()， failure_hazard_fit 来自 fit_failure_hazard()。 同样的错在 plugin_estimator()、tml_estimator()、四个生存边际估计量的帮助页里 都有一份（那几处还多带一个孤立的单引号：function()'）。 参数名本身没错，照名字传就行。\n\n\nace_estimate 只有三个用处：中心化 EIF、plot.unihtee() 的截距、 以及给你一个”平均而言治疗有多大用”的参照。它不进推断表， 没有 SE 也没有 p 值；要对边际效应做推断，用 tmle/drtmle 一类包。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>219</span>  <span class='chapter-title'>4. 三个估计量与推断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/04-estimators.html#sec-test",
+    "href": "notes/unihtee/04-estimators.html#sec-test",
+    "title": "4. 三个估计量、EIF 与假设检验",
+    "section": "test_hypotheses()",
+    "text": "test_hypotheses()\ntest_hypotheses(n_obs, estimates, var_estimates, rescale_factor)\n全部推断在这 10 行里：\nestimates     &lt;- estimates     * rescale_factor\nvar_estimates &lt;- var_estimates * rescale_factor^2\ntest_dt[, se       := sqrt(var / n_obs), by = modifier]\ntest_dt[, z        := estimate / se,     by = modifier]\ntest_dt[, p_value  := 2 * min(pnorm(z), 1 - pnorm(z)), by = modifier]\ntest_dt[, ci_lower := estimate - 1.96 * se, by = modifier]\ntest_dt[, ci_upper := estimate + 1.96 * se, by = modifier]\ntest_dt[, p_value_fdr := p.adjust(p_value, method = \"BH\")]\n四个要点：\n\nn_obs 是 unihtee() 开头取的 nrow(data)，即人数， 生存结局展开成长表之前就取好了——这是对的；\nrescale_factor 无条件相乘。绝对尺度正确；相对尺度错（ 第 1 页）；二分类与生存的 rescale_factor 都是 1，不受影响；\n1.96 是硬编码常数，不是 qnorm(0.975)；置信水平不可配置；\nBH 在这一张表内部做。分批调用 unihtee() 不能拼出全局 FDR 控制。\n\n\n名义水平校准如何\n纯噪声 DGP（\\(n = 200\\)，5 个独立协变量，\\(A \\sim \\text{Bern}(0.5)\\)， \\(Y \\sim N(w_1 + 0.5A, 1)\\)，没有任何效应修饰），默认设置跑 40 次：\nreps with &gt;=1 raw p&lt;0.05 (family-wise): 0.175\nmarginal rejection rate per modifier:   0.035\n单变量拒绝率 3.5%（名义 5%），略保守； 5 个变量里至少一个假阳性的比例 17.5%（独立时理论值 \\(1-0.95^5 = 22.6\\%\\)）。 默认路径的一类错误是可信的——前提是用默认学习器、低维、不开花哨的东西。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>219</span>  <span class='chapter-title'>4. 三个估计量与推断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/04-estimators.html#sec-bound",
+    "href": "notes/unihtee/04-estimators.html#sec-bound",
+    "title": "4. 三个估计量、EIF 与假设检验",
+    "section": "bound_precision()",
+    "text": "bound_precision()\nbound_precision(vals, tol = 1e-06)   # 把 [0,1] 的量截到 [tol, 1-tol]\n三行函数，作者署名是 Nima S. Hejazi（来自 tlverse 生态的同一段代码）。 只在 tml_estimator() 里用，作用是让 qlogis() 不返回 \\(\\pm\\infty\\)。 tol 在 unihtee() 里不可配置，永远是 \\(10^{-6}\\)。\n副作用：结局恰好等于 min 或 max 的那些观测，缩放后是 0 或 1， 靶向时被拉到 \\(10^{-6}\\) / \\(1-10^{-6}\\)，对应的 logit 是 \\(\\mp 13.8\\)。 连续结局的极端观测因此在 TMLE 里被压得很扁。样本量小、结局重尾时值得留意。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>219</span>  <span class='chapter-title'>4. 三个估计量与推断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/04-estimators.html#接下来",
+    "href": "notes/unihtee/04-estimators.html#接下来",
+    "title": "4. 三个估计量、EIF 与假设检验",
+    "section": "接下来",
+    "text": "接下来\n\n第 5 页：生存路径，本包最容易出错的部分；\n第 7 页：全部失效路径汇总与可照抄的工作流。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>219</span>  <span class='chapter-title'>4. 三个估计量与推断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/06-print-plot.html",
+    "href": "notes/unihtee/06-print-plot.html",
+    "title": "6. 结果可视化",
+    "section": "",
+    "text": "print.unihtee()\nunihtee 的可视化只有一个函数、一个必填参数，能画的也只有一条直线。 所以这一页分两半：前半把内置的 print.unihtee() 与 plot.unihtee() 讲透， 包括它画出来的那条线能说明什么、不能说明什么； 后半给出从 temvip_inference_tbl 自己画的六类图—— 森林图、火山图、排序条形图、交叉拟合对照、效应尺度对照、生存森林图， 每一张都附可直接运行的代码和本机实际输出。\n0.0.3 的 NEWS 只写了三条，其中两条就是这一页的内容： “Adding plotting functionality” 与 “unihtee() now outputs a unihtee class object with associated plotting and printing methods”。0.0.2 及更早返回的是普通 list，没有类。\n函数体一行：\n所以 print(fit) 与 fit$temvip_inference_tbl 完全一样， ... 原样转发给 data.table 的 print（nrows =、topn = 都可用）。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>221</span>  <span class='chapter-title'>6. 结果可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/06-print-plot.html#sec-print",
+    "href": "notes/unihtee/06-print-plot.html#sec-print",
+    "title": "6. 结果可视化",
+    "section": "",
+    "text": "print(x, ...)\n\nprint(x$temvip_inference_tbl, ...)\n\nfit &lt;- unihtee(dt, cn, cn, \"a\", \"y\",\n               outcome_type = \"continuous\", effect = \"absolute\")\nfit\n    modifier     estimate        se           z      p_value    ci_lower\n 1:      w_3  1.044592804 0.1599527  6.53063474 6.549161e-11  0.73108547\n 2:      w_4 -0.869002514 0.1505155 -5.77351005 7.763697e-09 -1.16401281\n 3:      w_8  0.137803254 0.1138565  1.21032372 2.261547e-01 -0.08535554\n 4:      w_1  0.115258422 0.1168820  0.98610900 3.240796e-01 -0.11383036\n 5:      w_9  0.124150185 0.1295567  0.95826884 3.379272e-01 -0.12978102\n 6:     w_10 -0.097928234 0.1356345 -0.72200119 4.702937e-01 -0.36377176\n 7:      w_6  0.054845105 0.1157812  0.47369617 6.357166e-01 -0.17208602\n 8:      w_2 -0.064478504 0.1761998 -0.36593963 7.144101e-01 -0.40983019\n 9:      w_7 -0.014704981 0.1485610 -0.09898279 9.211519e-01 -0.30588450\n10:      w_5  0.001500152 0.1100365  0.01363321 9.891226e-01 -0.21417147\n      ci_upper  p_value_fdr\n 1:  1.3581001 6.549161e-10\n 2: -0.5739922 3.881849e-08\n 3:  0.3609620 6.758544e-01\n ...\n\n读这张表的三条规矩\n\n不要横向比 estimate 的绝对大小。 \\(\\hat\\Psi_j\\) 的量纲是 「结局单位 / \\(W_j\\) 单位」。上表里所有 \\(W_j\\) 恰好都是标准正态，可以比； 真实数据上不行。排序用 z 或 p_value（表本身就按 p_value 排）。\np_value_fdr 只在这一次调用的 modifiers 内部做 BH。 分批调用拼不出全局 FDR。\nmodifier 是 factor。 按名字取行先转字符：\n\nas.data.table(fit$temvip_inference_tbl)[as.character(modifier) == \"w_3\"]\n\n\n常用后处理\ntb &lt;- as.data.table(fit$temvip_inference_tbl)\ntb[, modifier := as.character(modifier)]\n\ntb[p_value_fdr &lt; 0.05, modifier]      # 按 FDR 阈值挑\ntb[ci_lower * ci_upper &gt; 0]           # 区间不跨 0\nhead(tb$modifier, 5)                  # top-k，用于多方法取交集\nunihtee 没有 summary()、coef()、predict()——print 和 plot 就是全部方法。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>221</span>  <span class='chapter-title'>6. 结果可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/06-print-plot.html#sec-plot",
+    "href": "notes/unihtee/06-print-plot.html#sec-plot",
+    "title": "6. 结果可视化",
+    "section": "plot.unihtee()",
+    "text": "plot.unihtee()\nplot(x, y, ..., modifier_name, print_interpretation = TRUE)\n\n\n\n参数\n说明\n\n\n\n\nx\nunihtee() 的返回对象\n\n\ny、...\n文档明确写着 “Ignored”\n\n\nmodifier_name\n必填，单个变量名；没有默认值\n\n\nprint_interpretation\nTRUE 时在控制台 cat() 一句解读\n\n\n\n返回 ggplot 对象，可继续叠图层。\n\n它画的是什么\n源码只有两行实质内容：\nplotting_tbl &lt;- data.frame(\n  x = modifier_vals,\n  y = ace_estimate + temvip_est * (modifier_vals - mean(modifier_vals)),\n  ace_estimate = ace_estimate)\n即把 TEM-VIP 当斜率、ace_estimate 当在 \\(\\bar W_j\\) 处的截距，画出\n\\[\n\\widehat{\\mathrm{CATE}}(W_j) \\;\\approx\\;\n\\widehat{\\mathrm{ACE}} + \\hat\\Psi_j\\,(W_j - \\bar W_j).\n\\]\n横轴取自 fit$data，也就是缩放前的原始数据，所以横轴单位可以直接读。\n\n\n连续变量\nplot(fit, modifier_name = \"w_3\")\n#&gt; The TEM-VIP estimate corresponds to the slope of the black line.\n\n\n\n\n\n\n图 221.1: 连续修饰变量的 TEM-VIP 图。黑线斜率就是 \\(\\hat\\Psi_3 = 1.045\\)， 红色虚线是 ace_estimate = 0.0174，两线在 \\(\\bar w_3\\) 处相交。 标题给的是估计值与名义 95% 区间。\n\n\n\n\n\n二值变量\n源码用 identical(sort(unique(modifier_vals)), c(0, 1)) 判断， 命中时换成两个点 + 参考线：\ndtb[, w_b := as.numeric(w_3 &gt; 0)]\nfb &lt;- unihtee(dtb, c(cn, \"w_b\"), c(cn, \"w_b\"), \"a\", \"y\",\n              outcome_type = \"continuous\", effect = \"absolute\")\nplot(fb, modifier_name = \"w_b\")\n#&gt; The TEM-VIP estimate corresponds to the vertical distance between both points.\n\n\n\n\n\n\n图 221.2: 二值修饰变量的 TEM-VIP 图。两点的纵向距离就是 \\(\\hat\\Psi\\)。 把 w_3 &gt; 0 二值化之后 \\(\\hat\\Psi = 1.330\\)（连续版是 1.054）， 因为二值化改变了分母 \\(\\operatorname{Var}(W_j)\\)，两个数不可直接比。\n\n\n\n\n\n\n\n\n\n注记判定二值的条件很严格\n\n\n\nidentical(sort(unique(modifier_vals)), c(0, 1)) 要求取值集合恰好是 \\(\\{0,1\\}\\) 且是 double。所以 0L/1L（整数）、只出现一个取值、 或编码成 \\(\\{1,2\\}\\) 都会走连续分支画成直线——不报错，只是图的形式不对。 需要二值样式就确保列是 as.numeric(x) 且两个取值都出现。\n\n\n\n\n批量画：统一纵轴才看得出差别\nplot.unihtee() 一次只画一个变量，纵轴按该变量自适应。 直接排版会得到六张”看起来都很斜”的图——因为噪声变量的纵轴范围只有 ±0.3。 把纵轴统一之后，信号与噪声才分得开：\nlibrary(patchwork)\n\ntb   &lt;- as.data.table(fit$temvip_inference_tbl)[, modifier := as.character(modifier)]\ntop6 &lt;- head(tb$modifier, 6)\n\n# 先算出六张图共同的纵轴范围\nrng &lt;- range(sapply(top6, function(m) {\n  e &lt;- tb[modifier == m, estimate]; x &lt;- fit$data[[m]]\n  range(fit$ace_estimate + e * (x - mean(x)))\n}))\n\nps &lt;- lapply(top6, function(m)\n  plot(fit, modifier_name = m, print_interpretation = FALSE) +\n    coord_cartesian(ylim = rng) +\n    theme_bw(base_size = 11) + theme(legend.position = \"none\") +\n    ggtitle(sprintf(\"%s:  %.3f  (%.3f, %.3f)\", m, tb[modifier == m, estimate],\n                    tb[modifier == m, ci_lower], tb[modifier == m, ci_upper])) +\n    labs(x = m, y = NULL))\n\nwrap_plots(ps, ncol = 3)\n\n\n\n\n\n\n图 221.3: top-6 的内置图，纵轴已统一。只有 w_3 / w_4 的线是明显倾斜的， 其余四条几乎贴着 ace_estimate 那条红虚线。 不统一纵轴时六张图看上去都一样斜——这是批量出图最常见的误读来源。 print_interpretation = FALSE 必须加，否则控制台被那句解读刷屏； 它是 cat() 出来的，suppressMessages() 拦不住。\n\n\n\n\n\n这条线不是拟合出来的，是画出来的\n\n\n\n\n\n\n重要内置图不能用来判断线性假设对不对\n\n\n\n图上没有一个点来自数据的 CATE 估计——横轴是 \\(W_j\\) 的真实取值， 纵轴完全由 \\((\\widehat{\\mathrm{ACE}}, \\hat\\Psi_j)\\) 两个数决定。 无论真实的 \\(\\tau(W_j)\\) 是什么形状，它都会画成一条直线。\n要看真实形状，得把 AIPW 伪结局画出来。它可以从包的内部函数直接取到， 不需要另装 grf：\nd2 &lt;- copy(dt); mn &lt;- min(d2$y); rf &lt;- max(d2$y) - mn\nd2$y &lt;- (d2$y - mn) / rf                                  # 复现内部的 min–max 缩放\ng &lt;- unihtee:::fit_prop_score(d2, NULL, Lrnr_glm_fast$new(), \"a\", cn)$estimates\nq &lt;- unihtee:::fit_cond_outcome(d2, NULL, Lrnr_glm_fast$new(), \"y\", \"a\", cn)\naipw &lt;- ((2 * d2$a - 1) / (d2$a * g + (1 - d2$a) * (1 - g)) * (d2$y - q$estimates) +\n          q$exp_estimates - q$noexp_estimates) * rf       # 乘回原始结局单位\n\nggplot(data.frame(x = dt$w_5, aipw = aipw), aes(x)) +\n  geom_point(aes(y = aipw), colour = \"grey70\", size = .6, alpha = .5) +\n  geom_smooth(aes(y = aipw), method = \"loess\", formula = y ~ x, span = .9, se = FALSE) +\n  geom_abline(intercept = fit$ace_estimate - tb[modifier == \"w_5\", estimate] * mean(dt$w_5),\n              slope = tb[modifier == \"w_5\", estimate], linewidth = 1)\n在一份 \\(\\tau(W) = w_3 + (w_5^2 - 1)\\)、\\(n = 800\\) 的数据上跑：\n\n\n\n\n\n\n图 221.4: 三种情形并排。①线性修饰：直线与真值几乎重合，\\(p = 7.1\\times10^{-8}\\)。 ②U 形修饰：loess 完美地跟住了真实的抛物线，而 unihtee 的直线是平的， \\(\\hat\\Psi = -0.14\\)、\\(p = 0.42\\)——漏报。 ③纯噪声：正确地给出 0。 中间那张不是估计误差，是 TEM-VIP 参数本身的盲区： \\(\\Psi_5 = \\operatorname{Cov}(W_5^2, W_5)/\\operatorname{Var}(W_5) = \\mathbb{E}[W_5^3] = 0\\)， 对称的非单调修饰在这个参数下真值就是 0，加样本量、换学习器、开交叉拟合都救不回来。\n\n\n\n这张对照图应该作为常规诊断跑一遍，尤其是当某个你有先验理由怀疑的变量 在结果表里排得很靠后时。发现是 U 形，就该换用能抓非线性的方法 （grf、MOB 树、或者先对该变量做样条/分箱再跑一次 unihtee）。\n\n\n\n\n两个会报错的调用\nplot(fit)\n#&gt; Error: argument \"modifier_name\" is missing, with no default\n\nplot(fit, modifier_name = \"not_a_var\")\n#&gt; Warning in mean.default(modifier_vals) :\n#&gt;   argument is not numeric or logical: returning NA\n#&gt; Error: arguments imply differing number of rows: 0, 1\n名字打错时的报错完全看不出病因（differing number of rows: 0, 1 来自 data.frame() 收到长度 0 的 x）。批量出图前先过滤名字：\nfor (m in head(as.character(fit$temvip_inference_tbl$modifier), 5)) {\n  p &lt;- plot(fit, modifier_name = m, print_interpretation = FALSE)\n  ggsave(sprintf(\"temvip-%s.png\", m), p, width = 7, height = 4.6, dpi = 150)\n}\n\n\n叠图层\n返回的是普通 ggplot，照常改：\nplot(fit, modifier_name = \"w_3\", print_interpretation = FALSE) +\n  labs(subtitle = \"n = 500，TMLE，默认学习器\",\n       x = \"w_3（标准化）\", y = \"条件平均因果效应\") +\n  theme_minimal(base_size = 13)\n标题里那串 \"... TEM-VIP Inference [Estimate (Nominal 95% CI)]: 1.045 (0.731; 1.358)\" 是 ggtitle() 加的，labs(title = ) 会整个覆盖掉。想保留就改 subtitle。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>221</span>  <span class='chapter-title'>6. 结果可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/06-print-plot.html#接下来",
+    "href": "notes/unihtee/06-print-plot.html#接下来",
+    "title": "6. 结果可视化",
+    "section": "接下来",
+    "text": "接下来\n第 7 页：全部失效路径汇总与可照抄的工作流。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>221</span>  <span class='chapter-title'>6. 结果可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/07-pitfalls.html",
+    "href": "notes/unihtee/07-pitfalls.html",
+    "title": "7. 实测清单与工作流",
+    "section": "",
+    "text": "一、会报错的路径\n本页汇总前六页的全部实测结论，并给出两套可以直接抄的流程 （非生存 / 生存）。所有结论在 2026-09-20、Windows R 4.4.3、 unihtee 0.0.3、sl3 1.4.5 下复核。\n第 1 条有个反直觉的例外：cross_fit = TRUE 时省略 effect 不报错， 会默默按 \"absolute\" 跑。两条路径在这一点上行为不一致。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>222</span>  <span class='chapter-title'>7. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/07-pitfalls.html#一会报错的路径",
+    "href": "notes/unihtee/07-pitfalls.html#一会报错的路径",
+    "title": "7. 实测清单与工作流",
+    "section": "",
+    "text": "#\n触发条件\n报错\n修法\n\n\n\n\n1\n省略 effect=，且 cross_fit = FALSE\nthe condition has length &gt; 1\n永远显式写 effect = \"absolute\" 或 \"relative\"\n\n\n2\n生存结局用默认 failure_hazard_estimator，xgboost ≥ 3.x\nALTLIST classes must provide a Set_elt method\n传 failure_hazard_estimator = sl3::Lrnr_glmnet$new()，删失风险同\n\n\n3\nmodifiers 里有因子列\nCalling var(x) on a factor x is defunct\n先 one-hot 成 0/1 数值列；因子放 confounders 没问题\n\n\n4\nprop_score_values 传数值向量\ncolumns not found: [0.838…, 0.685…, …]\n传列名字符串\n\n\n5\nplot() 不给 modifier_name\nargument \"modifier_name\" is missing\n必填参数\n\n\n6\nplot() 的 modifier_name 拼错\narguments imply differing number of rows: 0, 1\n从 fit$temvip_inference_tbl$modifier 里取名字",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>222</span>  <span class='chapter-title'>7. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/07-pitfalls.html#二不报错但结果是错的",
+    "href": "notes/unihtee/07-pitfalls.html#二不报错但结果是错的",
+    "title": "7. 实测清单与工作流",
+    "section": "二、不报错但结果是错的",
+    "text": "二、不报错但结果是错的\n\n\n\n\n\n\n重要这一组才是真正的风险\n\n\n\n\n\n\n\n\n\n\n\n\n\n#\n条件\n表现\n判别\n修法\n\n\n\n\n7\ncensoring 列传成”1 = 事件”\nACE 与排序都变（GBSG2：0.665 → 0.980，头名 progrec → estrec）\nsum(cens_col) 应等于删失人数\n传 1L - status\n\n\n8\n生存结局 / 非默认学习器 + 协变量未标准化\nSE 大几个数量级，所有 p ≈ 1（GBSG2 progrec SE = 1125）\n比较各 modifier 的 var() 跨度\n全部 scale()\n\n\n9\n灵活学习器 + cross_fit = FALSE\n估计与 SE 同时向 0 缩（ranger：0.589 / 0.062，真值 1 / 交叉拟合后 0.170）\n开一次交叉拟合对比\ncross_fit = TRUE\n\n\n10\neffect = \"relative\" + outcome_type = \"continuous\"\nSE 七位数，估计随结局单位线性变化\n看 se 是否离谱\n改用 \"absolute\"，或先对 \\(Y\\) 取对数\n\n\n11\nmodifiers 不是 confounders 的子集\n多出来的变量既无双稳健也无 EIF 保证\n无提示，只能自查\nstopifnot(all(modifiers %in% confounders))\n\n\n12\n分批调用后把各表的 p_value_fdr 拼一起\n不控制全局 FDR\n无提示\n一次调用覆盖全部候选变量\n\n\n13\nTMLE 靶向步被安全阀静默关掉\n估计接近插值（默认学习器下即 0）\n与 estimator = \"onestep\" 对比\n换学习器 / 开交叉拟合 / 改用一步\n\n\n\n\n\n第 8 与第 9 条的根源是两个独立的问题，值得分开记：\n\n第 8 条是 compute_eif() 里 centred_modifiers_dt^2 / modifier_vars * plugin_estimates 这一句的向量回收方向错误——data.table 除以普通向量是按行回收的。 观测数是变量数的整数倍时连警告都没有。 它只在 plugin_estimates 非 0 时才发作， 所以连续/二分类 + 默认学习器是安全的，生存结局永远发作。 详见第 4 页。\n第 9 条是统计问题，不是 bug：cross_fit = FALSE 用样本内预测， 过拟合把 AIPW 的残差项压没了。详见第 3 页。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>222</span>  <span class='chapter-title'>7. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/07-pitfalls.html#三帮助页与源码不一致",
+    "href": "notes/unihtee/07-pitfalls.html#三帮助页与源码不一致",
+    "title": "7. 实测清单与工作流",
+    "section": "三、帮助页与源码不一致",
+    "text": "三、帮助页与源码不一致\n\n\n\n帮助页写的\n源码实际\n影响\n\n\n\n\ncond_outcome_estimator 默认含”one- and two-way interactions”\nsl3::Lrnr_glm_fast$new()，纯主效应\n插值 CATE 是常数 ⇒ 全部 plug-in TEM-VIP = 0（实测 sd = \\(5.3\\times10^{-17}\\)）\n\n\nprop_score_estimator 同上\n同上\n倾向评分是主效应 logistic\n\n\nmodifiers “must be a subset of confounders”\n无任何断言\n传超集不报错\n\n\ncompute_eif() 的 prop_score_values 是 “A numeric vector”\nunihtee() 按列名用\n传向量报错\n\n\ncompute_eif()/plugin_estimator()/tml_estimator() 及四个生存边际估计量的帮助页把 cond_outcome_fit 与 failure_hazard_fit 的来源写反\n按参数名对应\n纯文档 typo，不影响运行\n\n\n本书效应修饰的效应尺度记为 “log RMST 比”\n一步/TMLE 用的是 \\(\\log S(t\\mid1,W) - \\log S(t\\mid0,W)\\)\n口径不同；另外 plugin_estimator() 的同一分支还把对数比沿时间积了一次，与另两个估计量不一致",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>222</span>  <span class='chapter-title'>7. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/07-pitfalls.html#四不可配置的硬编码常数",
+    "href": "notes/unihtee/07-pitfalls.html#四不可配置的硬编码常数",
+    "title": "7. 实测清单与工作流",
+    "section": "四、不可配置的硬编码常数",
+    "text": "四、不可配置的硬编码常数\n\n\n\n\n\n\n\n\n\n常数\n值\n位置\n后果\n\n\n\n\n倾向评分截断\n\\(1/\\min(\\sqrt n, 1000)\\)\nfit_prop_score()\n\\(n=500\\) 时是 0.045，实测 3% 的观测被截断\n\n\n置信区间乘子\n1.96\ntest_hypotheses()\n置信水平不可改；与 qnorm(0.975) 差第四位小数\n\n\n多重校正方法\n\"BH\"\ntest_hypotheses()\n想要 Bonferroni 得自己对 p_value 再算\n\n\nTMLE 最大迭代\n10\ntml_estimator()\n—\n\n\nTMLE 停止准则\n\\(\\log(n)/n\\)\ntml_estimator()\n—\n\n\nTMLE 波动上限\n\\(\\lvert\\epsilon\\rvert \\le 5\\)\ntml_estimator()\n超过就静默置 0\n\n\nlogit 截断\n\\(10^{-6}\\)\nbound_precision()\n结局取到 min/max 的观测被压扁\n\n\n相对尺度 \\(\\hat Q\\) 下界\n1e-10（EIF）/ 0.1（TMLE clever covariate）\ncompute_eif() / tml_estimator()\n前者救不了连续结局",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>222</span>  <span class='chapter-title'>7. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/07-pitfalls.html#五性能参考",
+    "href": "notes/unihtee/07-pitfalls.html#五性能参考",
+    "title": "7. 实测清单与工作流",
+    "section": "五、性能参考",
+    "text": "五、性能参考\n本机（Windows R 4.4.3，单线程）：\n\n\n\n\n\n\n\n\n场景\n配置\n耗时\n\n\n\n\n连续，\\(n=500\\)，\\(p=10\\)\n默认 TMLE\n0.58 s\n\n\n连续，\\(n=2000\\)，\\(p=50\\)\n默认 TMLE\n0.55 s\n\n\n连续，\\(n=2000\\)，\\(p=50\\)\n默认 one-step\n0.14 s\n\n\n连续，\\(n=500\\)，\\(p=10\\)\n5 折交叉拟合\n0.3 s\n\n\n连续，\\(n=500\\)，\\(p=10\\)\nSuper Learner（glmnet+ranger+earth）+ 交叉拟合\n34 s\n\n\n生存，\\(n=686\\)，\\(p=7\\)\n8 分箱、glmnet\n5.0 s\n\n\n生存，\\(n=686\\)，\\(p=7\\)\n15 分箱、glmnet\n17.4 s\n\n\n生存，\\(n=686\\)，\\(p=7\\)\n30 分箱、glmnet\n56.1 s\n\n\n\n两条结论：非生存路径便宜到不用考虑性能（\\(p\\) 的影响比 \\(n\\) 大， 因为 TMLE 是逐变量迭代的）；生存路径的成本由分箱数决定， 不是由 \\(n\\) 决定。parallel = TRUE 只在 cross_fit = TRUE 时有意义， 而且需要自己先设 future::plan()，否则静默串行。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>222</span>  <span class='chapter-title'>7. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/07-pitfalls.html#六可照抄的工作流",
+    "href": "notes/unihtee/07-pitfalls.html#六可照抄的工作流",
+    "title": "7. 实测清单与工作流",
+    "section": "六、可照抄的工作流",
+    "text": "六、可照抄的工作流\n\nA. 连续 / 二分类结局\nlibrary(unihtee); library(data.table); library(sl3)\n\ndt &lt;- as.data.table(your_data)\n\nconfounders &lt;- c(...)              # 全部基线调整变量\nmodifiers   &lt;- confounders         # 候选修饰变量，必须是子集\n\n## 0. 前置检查 -------------------------------------------------------------\nstopifnot(all(modifiers %in% confounders))\nstopifnot(is.numeric(dt$a), all(dt$a %in% c(0, 1)))\nstopifnot(all(sapply(dt[, ..modifiers], is.numeric)))   # 因子会报错\n\n## 1. 标准化 modifier（让 SE 的回收 bug 失效，也让 estimate 可横向比较）\ndt[, (modifiers) := lapply(.SD, function(x) as.numeric(scale(x))), .SDcols = modifiers]\n\n## 2. overlap 诊断：被截断的比例超过 5% 就别往下走了\ng &lt;- unihtee:::fit_prop_score(dt, NULL, Lrnr_glm_fast$new(), \"a\", confounders)$estimates\ntr &lt;- 1 / min(sqrt(nrow(dt)), 1000)\nmean(g &lt;= tr | g &gt;= 1 - tr)\n\n## 3. 主分析：默认学习器，显式写 effect\nfit &lt;- unihtee(\n  data         = dt,\n  confounders  = confounders,\n  modifiers    = modifiers,\n  exposure     = \"a\",\n  outcome      = \"y\",\n  outcome_type = \"continuous\",       # 或 \"binary\"\n  effect       = \"absolute\",         # 显式！\n  estimator    = \"tmle\"\n)\n\n## 4. 自查 1：一步估计应与 TMLE 同量级\nfit_os &lt;- unihtee(dt, confounders, modifiers, \"a\", \"y\",\n                  outcome_type = \"continuous\", effect = \"absolute\",\n                  estimator = \"onestep\")\nmerge(as.data.table(fit$temvip_inference_tbl)[,    .(modifier, tmle = estimate)],\n      as.data.table(fit_os$temvip_inference_tbl)[, .(modifier, onestep = estimate)],\n      by = \"modifier\")               # 差得离谱 = TMLE 靶向步被关掉了\n\n## 5. 自查 2：一步估计有闭式，可以手算复核\n##    Ψ̂_j = (n-1)/n * cov(W_j, AIPW) / var(W_j)\n\n## 5b. 自查 3：把 AIPW 伪结局对可疑变量画散点 + loess，\n##     看真实形状是不是单调——U 形修饰在这个参数下真值就是 0，会被漏报。\n##     代码与实测图见第 6 页 sec-line-limit\n\n## 6. 灵活学习器版本（可选，必须开交叉拟合）\nfit_ml &lt;- unihtee(dt, confounders, modifiers, \"a\", \"y\",\n                  outcome_type = \"continuous\", effect = \"absolute\",\n                  cond_outcome_estimator = Lrnr_glmnet$new(),\n                  prop_score_estimator   = Lrnr_glmnet$new(),\n                  cross_fit = TRUE, cross_fit_folds = 5)\n\n## 7. 尺子：同一份数据上的 OLS 交互扫描\nols &lt;- t(sapply(modifiers, function(m)\n  summary(lm(reformulate(paste0(\"a*\", m), \"y\"), data = dt))$coefficients[\n    paste0(\"a:\", m), c(\"Estimate\", \"Pr(&gt;|t|)\")]))\n\n\nB. 生存结局\n## 1. 时间分箱（先写进分析计划，不要看结果再调）\nn_bins &lt;- 15\ndt[, t_bin := as.integer(cut(time,\n       breaks = quantile(time, probs = seq(0, 1, length.out = n_bins + 1)),\n       include.lowest = TRUE, labels = FALSE))]\ncutoff &lt;- 12                                   # ≤ n_bins\n\n## 2. 删失指示反向：1 = 删失\ndt[, cens_flag := 1L - status]\nsum(dt$cens_flag)                              # 必须等于删失人数\n\n## 3. 协变量标准化（生存路径这一步是必须的，不是可选）\ndt[, (covs) := lapply(.SD, function(x) as.numeric(scale(x))), .SDcols = covs]\n\n## 4. 换掉坏掉的默认学习器\nL &lt;- Lrnr_glmnet$new()\n\nset.seed(99)\nfit &lt;- unihtee(\n  data                       = dt[, c(covs, \"a\", \"t_bin\", \"cens_flag\"), with = FALSE],\n  confounders                = covs,\n  modifiers                  = covs,\n  exposure                   = \"a\",\n  outcome                    = \"t_bin\",\n  censoring                  = \"cens_flag\",\n  time_cutoff                = cutoff,\n  outcome_type               = \"time-to-event\",\n  effect                     = \"absolute\",     # 相对尺度实测最不稳\n  failure_hazard_estimator   = L,\n  censoring_hazard_estimator = L\n)\n\n## 5. 敏感性：换分箱数与 cutoff，看排序是否稳定",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>222</span>  <span class='chapter-title'>7. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/07-pitfalls.html#七这个包该用在哪一步",
+    "href": "notes/unihtee/07-pitfalls.html#七这个包该用在哪一步",
+    "title": "7. 实测清单与工作流",
+    "section": "七、这个包该用在哪一步",
+    "text": "七、这个包该用在哪一步\n\n\n\n\n\n\n注记定位：筛选，不是确认\n\n\n\nunihtee 的输出是每个变量一个边际投影。它的长处与短处都来自这一点：\n长处\n\n参数在定义层面只看 \\(\\tau(W)\\)，不看基线水平， 因此天然排除了纯预后变量——这是 MOB/树路线（model4you、 StratifiedMedicine 的默认配置）做不到的， 那边的分裂检验默认把截距也算进去；\n有正式的渐近正态推断与 BH 校正，可以写进方法学；\n点估计在有混杂时不偏（落地页的最小例子：真值 1， unihtee 给 0.97–1.04，朴素 OLS 交互给 0.76）；\n支持观察性数据、三种结局类型、已知倾向评分。\n\n短处\n\n边际：与真修饰变量相关的变量也会显著，这是参数性质，消不掉；\n线性投影：\\(\\tau(W_j)\\) 若是 U 形，\\(\\Psi_j\\) 可能接近 0；\n不给亚组：要可读的切点得另找 rsides / TSDT / MOB；\n功效受限：一步估计就是 AIPW 伪结局的一元回归斜率， 不会比同样这批伪结局提供更多信息。\n\n因此推荐的位置：\n候选变量 20–100 个\n      │\n      ├─ unihtee()：批量 TEM-VIP + BH   ← 本包在这里\n      │     ↓ 取 top-k 或 FDR &lt; 0.1\n      ├─ 与机制不同的方法取交集（树/森林类：pmforest+varimp、TSDT、rsides）\n      │     ↓\n      ├─ 在独立数据 / 预先规定的框架里确认，效应尺度保持一致\n      │     ↓\n      └─ 需要可读亚组时再上 MOB / SIDES\n“取交集”的前提是机制真的不同：unihtee 与 uniCATE 都是单变量半参数路子， 交集大但不增信息；与树/森林类取交集才有意义。 本书快速筛选 modifier 的 R 包 与筛选软件与方法核查 给了更完整的方法谱系。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>222</span>  <span class='chapter-title'>7. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/07-pitfalls.html#八一页纸速查",
+    "href": "notes/unihtee/07-pitfalls.html#八一页纸速查",
+    "title": "7. 实测清单与工作流",
+    "section": "八、一页纸速查",
+    "text": "八、一页纸速查\n## 必须显式写的三件事\neffect = \"absolute\"                  # 省了会报错（除非 cross_fit = TRUE）\nfailure_hazard_estimator = Lrnr_glmnet$new()      # 生存：默认 xgboost 是坏的\ncensoring_hazard_estimator = Lrnr_glmnet$new()\n\n## 必须自己做的三件事\nmodifiers 全部 scale() 到单位方差     # 否则 SE 可能错几个数量级\ncensoring 列 = 1L - status           # 与 survival 惯例相反\n灵活学习器 ⇒ cross_fit = TRUE        # 否则估计与 SE 一起塌\n\n## 结果在哪\nfit$temvip_inference_tbl             # estimate / se / z / p_value / ci / p_value_fdr\nfit$ace_estimate                     # 边际效应，没有 SE\nfit$data                             # 缩放前的原始数据副本\n\n## 不要做的三件事\neffect = \"relative\" + outcome_type = \"continuous\"   # SE 七位数\n按 estimate 的绝对大小横向排序                        # 有量纲，用 z 或 p\n分批调用再把 p_value_fdr 拼起来                       # 不控制全局 FDR",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>222</span>  <span class='chapter-title'>7. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/07-pitfalls.html#回到目录",
+    "href": "notes/unihtee/07-pitfalls.html#回到目录",
+    "title": "7. 实测清单与工作流",
+    "section": "回到目录",
+    "text": "回到目录\n\n手册首页\n1. TEM-VIP 参数\n2. unihtee()\n3. nuisance 与学习器\n4. 三个估计量\n5. 生存结局\n6. 结果可视化",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>222</span>  <span class='chapter-title'>7. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/05-survival.html",
+    "href": "notes/unihtee/05-survival.html",
+    "title": "5. 生存结局：tte_data_melt() 与四个必踩的坑",
+    "section": "",
+    "text": "tte_data_melt()：宽表变长表\noutcome_type = \"time-to-event\" 是这个包功能最强、也最容易悄悄算错的一条路。 四个问题分别在数据编码、依赖版本、数值稳定性和计算量上， 其中三个不报错。本页按”从数据到结果”的顺序走一遍。\n把一人一行的宽表展开成”人 × 时间”的长表，这是离散时间风险模型的标准做法。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>220</span>  <span class='chapter-title'>5. 生存结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/05-survival.html#sec-melt",
+    "href": "notes/unihtee/05-survival.html#sec-melt",
+    "title": "5. 生存结局：tte_data_melt() 与四个必踩的坑",
+    "section": "",
+    "text": "tte_data_melt(data, confounders, exposure, outcome, censoring,\n              time_cutoff, prop_score_values)\n\n\n时间网格\nunique_times &lt;- sort(unique(c(data[get(outcome) &lt; time_cutoff, get(outcome)],\n                              time_cutoff)))\n网格是数据里所有小于 time_cutoff 的观测时间，加上 time_cutoff 本身。 每个人被复制到 \\(|{\\text{unique\\_times}}|\\) 行。\n\n\n三个派生列\n\n\n\n列\n含义\n\n\n\n\nid\n受试者编号（rbindlist(idcol = \"id\") 加的）\n\n\nfailure\n该时间点是否发生事件；只在观测到事件的那一行为 1\n\n\nkeep\n该行是否落在此人的随访期内；事件/删失之后的填充行为 0\n\n\n\nkeep 决定训练集：fit_failure_hazard() 与 fit_censoring_hazard() 都只用 keep == 1 的行训练，但在全部行上预测。\n\n\n删失指示的编码\n\n\n\n\n\n\n重要censoring 列：1 = 删失，0 = 事件\n\n\n\n与 survival::Surv(time, status) 的 status = 1 表示事件正好相反。 四个人的玩具例子，time_cutoff = 5：\nd &lt;- data.table(w_1 = c(0.5,-0.5,1,0), a = c(1,0,1,0),\n                t = c(2,3,5,5), cens_flag = c(0,1,0,1))\nunihtee:::tte_data_melt(d, \"w_1\", \"a\", \"t\", \"cens_flag\", 5, NULL)\n       id   w_1     a     t cens_flag failure  keep\n 1:     1   0.5     1     2         0       1     1   &lt;- t=2 出事件（cens_flag=0）\n 2:     1   0.5     1     3         0       0     0      之后是填充行\n 3:     1   0.5     1     5         0       0     0\n 4:     2  -0.5     0     2         0       0     1\n 5:     2  -0.5     0     3         1       0     1   &lt;- t=3 被删失（cens_flag=1）\n 6:     2  -0.5     0     5         1       0     0\n 7:     3   1.0     1     2         0       0     1\n 8:     3   1.0     1     3         0       0     1\n 9:     3   1.0     1     5         0       1     1   &lt;- 恰好在 cutoff 出事件\n10:     4   0.0     0     2         0       0     1\n11:     4   0.0     0     3         0       0     1\n12:     4   0.0     0     5         1       0     1   &lt;- 恰好在 cutoff 被删失\n从标准生存数据过来必须写 1L - status：\nd[, cens_flag := 1L - cens]     # GBSG2 的 cens: 1 = 事件\n传反了不报错。 GBSG2（15 个分箱、time_cutoff = 12、Lrnr_glmnet、 协变量已标准化）：\n  正确编码: ace = 0.6648, 排第一 = progrec (p = 0.459)\n  传反了  : ace = 0.9797, 排第一 = estrec  (p = 0.315)\n边际 RMST 差大了 47%，头名变量也换了。 上线前的检查只有一句话：sum(dat$cens_flag) 必须等于删失人数， 而不是事件数。\n\n\n\n\n长表规模\n\\[\n\\text{行数} \\;=\\; n \\times \\bigl(\\#\\{\\text{原始数据里} &lt; t \\text{的不同时间}\\} + 1\\bigr).\n\\]\nGBSG2 以天为单位，中位数以下就有 291 个不同时间：\nunique event/censor times &lt; median: 291\n=&gt; long data rows at cutoff = median: 200312\n20 万行，三个 sl3 模型各拟合一次，外加 7 个变量各自一轮 TMLE 迭代—— 实际上跑不动。必须先把时间分箱：\nd[, t_bin := as.integer(cut(time,\n                            breaks = quantile(time, probs = seq(0, 1, length.out = 16)),\n                            include.lowest = TRUE, labels = FALSE))]\n分箱数与代价（GBSG2，\\(n = 686\\)，Lrnr_glmnet，effect = \"absolute\"， time_cutoff 取倒数第四个分箱）：\n\n\n\n分箱数\ntime_cutoff\n长表行数\n耗时\n排第一\nprogrec 名次\n\n\n\n\n8\n5\n3 430\n5.0 s\nprogrec (p = 0.460)\n1\n\n\n15\n12\n8 232\n17.4 s\nprogrec (p = 0.468)\n1\n\n\n30\n27\n18 522\n56.1 s\nprogrec (p = 0.574)\n1\n\n\n\n耗时大致随行数超线性增长（行数 ×5.4 → 耗时 ×11）。 排序在三档分箱下稳定，p 值随分箱变细而变大。\n\n\n\n\n\n\n警告分箱数和 time_cutoff 是分析者的自由度，必须预先写死\n\n\n\n上面三行的 p 值从 0.460 到 0.574，还不算大； 但分箱方案、time_cutoff 的位置都直接改变估计的目标参数 （\\(t\\) 变了，RMST 差就变了），换一个组合就是换一个假设检验。 把分箱规则（分位数？等距？几个箱？）与 \\(t\\) 写进分析计划， 不要在看到结果之后再调。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>220</span>  <span class='chapter-title'>5. 生存结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/05-survival.html#sec-xgboost",
+    "href": "notes/unihtee/05-survival.html#sec-xgboost",
+    "title": "5. 生存结局：tte_data_melt() 与四个必踩的坑",
+    "section": "默认学习器在 xgboost ≥ 3.x 下必定报错",
+    "text": "默认学习器在 xgboost ≥ 3.x 下必定报错\n\n\n\n\n\n\n重要Lrnr_xgboost + xgboost 3.2.1.1 ⇒ ALTLIST classes must provide a Set_elt method\n\n\n\nunihtee(dd, covs, covs, \"a\", \"t_bin\", censoring = \"cens_flag\", time_cutoff = 12,\n        outcome_type = \"time-to-event\", effect = \"absolute\")\nError in fit_object$training_offset &lt;- task$has_node(\"offset\") :\n  ALTLIST classes must provide a Set_elt method [class: XGBAltrepPointerClass, pkg: xgboost]\nIn addition: Warning messages:\n1: Passed invalid function arguments: nthread, eval_metric. These should be passed\n   as a list to argument 'params'. ...\n2: Parameter 'watchlist' has been renamed to 'evals'. ...\n3: Argument 'objective' is only for custom objectives. ...\nFailed on Lrnr_xgboost_20_1\n这是 sl3 1.4.5 的 Lrnr_xgboost 与 xgboost 3.x 的不兼容， 不是 unihtee 的 bug，但因为它是两个生存参数的默认值， 所以生存路径开箱即坏。\n修法：显式换掉两个学习器。\nL &lt;- sl3::Lrnr_glmnet$new()\nunihtee(..., failure_hazard_estimator = L, censoring_hazard_estimator = L)\nLrnr_ranger 也可以，但风险模型的结局是极不平衡的 0/1 （每个时间点只有少数人出事件），森林容易输出接近 0 的风险， cumprod(1 - hazard) 于是几乎不下降。glmnet 更稳。 无论选哪个，记得连 cross_fit = TRUE 一起开。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>220</span>  <span class='chapter-title'>5. 生存结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/05-survival.html#sec-standardize",
+    "href": "notes/unihtee/05-survival.html#sec-standardize",
+    "title": "5. 生存结局：tte_data_melt() 与四个必踩的坑",
+    "section": "协变量必须标准化",
+    "text": "协变量必须标准化\n\n\n\n\n\n\n重要不标准化时 SE 会大三个数量级，所有 p 值都 ≈ 1\n\n\n\nGBSG2，15 个分箱，Lrnr_glmnet，set.seed(99)，原始协变量尺度：\nace = 0.6868\n        modifier  estimate        se p_value\n1: menostat_post  0.161000    0.7260  0.8250\n2:    tgrade_num -0.062300    0.5955  0.9167\n3:           age -0.002900    1.2670  0.9982\n4:         tsize  0.004410    3.5680  0.9990\n5:        pnodes  0.000667    1.9510  0.9997\n6:        estrec -0.000498  183.5000  1.0000\n7:       progrec -0.000864 1125.0000  1.0000\n同一个种子，协变量标准化后：\nace = 0.6868                                  &lt;- 完全一样\n        modifier    estimate        se   p_value\n1:       progrec -0.16991541 0.2288286 0.4577575\n2:        pnodes -0.07157998 0.3702869 0.8467166\n3: menostat_post  0.05835220 0.3590156 0.8708854\n4:         tsize  0.05749778 0.3831973 0.8807272\n5:    tgrade_num  0.04639988 0.3465861 0.8934999\n6:        estrec -0.02333858 0.3194417 0.9417580\n7:           age -0.02356390 0.3656039 0.9486103\nprogrec 的 SE 从 1125 降到 0.229。\n为什么 ace 一模一样？ 因为 Lrnr_glmnet 内部本来就标准化， 失败/删失风险的拟合值逐位相同。纯粹的尺度问题应该让估计与 SE 同步按 \\(\\operatorname{sd}(W_j)\\) 缩放，\\(z\\) 值不变。实测 \\(z\\) 变了 （\\(-7.7\\times10^{-7}\\) → \\(-0.647\\)），所以问题不在参数的量纲， 而在第 4 页那个向量回收 bug：\ncentred_modifiers_dt^2 / modifier_vars * plugin_estimates\nmodifier_vars 在原始尺度上跨了 5 个数量级：\n          age menostat_post         tsize    tgrade_num        pnodes\n     102.4294        0.2444      204.3818        0.3397       29.9809\n      progrec        estrec\n   40938.0569    23434.6998\n按行错位除法之后，progrec 那一列会被除以 menostat_post 的 0.244、 tgrade_num 的 0.340 等等，直接爆掉。GBSG2 的 \\(686 = 7 \\times 98\\) 正好整除， 所以连 R 的长度不匹配警告都没有。 标准化让所有 modifier_vars 都等于 1，错位除法就无害了。\n标准化后与”正确回收”版本的对照（同一份拟合）：\n        modifier plugin se_pkg se_fixed ratio\n1:           age -0.018 0.3646   0.3638 1.002\n2: menostat_post  0.019 0.3589   0.3588 1.000\n3:         tsize  0.067 0.3821   0.3758 1.017\n4:    tgrade_num  0.117 0.3472   0.3478 0.998\n5:        pnodes  0.092 0.3720   0.3721 1.000\n6:       progrec -0.175 0.2285   0.2289 0.998\n7:        estrec -0.076 0.3194   0.3149 1.014\n残留误差 2% 以内——那是 plugin_estimates 的错位，可以接受。\n生存路径一律先做 scale()。 记得标准化之后 estimate 的单位变成”每一个标准差”，解释时要换算回来。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>220</span>  <span class='chapter-title'>5. 生存结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/05-survival.html#完整可跑的-gbsg2-例子",
+    "href": "notes/unihtee/05-survival.html#完整可跑的-gbsg2-例子",
+    "title": "5. 生存结局：tte_data_melt() 与四个必踩的坑",
+    "section": "完整可跑的 GBSG2 例子",
+    "text": "完整可跑的 GBSG2 例子\nlibrary(unihtee); library(data.table); library(sl3); library(TH.data)\ndata(\"GBSG2\", package = \"TH.data\")\n\nd &lt;- as.data.table(GBSG2)\nd[, `:=`(a             = as.integer(horTh == \"yes\"),      # 0/1 数值治疗\n         menostat_post = as.integer(menostat == \"Post\"),  # 因子 -&gt; 0/1\n         tgrade_num    = as.integer(tgrade))]\ncovs &lt;- c(\"age\", \"menostat_post\", \"tsize\", \"tgrade_num\", \"pnodes\", \"progrec\", \"estrec\")\n\n# 1. 时间分箱（15 个分位数箱）\nd[, t_bin := as.integer(cut(time,\n                            breaks = quantile(time, probs = seq(0, 1, length.out = 16)),\n                            include.lowest = TRUE, labels = FALSE))]\n# 2. 删失指示反过来：1 = 删失\nd[, cens_flag := 1L - cens]\nsum(d$cens_flag)   #&gt; 387  = 删失人数（不是事件数 299），方向就对了\n\n# 3. 协变量标准化\nds &lt;- d[, c(covs, \"a\", \"t_bin\", \"cens_flag\"), with = FALSE]\nds[, (covs) := lapply(.SD, function(x) as.numeric(scale(x))), .SDcols = covs]\n\n# 4. 换掉默认的 xgboost 学习器\nL &lt;- Lrnr_glmnet$new()\n\nset.seed(99)\nfit &lt;- unihtee(\n  data                       = ds,\n  confounders                = covs,\n  modifiers                  = covs,\n  exposure                   = \"a\",\n  outcome                    = \"t_bin\",\n  censoring                  = \"cens_flag\",\n  time_cutoff                = 12,\n  outcome_type               = \"time-to-event\",\n  effect                     = \"absolute\",\n  failure_hazard_estimator   = L,\n  censoring_hazard_estimator = L\n)\nfit\n17 秒，输出见上一节。\\(n = 686\\)、299 个事件、7 个候选变量， 没有任何变量达到显著（最小 p = 0.458）。这与本书 效应修饰的效应尺度 一页的结论一致：GBSG2 上的”修饰效应”信号很弱， 不同方法给出的头名变量互相打架，progrec 只是其中一个常见候选。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>220</span>  <span class='chapter-title'>5. 生存结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/05-survival.html#相对尺度的生存参数",
+    "href": "notes/unihtee/05-survival.html#相对尺度的生存参数",
+    "title": "5. 生存结局：tte_data_melt() 与四个必踩的坑",
+    "section": "相对尺度的生存参数",
+    "text": "相对尺度的生存参数\n同一份数据，effect = \"relative\"：\nace = 0.1066\n        modifier estimate     se p_value p_value_fdr\n1: menostat_post  -0.0516 0.1757   0.769       0.994\n2:        pnodes  -0.3476 1.4331   0.808       0.994\n3:           age  -0.0392 0.1657   0.813       0.994\n4:    tgrade_num   0.0221 0.0962   0.818       0.994\n5:         tsize  -0.0381 0.3859   0.921       0.994\n6:        estrec  -0.0038 0.1243   0.975       0.994\n7:       progrec  -0.0007 0.1060   0.994       0.994\npnodes 的 SE 是估计值的 4 倍，整张表没有任何结构—— 排序与绝对尺度完全不同（progrec 从第 1 掉到第 7）。 本机实测里相对生存参数是这个包最不稳的一条路， 再加上第 1 页指出的 “插值估计与一步/TMLE 目标参数不一致”，建议默认用绝对尺度（RMST 差）。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>220</span>  <span class='chapter-title'>5. 生存结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/05-survival.html#生存路径的最小检查清单",
+    "href": "notes/unihtee/05-survival.html#生存路径的最小检查清单",
+    "title": "5. 生存结局：tte_data_melt() 与四个必踩的坑",
+    "section": "生存路径的最小检查清单",
+    "text": "生存路径的最小检查清单\n\n\n\n\n\n\n\n检查\n命令\n\n\n\n\n删失编码方向\nsum(dat$cens_flag) 应等于删失人数，不是事件数\n\n\n时间已分箱\nlength(unique(dat$t_bin)) &lt;= 30\n\n\n长表规模可接受\nnrow(dat) * (length(unique(dat$t_bin[dat$t_bin &lt; cutoff])) + 1)\n\n\n协变量已标准化\nsapply(dat[, ..covs], var) 全部为 1\n\n\n学习器不是 xgboost\n显式传 failure_hazard_estimator / censoring_hazard_estimator\n\n\n治疗是 0/1 数值\nis.numeric(dat$a) && all(dat$a %in% 0:1)\n\n\nmodifier 不是因子\nall(sapply(dat[, ..covs], is.numeric))",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>220</span>  <span class='chapter-title'>5. 生存结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/05-survival.html#接下来",
+    "href": "notes/unihtee/05-survival.html#接下来",
+    "title": "5. 生存结局：tte_data_melt() 与四个必踩的坑",
+    "section": "接下来",
+    "text": "接下来\n\n第 6 页：结果怎么看、怎么画（含生存森林图与 SE 对照图）；\n第 7 页：全部失效路径汇总与工作流。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>220</span>  <span class='chapter-title'>5. 生存结局</span>"
+    ]
+  },
+  {
     "objectID": "notes/tidyhte/03-model-cfg.html",
     "href": "notes/tidyhte/03-model-cfg.html",
     "title": "3. 模型配置类：Model_cfg 家族",
@@ -14176,6 +14862,61 @@
     "crumbs": [
       "tidyhte 包函数手册",
       "<span class='chapter-number'>212</span>  <span class='chapter-title'>5. 冗余函数与伪结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/06-print-plot.html#自己画三类结果表图",
+    "href": "notes/unihtee/06-print-plot.html#自己画三类结果表图",
+    "title": "6. 结果可视化",
+    "section": "自己画：三类结果表图",
+    "text": "自己画：三类结果表图\n内置图一次只讲一个变量。筛选阶段真正要看的是整张表， 而这需要自己画。下面三类图覆盖了绝大多数场景，代码可直接抄。\n共同的准备：\nlibrary(ggplot2); library(data.table)\ntb &lt;- as.data.table(fit$temvip_inference_tbl)[, modifier := as.character(modifier)]\ntb[, sig := fifelse(p_value_fdr &lt; 0.05, \"FDR &lt; 0.05\", \"不显著\")]\n\n\n\n\n\n\n注记中文标签的字体\n\n\n\n本页所有图用 ragg::agg_png 输出（ggsave(..., device = ragg::agg_png)）。 Windows 默认 PNG 设备在 CJK 上容易掉字，ragg 不会。 ragg 是 ggplot2 的常见配套，多数环境已经装了。\n\n\n\n森林图：变量少（≤ 20）时的首选\n森林图同时给出效应大小、精度和显著性，是结果表最忠实的翻译。\ntb[, modifier := factor(modifier, levels = tb[order(estimate), modifier])]\n\nggplot(tb, aes(x = estimate, y = modifier, colour = sig)) +\n  geom_vline(xintercept = 0, linetype = \"22\", colour = \"grey40\") +\n  geom_errorbar(aes(xmin = ci_lower, xmax = ci_upper), width = .22, linewidth = .6) +\n  geom_point(size = 2.4) +\n  geom_text(aes(x = ci_upper, label = sprintf(\"  p=%.1e\", p_value_fdr)),\n            hjust = 0, size = 3, colour = \"grey30\") +\n  scale_colour_manual(values = c(\"FDR &lt; 0.05\" = \"#C0392B\", \"不显著\" = \"grey55\")) +\n  scale_x_continuous(expand = expansion(mult = c(.05, .35))) +\n  labs(x = \"Ψ̂ⱼ（结局单位 / W_j 单位）\", y = NULL, colour = NULL) +\n  theme_bw(base_size = 11) + theme(legend.position = \"bottom\")\n\n\n\n\n\n\n图 221.5: README 数据（\\(n=500\\)，\\(p=10\\)）的森林图。按 estimate 排序而不是按 p 排序， 是为了让”正负两端”一眼可见。区间跨 0 的都是灰的； w_3 / w_4 的区间离 0 很远，其余八个几乎对称地压在 0 上。 右侧标注的是 BH 校正后的 p。\n\n\n\n\n\n火山图：变量多时看整体格局\n变量上到几十个，森林图就太长了。火山图把效应大小（横轴）与 证据强度（纵轴）摊在一个平面上，还能用点大小编码精度：\ntb[, lab := fifelse(p_value_fdr &lt; 0.05, modifier, NA_character_)]\n\nggplot(tb, aes(x = estimate, y = -log10(p_value))) +\n  geom_hline(yintercept = -log10(0.05), linetype = \"22\", colour = \"grey45\") +\n  geom_vline(xintercept = 0, linetype = \"22\", colour = \"grey80\") +\n  geom_point(aes(size = 1 / se, shape = sig), alpha = .85) +\n  ggrepel::geom_text_repel(aes(label = lab), size = 3.1, min.segment.length = 0, seed = 1) +\n  scale_shape_manual(values = c(\"FDR &lt; 0.05\" = 16, \"不显著\" = 1)) +\n  scale_size_continuous(range = c(1.4, 4), guide = \"none\") +\n  labs(x = \"Ψ̂ⱼ\", y = expression(-log[10](p)), shape = NULL) +\n  theme_bw(base_size = 11) + theme(legend.position = \"bottom\")\n在一份更接近真实筛选场景的数据上（\\(n = 1000\\)，\\(p = 50\\)， 真修饰变量 w_3 / w_4 / w_7，w_1 / w_2 是纯预后兼混杂变量）：\n\n\n\n\n\n\n图 221.6: 高维筛选的火山图。三个真修饰变量在最外侧且实心； w_1 / w_2 虽然既是混杂又是强预后变量，却正确地留在了 0 附近—— 这正是 TEM-VIP 与”看 \\(Y\\) 的变量重要性”的根本区别。 但注意 w_45 这个纯噪声变量也过了 BH 0.05： \\(n = 1000\\)、50 个检验下，FDR 0.05 里出现 1 个假阳性完全正常， 不要把”FDR 显著”读成”确认”。\n\n\n\n\n\n排序条形图：把”该往下查哪几个”讲清楚\n火山图适合放论文，条形图适合放工作汇报——它直接回答”接下来查哪几个”。 把 BH 的实际临界点画出来，比只画 0.05 更有信息：\ntb20 &lt;- head(tb[order(p_value)], 20)[, modifier := factor(modifier, levels = rev(modifier))]\nthr  &lt;- max(tb[p_value_fdr &lt; 0.05, p_value])      # BH 在本次调用内的实际临界 p\n\nggplot(tb20, aes(x = -log10(p_value), y = modifier)) +\n  geom_col(width = .7, fill = \"grey70\") +\n  geom_vline(xintercept = -log10(0.05), linetype = \"22\", colour = \"grey40\") +\n  geom_vline(xintercept = -log10(thr), colour = \"#C0392B\", linewidth = .45) +\n  labs(x = expression(-log[10](p)), y = NULL) +\n  theme_bw(base_size = 11)\n\n\n\n\n\n\n图 221.7: 同一份 \\(p = 50\\) 的数据，top-20。灰虚线是未校正的 0.05， 红实线是 BH 在本次调用内的实际临界点——它比 0.05 严得多， 这就是 p_value_fdr 在做的事。 横轴是证据强度不是效应大小；效应大小要回到森林图看。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>221</span>  <span class='chapter-title'>6. 结果可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/06-print-plot.html#自己画三类诊断对照图",
+    "href": "notes/unihtee/06-print-plot.html#自己画三类诊断对照图",
+    "title": "6. 结果可视化",
+    "section": "自己画：三类诊断对照图",
+    "text": "自己画：三类诊断对照图\n这一组不是为了展示结果，而是为了在出结果之前发现自己配错了。 每一张都对应第 7 页清单里的一条。\n\n交叉拟合开没开\n第 3 页那条硬规则的可视化版本。 把三种配置的估计与区间画在一起，再标上真值：\ngrab &lt;- function(f, tag) as.data.table(f$temvip_inference_tbl)[\n  , .(modifier = as.character(modifier), estimate, se, ci_lower, ci_upper, cfg = tag)]\n\nL &lt;- Lrnr_ranger$new()\nset.seed(2); f1 &lt;- unihtee(dt, cn, cn, \"a\", \"y\", outcome_type = \"continuous\", effect = \"absolute\")\nset.seed(2); f2 &lt;- unihtee(dt, cn, cn, \"a\", \"y\", outcome_type = \"continuous\", effect = \"absolute\",\n                           cond_outcome_estimator = L, prop_score_estimator = L)\nset.seed(2); f3 &lt;- unihtee(dt, cn, cn, \"a\", \"y\", outcome_type = \"continuous\", effect = \"absolute\",\n                           cond_outcome_estimator = L, prop_score_estimator = L, cross_fit = TRUE)\n\ncmp &lt;- rbindlist(list(grab(f1, \"① 默认 glm / 不交叉拟合\"),\n                      grab(f2, \"② ranger / 不交叉拟合\"),\n                      grab(f3, \"③ ranger / 交叉拟合\")))[modifier %in% c(\"w_3\",\"w_4\",\"w_8\",\"w_5\")]\n\nggplot(cmp, aes(x = estimate, y = modifier, colour = cfg)) +\n  geom_vline(xintercept = 0, linetype = \"22\", colour = \"grey75\") +\n  geom_errorbar(aes(xmin = ci_lower, xmax = ci_upper), width = .22,\n                position = position_dodge(width = .65), linewidth = .6) +\n  geom_point(size = 2.2, position = position_dodge(width = .65)) +\n  theme_bw(base_size = 11) + theme(legend.position = \"bottom\")\n\n\n\n\n\n\n图 221.8: 上：估计与名义 95% 区间，× 是真值。 ② 的区间比 ① 窄一半，却离真值更远——这是最危险的组合， 它在形式上比正确答案更”显著”。 下：同一批变量的 SE，② 只有 ③ 的四成。 把这张图跑一遍只要几秒，是判断”我该不该开 cross_fit“最快的方法。\n\n\n\n\n\n换一把效应尺度，名次变了多少\neffect = \"absolute\" 与 \"relative\" 是两个不同的参数，不是同一个量的两种表达。 用名次连线图（bump chart）看它们是否给出一致的结论：\nr &lt;- rbindlist(lapply(c(\"absolute\", \"relative\"), function(e) {\n  f &lt;- unihtee(dtb, cn, cn, \"a\", \"y\", outcome_type = \"binary\", effect = e)\n  t &lt;- as.data.table(f$temvip_inference_tbl)[, .(modifier = as.character(modifier), p_value)]\n  t[, `:=`(rank = rank(p_value), scale = e)]\n}))\n\nggplot(r, aes(x = scale, y = rank, group = modifier)) +\n  geom_line(linewidth = .8, alpha = .85) + geom_point(size = 2.6) +\n  scale_y_reverse(breaks = 1:10) +\n  labs(x = NULL, y = \"名次（1 = p 值最小）\") + theme_bw(base_size = 11)\n\n\n\n\n\n\n图 221.9: 二分类结局，\\(n = 500\\)。真修饰变量 w_3 名次 1→2、w_4 名次 3→6， 而纯噪声 w_5 是 2→1，两把尺子都把它排在 w_4 之前。 混杂兼预后变量 w_1 / w_2 在两边都在中下游，说明参数定义确实在起作用。 这张图的用法是：先画，再决定写哪一把尺度进方法学； 两边结论打架时不要事后挑一个好看的报。\n\n\n\n\n\n协变量标准化前后的 SE\n第 4 页那个向量回收 bug 的可视化。 生存结局和任何非默认学习器都会触发它，画一次就知道自己有没有中招：\nse &lt;- merge(ts[, .(modifier, se_std = se)], tr[, .(modifier, se_raw = se)], by = \"modifier\")\nse[, vj := sapply(modifier, function(m) var(ds[[m]]))]      # 原始尺度的方差\n\nsl &lt;- melt(se[order(vj)], id.vars = c(\"modifier\", \"vj\"),\n           measure.vars = c(\"se_raw\", \"se_std\"),\n           variable.name = \"scale\", value.name = \"se\")\n\nggplot(sl, aes(x = se, y = factor(modifier, levels = se[order(vj), modifier]), colour = scale)) +\n  geom_line(aes(group = modifier), colour = \"grey75\", linewidth = .6) +\n  geom_point(size = 2.8) +\n  scale_x_log10() +\n  labs(x = \"报告的 se（对数刻度）\", y = NULL, colour = NULL) +\n  theme_bw(base_size = 11) + theme(legend.position = \"bottom\")\n\n\n\n\n\n\n图 221.10: GBSG2，同一份 nuisance 拟合（glmnet 内部本来就标准化， 所以两边的 ace_estimate 逐位相同，只有报告的 SE 变了）。 上：progrec 的 SE 从 0.229 变成 1125，跨了将近四个数量级。 下：放大倍数与该变量的原始方差成正比—— 这正是”按行回收”应该有的指纹，而不是量纲效应 （真的量纲效应会让 SE 和估计同比缩放，\\(z\\) 不变；这里 \\(z\\) 从 \\(-7.7\\times10^{-7}\\) 变成 \\(-0.647\\)）。 纵轴按原始方差排序，可以看到一条清晰的斜坡。\n\n\n\n判断规则很简单：把所有 modifiers 的 var() 打出来，跨度超过一个数量级就先 scale()。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>221</span>  <span class='chapter-title'>6. 结果可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/06-print-plot.html#sec-survival-plot",
+    "href": "notes/unihtee/06-print-plot.html#sec-survival-plot",
+    "title": "6. 结果可视化",
+    "section": "生存结局的图",
+    "text": "生存结局的图\nplot.unihtee() 对生存结局照常可用——fit$data 里存的是原始宽表， 纵轴的”条件平均因果效应”在这里读作”截至 \\(t\\) 的 RMST 差”。 但更常用的还是森林图：\nts &lt;- as.data.table(f_s$temvip_inference_tbl)[, modifier := as.character(modifier)]\nts[, modifier := factor(modifier, levels = ts[order(estimate), modifier])]\n\nggplot(ts, aes(x = estimate, y = modifier)) +\n  geom_vline(xintercept = 0, linetype = \"22\", colour = \"grey40\") +\n  geom_errorbar(aes(xmin = ci_lower, xmax = ci_upper), width = .2,\n                colour = \"grey45\", linewidth = .6) +\n  geom_point(size = 2.4, colour = \"#2E86C1\") +\n  geom_text(aes(x = ci_upper, label = sprintf(\"  p=%.2f\", p_value)),\n            hjust = 0, size = 3, colour = \"grey30\") +\n  scale_x_continuous(expand = expansion(mult = c(.06, .3))) +\n  labs(x = \"Ψ̂ⱼ（每个标准差对应的 RMST 差改变量）\", y = NULL) +\n  theme_bw(base_size = 11)\n\n\n\n\n\n\n图 221.11: GBSG2，15 个时间分箱、time_cutoff = 12、Lrnr_glmnet、协变量已标准化。 七个变量的区间全部跨 0，最小的 p 是 progrec 的 0.46。 横轴单位是”每个标准差”——因为做了标准化，解释时要乘回 sd(progrec) 才是原始单位。 这张图的价值恰恰在于它是阴性的：它把”没有发现”画得和”有发现”一样清楚， 而只报一张按 p 排序的表很容易被读成”progrec 最重要”。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>221</span>  <span class='chapter-title'>6. 结果可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/06-print-plot.html#一张图该配哪种场景",
+    "href": "notes/unihtee/06-print-plot.html#一张图该配哪种场景",
+    "title": "6. 结果可视化",
+    "section": "一张图该配哪种场景",
+    "text": "一张图该配哪种场景\n\n\n\n\n\n\n\n\n想回答的问题\n用哪张图\n本页位置\n\n\n\n\n某个特定变量的效应怎么随它变化\n内置 plot.unihtee()\n图 221.1、图 221.2\n\n\n前几名变量里哪些真的在动\n内置图批量 + 统一纵轴\n图 221.3\n\n\n我会不会漏了一个非线性修饰变量\nAIPW 伪结局散点 + loess\n图 221.4\n\n\n效应有多大、精度如何（变量 ≤ 20）\n森林图\n图 221.5\n\n\n几十个变量的整体格局\n火山图\n图 221.6\n\n\n接下来该往下查哪几个\n排序条形图 + BH 临界线\n图 221.7\n\n\n我该不该开 cross_fit\n三配置估计/区间对照\n图 221.8\n\n\n两把效应尺度结论一致吗\n名次连线图\n图 221.9\n\n\n我的 SE 可不可信\n标准化前后 SE 对照（对数轴）\n图 221.10\n\n\n生存结局的结果怎么呈现\n森林图（注意单位是”每个标准差”）\n图 221.11",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>221</span>  <span class='chapter-title'>6. 结果可视化</span>"
+    ]
+  },
+  {
+    "objectID": "notes/unihtee/06-print-plot.html#导出与在-quarto-里使用",
+    "href": "notes/unihtee/06-print-plot.html#导出与在-quarto-里使用",
+    "title": "6. 结果可视化",
+    "section": "导出与在 Quarto 里使用",
+    "text": "导出与在 Quarto 里使用\n# 本页全部图形的输出方式：ragg 保证中文不掉字，白底在深浅主题下都可读\nggsave(\"temvip-forest.png\", p, width = 8, height = 5, dpi = 150,\n       device = ragg::agg_png, bg = \"white\")\n在 Quarto 里插入并交叉引用：\n![说明文字。](../../images/temvip-forest.png){#fig-my-forest}\n\n正文里用 [@fig-my-forest] 引用。\n\n\n\n\n\n\n注记本页图形的可复现性\n\n\n\n所有图形在 Windows R 4.4.3、unihtee 0.0.3、sl3 1.4.5、ggplot2 4.0.2 下生成， 随机过程均已固定种子（README 数据 set.seed(510)； \\(p = 50\\) 的筛选场景 set.seed(77)；U 形演示 set.seed(2026)； ranger 对照 set.seed(2)；GBSG2 set.seed(99)）。 glmnet / ranger 带交叉验证随机性，换种子结果会小幅变动， 但本页讨论的方向性结论（内置图是直线、U 形漏报、 不交叉拟合 SE 塌缩、未标准化 SE 爆炸）与种子无关。",
+    "crumbs": [
+      "unihtee 包函数手册",
+      "<span class='chapter-number'>221</span>  <span class='chapter-title'>6. 结果可视化</span>"
     ]
   },
   {
