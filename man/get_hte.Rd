@@ -35,7 +35,9 @@ covariates with a message, because a subgroup estimate is only guaranteed
 for variables the forest conditions on.}
 
 \item{adj_var}{Character vector of covariates the forest conditions on, or
-\code{NULL}. Factor, character and logical columns enter as indicator columns.}
+\code{NULL}. Factor, character and logical columns enter as one indicator
+column per level, with no reference level dropped, so a tree can split
+any single level off from the rest.}
 
 \item{surv}{Outcome selector, following \code{\link[RegR:get_eff]{RegR::get_eff()}}:
 \itemize{

@@ -83,6 +83,13 @@ test_that("get_hte returns the documented structure", {
   expect_identical(attr(res, "analysis")$outcome_type, "binary")
 })
 
+test_that("every factor enters the forest with one column per level", {
+  res <- hte_bin()
+  expect_identical(colnames(res$fit$X.orig),
+                   c("age", "x2", "sexF", "sexM", "stageI", "stageII", "stageIII"))
+  expect_identical(attr(res$fit$X.orig, "assign"), c(1L, 2L, 3L, 3L, 4L, 4L, 4L))
+})
+
 test_that("diff reproduces grf for every estimand and $data matches grf", {
   res <- hte_bin()
   map <- c(ATE = "all", ATT = "treated", ATC = "control", ATO = "overlap")

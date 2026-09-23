@@ -7,7 +7,7 @@
 #   .merge_named_arg    validate + merge a fully named list argument
 #   .sens_check_col     validate that a character argument names data columns
 #   .sens_complete      drop incomplete rows on the columns a backend uses
-#   .sens_model_matrix  numeric design matrix (no intercept) for dml / iv
+#   .sens_model_matrix  numeric design matrix (no intercept) for dml / iv / hte
 #   .sens_hr_to_rr      VanderWeele-Ding square-root HR -> RR approximation
 #   .sens_fmt_vec       compact vector rendering for print methods
 #
@@ -82,12 +82,23 @@
 
 #' @keywords internal
 #' @noRd
-.sens_model_matrix <- function(data, vars) {
+.sens_model_matrix <- function(data, vars, one_hot = FALSE) {
   if (is.null(vars) || !length(vars))
     return(matrix(numeric(0), nrow = nrow(data), ncol = 0L))
   quoted <- .sens_quote_names(vars)
+  # Without an intercept only the first factor keeps every level. `one_hot`
+  # keeps every level of every factor, which forests (get_hte) need so that
+  # any level can be split off in one step and no factor gets an extra column.
+  ca <- NULL
+  if (one_hot) {
+    fac <- vars[!vapply(data[vars], is.numeric, logical(1L))]
+    if (length(fac)) {
+      data[fac] <- lapply(data[fac], function(x) droplevels(as.factor(x)))
+      ca <- lapply(data[fac], stats::contrasts, contrasts = FALSE)
+    }
+  }
   mm <- stats::model.matrix(stats::reformulate(quoted, intercept = FALSE),
-                            data = data)
+                            data = data, contrasts.arg = ca)
   # Matrix backends select numeric benchmarks by the original column name.
   hit <- match(colnames(mm), quoted)
   colnames(mm)[!is.na(hit)] <- vars[hit[!is.na(hit)]]

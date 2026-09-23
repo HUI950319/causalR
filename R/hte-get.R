@@ -120,7 +120,9 @@
 #'   covariates with a message, because a subgroup estimate is only guaranteed
 #'   for variables the forest conditions on.
 #' @param adj_var Character vector of covariates the forest conditions on, or
-#'   `NULL`. Factor, character and logical columns enter as indicator columns.
+#'   `NULL`. Factor, character and logical columns enter as one indicator
+#'   column per level, with no reference level dropped, so a tree can split
+#'   any single level off from the rest.
 #' @param surv Outcome selector, following [RegR::get_eff()]:
 #'   \itemize{
 #'     \item `TRUE` (default): survival outcome in the fixed columns `time`
@@ -411,7 +413,7 @@ get_hte <- function(data,
          call. = FALSE)
 
   # ---- Fit and estimate ----------------------------------------------------
-  X   <- .sens_model_matrix(data, covars)
+  X   <- .sens_model_matrix(data, covars, one_hot = TRUE)
   fit <- do.call(fun, c(list(X = X, Y = Y, W = W),
                         if (is_surv) list(D = D, horizon = time),
                         grf_args))
