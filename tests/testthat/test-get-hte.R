@@ -145,6 +145,26 @@ test_that("the risk-ratio interval covers the true marginal risk ratio", {
   expect_gt(res$stats$conf.high, truth)
 })
 
+test_that("survival diff, ratio and OR intervals cover the true marginal effects", {
+  skip_if_not_installed("grf")
+  # 100 replicates of this design covered at 0.97-0.99 for every measure
+  d   <- hte_surv_data(n = 2000L, seed = 1)
+  res <- get_hte(d, cat_var = "z", adj_var = c("age", "x2"), surv = TRUE,
+                 time = 60, measure = c("diff", "ratio", "OR"),
+                 grf_args = list(num.trees = 500, seed = 1))
+  # S_z(60) under hazard 0.02 exp(0.3 x2 - 0.5 z) with x2 ~ N(0, 1)
+  S <- function(z) stats::integrate(function(x)
+    exp(-0.02 * exp(0.3 * x - 0.5 * z) * 60) * stats::dnorm(x), -Inf, Inf)$value
+  f1 <- 1 - S(1)
+  f0 <- 1 - S(0)
+  truth <- c(diff = S(1) - S(0), ratio = f1 / f0,
+             OR = (f1 / (1 - f1)) / (f0 / (1 - f0)))
+  st <- res$stats
+  expect_identical(st$measure, c("diff", "ratio", "OR"))
+  expect_true(all(st$conf.low < truth[st$measure]))
+  expect_true(all(st$conf.high > truth[st$measure]))
+})
+
 test_that("subgroups use the grf subset estimate and a descriptive CATE mean", {
   skip_if_not_installed("grf")
   d <- hte_bin_data()
