@@ -24,7 +24,8 @@ plt_hte_dep(
 the order of \code{x$importance}, a character vector of covariate names, or
 \code{"fct"} / \code{"num"} for only the categorical / continuous ones. A numeric
 covariate with more than 5 distinct values counts as continuous.
-\code{type = "heat"} needs exactly two names.}
+\code{type = "heat"} needs exactly two names. A patient missing a covariate
+is left out of its panel.}
 
 \item{type}{\code{"dep"} (default) draws one panel per covariate; \code{"heat"} draws
 the partial dependence of two covariates as a heat map.}

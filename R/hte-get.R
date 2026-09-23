@@ -131,7 +131,8 @@
     fit <- stats::lm(s ~ splines::ns(x, df = spline_df))
     V   <- sandwich::vcovHC(fit, type = "HC3")
     b   <- stats::coef(fit)[-1L]
-    g   <- data.frame(x = seq(min(x), max(x), length.out = 100L))
+    g   <- data.frame(x = seq(min(x, na.rm = TRUE), max(x, na.rm = TRUE),
+                              length.out = 100L))
     M   <- stats::model.matrix(stats::delete.response(stats::terms(fit)), g)
     est <- drop(M %*% stats::coef(fit))
     se  <- sqrt(rowSums((M %*% V) * M))
@@ -187,11 +188,14 @@
 #'   Numeric columns with more than 5 distinct values are rejected; cut them
 #'   into groups first. Columns missing from `adj_var` are added to the forest
 #'   covariates with a message, because a subgroup estimate is only guaranteed
-#'   for variables the forest conditions on.
+#'   for variables the forest conditions on. A patient whose value is missing
+#'   is left out of that column's rows.
 #' @param adj_var Character vector of covariates the forest conditions on, or
 #'   `NULL`. Factor, character and logical columns enter as one indicator
 #'   column per level, with no reference level dropped, so a tree can split
-#'   any single level off from the rest.
+#'   any single level off from the rest. Missing values are kept and left to
+#'   grf, which splits on missingness; a missing factor value leaves all of
+#'   that factor's indicator columns missing.
 #' @param surv Outcome selector, following [RegR::get_eff()]:
 #'   \itemize{
 #'     \item `TRUE` (default): survival outcome in the fixed columns `time`
@@ -226,8 +230,8 @@
 #'   to `time`. Per-row fields (`W.hat`, `Y.hat`, `sample.weights`,
 #'   `clusters`) must match the complete rows analysed, and `clusters` and
 #'   `sample.weights` are only supported with `measure = "diff"`.
-#' @param verbose Logical. `TRUE` reports how many incomplete rows were
-#'   dropped. Default `FALSE`.
+#' @param verbose Logical. `TRUE` reports how many rows were dropped for a
+#'   missing `cat_var` or outcome. Default `FALSE`.
 #'
 #' @section Effect measures:
 #' Every measure compares the mean outcome of the two arms:
@@ -303,7 +307,7 @@
 #'       a numeric one with more than 5 distinct values. Levels with fewer
 #'       than two patients in either arm are left out. [plt_hte_dep()] draws
 #'       the same estimates.}
-#'     \item{`data`}{The complete rows analysed plus `.cate`, the out-of-bag
+#'     \item{`data`}{The rows analysed plus `.cate`, the out-of-bag
 #'       CATE, and `.dr_score`, the AIPW score (equal to
 #'       [grf::get_scores()]). Both are on the `"diff"` scale whatever
 #'       `measure` is.}
@@ -311,7 +315,9 @@
 #'   }
 #'   Analysis metadata is attached as `attr(x, "analysis")`, including the
 #'   covariates actually used, the treated level and the seed of the forest.
-#'   Rows with a missing value in any column used are dropped.
+#'   Rows missing `cat_var` or the outcome are dropped. Missing covariates are
+#'   left to grf, and each subgroup row, `p_het` and [plt_hte_dep()] panel
+#'   uses the patients whose value of that covariate is observed.
 #'
 #' @references
 #' Wager S, Athey S (2018). Estimation and inference of heterogeneous
@@ -438,7 +444,14 @@ get_hte <- function(data,
       "Added {.field {added}} to the forest covariates: subgroup estimates",
       "are only guaranteed for variables the forest conditions on.")))
 
-  data <- .sens_complete(data, c(cat_var, outcome, covars), verbose)
+  # Only the exposure and the outcome must be complete. grf splits on missing
+  # covariates itself, so dropping those rows -- or letting a sub_var shrink
+  # the overall sample -- would only throw patients away.
+  data <- .sens_complete(data, c(cat_var, outcome), verbose)
+  empty <- covars[vapply(data[covars], function(x) all(is.na(x)), logical(1L))]
+  if (length(empty))
+    stop(sprintf("Covariate column(s) %s have no observed value.",
+                 paste0("`", empty, "`", collapse = ", ")), call. = FALSE)
   tz <- .psw_treat(data[[cat_var]], cat_var, arg = "cat_var")
   W  <- tz$z
   if (sum(W == 1L) < 2L || sum(W == 0L) < 2L)
@@ -563,7 +576,7 @@ get_hte <- function(data,
     sub_tbl <- do.call(rbind, lapply(sub_var, function(v) {
       g <- droplevels(as.factor(data[[v]]))
       rows <- do.call(rbind, lapply(levels(g), function(lv) {
-        idx <- g == lv
+        idx <- g %in% lv                 # FALSE where `v` is missing
         est <- .hte_estimate(fit, s, idx, grid, event_risk, z,
                              sprintf("%s = %s", v, lv), beyond)
         cate_mean <- vapply(seq_len(nrow(est)), function(i) {

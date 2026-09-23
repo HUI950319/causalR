@@ -132,6 +132,30 @@ test_that("type = 'heat' tiles the two-way partial dependence", {
                                         stageII = 0, stageIII = 1)))
 })
 
+test_that("a covariate with missing values draws only its observed patients", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("sandwich")
+  skip_if_not_installed("patchwork")
+  set.seed(11)
+  n <- 400L
+  d <- data.frame(age   = stats::runif(n, 20, 85),
+                  stage = factor(sample(c("I", "II", "III"), n, replace = TRUE)))
+  d$age[1:40]    <- NA
+  d$stage[41:80] <- NA
+  d$z <- stats::rbinom(n, 1, 0.5)
+  d$y <- stats::rbinom(n, 1, 0.3 + 0.1 * d$z)
+  res <- get_hte(d, cat_var = "z", adj_var = c("age", "stage"), surv = "y",
+                 grf_args = list(num.trees = 200, seed = 1))
+  expect_identical(nrow(res$data), n)
+
+  p <- plt_hte_dep(res, display = c("cate", "dr", "pdp"))
+  for (q in panels_of(p)) expect_no_warning(ggplot2::ggplot_build(q))
+  pts <- layer_data_of(plt_hte_dep(res, x_var = "stage", display = "cate"),
+                       "GeomPoint")
+  expect_identical(nrow(pts), n - 40L)
+  expect_false(anyNA(pts$x))
+})
+
 test_that("invalid requests stop with a clear message", {
   res <- dep_res()
   expect_error(plt_hte_dep(list()), "hte_res")

@@ -32,12 +32,15 @@ one exposure is analysed.}
 Numeric columns with more than 5 distinct values are rejected; cut them
 into groups first. Columns missing from \code{adj_var} are added to the forest
 covariates with a message, because a subgroup estimate is only guaranteed
-for variables the forest conditions on.}
+for variables the forest conditions on. A patient whose value is missing
+is left out of that column's rows.}
 
 \item{adj_var}{Character vector of covariates the forest conditions on, or
 \code{NULL}. Factor, character and logical columns enter as one indicator
 column per level, with no reference level dropped, so a tree can split
-any single level off from the rest.}
+any single level off from the rest. Missing values are kept and left to
+grf, which splits on missingness; a missing factor value leaves all of
+that factor's indicator columns missing.}
 
 \item{surv}{Outcome selector, following \code{\link[RegR:get_eff]{RegR::get_eff()}}:
 \itemize{
@@ -80,8 +83,8 @@ to \code{time}. Per-row fields (\code{W.hat}, \code{Y.hat}, \code{sample.weights
 \code{clusters}) must match the complete rows analysed, and \code{clusters} and
 \code{sample.weights} are only supported with \code{measure = "diff"}.}
 
-\item{verbose}{Logical. \code{TRUE} reports how many incomplete rows were
-dropped. Default \code{FALSE}.}
+\item{verbose}{Logical. \code{TRUE} reports how many rows were dropped for a
+missing \code{cat_var} or outcome. Default \code{FALSE}.}
 }
 \value{
 An object of class \code{hte_res}: a list of
@@ -108,7 +111,7 @@ for a categorical covariate (\code{df} = levels - 1, the \code{p_inter} of a
 a numeric one with more than 5 distinct values. Levels with fewer
 than two patients in either arm are left out. \code{\link[=plt_hte_dep]{plt_hte_dep()}} draws
 the same estimates.}
-\item{\code{data}}{The complete rows analysed plus \code{.cate}, the out-of-bag
+\item{\code{data}}{The rows analysed plus \code{.cate}, the out-of-bag
 CATE, and \code{.dr_score}, the AIPW score (equal to
 \code{\link[grf:get_scores]{grf::get_scores()}}). Both are on the \code{"diff"} scale whatever
 \code{measure} is.}
@@ -116,7 +119,9 @@ CATE, and \code{.dr_score}, the AIPW score (equal to
 }
 Analysis metadata is attached as \code{attr(x, "analysis")}, including the
 covariates actually used, the treated level and the seed of the forest.
-Rows with a missing value in any column used are dropped.
+Rows missing \code{cat_var} or the outcome are dropped. Missing covariates are
+left to grf, and each subgroup row, \code{p_het} and \code{\link[=plt_hte_dep]{plt_hte_dep()}} panel
+uses the patients whose value of that covariate is observed.
 }
 \description{
 Fits one generalized random forest for a binary exposure and returns, in

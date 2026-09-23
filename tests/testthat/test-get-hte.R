@@ -261,6 +261,36 @@ test_that("a propensity of exactly 0 or 1 stops with a positivity message", {
                           grf_args = c(hte_args, W.hat = 0.5)), "hte_res")
 })
 
+test_that("missing covariates go to grf; only cat_var and the outcome drop rows", {
+  skip_if_not_installed("grf")
+  d <- hte_bin_data()
+  set.seed(7)
+  d$grade <- factor(sample(c("G1", "G2", "G3"), nrow(d), replace = TRUE))
+  d$grade[sample(nrow(d), 200)] <- NA
+  d$age[sample(nrow(d), 80)]    <- NA
+  d$y[1:5]  <- NA
+  d$z[6:10] <- NA
+
+  res <- suppressMessages(get_hte(d, "z", sub_var = "grade",
+                                  adj_var = c("age", "x2", "sex"), surv = "y",
+                                  grf_args = hte_args))
+  expect_identical(res$stats$n, nrow(d) - 10L)
+  expect_identical(nrow(res$data), nrow(d) - 10L)
+  expect_true(anyNA(res$fit$X.orig[, "age"]))
+  # a missing level leaves every indicator column of that factor missing
+  na_grade <- is.na(res$data$grade)
+  expect_true(all(is.na(res$fit$X.orig[na_grade,
+                                       c("gradeG1", "gradeG2", "gradeG3")])))
+
+  # subgroups and p_het use the patients whose value is observed
+  sub <- res$subgroup
+  expect_identical(sub$level, c("G1", "G2", "G3"))
+  expect_identical(sum(sub$n), sum(!na_grade))
+  imp <- res$importance
+  expect_equal(imp$p_het[imp$variable == "grade"], sub$p_inter[1])
+  expect_false(is.na(imp$p_het[imp$variable == "age"]))
+})
+
 test_that("continuous outcomes give a ratio of means but no OR", {
   skip_if_not_installed("grf")
   d <- hte_bin_data()

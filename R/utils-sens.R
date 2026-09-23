@@ -97,8 +97,11 @@
       ca <- lapply(data[fac], stats::contrasts, contrasts = FALSE)
     }
   }
-  mm <- stats::model.matrix(stats::reformulate(quoted, intercept = FALSE),
-                            data = data, contrasts.arg = ca)
+  # na.pass keeps every row: the dml / iv backends drop incomplete rows first,
+  # and get_hte() hands missing covariates to grf, which splits on them.
+  form <- stats::reformulate(quoted, intercept = FALSE)
+  mf   <- stats::model.frame(form, data = data, na.action = stats::na.pass)
+  mm   <- stats::model.matrix(form, data = mf, contrasts.arg = ca)
   # Matrix backends select numeric benchmarks by the original column name.
   hit <- match(colnames(mm), quoted)
   colnames(mm)[!is.na(hit)] <- vars[hit[!is.na(hit)]]

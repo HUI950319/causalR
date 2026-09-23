@@ -37,7 +37,8 @@
 
   grid <- lapply(stats::setNames(vars, vars), function(v) {
     xv <- d[[v]]
-    if (.hte_is_num(xv)) seq(min(xv), max(xv), length.out = grid_n)
+    if (.hte_is_num(xv)) seq(min(xv, na.rm = TRUE), max(xv, na.rm = TRUE),
+                             length.out = grid_n)
     else if (is.numeric(xv)) sort(unique(xv))
     else levels(droplevels(as.factor(xv)))
   })
@@ -83,7 +84,8 @@
 #'   the order of `x$importance`, a character vector of covariate names, or
 #'   `"fct"` / `"num"` for only the categorical / continuous ones. A numeric
 #'   covariate with more than 5 distinct values counts as continuous.
-#'   `type = "heat"` needs exactly two names.
+#'   `type = "heat"` needs exactly two names. A patient missing a covariate
+#'   is left out of its panel.
 #' @param type `"dep"` (default) draws one panel per covariate; `"heat"` draws
 #'   the partial dependence of two covariates as a heat map.
 #' @param display Layers of a `"dep"` panel, any of
@@ -307,6 +309,7 @@ plt_hte_dep <- function(x,
 
       if ("cate" %in% display) {
         pts <- data.frame(x = xval(d[[v]]), y = d$.cate, panel = label)
+        pts <- pts[!is.na(pts$x), , drop = FALSE]
         q <- q + if (is_n) {
           list(ggplot2::geom_point(data = pts, ggplot2::aes(x = x, y = y),
                                    colour = "grey55", alpha = 0.4, size = 0.8),
