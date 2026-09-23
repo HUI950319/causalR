@@ -40,7 +40,12 @@ overall mean.}
 intervals (red): the AIPW score mean per level, or a natural spline
 of the AIPW scores with HC3 errors. The strip adds \code{p_het}, the Wald
 test that the CATE does not vary with the covariate. Levels with
-fewer than two patients in either arm are left out.}
+fewer than two patients in either arm are left out, and for a
+survival outcome so are levels in which an arm has no patient
+followed beyond \code{time}; the spline of a continuous covariate covers
+only the values that patients followed beyond \code{time} reach in both
+arms. With nothing left the panel has no red layer and \code{p_het} is
+\code{NA}.}
 \item{\code{"pdp"}}{The partial dependence of the forest (blue): its CATE
 averaged over the patients with the covariate set to each level or
 grid value, other covariates as observed.}

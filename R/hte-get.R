@@ -122,12 +122,27 @@
 # that the levels are equal, the subgroup p_inter of get_hte(). A continuous
 # one gets a natural spline with HC3 errors and a joint Wald test of the
 # spline terms. Either way `p_het` tests whether the CATE varies with it.
+# `beyond` flags the survival patients followed past `time`: a level in which
+# an arm has none is left out, as in the get_hte() subgroups, and a continuous
+# covariate keeps only the values both arms reach among them.
 #' @keywords internal
 #' @noRd
-.hte_dr_var <- function(data, v, w, z, spline_df) {
+.hte_dr_var <- function(data, v, w, z, spline_df, beyond = NULL) {
   x <- data[[v]]
   s <- data$.dr_score
   if (.hte_is_num(x)) {
+    if (!is.null(beyond)) {
+      x1 <- x[beyond & w == 1 & !is.na(x)]
+      x0 <- x[beyond & w == 0 & !is.na(x)]
+      lim <- if (length(x1) && length(x0))
+        c(max(min(x1), min(x0)), min(max(x1), max(x0))) else c(Inf, -Inf)
+      x[!is.na(x) & (x < lim[1L] | x > lim[2L])] <- NA
+      if (length(unique(x[!is.na(x)])) <= spline_df + 1L)
+        return(list(type = "continuous", df = NA_integer_, p_het = NA_real_,
+                    curve = data.frame(x = numeric(0), estimate = numeric(0),
+                                       conf.low = numeric(0),
+                                       conf.high = numeric(0))))
+    }
     fit <- stats::lm(s ~ splines::ns(x, df = spline_df))
     V   <- sandwich::vcovHC(fit, type = "HC3")
     b   <- stats::coef(fit)[-1L]
@@ -147,8 +162,11 @@
   lv <- do.call(rbind, lapply(levels(g), function(l) {
     i  <- which(g == l)
     nt <- sum(w[i])
-    # the same two-per-arm floor as the get_hte() subgroup rows
-    ok  <- nt >= 2 && length(i) - nt >= 2
+    # the same floors as the get_hte() subgroup rows: two patients per arm
+    # and, for survival, someone in each arm followed past `time`
+    ok  <- nt >= 2 && length(i) - nt >= 2 &&
+      (is.null(beyond) || (any(beyond[i] & w[i] == 1) &&
+                             any(beyond[i] & w[i] == 0)))
     est <- if (ok) mean(s[i]) else NA_real_
     se  <- if (ok) stats::sd(s[i]) / sqrt(length(i)) else NA_real_
     data.frame(level = l, n = length(i), n_treat = nt, estimate = est,
@@ -314,8 +332,11 @@
 #'       for a categorical covariate (`df` = levels - 1, the `p_inter` of a
 #'       `sub_var`), and zero natural-spline terms (`df` = 3, HC3 errors) for
 #'       a numeric one with more than 5 distinct values. Levels with fewer
-#'       than two patients in either arm are left out. [plt_hte_dep()] draws
-#'       the same estimates.}
+#'       than two patients in either arm are left out, and so, for a survival
+#'       outcome, are levels in which an arm has no patient followed beyond
+#'       `time`, as in `$subgroup`; the spline of a numeric covariate keeps
+#'       only the values that patients followed beyond `time` reach in both
+#'       arms. [plt_hte_dep()] draws the same estimates.}
 #'     \item{`data`}{The rows analysed plus `.cate`, the out-of-bag
 #'       CATE, and `.dr_score`, the AIPW score (equal to
 #'       [grf::get_scores()]). Both are on the `"diff"` scale whatever
@@ -673,7 +694,8 @@ get_hte <- function(data,
   # plt_hte_dep() prints in its strips.
   src <- covars[attr(X, "assign")]
   vi  <- as.numeric(grf::variable_importance(fit))
-  dr  <- lapply(covars, function(v) .hte_dr_var(data, v, W, z, .HTE_SPLINE_DF))
+  dr  <- lapply(covars, function(v) .hte_dr_var(data, v, W, z, .HTE_SPLINE_DF,
+                                                beyond))
   imp_tbl <- tibble::tibble(
     variable   = covars,
     importance = vapply(covars, function(v) sum(vi[src == v]), numeric(1L),

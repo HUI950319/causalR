@@ -98,7 +98,12 @@
 #'       intervals (red): the AIPW score mean per level, or a natural spline
 #'       of the AIPW scores with HC3 errors. The strip adds `p_het`, the Wald
 #'       test that the CATE does not vary with the covariate. Levels with
-#'       fewer than two patients in either arm are left out.}
+#'       fewer than two patients in either arm are left out, and for a
+#'       survival outcome so are levels in which an arm has no patient
+#'       followed beyond `time`; the spline of a continuous covariate covers
+#'       only the values that patients followed beyond `time` reach in both
+#'       arms. With nothing left the panel has no red layer and `p_het` is
+#'       `NA`.}
 #'     \item{`"pdp"`}{The partial dependence of the forest (blue): its CATE
 #'       averaged over the patients with the covariate set to each level or
 #'       grid value, other covariates as observed.}
@@ -290,6 +295,12 @@ plt_hte_dep <- function(x,
   } else {
     z     <- stats::qnorm(1 - (1 - a$conf_level) / 2)
     w     <- x$fit$W.orig
+    # patients followed past `time`, flagged by the rule get_hte() applies
+    # (grf keeps only the times cut at the horizon)
+    beyond <- if (identical(a$outcome_type, "survival")) {
+      y <- d[[a$outcome[1L]]]
+      if (identical(a$target, "RMST")) y >= a$time else y > a$time
+    }
     fmt_p <- function(p) if (is.na(p)) "NA" else if (p < 0.001) "< 0.001"
                          else sprintf("= %.3f", p)
 
@@ -298,7 +309,8 @@ plt_hte_dep <- function(x,
       lv    <- if (!is_n) levels(droplevels(as.factor(d[[v]])))
       xval  <- function(val) if (is_n) val else factor(as.character(val),
                                                        levels = lv)
-      dr    <- if ("dr" %in% display) .hte_dr_var(d, v, w, z, dr_args$spline_df)
+      dr    <- if ("dr" %in% display) .hte_dr_var(d, v, w, z, dr_args$spline_df,
+                                                  beyond)
       label <- if (is.null(dr)) v else sprintf("%s (p_het %s)", v, fmt_p(dr$p_het))
       yv    <- c(0, ate)
 
@@ -326,7 +338,9 @@ plt_hte_dep <- function(x,
         yv <- c(yv, pts$y)
       }
 
-      if (!is.null(dr)) {
+      # a covariate with no level or value left to estimate gets no dr layer
+      if (!is.null(dr) && (if (is_n) nrow(dr$curve) > 0L
+                           else any(!is.na(dr$levels$estimate)))) {
         if (is_n) {
           cv <- data.frame(dr$curve, panel = label)
           q <- q +

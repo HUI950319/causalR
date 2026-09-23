@@ -156,6 +156,55 @@ test_that("a covariate with missing values draws only its observed patients", {
   expect_false(anyNA(pts$x))
 })
 
+test_that("survival: levels and values no arm follows past `time` leave the dr layer", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("sandwich")
+  skip_if_not_installed("patchwork")
+  set.seed(20260924)
+  n <- 800L
+  d <- data.frame(age   = stats::runif(n, 20, 85),
+                  stage = factor(sample(c("I", "II", "III"), n, replace = TRUE)))
+  d$z  <- stats::rbinom(n, 1, 0.5)
+  ev   <- stats::rexp(n, 0.02)
+  cens <- pmin(stats::rexp(n, 0.01), 120)
+  d$time <- pmin(ev, cens)
+  d$DSS  <- as.integer(ev <= cens)
+  # no treated patient in stage III or over 70 is followed past 60
+  cut <- d$z == 1 & (d$stage == "III" | d$age > 70) & d$time > 50
+  d$time[cut] <- 50
+  d$DSS[cut]  <- 0L
+  expect_warning(
+    res <- get_hte(d, "z", sub_var = "stage", adj_var = c("age", "stage"),
+                   surv = TRUE, time = 60,
+                   grf_args = list(num.trees = 300, seed = 1)),
+    "stage = III: no patient in one arm")
+  imp <- res$importance
+
+  # stage III is NA in $subgroup, so it leaves p_het and the dr layer as well
+  expect_equal(imp$p_het[imp$variable == "stage"],
+               res$subgroup$p_inter[res$subgroup$measure == "diff"][1])
+  expect_identical(imp$df[imp$variable == "stage"], 1L)
+  pr <- layer_data_of(plt_hte_dep(res, x_var = "stage", display = "dr"),
+                      "GeomPointrange")
+  expect_identical(as.character(pr$x), c("I", "II"))
+
+  # the age spline is fit and drawn only where both arms reach past 60
+  dd   <- res$data
+  past <- dd$time > 60
+  lo   <- max(min(dd$age[past & dd$z == 1]), min(dd$age[past & dd$z == 0]))
+  hi   <- min(max(dd$age[past & dd$z == 1]), max(dd$age[past & dd$z == 0]))
+  line <- layer_data_of(plt_hte_dep(res, x_var = "age", display = "dr"),
+                        "GeomLine", "estimate")
+  expect_equal(range(line$x), c(lo, hi))
+  fit <- stats::lm(.dr_score ~ splines::ns(age, df = 3),
+                   data = dd[dd$age >= lo & dd$age <= hi, ])
+  V   <- sandwich::vcovHC(fit, type = "HC3")
+  b   <- stats::coef(fit)[-1]
+  expect_equal(imp$p_het[imp$variable == "age"],
+               stats::pchisq(drop(b %*% solve(V[-1, -1], b)), 3,
+                             lower.tail = FALSE))
+})
+
 test_that("invalid requests stop with a clear message", {
   res <- dep_res()
   expect_error(plt_hte_dep(list()), "hte_res")

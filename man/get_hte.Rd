@@ -116,8 +116,11 @@ that the CATE does not vary with the covariate -- equal level means
 for a categorical covariate (\code{df} = levels - 1, the \code{p_inter} of a
 \code{sub_var}), and zero natural-spline terms (\code{df} = 3, HC3 errors) for
 a numeric one with more than 5 distinct values. Levels with fewer
-than two patients in either arm are left out. \code{\link[=plt_hte_dep]{plt_hte_dep()}} draws
-the same estimates.}
+than two patients in either arm are left out, and so, for a survival
+outcome, are levels in which an arm has no patient followed beyond
+\code{time}, as in \verb{$subgroup}; the spline of a numeric covariate keeps
+only the values that patients followed beyond \code{time} reach in both
+arms. \code{\link[=plt_hte_dep]{plt_hte_dep()}} draws the same estimates.}
 \item{\code{data}}{The rows analysed plus \code{.cate}, the out-of-bag
 CATE, and \code{.dr_score}, the AIPW score (equal to
 \code{\link[grf:get_scores]{grf::get_scores()}}). Both are on the \code{"diff"} scale whatever
