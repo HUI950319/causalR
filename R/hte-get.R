@@ -250,6 +250,10 @@
 #' [RegR::get_eff()]. A hazard ratio itself is not available: a causal forest
 #' estimates contrasts of mean outcomes, which a hazard ratio is not.
 #'
+#' Every measure needs overlap: if the propensity (`W.hat`, estimated or
+#' supplied) is exactly 0 or 1 for any patient, the doubly robust scores are
+#' undefined and the call stops.
+#'
 #' Requested combinations that are not available -- `"OR"` for a continuous
 #' outcome or RMST, a relative measure for anything but the ATE, a survival
 #' estimand other than the ATE -- are skipped with a message; the call stops
@@ -532,6 +536,15 @@ get_hte <- function(data,
   fit <- do.call(fun, c(list(X = X, Y = Y, W = W),
                         if (is_surv) list(D = D, horizon = time),
                         grf_args))
+  # A propensity of exactly 0 or 1 -- a regression forest reaches it when a
+  # covariate region holds one arm only -- divides the AIPW score by zero:
+  # grf's own estimate turns NaN and the ratio scores fail. This also checks
+  # a W.hat passed through grf_args.
+  bad <- !is.finite(fit$W.hat) | fit$W.hat <= 0 | fit$W.hat >= 1
+  if (any(bad))
+    stop(sprintf("The estimated propensity of `%s` is exactly 0 or 1 for %d patient%s, so the doubly robust estimates are undefined. Restrict the data to the region of overlap (for example the patients get_PSW(trim_args = list(method = \"cr\")) keeps), drop covariates that fully determine `%s`, or pass a bounded `W.hat` in `grf_args`.",
+                 cat_var, sum(bad), if (sum(bad) == 1L) "" else "s",
+                 cat_var), call. = FALSE)
   s  <- .hte_arm_scores(fit)
   z  <- stats::qnorm(1 - (1 - conf_level) / 2)
   event_risk <- identical(target, "survival.probability")

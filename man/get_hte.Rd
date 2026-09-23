@@ -147,6 +147,10 @@ ratio would, while \code{"diff"} stays on the survival scale of
 \code{\link[RegR:get_eff]{RegR::get_eff()}}. A hazard ratio itself is not available: a causal forest
 estimates contrasts of mean outcomes, which a hazard ratio is not.
 
+Every measure needs overlap: if the propensity (\code{W.hat}, estimated or
+supplied) is exactly 0 or 1 for any patient, the doubly robust scores are
+undefined and the call stops.
+
 Requested combinations that are not available -- \code{"OR"} for a continuous
 outcome or RMST, a relative measure for anything but the ATE, a survival
 estimand other than the ATE -- are skipped with a message; the call stops

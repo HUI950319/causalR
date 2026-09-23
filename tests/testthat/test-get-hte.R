@@ -246,6 +246,21 @@ test_that("survival: few patients past `time` warn; a subgroup with none is NA",
   expect_false(is.na(sub$estimate[sub$level == "F"]))
 })
 
+test_that("a propensity of exactly 0 or 1 stops with a positivity message", {
+  skip_if_not_installed("grf")
+  set.seed(3)
+  n <- 1000L
+  d <- data.frame(x1 = stats::rnorm(n), x2 = stats::rnorm(n))
+  d$z <- ifelse(d$x2 > 1, 1L, stats::rbinom(n, 1, 0.5))  # x2 > 1 always treated
+  d$y <- stats::rnorm(n) + 0.3 * d$z
+  expect_error(get_hte(d, "z", adj_var = c("x1", "x2"), surv = "y",
+                       measure = c("diff", "ratio"), grf_args = hte_args),
+               "propensity of `z` is exactly 0 or 1")
+  # a bounded, known propensity passes
+  expect_s3_class(get_hte(d, "z", adj_var = c("x1", "x2"), surv = "y",
+                          grf_args = c(hte_args, W.hat = 0.5)), "hte_res")
+})
+
 test_that("continuous outcomes give a ratio of means but no OR", {
   skip_if_not_installed("grf")
   d <- hte_bin_data()
