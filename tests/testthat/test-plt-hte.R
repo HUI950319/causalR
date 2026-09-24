@@ -146,6 +146,14 @@ test_that("cate_smooth sets the loess span of the cate line; 0 leaves it out", {
   expect_identical(span_of(plt_hte_dep(res, x_var = "age", display = "cate")), 0.6)
   expect_identical(span_of(plt_hte_dep(res, x_var = "age", display = "cate",
                                        cate_smooth = 0.3)), 0.3)
+  colour_of <- function(q) {
+    for (l in q$layers)
+      if (inherits(l$geom, "GeomSmooth")) return(l$aes_params$colour)
+    NULL
+  }
+  expect_identical(colour_of(plt_hte_dep(res, x_var = "age", display = "cate")),
+                   "firebrick")
+  expect_identical(colour_of(plt_hte_dep(res, x_var = "age")), "grey30")
   p0 <- plt_hte_dep(res, x_var = "age", display = "cate", cate_smooth = 0)
   expect_null(span_of(p0))
   expect_identical(nrow(layer_data_of(p0, "GeomPoint")), nrow(res$data))

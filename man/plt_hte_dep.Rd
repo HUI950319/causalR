@@ -60,10 +60,11 @@ Only used by \code{type = "dep"}.}
 \item{ylim}{\code{NULL} (default) or two increasing numbers giving the y range
 of every panel; intervals running past it are clipped.}
 
-\item{cate_smooth}{Loess span of the grey \code{"cate"} line of a continuous
+\item{cate_smooth}{Loess span of the \code{"cate"} line of a continuous
 covariate, from \code{0.05} to \code{1}: smaller follows the patients more closely,
 larger is smoother. Default \code{0.6}. \code{0} leaves the line out and keeps the
-points. Only used by \code{type = "dep"}.}
+points. The line is dark grey beside the red \code{"dr"} layer and red without
+it. Only used by \code{type = "dep"}.}
 
 \item{dr_args}{Named list for the \code{"dr"} layer: \code{spline_df} (default \code{2}),
 the natural-spline degrees of freedom of a continuous covariate, which

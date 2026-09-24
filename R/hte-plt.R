@@ -195,10 +195,11 @@
 #'   Only used by `type = "dep"`.
 #' @param ylim `NULL` (default) or two increasing numbers giving the y range
 #'   of every panel; intervals running past it are clipped.
-#' @param cate_smooth Loess span of the grey `"cate"` line of a continuous
+#' @param cate_smooth Loess span of the `"cate"` line of a continuous
 #'   covariate, from `0.05` to `1`: smaller follows the patients more closely,
 #'   larger is smoother. Default `0.6`. `0` leaves the line out and keeps the
-#'   points. Only used by `type = "dep"`.
+#'   points. The line is dark grey beside the red `"dr"` layer and red without
+#'   it. Only used by `type = "dep"`.
 #' @param dr_args Named list for the `"dr"` layer: `spline_df` (default `2`),
 #'   the natural-spline degrees of freedom of a continuous covariate, which
 #'   also sets the degrees of freedom of its `p_het`: fewer is smoother, and
@@ -395,6 +396,8 @@ plt_hte_dep <- function(x,
     beyond <- .hte_beyond(x)
     fmt_p <- function(p) if (is.na(p)) "NA" else if (p < 0.001) "< 0.001"
                          else sprintf("= %.3f", p)
+    # red is the dr layer's colour, so the loess line takes it only without one
+    cate_line <- if ("dr" %in% display) "grey30" else "firebrick"
 
     panel <- function(v) {
       is_n  <- num[[v]]
@@ -421,7 +424,7 @@ plt_hte_dep <- function(x,
                  ggplot2::geom_smooth(data = pts, ggplot2::aes(x = x, y = y),
                                       method = "loess", formula = y ~ x,
                                       span = cate_smooth, se = FALSE,
-                                      colour = "grey30", linewidth = 0.6))
+                                      colour = cate_line, linewidth = 0.6))
         } else {
           ggplot2::geom_point(data = pts, ggplot2::aes(x = x, y = y),
                               position = ggplot2::position_jitter(
@@ -494,6 +497,8 @@ plt_hte_dep <- function(x,
 
     caption <- paste(c(
       if ("cate" %in% display) "grey: out-of-bag CATE per patient",
+      if ("cate" %in% display && !"dr" %in% display && cate_smooth > 0 &&
+          any(num[vars])) "red: its loess",
       if ("dr" %in% display)
         sprintf("red: AIPW mean or spline with %g%% CI", 100 * conf_level),
       if ("pdp" %in% display) "blue: partial dependence of the forest",
