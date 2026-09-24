@@ -390,7 +390,8 @@ plt_hte_rate <- function(x,
     ggplot2::facet_wrap(~panel, scales = "free_y",
                         labeller = ggplot2::as_labeller(strip)) +
     ggplot2::scale_x_continuous(limits = c(0, 1),
-                                labels = function(v) paste0(round(100 * v), "%")) +
+                                labels = function(v) paste0(round(100 * v), "%"),
+                                expand = ggplot2::expansion(mult = 0.01)) +
     ggplot2::scale_colour_manual(NULL, values = pal,
                                  aesthetics = c("colour", "fill")) +
     ggplot2::labs(x = "Treated share q, highest priority first",

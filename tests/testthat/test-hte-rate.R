@@ -142,6 +142,8 @@ test_that("the panels hold the TOC and q times the TOC", {
   expect_match(p$labels$caption, "all 800 patients")
   expect_true(any(vapply(p$layers, function(l) inherits(l$geom, "GeomRibbon"),
                          logical(1L))))
+  # 1% of the axis beside the curves, as in plt_hte_cate()
+  expect_equal(p$scales$get_scales("x")$expand, ggplot2::expansion(mult = 0.01))
 
   one <- plt_hte_rate(res, priority = "marker", type = "qini")
   expect_identical(levels(one$data$panel), "Qini")
