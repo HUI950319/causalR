@@ -1111,6 +1111,8 @@ plt_hte_cate <- function(x,
                                      linetype = 2, linewidth = 0.8)
       q <- q + ggplot2::labs(x = lab, y = "Density") + ggplot2::theme_bw()
     }
+    # 1% of the axis beside the bars or curves instead of ggplot2's 5%
+    q <- q + ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = 0.01))
     if (!is.null(g)) {
       cols <- stats::setNames(hue(nlevels(g)), levels(g))
       q <- q + ggplot2::scale_fill_manual(values = cols, name = NULL) +

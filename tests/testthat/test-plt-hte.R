@@ -536,6 +536,9 @@ test_that("plt_hte_cate draws the sorted CATE with the overall and subgroup ATE"
   expect_equal(sort(layer_data_of(pd, "GeomDensity")$cate), sort(res$data$.cate))
   expect_equal(layer_data_of(pd, "GeomVline", "estimate")$estimate, sub$estimate)
   expect_equal(layer_data_of(pd, "GeomVline", "ate")$ate, ate)
+  # little room left and right of the bars and curves
+  expect_equal(p$scales$get_scales("x")$expand, ggplot2::expansion(mult = 0.01))
+  expect_equal(pd$scales$get_scales("x")$expand, ggplot2::expansion(mult = 0.01))
 
   # no sub_var: one ungrouped panel; several: one panel each
   p0 <- plt_hte_cate(res)
