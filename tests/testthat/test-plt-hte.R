@@ -291,7 +291,7 @@ test_that("measure = 'ratio' averages the arm scores on a log axis", {
   expect_identical(fp_headers(p)[3], "Risk ratio (95% CI)")
 })
 
-test_that("overall, show_pvalue and show_pinter set the rows and columns", {
+test_that("overall, show_n, show_pvalue and show_pinter set the rows and columns", {
   skip_if_not_installed("forestplot")
   res <- dep_res()
   p <- plt_hte_sub(res, sub_var = c("stage", "sex"))
@@ -304,6 +304,11 @@ test_that("overall, show_pvalue and show_pinter set the rows and columns", {
 
   no_all <- plt_hte_sub(res, sub_var = "stage", overall = FALSE)
   expect_false("All patients" %in% trimws(fp_col(no_all, 1)))
+
+  expect_identical(names(formals(plt_hte_sub))[4:7],
+                   c("overall", "show_n", "show_pvalue", "show_pinter"))
+  no_n <- plt_hte_sub(res, sub_var = "stage", show_n = FALSE)
+  expect_identical(fp_headers(no_n), c("Subgroup", "Risk difference (95% CI)"))
 
   both <- plt_hte_sub(res, sub_var = "stage", show_pvalue = TRUE,
                       show_pinter = TRUE)

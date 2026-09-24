@@ -471,6 +471,8 @@ plt_hte_dep <- function(x,
 #'   an outcome probability, a binary outcome or \eqn{S(t)}.
 #' @param overall Logical. `TRUE` (default) adds an "All patients" row with the
 #'   overall ATE.
+#' @param show_n Logical. `TRUE` (default) shows the column of patients per
+#'   arm, treated first; `FALSE` leaves it out.
 #' @param show_pvalue Logical. `TRUE` adds a `P` column with the p-value of
 #'   every row. Default `FALSE`.
 #' @param show_pinter Logical. `TRUE` adds a "P for interaction" column: for
@@ -532,6 +534,7 @@ plt_hte_sub <- function(x,
                         sub_var     = NULL,
                         measure     = c("diff", "ratio", "OR"),
                         overall     = TRUE,
+                        show_n      = TRUE,
                         show_pvalue = FALSE,
                         show_pinter = FALSE,
                         xlim        = NULL,
@@ -542,7 +545,7 @@ plt_hte_sub <- function(x,
   if (!inherits(x, "hte_res"))
     stop("`x` must be an `hte_res` object from get_hte().", call. = FALSE)
   measure <- match.arg(measure)
-  flags <- list(overall = overall, show_pvalue = show_pvalue,
+  flags <- list(overall = overall, show_n = show_n, show_pvalue = show_pvalue,
                 show_pinter = show_pinter)
   for (nm in names(flags))
     if (!is.logical(flags[[nm]]) || length(flags[[nm]]) != 1L ||
@@ -658,9 +661,10 @@ plt_hte_sub <- function(x,
                          fmt_p(r$p.value), "", r$estimate, r$conf.low,
                          r$conf.high, FALSE))
   }
-  cols <- c("label", "n", "est", if (show_pvalue) "p",
+  cols <- c("label", if (show_n) "n", "est", if (show_pvalue) "p",
             if (show_pinter) "p_inter")
-  text <- rbind(c("Subgroup", sprintf("N (%s / %s)", a$treated, ref),
+  text <- rbind(c("Subgroup",
+                  if (show_n) sprintf("N (%s / %s)", a$treated, ref),
                   sprintf("%s (%s%% CI)", lab, format(100 * a$conf_level)),
                   if (show_pvalue) "P", if (show_pinter) "P for interaction"),
                 as.matrix(body[cols]))

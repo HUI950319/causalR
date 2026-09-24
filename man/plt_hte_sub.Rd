@@ -9,6 +9,7 @@ plt_hte_sub(
   sub_var = NULL,
   measure = c("diff", "ratio", "OR"),
   overall = TRUE,
+  show_n = TRUE,
   show_pvalue = FALSE,
   show_pinter = FALSE,
   xlim = NULL,
@@ -35,6 +36,9 @@ an outcome probability, a binary outcome or \eqn{S(t)}.}
 
 \item{overall}{Logical. \code{TRUE} (default) adds an "All patients" row with the
 overall ATE.}
+
+\item{show_n}{Logical. \code{TRUE} (default) shows the column of patients per
+arm, treated first; \code{FALSE} leaves it out.}
 
 \item{show_pvalue}{Logical. \code{TRUE} adds a \code{P} column with the p-value of
 every row. Default \code{FALSE}.}
