@@ -1,15 +1,20 @@
 # =============================================================================
-# hte-plt.R -- dependence plots for get_hte()
+# hte-plt.R -- plots for get_hte()
 # =============================================================================
 #
 # Architecture:
 #
-#   L1  plt_hte_dep()  one panel per covariate ("dep") or a two-covariate
-#                      partial-dependence heat map ("heat")
-#   L1  plt_hte_sub()  subgroup forest plot (forestplot) of the doubly robust
-#                      subgroup ATEs, recomputed with .hte_subgroup()
-#   L2  .hte_pdp()     forest CATE averaged with covariates set to grid values
-#   L2  .hte_beyond()  survival patients followed past `time`
+#   L1  plt_hte_dep()     one panel per covariate ("dep") or a two-covariate
+#                         partial-dependence heat map ("heat")
+#   L1  plt_hte_sub()     subgroup forest plot (forestplot) of the doubly
+#                         robust subgroup ATEs, recomputed with .hte_subgroup()
+#   L1  plt_hte_cate()    waterfall / density of the per-patient CATE by
+#                         subgroup, with the doubly robust ATE lines
+#   L2  .hte_pdp()        forest CATE averaged with covariates set to grid values
+#   L2  .hte_beyond()     survival patients followed past `time`
+#   L2  .hte_cate_label() axis label of the CATE
+#   L2  .hte_sub_var()    `sub_var` checks of plt_hte_sub() and plt_hte_cate()
+#   L2  .hte_muffle_ps()  silences grf's overlap warning in recomputed estimates
 #
 # The doubly robust layer comes from .hte_dr_var() in hte-get.R, so the p_het
 # in the strips is the one in get_hte()$importance at the default spline df.
@@ -87,6 +92,58 @@
   y <- x$data[[a$outcome[1L]]]
   if (identical(a$target, "RMST")) y >= a$time else y > a$time
 }
+
+# Axis label of the CATE, on the "diff" scale of get_hte().
+#' @keywords internal
+#' @noRd
+.hte_cate_label <- function(x) {
+  a    <- attr(x, "analysis")
+  ref  <- setdiff(levels(factor(x$data[[a$cat_var]])), a$treated)[1L]
+  what <- switch(a$outcome_type,
+                 survival   = sprintf("%s(%s)",
+                                      if (identical(a$target, "RMST")) "RMST" else "S",
+                                      format(a$time)),
+                 binary     = "risk",
+                 continuous = "mean")
+  sprintf("CATE: %s %s - %s", what, a$treated, ref)
+}
+
+# The `sub_var` a caller names, checked against `x$data`: categorical columns
+# other than the exposure, with a note for any the forest does not condition
+# on.
+#' @keywords internal
+#' @noRd
+.hte_sub_var <- function(sub_var, d, a) {
+  if (!is.character(sub_var) || anyNA(sub_var))
+    stop("`sub_var` must be `NULL` or column names.", call. = FALSE)
+  sub_var <- unique(setdiff(sub_var, a$cat_var))
+  miss <- setdiff(sub_var, names(d))
+  if (length(miss))
+    stop(sprintf("`sub_var` names no column of `x$data`: %s.",
+                 paste0("`", miss, "`", collapse = ", ")), call. = FALSE)
+  num <- sub_var[vapply(d[sub_var], .hte_is_num, logical(1L))]
+  if (length(num))
+    stop(sprintf("%s %s continuous; cut it into groups first, for example with cut().",
+                 paste0("`", num, "`", collapse = ", "),
+                 if (length(num) == 1L) "is" else "are"), call. = FALSE)
+  outside <- setdiff(sub_var, a$covariates)
+  if (length(outside))
+    cli::cli_inform(c("i" = paste(
+      "{.field {outside}} {?is/are} not a forest covariate: the subgroup",
+      "estimates hold for a function of the covariates or a variable that",
+      "is no confounder; otherwise add it with get_hte(sub_var = ).")))
+  sub_var
+}
+
+# get_hte() already reported grf's overlap warning once for this forest, so
+# estimates recomputed from it leave it out.
+#' @keywords internal
+#' @noRd
+.hte_muffle_ps <- function(expr)
+  withCallingHandlers(expr, warning = function(w) {
+    if (startsWith(conditionMessage(w), "Estimated treatment propensities"))
+      invokeRestart("muffleWarning")
+  })
 
 
 # ---- L1 public entry point -------------------------------------------------
@@ -288,14 +345,7 @@ plt_hte_dep <- function(x,
     stop("Package 'patchwork' is required to combine several panels.",
          call. = FALSE)
 
-  ref  <- setdiff(levels(factor(d[[a$cat_var]])), a$treated)[1L]
-  what <- switch(a$outcome_type,
-                 survival   = sprintf("%s(%s)",
-                                      if (identical(a$target, "RMST")) "RMST" else "S",
-                                      format(a$time)),
-                 binary     = "risk",
-                 continuous = "mean")
-  ylab <- sprintf("CATE: %s %s - %s", what, a$treated, ref)
+  ylab <- .hte_cate_label(x)
   ate  <- x$stats$estimate[x$stats$estimand == "ATE" &
                              x$stats$measure == "diff"]
 
@@ -610,27 +660,10 @@ plt_hte_sub <- function(x,
          call. = FALSE)
 
   # ---- Subgroup variables ---------------------------------------------------
-  if (is.null(sub_var)) {
-    sub_var <- a$covariates[!vapply(d[a$covariates], .hte_is_num, logical(1L))]
+  sub_var <- if (is.null(sub_var)) {
+    a$covariates[!vapply(d[a$covariates], .hte_is_num, logical(1L))]
   } else {
-    if (!is.character(sub_var) || anyNA(sub_var))
-      stop("`sub_var` must be `NULL` or column names.", call. = FALSE)
-    sub_var <- unique(setdiff(sub_var, a$cat_var))
-    miss <- setdiff(sub_var, names(d))
-    if (length(miss))
-      stop(sprintf("`sub_var` names no column of `x$data`: %s.",
-                   paste0("`", miss, "`", collapse = ", ")), call. = FALSE)
-    num <- sub_var[vapply(d[sub_var], .hte_is_num, logical(1L))]
-    if (length(num))
-      stop(sprintf("%s %s continuous; cut it into groups first, for example with cut().",
-                   paste0("`", num, "`", collapse = ", "),
-                   if (length(num) == 1L) "is" else "are"), call. = FALSE)
-    outside <- setdiff(sub_var, a$covariates)
-    if (length(outside))
-      cli::cli_inform(c("i" = paste(
-        "{.field {outside}} {?is/are} not a forest covariate: the subgroup",
-        "estimates hold for a function of the covariates or a variable that",
-        "is no confounder; otherwise add it with get_hte(sub_var = ).")))
+    .hte_sub_var(sub_var, d, a)
   }
   if (!length(sub_var) && !overall)
     stop("Nothing to draw: `sub_var` holds no categorical variable and `overall = FALSE`.",
@@ -644,16 +677,12 @@ plt_hte_sub <- function(x,
                      stringsAsFactors = FALSE)
   event_risk <- identical(a$target, "survival.probability")
   beyond     <- .hte_beyond(x)
-  # get_hte() already reported grf's overlap warning once for this forest
-  quiet <- function(expr) withCallingHandlers(expr, warning = function(w) {
-    if (startsWith(conditionMessage(w), "Estimated treatment propensities"))
-      invokeRestart("muffleWarning")
-  })
   sub <- if (length(sub_var))
-    quiet(.hte_subgroup(fit, s, d, sub_var, grid, event_risk, z, beyond))
+    .hte_muffle_ps(.hte_subgroup(fit, s, d, sub_var, grid, event_risk, z,
+                                 beyond))
   ov  <- if (overall)
-    quiet(.hte_estimate(fit, s, rep(TRUE, nrow(d)), grid, event_risk, z,
-                        "Overall", beyond))
+    .hte_muffle_ps(.hte_estimate(fit, s, rep(TRUE, nrow(d)), grid, event_risk,
+                                 z, "Overall", beyond))
 
   # ---- Table ----------------------------------------------------------------
   ref <- setdiff(levels(factor(d[[a$cat_var]])), a$treated)[1L]
@@ -864,4 +893,266 @@ print.hte_forestplot <- function(x, ...) {
   }
   print(x, ...)
   invisible(obj)
+}
+
+
+#' Waterfall and density plots of the CATE by subgroup
+#'
+#' Draws the conditional average treatment effect (CATE) that [get_hte()]
+#' estimated for every patient, after `StratifiedMedicine::plot_ple()`: a
+#' waterfall of the patients sorted by their CATE, or the density of the CATE,
+#' coloured by the levels of a subgroup variable. Dashed lines mark the
+#' overall average treatment effect (ATE) and the subgroup ATEs, the doubly
+#' robust estimates [plt_hte_sub()] draws.
+#'
+#' @param x An `hte_res` object from [get_hte()].
+#' @param sub_var `NULL` (default) for one panel of every patient, or a
+#'   character vector of categorical columns of `x$data`: one panel each,
+#'   three per row, coloured by level. The columns follow the rules of
+#'   [plt_hte_sub()]; a patient missing the value is left out of that panel.
+#' @param type `"waterfall"` (default) draws one bar per patient, sorted by
+#'   the CATE; `"density"` draws the density of the CATE per level.
+#' @param show_ci Logical. `TRUE` adds grf's pointwise confidence interval of
+#'   every patient's CATE (grey), which needs a forest grown with
+#'   `ci.group.size` of at least 2, grf's default. Default `FALSE`. Only used
+#'   by `type = "waterfall"`.
+#' @param conf_level Confidence level of `show_ci`. Default `0.95`. Only used
+#'   by `type = "waterfall"`.
+#' @param overall Logical. `TRUE` (default) marks the overall ATE with a black
+#'   dashed line.
+#' @param title Plot title, or `NULL` (default).
+#' @param save `NULL` or a list with `filename`, `width` and `height`, passed
+#'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
+#'   `width` or `height` left out is taken from `attr(p, "plot_size")`. Do not
+#'   include the `plot` argument; it is supplied internally.
+#'
+#' @section Reading the plots:
+#' The bars and curves are the forest's out-of-bag estimates, one per patient,
+#' on the `"diff"` scale of [get_hte()]. They describe how the forest spreads
+#' the effect and test nothing: forest estimates are shrunk towards the
+#' overall mean, and their spread mixes real heterogeneity with estimation
+#' noise. The coloured lines are the doubly robust subgroup ATEs, whose
+#' intervals and `p_inter` [plt_hte_sub()] shows. A level without an estimate
+#' -- fewer than two patients in an arm, or for a survival outcome no patient
+#' in an arm followed beyond `time` -- keeps its bars or curve but gets no
+#' line, with a warning.
+#'
+#' @return A `ggplot` for one panel, otherwise a patchwork. The CATE axis is
+#'   the S(t) or RMST difference for a survival outcome, the risk difference
+#'   for a binary one and the mean difference otherwise.
+#'   `attr(p, "subgroup")` holds the subgroup ATEs drawn, laid out as
+#'   `get_hte()$subgroup` (`NULL` without `sub_var`), and
+#'   `attr(p, "plot_size")` a suggested `c(width, height)` in inches. If
+#'   `save` is non-empty, the plot is also written to PDF through
+#'   `RegR::save_plt()`.
+#'
+#' @seealso [plt_hte_sub()] for the subgroup ATEs with their intervals;
+#'   [plt_hte_dep()] for how the CATE varies with a covariate.
+#'
+#' @examplesIf requireNamespace("grf", quietly = TRUE) && requireNamespace("patchwork", quietly = TRUE)
+#' \donttest{
+#' set.seed(20260923)
+#' n <- 600
+#' d <- data.frame(age   = round(runif(n, 20, 85)),
+#'                 sex   = factor(sample(c("F", "M"), n, replace = TRUE)),
+#'                 stage = factor(sample(c("I", "II", "III"), n, replace = TRUE)))
+#' d$z <- rbinom(n, 1, 0.5)
+#' d$y <- rbinom(n, 1, plogis(-1 + 0.02 * (d$age - 50) +
+#'                              d$z * (0.2 + 0.6 * (d$sex == "M"))))
+#' res <- get_hte(d, cat_var = "z", adj_var = c("age", "sex", "stage"),
+#'                surv = "y", grf_args = list(num.trees = 500, seed = 1))
+#'
+#' # Patients sorted by their CATE, coloured by sex
+#' plt_hte_cate(res, sub_var = "sex")
+#'
+#' # Density of the CATE by sex and by stage
+#' plt_hte_cate(res, sub_var = c("sex", "stage"), type = "density")
+#' }
+#'
+#' @export
+plt_hte_cate <- function(x,
+                         sub_var    = NULL,
+                         type       = c("waterfall", "density"),
+                         show_ci    = FALSE,
+                         conf_level = 0.95,
+                         overall    = TRUE,
+                         title      = NULL,
+                         save       = list()) {
+
+  if (!inherits(x, "hte_res"))
+    stop("`x` must be an `hte_res` object from get_hte().", call. = FALSE)
+  type <- match.arg(type)
+  if (type == "density") {
+    used <- c(show_ci = !missing(show_ci), conf_level = !missing(conf_level))
+    if (any(used))
+      stop(sprintf("%s only applies to type = \"waterfall\".",
+                   paste0("`", names(used)[used], "`", collapse = ", ")),
+           call. = FALSE)
+  }
+  flags <- list(show_ci = show_ci, overall = overall)
+  for (nm in names(flags))
+    if (!is.logical(flags[[nm]]) || length(flags[[nm]]) != 1L ||
+        is.na(flags[[nm]]))
+      stop(sprintf("`%s` must be TRUE or FALSE.", nm), call. = FALSE)
+  if (!is.numeric(conf_level) || length(conf_level) != 1L ||
+      is.na(conf_level) || conf_level <= 0 || conf_level >= 1)
+    stop("`conf_level` must be a single number strictly between 0 and 1.",
+         call. = FALSE)
+  if (!is.null(save) && !is.list(save))
+    stop("`save` must be `NULL` or a list.", call. = FALSE)
+  # grf also has to be loaded for predict() on a forest read back from disk
+  if (!requireNamespace("grf", quietly = TRUE))
+    stop("Package 'grf' is required for plt_hte_cate().", call. = FALSE)
+
+  a <- attr(x, "analysis")
+  d <- x$data
+  if (!is.null(sub_var)) sub_var <- .hte_sub_var(sub_var, d, a)
+  if (length(sub_var) > 1L && !requireNamespace("patchwork", quietly = TRUE))
+    stop("Package 'patchwork' is required to combine several panels.",
+         call. = FALSE)
+
+  # ---- Estimates: the lines as plt_hte_sub() computes them -------------------
+  fit    <- x$fit
+  s      <- .hte_arm_scores(fit)
+  z      <- stats::qnorm(1 - (1 - conf_level) / 2)
+  grid   <- data.frame(estimand = "ATE", measure = "diff",
+                       stringsAsFactors = FALSE)
+  beyond <- .hte_beyond(x)
+  sub <- if (length(sub_var))
+    .hte_muffle_ps(.hte_subgroup(fit, s, d, sub_var, grid, FALSE, z, beyond))
+  ate <- if (overall)
+    .hte_muffle_ps(.hte_estimate(fit, s, rep(TRUE, nrow(d)), grid, FALSE, z,
+                                 "Overall", beyond))$estimate
+  se  <- if (show_ci)
+    sqrt(as.numeric(stats::predict(fit, estimate.variance = TRUE)$variance.estimates))
+
+  # ---- One panel per variable ------------------------------------------------
+  lab  <- .hte_cate_label(x)
+  cate <- d$.cate
+  # ggplot2's default hues, so the lines take the colour of their level
+  hue  <- function(k) grDevices::hcl(h = seq(15, 375, length.out = k + 1L)[seq_len(k)],
+                                     c = 100, l = 65)
+
+  panel <- function(v) {
+    g <- if (!is.null(v)) droplevels(as.factor(d[[v]]))
+    o <- order(cate)
+    if (!is.null(g)) o <- o[!is.na(g[o])]
+    pd <- data.frame(rank = seq_along(o), cate = cate[o])
+    if (show_ci) {
+      pd$conf.low  <- pd$cate - z * se[o]
+      pd$conf.high <- pd$cate + z * se[o]
+    }
+    lines <- NULL
+    if (!is.null(g)) {
+      pd$level <- g[o]
+      pd$panel <- v
+      r <- sub[sub$sub_var == v & !is.na(sub$estimate), ]
+      lines <- data.frame(level = factor(r$level, levels = levels(g)),
+                          estimate = r$estimate, panel = v)
+    }
+    ref <- if (overall) data.frame(ate = ate)
+
+    q <- ggplot2::ggplot()
+    if (type == "waterfall") {
+      q <- q + ggplot2::geom_hline(yintercept = 0, colour = "grey75")
+      if (show_ci)
+        q <- q + ggplot2::geom_linerange(
+          data = pd, ggplot2::aes(x = rank, ymin = conf.low, ymax = conf.high),
+          colour = "grey70", linewidth = 0.3)
+      # Outlined in their own colour: side by side, bare bars leave hairline
+      # gaps once rasterised.
+      q <- q + if (is.null(g)) {
+        list(ggplot2::geom_col(data = pd, ggplot2::aes(x = rank, y = cate,
+                                                       fill = cate,
+                                                       colour = cate),
+                               width = 1, linewidth = 0.3),
+             ggplot2::scale_fill_gradient2(low = "navy", mid = "white",
+                                           high = "firebrick", midpoint = 0,
+                                           guide = "none"),
+             ggplot2::scale_colour_gradient2(low = "navy", mid = "white",
+                                             high = "firebrick", midpoint = 0,
+                                             guide = "none"))
+      } else {
+        ggplot2::geom_col(data = pd, ggplot2::aes(x = rank, y = cate,
+                                                  fill = level, colour = level),
+                          width = 1, linewidth = 0.3)
+      }
+      if (overall)
+        q <- q + ggplot2::geom_hline(data = ref, ggplot2::aes(yintercept = ate),
+                                     linetype = 2)
+      if (length(lines) && nrow(lines))
+        q <- q + ggplot2::geom_hline(data = lines,
+                                     ggplot2::aes(yintercept = estimate,
+                                                  colour = level),
+                                     linetype = 2, linewidth = 0.8)
+      q <- q + ggplot2::labs(x = "Patients ranked by CATE", y = lab) +
+        ggplot2::theme_bw() +
+        ggplot2::theme(axis.text.x = ggplot2::element_blank(),
+                       axis.ticks.x = ggplot2::element_blank(),
+                       panel.grid.major.x = ggplot2::element_blank(),
+                       panel.grid.minor.x = ggplot2::element_blank())
+    } else {
+      q <- q + ggplot2::geom_vline(xintercept = 0, colour = "grey75") +
+        if (is.null(g)) {
+          ggplot2::geom_density(data = pd, ggplot2::aes(x = cate),
+                                fill = "grey70", colour = "grey30", alpha = 0.5)
+        } else {
+          ggplot2::geom_density(data = pd, ggplot2::aes(x = cate, fill = level,
+                                                        colour = level),
+                                alpha = 0.3)
+        }
+      if (overall)
+        q <- q + ggplot2::geom_vline(data = ref, ggplot2::aes(xintercept = ate),
+                                     linetype = 2)
+      if (length(lines) && nrow(lines))
+        q <- q + ggplot2::geom_vline(data = lines,
+                                     ggplot2::aes(xintercept = estimate,
+                                                  colour = level),
+                                     linetype = 2, linewidth = 0.8)
+      q <- q + ggplot2::labs(x = lab, y = "Density") + ggplot2::theme_bw()
+    }
+    if (!is.null(g)) {
+      cols <- stats::setNames(hue(nlevels(g)), levels(g))
+      q <- q + ggplot2::scale_fill_manual(values = cols, name = NULL) +
+        ggplot2::scale_colour_manual(values = cols, guide = "none") +
+        ggplot2::facet_wrap(~panel) +
+        ggplot2::theme(legend.position = "bottom")
+    }
+    q
+  }
+  plots <- lapply(if (length(sub_var)) sub_var else list(NULL), panel)
+
+  caption <- paste(c(
+    if (type == "waterfall") "bars: out-of-bag CATE per patient, sorted"
+    else "curves: density of the out-of-bag CATE",
+    if (show_ci) sprintf("grey: %g%% CI", 100 * conf_level),
+    if (overall) "black dashed: ATE",
+    if (length(sub_var)) "coloured dashed: subgroup ATE (doubly robust)"),
+    collapse = "; ")
+  caption <- paste0(toupper(substr(caption, 1L, 1L)), substring(caption, 2L))
+  ncol <- min(3L, length(plots))
+  size <- if (length(plots) == 1L) c(if (type == "waterfall") 7 else 6, 4.5) else
+    c(3.6 * ncol + 0.6, 3.6 * ceiling(length(plots) / ncol) + 0.8)
+  # About 13 caption characters fit per inch; wrap so nothing is cut off.
+  caption <- paste(strwrap(caption, width = floor(13 * size[1L])),
+                   collapse = "\n")
+
+  p <- if (length(plots) == 1L) {
+    plots[[1L]] + ggplot2::labs(title = title, caption = caption)
+  } else {
+    patchwork::wrap_plots(plots, ncol = ncol) +
+      patchwork::plot_layout(axis_titles = "collect") +
+      patchwork::plot_annotation(title = title, caption = caption)
+  }
+
+  attr(p, "subgroup")  <- sub
+  attr(p, "plot_size") <- stats::setNames(size, c("width", "height"))
+  if (!is.null(save) && length(save) > 0L) {
+    if (!requireNamespace("RegR", quietly = TRUE))
+      stop("Package 'RegR' is required for a non-empty `save`.", call. = FALSE)
+    if (is.null(save$width))  save$width  <- size[1L]
+    if (is.null(save$height)) save$height <- size[2L]
+    do.call(RegR::save_plt, c(list(plot = p), save))
+  }
+  p
 }

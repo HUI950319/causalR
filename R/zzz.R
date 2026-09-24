@@ -33,6 +33,10 @@ utils::globalVariables(c(
   "panel",     # plt_hte_dep:       strip label of a panel
   "x1",        # plt_hte_dep:       first covariate of the heat map
   "x2",        # plt_hte_dep:       second covariate of the heat map
+  "rank",      # plt_hte_cate:      position of a patient in the waterfall
+  "cate",      # plt_hte_cate:      out-of-bag CATE of a patient
+  "level",     # plt_hte_cate:      subgroup level, shown in the legend
+  "ate",       # plt_hte_cate:      overall ATE line
   # hte-rate.R (reuses y / conf.low / conf.high / panel above)
   "q",         # plt_hte_rate:      treated fraction
   "rule"       # plt_hte_rate:      ranking rule, shown in the legend

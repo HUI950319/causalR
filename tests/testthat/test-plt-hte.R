@@ -391,6 +391,14 @@ test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
     fp_headers(suppressWarnings(plt_hte_sub(res, sub_var = "stage",
                                             measure = "ratio")))[3],
     "Event risk ratio (95% CI)")
+
+  # plt_hte_cate(): that level keeps its curve but gets no subgroup line
+  expect_warning(pc <- plt_hte_cate(res, sub_var = "stage", type = "density"),
+                 "stage = III: no patient in one arm")
+  expect_identical(as.character(layer_data_of(pc, "GeomVline", "estimate")$level),
+                   c("I", "II"))
+  expect_identical(nlevels(layer_data_of(pc, "GeomDensity")$level), 3L)
+  expect_identical(pc$labels$x, "CATE: S(60) 1 - 0")
 })
 
 test_that("plt_hte_sub rejects invalid requests and saves a PDF", {
@@ -490,5 +498,79 @@ test_that("fixed_size pins the plot to the size its text needs", {
   print(pf)
   grDevices::dev.off()
   expect_identical(pdf_pages(f), 3L)
+  unlink(f)
+})
+
+
+# ---- plt_hte_cate() ---------------------------------------------------------
+
+test_that("plt_hte_cate draws the sorted CATE with the overall and subgroup ATE", {
+  res <- dep_res()
+  expect_identical(names(formals(plt_hte_cate)),
+                   c("x", "sub_var", "type", "show_ci", "conf_level",
+                     "overall", "title", "save"))
+  p <- plt_hte_cate(res, sub_var = "stage")
+  expect_s3_class(p, "ggplot")
+  bars <- layer_data_of(p, "GeomCol")
+  expect_identical(nrow(bars), nrow(res$data))
+  expect_false(is.unsorted(bars$cate))
+  expect_equal(sort(bars$cate), sort(res$data$.cate))
+  expect_identical(levels(bars$level), c("I", "II", "III"))
+  expect_identical(strip_of(p), "stage")
+
+  # dashed lines: the overall ATE, and the doubly robust subgroup ATEs that
+  # plt_hte_sub() draws
+  ate <- res$stats$estimate[res$stats$measure == "diff"]
+  expect_equal(layer_data_of(p, "GeomHline", "ate")$ate, ate)
+  sub <- attr(p, "subgroup")
+  for (lv in c("I", "II", "III")) {
+    ref <- grf::average_treatment_effect(res$fit, subset = res$data$stage == lv)
+    expect_equal(sub$estimate[sub$level == lv], unname(ref[["estimate"]]))
+  }
+  expect_equal(layer_data_of(p, "GeomHline", "estimate")$estimate, sub$estimate)
+  expect_null(layer_data_of(plt_hte_cate(res, sub_var = "stage", overall = FALSE),
+                            "GeomHline", "ate"))
+
+  # density: one curve per level and the same lines, now vertical
+  pd <- plt_hte_cate(res, sub_var = "stage", type = "density")
+  expect_equal(sort(layer_data_of(pd, "GeomDensity")$cate), sort(res$data$.cate))
+  expect_equal(layer_data_of(pd, "GeomVline", "estimate")$estimate, sub$estimate)
+  expect_equal(layer_data_of(pd, "GeomVline", "ate")$ate, ate)
+
+  # no sub_var: one ungrouped panel; several: one panel each
+  p0 <- plt_hte_cate(res)
+  expect_null(attr(p0, "subgroup"))
+  expect_null(layer_data_of(p0, "GeomHline", "estimate"))
+  expect_false("level" %in% names(layer_data_of(p0, "GeomCol")))
+  pm <- plt_hte_cate(res, sub_var = c("stage", "sex"))
+  expect_identical(vapply(panels_of(pm), strip_of, ""), c("stage", "sex"))
+  expect_named(attr(pm, "plot_size"), c("width", "height"))
+})
+
+test_that("plt_hte_cate adds grf's pointwise intervals and checks its input", {
+  res <- dep_res()
+  p  <- plt_hte_cate(res, sub_var = "stage", show_ci = TRUE, conf_level = 0.9)
+  ci <- layer_data_of(p, "GeomLinerange")
+  pr <- stats::predict(res$fit, estimate.variance = TRUE)
+  o  <- order(as.numeric(pr$predictions))
+  expect_equal(ci$cate, as.numeric(pr$predictions)[o])
+  expect_equal(ci$conf.high - ci$cate,
+               stats::qnorm(0.95) * sqrt(as.numeric(pr$variance.estimates))[o])
+  expect_null(layer_data_of(plt_hte_cate(res, sub_var = "stage"), "GeomLinerange"))
+
+  expect_error(plt_hte_cate(res, type = "density", show_ci = TRUE), "only applies")
+  expect_error(plt_hte_cate(res, type = "density", conf_level = 0.9), "only applies")
+  expect_error(plt_hte_cate(list()), "hte_res")
+  expect_error(plt_hte_cate(res, sub_var = "nope"), "nope")
+  expect_error(plt_hte_cate(res, sub_var = "age"), "continuous")
+  expect_error(plt_hte_cate(res, show_ci = NA), "show_ci")
+  expect_error(plt_hte_cate(res, conf_level = 1), "conf_level")
+  expect_error(plt_hte_cate(res, save = "a.pdf"), "`save`")
+
+  skip_if_not_installed("RegR")
+  f <- tempfile(fileext = ".pdf")
+  expect_s3_class(plt_hte_cate(res, sub_var = "stage", save = list(filename = f)),
+                  "ggplot")
+  expect_true(file.exists(f))
   unlink(f)
 })
