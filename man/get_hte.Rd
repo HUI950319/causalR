@@ -137,6 +137,10 @@ outcome, are levels in which an arm has no patient followed beyond
 \code{time}, as in \verb{$subgroup}; the spline of a numeric covariate keeps
 only the values that patients followed beyond \code{time} reach in both
 arms. \code{\link[=plt_hte_dep]{plt_hte_dep()}} draws the same estimates.}
+\item{\code{calibration}}{Tibble with one row per coefficient of the
+calibration test, \code{mean.forest.prediction} and
+\code{differential.forest.prediction}: \code{term}, \code{estimate}, \code{std.error},
+\code{statistic}, \code{p.value} (one-sided); see the Calibration section.}
 \item{\code{data}}{The rows analysed plus \code{.cate}, the out-of-bag
 CATE, and \code{.dr_score}, the AIPW score (equal to
 \code{\link[grf:get_scores]{grf::get_scores()}}). Both are on the \code{"diff"} scale whatever
@@ -214,6 +218,22 @@ and \code{"OR"}). A subgroup in which an arm has no patient followed beyond
 robust standard errors, estimates \eqn{E[\tau(X) \mid x]} with valid
 pointwise intervals. Plotting \code{.cate} against \code{x} shows the forest's own
 out-of-bag estimates, whose smoother bands are not confidence intervals.
+}
+
+\section{Calibration}{
+
+\verb{$calibration} is the calibration test of \code{\link[grf:test_calibration]{grf::test_calibration()}}: the
+outcome residual \eqn{Y - m(X)} is regressed on \eqn{W - e(X)} times the
+mean out-of-bag CATE and times each patient's deviation from that mean,
+with grf's cluster-robust HC3 standard errors. A \code{mean.forest.prediction}
+coefficient of 1 says the average CATE is right; a
+\code{differential.forest.prediction} coefficient of 1 says its variation
+around that average is well calibrated, and one significantly above 0 is
+an omnibus test that the effect varies at all. \code{p.value} is one-sided
+(coefficient > 0), as in grf. grf runs the test on a \code{causal_forest} only,
+where \verb{$calibration} equals \code{grf::test_calibration(res$fit)}; for a
+survival outcome the same regression runs on the censoring-adjusted
+residual the \code{causal_survival_forest} keeps.
 }
 
 \examples{

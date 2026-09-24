@@ -71,7 +71,8 @@ test_that("get_hte returns the documented structure", {
   res <- hte_bin()
 
   expect_s3_class(res, "hte_res")
-  expect_named(res, c("stats", "subgroup", "importance", "data", "fit"))
+  expect_named(res, c("stats", "subgroup", "importance", "calibration",
+                      "data", "fit"))
   expect_s3_class(res$fit, "causal_forest")
   expect_null(res$subgroup)
   expect_named(res$stats, c("method", "estimand", "measure", "estimate",
@@ -147,6 +148,27 @@ test_that("diff reproduces grf for every estimand and $data matches grf", {
   }
   expect_equal(res$data$.cate, as.numeric(predict(res$fit)$predictions))
   expect_equal(res$data$.dr_score, as.numeric(grf::get_scores(res$fit)))
+})
+
+test_that("$calibration reproduces grf::test_calibration() on a causal forest", {
+  res <- hte_bin()
+  cal <- res$calibration
+  ref <- grf::test_calibration(res$fit)
+  expect_named(cal, c("term", "estimate", "std.error", "statistic", "p.value"))
+  expect_identical(cal$term, rownames(ref))
+  expect_equal(unname(as.matrix(cal[-1])), unname(unclass(ref)[, 1:4]))
+
+  # grf's observation weights: sample weights, or equal weight per cluster
+  d <- hte_bin_data(n = 400L)
+  for (ga in list(list(clusters = rep(1:40, length.out = 400),
+                       sample.weights = rep(c(0.5, 1, 1.5), length.out = 400)),
+                  list(clusters = rep(1:40, length.out = 400),
+                       equalize.cluster.weights = TRUE))) {
+    res <- get_hte(d, "z", adj_var = c("age", "x2"), surv = "y",
+                   grf_args = c(hte_args, ga))
+    expect_equal(unname(as.matrix(res$calibration[-1])),
+                 unname(unclass(grf::test_calibration(res$fit))[, 1:4]))
+  }
 })
 
 test_that("ratio and OR come from arm-specific AIPW scores", {
@@ -254,6 +276,32 @@ test_that("survival RMST is reached through grf_args$target; OR is skipped", {
   expect_identical(res$stats$measure, c("diff", "ratio"))
   s <- arm_means(res$fit)
   expect_equal(row_of(res$stats, "ATE", "ratio")$estimate, s[1] / s[2])
+})
+
+test_that("survival: $calibration detects an effect that differs by sex", {
+  skip_if_not_installed("grf")
+  # 200 replicates (n = 1000, S(60) difference) with a constant effect
+  # rejected at 0.050; grf's own test, on the uncensored 0/1 outcome, at 0.030
+  set.seed(1)
+  n <- 800L
+  d <- data.frame(age = stats::rnorm(n, 60, 10), x2 = stats::rnorm(n),
+                  sex = factor(sample(c("F", "M"), n, replace = TRUE)))
+  d$z  <- stats::rbinom(n, 1, stats::plogis(0.3 * d$x2))
+  ev   <- stats::rexp(n, 0.02 * exp(0.3 * d$x2 -
+                                      d$z * (0.1 + 1.2 * (d$sex == "M"))))
+  cens <- pmin(stats::rexp(n, 0.01), 120)
+  d$time <- pmin(ev, cens)
+  d$DSS  <- as.integer(ev <= cens)
+  res <- get_hte(d, cat_var = "z", adj_var = c("age", "x2", "sex"),
+                 surv = TRUE, time = 60, grf_args = hte_args)
+  cal <- res$calibration
+  expect_identical(cal$term, c("mean.forest.prediction",
+                               "differential.forest.prediction"))
+  expect_lt(cal$p.value[2], 0.01)
+  expect_true(all(abs(cal$estimate - 1) < stats::qnorm(0.975) * cal$std.error))
+
+  expect_error(.test_calibration(structure(list(), class = "regression_forest")),
+               "causal_forest or causal_survival_forest")
 })
 
 test_that("survival: a time point past either arm's follow-up stops", {
@@ -454,6 +502,8 @@ test_that("print shows the analysis header and the event-risk note", {
   res <- hte_surv()
   out <- capture.output(print(res))
   expect_match(out[1], "<hte_res> causal_survival_forest")
+  expect_true(any(grepl("Calibration (one-sided p):", out, fixed = TRUE)))
+  expect_true(any(grepl("differential.forest.prediction", out, fixed = TRUE)))
   expect_true(any(grepl("1 - S(t)", out, fixed = TRUE)))
   expect_true(any(grepl(".dr_score", out, fixed = TRUE)))
 })

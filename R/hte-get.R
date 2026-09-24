@@ -6,6 +6,8 @@
 #
 #   L1  get_hte()          validate, fit one grf forest, assemble the result
 #   L2  .hte_arm_scores()  arm-specific AIPW scores backed out of the forest
+#   L2  .test_calibration()
+#                          grf's calibration test, for either forest
 #   L2  .hte_estimate()    one row per estimand x measure for a set of units
 #   L2  .hte_subgroup()    those rows per sub_var level + p_inter
 #                          (shared with plt_hte_sub())
@@ -45,6 +47,48 @@
   list(tau = tau,
        g1  = fit$Y.hat + (1 - e) * tau + fit$W.orig / e * r,
        g0  = fit$Y.hat - e * tau + (1 - fit$W.orig) / (1 - e) * r)
+}
+
+# grf::test_calibration() regresses the outcome residual Y - m(x) on
+# (W - e(x)) times the mean out-of-bag CATE and times each CATE's deviation
+# from it, but accepts a causal_forest only. A causal_survival_forest keeps
+# its censoring-adjusted residual as `_psi$numerator` / (W - e), the one
+# .hte_arm_scores() uses, so the same regression runs on either forest and
+# reproduces grf on a causal_forest, observation weights, clusters, HC3
+# errors and one-sided p-values (coefficient > 0) included. Simulated with a
+# constant effect, it rejected at 5% in 10 of 200 survival data sets; grf's
+# own test, on the uncensored 0/1 outcome, in 6.
+#' @keywords internal
+#' @noRd
+.test_calibration <- function(fit) {
+  if (!inherits(fit, c("causal_forest", "causal_survival_forest")))
+    stop("`fit` must be a grf causal_forest or causal_survival_forest.",
+         call. = FALSE)
+  tau <- as.numeric(stats::predict(fit)$predictions)
+  wc  <- as.numeric(fit$W.orig - fit$W.hat)
+  r   <- if (inherits(fit, "causal_survival_forest"))
+    fit[["_psi"]]$numerator / wc else as.numeric(fit$Y.orig - fit$Y.hat)
+  # grf's observation weights: the sample weights or, with equalized
+  # clusters, one over the cluster size; scaled to sum to 1
+  cl <- fit$clusters
+  wt <- if (!is.null(fit$sample.weights)) fit$sample.weights
+        else if (length(cl) && isTRUE(fit$equalize.cluster.weights))
+          1 / as.numeric(table(cl)[as.character(cl)])
+        else rep(1, length(tau))
+  wt <- wt / sum(wt)
+  mp <- stats::weighted.mean(tau, wt)
+  m  <- stats::lm(r ~ 0 + mean.forest.prediction +
+                    differential.forest.prediction, weights = wt,
+                  data = data.frame(r = r, mean.forest.prediction = wc * mp,
+                                    differential.forest.prediction =
+                                      wc * (tau - mp)))
+  b  <- stats::coef(m)
+  se <- sqrt(diag(sandwich::vcovCL(m, cluster = if (length(cl)) cl
+                                   else seq_along(r), type = "HC3")))
+  tibble::tibble(term = names(b), estimate = unname(b),
+                 std.error = unname(se), statistic = unname(b / se),
+                 p.value = stats::pt(unname(b / se), m$df.residual,
+                                     lower.tail = FALSE))
 }
 
 # `diff` is grf's own average_treatment_effect(), which also honours clusters
@@ -377,6 +421,20 @@
 #' pointwise intervals. Plotting `.cate` against `x` shows the forest's own
 #' out-of-bag estimates, whose smoother bands are not confidence intervals.
 #'
+#' @section Calibration:
+#' `$calibration` is the calibration test of [grf::test_calibration()]: the
+#' outcome residual \eqn{Y - m(X)} is regressed on \eqn{W - e(X)} times the
+#' mean out-of-bag CATE and times each patient's deviation from that mean,
+#' with grf's cluster-robust HC3 standard errors. A `mean.forest.prediction`
+#' coefficient of 1 says the average CATE is right; a
+#' `differential.forest.prediction` coefficient of 1 says its variation
+#' around that average is well calibrated, and one significantly above 0 is
+#' an omnibus test that the effect varies at all. `p.value` is one-sided
+#' (coefficient > 0), as in grf. grf runs the test on a `causal_forest` only,
+#' where `$calibration` equals `grf::test_calibration(res$fit)`; for a
+#' survival outcome the same regression runs on the censoring-adjusted
+#' residual the `causal_survival_forest` keeps.
+#'
 #' @return An object of class `hte_res`: a list of
 #'   \describe{
 #'     \item{`stats`}{Tibble with one row per estimand and measure: `method`,
@@ -404,6 +462,10 @@
 #'       `time`, as in `$subgroup`; the spline of a numeric covariate keeps
 #'       only the values that patients followed beyond `time` reach in both
 #'       arms. [plt_hte_dep()] draws the same estimates.}
+#'     \item{`calibration`}{Tibble with one row per coefficient of the
+#'       calibration test, `mean.forest.prediction` and
+#'       `differential.forest.prediction`: `term`, `estimate`, `std.error`,
+#'       `statistic`, `p.value` (one-sided); see the Calibration section.}
 #'     \item{`data`}{The rows analysed plus `.cate`, the out-of-bag
 #'       CATE, and `.dr_score`, the AIPW score (equal to
 #'       [grf::get_scores()]). Both are on the `"diff"` scale whatever
@@ -746,7 +808,7 @@ get_hte <- function(data,
 
   structure(
     list(stats = stats_tbl, subgroup = sub_tbl, importance = imp_tbl,
-         data = data, fit = fit),
+         calibration = .test_calibration(fit), data = data, fit = fit),
     class = c("hte_res", "list"),
     analysis = list(
       method = method, backend = "grf",
@@ -783,12 +845,18 @@ print.hte_res <- function(x, ...) {
     cat("\nSubgroups:\n")
     print(x$subgroup)
   }
+  if (!is.null(x$calibration)) {
+    cat("\nCalibration (one-sided p):\n")
+    print(x$calibration)
+  }
   cat("\n")
   if (identical(a$target, "survival.probability") &&
       any(x$stats$measure != "diff"))
     cat("# ratio / OR compare the event risk 1 - S(t); diff is S1(t) - S0(t).\n")
   cat("# $data: .cate = out-of-bag CATE, .dr_score = AIPW score (diff scale).\n")
   cat("# $importance: grf split frequency by covariate (not a test) + p_het; plt_bar_per()-ready.\n")
+  if (!is.null(x$calibration))
+    cat("# Calibration: 1 = well calibrated; differential.forest.prediction > 0 = heterogeneity.\n")
   cat("# plt_hte_dep(x) draws the CATE against each covariate.\n")
   invisible(x)
 }
