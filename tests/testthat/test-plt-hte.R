@@ -291,10 +291,26 @@ test_that("save writes one PDF and returns the plot unchanged", {
 
 # ---- plt_hte_sub() ----------------------------------------------------------
 
-# The cells of one forestplot text column, header first, and every header.
-fp_col <- function(p, j)
-  vapply(p$labels[[j]], function(s) paste(s, collapse = ""), "")
-fp_headers <- function(p) vapply(seq_along(p$labels), function(j) fp_col(p, j)[1], "")
+# The grobs of one class in the forestplot drawing a plt_hte_sub() ggplot holds
+# in its annotation layer, in drawing order.
+fp_grobs <- function(p, cls)
+  Filter(function(k) inherits(k, cls), p$layers[[2]]$geom_params$grob$children)
+
+# The table as drawn, one vector per text column, header first: forestplot
+# draws every cell in a viewport named Label_vp_<row>_<column>.
+fp_table <- function(p) {
+  cells <- Filter(function(k) !is.null(k$vp) && startsWith(k$vp$name, "Label_vp_"),
+                  fp_grobs(p, "text"))
+  rc  <- vapply(cells, function(k)
+    as.integer(strsplit(sub("Label_vp_", "", k$vp$name, fixed = TRUE), "_")[[1]]),
+    integer(2L))
+  lab <- vapply(cells, function(k) paste(k$label, collapse = ""), "",
+                USE.NAMES = FALSE)
+  lapply(sort(unique(rc[2L, ])), function(j)
+    lab[rc[2L, ] == j][order(rc[1L, rc[2L, ] == j])])
+}
+fp_col <- function(p, j) fp_table(p)[[j]]
+fp_headers <- function(p) vapply(fp_table(p), `[`, "", 1L)
 
 # Page size of a PDF in inches, from its MediaBox, and its number of pages.
 pdf_size <- function(f) {
@@ -305,13 +321,32 @@ pdf_size <- function(f) {
 pdf_pages <- function(f)
   length(grepRaw("/Type /Page[^s]", readBin(f, "raw", file.size(f)), all = TRUE))
 
+# The table as drawn on a w x h page, in inches: its column widths and row
+# heights, the area forestplot gives it and the centre of that area relative
+# to the centre of the page.
+drawn <- function(p, w, h) {
+  grDevices::pdf(NULL, width = w, height = h)
+  on.exit(grDevices::dev.off())
+  print(p)
+  grid::seekViewport("BaseGrid")
+  lay <- grid::current.viewport()$layout
+  mid <- grid::deviceLoc(grid::unit(0.5, "npc"), grid::unit(0.5, "npc"),
+                         valueOnly = TRUE)
+  list(widths  = grid::convertWidth(lay$widths, "in", valueOnly = TRUE),
+       heights = grid::convertHeight(lay$heights, "in", valueOnly = TRUE),
+       area    = c(grid::convertWidth(grid::unit(1, "npc"), "in", TRUE),
+                   grid::convertHeight(grid::unit(1, "npc"), "in", TRUE)),
+       centre  = c(mid$x - w / 2, mid$y - h / 2))
+}
+
 test_that("plt_hte_sub recomputes the get_hte() subgroup estimates", {
   skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
   res <- dep_res()
   devs <- grDevices::dev.list()
   p <- plt_hte_sub(res, sub_var = "sex")
   expect_identical(grDevices::dev.list(), devs)   # no stray device opened
-  expect_s3_class(p, "gforge_forestplot")
+  expect_s3_class(p, "ggplot")
   expect_equal(attr(p, "subgroup"), res$subgroup[res$subgroup$measure == "diff", ])
 
   # a covariate get_hte() was not asked about: grf's own subset estimates
@@ -333,27 +368,33 @@ test_that("plt_hte_sub recomputes the get_hte() subgroup estimates", {
 
 test_that("measure = 'ratio' averages the arm scores on a log axis", {
   skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
   res <- dep_res()
   p   <- plt_hte_sub(res, sub_var = "stage", measure = "ratio")
   s   <- .hte_arm_scores(res$fit)
   idx <- res$data$stage == "II"
   sg  <- attr(p, "subgroup")
   expect_equal(sg$estimate[sg$level == "II"], mean(s$g1[idx]) / mean(s$g0[idx]))
-  expect_true(p$xlog)
-  expect_equal(p$zero, 0)                     # log(1): forestplot logs the axis
+  # forestplot logs the axis, labelled on the ratio scale
+  ax <- fp_grobs(p, "xaxis")[[1L]]
+  expect_equal(ax$at, log(as.numeric(ax$label)))
+  expect_true("1" %in% ax$label)
   expect_identical(fp_headers(p)[3], "Risk ratio (95% CI)")
 })
 
 test_that("overall, show_n, show_pvalue and show_pinter set the rows and columns", {
   skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
   res <- dep_res()
   p <- plt_hte_sub(res, sub_var = c("stage", "sex"))
   expect_identical(trimws(fp_col(p, 1)),
                    c("Subgroup", "All patients", "stage", "I", "II", "III",
                      "sex", "F", "M"))
-  expect_length(p$labels, 3L)                 # no P columns by default
-  expect_equal(unname(p$estimates[2, 1, 1]),
-               res$stats$estimate[res$stats$measure == "diff"])
+  expect_length(fp_table(p), 3L)              # no P columns by default
+  ov <- res$stats[res$stats$measure == "diff", ]
+  expect_identical(fp_col(p, 3)[2], sprintf("%.3f (%.3f, %.3f)", ov$estimate,
+                                            ov$conf.low, ov$conf.high))
+  expect_length(fp_grobs(p, "polygon"), 6L)   # a diamond for every estimate
 
   no_all <- plt_hte_sub(res, sub_var = "stage", overall = FALSE)
   expect_false("All patients" %in% trimws(fp_col(no_all, 1)))
@@ -374,6 +415,7 @@ test_that("overall, show_n, show_pvalue and show_pinter set the rows and columns
 
 test_that("sub_var defaults to the categorical covariates and checks columns", {
   skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
   res <- dep_res()
   cov  <- attr(res, "analysis")$covariates
   labs <- trimws(fp_col(plt_hte_sub(res, overall = FALSE), 1))
@@ -391,6 +433,7 @@ test_that("sub_var defaults to the categorical covariates and checks columns", {
 test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
   skip_if_not_installed("grf")
   skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
   set.seed(20260924)
   n <- 800L
   d <- data.frame(age   = stats::runif(n, 20, 85),
@@ -411,7 +454,7 @@ test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
   row <- trimws(fp_col(p, 1)) == "III"
   expect_true(is.na(attr(p, "subgroup")$estimate[3]))
   expect_identical(fp_col(p, 3)[row], "\u2014")
-  expect_true(is.na(p$estimates[row, 1, 1]))
+  expect_length(fp_grobs(p, "polygon"), 3L)   # no diamond for III
   expect_identical(fp_headers(p)[3], "S(60) difference (95% CI)")
   expect_identical(
     fp_headers(suppressWarnings(plt_hte_sub(res, sub_var = "stage",
@@ -429,6 +472,7 @@ test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
 
 test_that("plt_hte_sub rejects invalid requests and saves a PDF", {
   skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
   res <- dep_res()
   expect_error(plt_hte_sub(list()), "hte_res")
   expect_error(plt_hte_sub(res, overall = NA), "overall")
@@ -453,7 +497,7 @@ test_that("plt_hte_sub rejects invalid requests and saves a PDF", {
   f <- tempfile(fileext = ".pdf")
   p <- plt_hte_sub(res, sub_var = "stage", save = list(filename = f))
   expect_true(file.exists(f))
-  expect_s3_class(p, "gforge_forestplot")
+  expect_s3_class(p, "ggplot")
   # the page is the pinned size unless `save` names a dimension (PDF pages
   # are whole points, hence the tolerance)
   expect_equal(pdf_size(f), unname(attr(p, "plot_size")), tolerance = 0.01)
@@ -466,29 +510,11 @@ test_that("plt_hte_sub rejects invalid requests and saves a PDF", {
 
 test_that("fixed_size pins the plot to the size its text needs", {
   skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
   res <- dep_res()
   expect_identical(tail(names(formals(plt_hte_sub)), 2L), c("fixed_size", "save"))
 
-  # The table as drawn on a w x h page, in inches: its column widths and row
-  # heights, the area forestplot gives it and the centre of that area relative
-  # to the centre of the page.
-  drawn <- function(p, w, h) {
-    grDevices::pdf(NULL, width = w, height = h)
-    on.exit(grDevices::dev.off())
-    print(p)
-    grid::seekViewport("BaseGrid")
-    lay <- grid::current.viewport()$layout
-    mid <- grid::deviceLoc(grid::unit(0.5, "npc"), grid::unit(0.5, "npc"),
-                           valueOnly = TRUE)
-    list(widths  = grid::convertWidth(lay$widths, "in", valueOnly = TRUE),
-         heights = grid::convertHeight(lay$heights, "in", valueOnly = TRUE),
-         area    = c(grid::convertWidth(grid::unit(1, "npc"), "in", TRUE),
-                     grid::convertHeight(grid::unit(1, "npc"), "in", TRUE)),
-         centre  = c(mid$x - w / 2, mid$y - h / 2))
-  }
-
   p <- plt_hte_sub(res, sub_var = "stage")
-  expect_s3_class(p, "hte_forestplot")
   size <- attr(p, "plot_size")
   expect_named(size, c("width", "height"))
   expect_equal(size, round(size, 1))
@@ -511,7 +537,6 @@ test_that("fixed_size pins the plot to the size its text needs", {
 
   # FALSE stretches the table over the page, as before
   pf <- plt_hte_sub(res, sub_var = "stage", fixed_size = FALSE)
-  expect_identical(pf$lineheight, "auto")
   expect_named(attr(pf, "plot_size"), c("width", "height"))
   expect_false(isTRUE(all.equal(drawn(pf, 8, 5)$heights,
                                 drawn(pf, 14, 10)$heights)))
@@ -525,6 +550,28 @@ test_that("fixed_size pins the plot to the size its text needs", {
   grDevices::dev.off()
   expect_identical(pdf_pages(f), 3L)
   unlink(f)
+})
+
+test_that("plt_hte_sub returns a ggplot patchwork can combine", {
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  skip_if_not_installed("patchwork")
+  res <- dep_res()
+  # the wrapping raises no warning of its own
+  expect_no_warning(p <- plt_hte_sub(res, sub_var = "stage"))
+  expect_s3_class(p, "ggplot")
+  q  <- plt_hte_cate(res, sub_var = "stage", type = "density")
+  pw <- patchwork::wrap_plots(p, q, ncol = 1)
+  expect_s3_class(pw, "patchwork")
+  # the pinned table draws in the composition as it does alone
+  keep <- c("widths", "heights", "area")
+  expect_equal(drawn(pw, 9, 8)[keep], drawn(p, 9, 8)[keep], tolerance = 1e-6)
+
+  # unpinned, it takes a proportional share
+  pf <- plt_hte_sub(res, sub_var = "stage", fixed_size = FALSE)
+  even <- drawn(patchwork::wrap_plots(pf, q, ncol = 1), 9, 8)
+  more <- drawn(patchwork::wrap_plots(pf, q, ncol = 1, heights = c(2, 1)), 9, 8)
+  expect_gt(more$area[2], even$area[2])
 })
 
 

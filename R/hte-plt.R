@@ -6,8 +6,9 @@
 #
 #   L1  plt_hte_dep()     one panel per covariate ("dep") or a two-covariate
 #                         partial-dependence heat map ("heat")
-#   L1  plt_hte_sub()     subgroup forest plot (forestplot) of the doubly
-#                         robust subgroup ATEs, recomputed with .hte_subgroup()
+#   L1  plt_hte_sub()     subgroup forest plot (forestplot, wrapped as a ggplot)
+#                         of the doubly robust subgroup ATEs, recomputed with
+#                         .hte_subgroup()
 #   L1  plt_hte_cate()    waterfall / density of the per-patient CATE by
 #                         subgroup, with the doubly robust ATE lines
 #   L2  .hte_pdp()        forest CATE averaged with covariates set to grid values
@@ -523,9 +524,10 @@ plt_hte_dep <- function(x,
 #' Recomputes the doubly robust average treatment effect (ATE) within each
 #' level of the chosen categorical variables from a [get_hte()] result and
 #' draws them with \pkg{forestplot}, in the diamond style of
-#' `RegR::plt_eff2()`. The estimates come from the stored forest exactly as
-#' `get_hte(sub_var = )` computes them, so nothing is refitted and the
-#' subgroups can be chosen after the fact.
+#' `RegR::plt_eff2()`, wrapped as a ggplot by [ggplotify::as.ggplot()] so
+#' \pkg{patchwork} can combine it with other plots. The estimates come from the
+#' stored forest exactly as `get_hte(sub_var = )` computes them, so nothing is
+#' refitted and the subgroups can be chosen after the fact.
 #'
 #' @param x An `hte_res` object from [get_hte()].
 #' @param sub_var Character vector of categorical columns of `x$data`, drawn
@@ -561,7 +563,10 @@ plt_hte_dep <- function(x,
 #'   width and at least 2 in -- so it draws the same on every device: a larger
 #'   one only adds white space, a smaller one clips it. A single positive
 #'   number pins the total width in inches instead, the graph column taking
-#'   what the text leaves. `FALSE` stretches the plot over the device.
+#'   what the text leaves. `FALSE` stretches the plot over the device, or over
+#'   its cell of a \pkg{patchwork} composition: that is what
+#'   `plot_layout(widths = , heights = )` needs, since patchwork cannot give a
+#'   pinned plot a proportional share.
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
 #'   `width` or `height` left out is taken from `attr(p, "plot_size")`. Do not
@@ -576,10 +581,11 @@ plt_hte_dep <- function(x,
 #' in an arm followed beyond `time` -- has no estimate: it is drawn with a
 #' dash, with a warning.
 #'
-#' @return A `forestplot` object of class `hte_forestplot`, inheriting
-#'   `gforge_forestplot`: printing it draws the plot on a new page, and the
-#'   `fp_*()` functions of \pkg{forestplot} can restyle it (text they enlarge
-#'   can outgrow a pinned size; use `fixed_size = FALSE` then).
+#' @return A `ggplot`: the \pkg{forestplot} drawing, captured on the PDF
+#'   metrics `RegR::save_plt()` writes with and wrapped by
+#'   [ggplotify::as.ggplot()]. \pkg{patchwork} combines it with other plots
+#'   as one plot (`p | q`, `p / q`, [patchwork::wrap_plots()]), but it is a
+#'   picture of the table: themes and scales added to it do not restyle it.
 #'   `attr(p, "subgroup")` holds the subgroup estimates drawn, laid out as
 #'   `get_hte()$subgroup`, and `attr(p, "plot_size")` the `c(width, height)`
 #'   in inches the plot is pinned to, or a suggested size with
@@ -589,7 +595,7 @@ plt_hte_dep <- function(x,
 #' @seealso [get_hte()]; [plt_hte_dep()] for how the CATE varies with a
 #'   covariate.
 #'
-#' @examplesIf requireNamespace("grf", quietly = TRUE) && requireNamespace("forestplot", quietly = TRUE)
+#' @examplesIf requireNamespace("grf", quietly = TRUE) && requireNamespace("forestplot", quietly = TRUE) && requireNamespace("ggplotify", quietly = TRUE) && requireNamespace("patchwork", quietly = TRUE)
 #' \donttest{
 #' set.seed(20260923)
 #' n <- 600
@@ -608,6 +614,11 @@ plt_hte_dep <- function(x,
 #' # Chosen variables as risk ratios, with both P columns
 #' plt_hte_sub(res, sub_var = c("sex", "stage"), measure = "ratio",
 #'             show_pvalue = TRUE, show_pinter = TRUE)
+#'
+#' # A ggplot, so patchwork stacks it over the CATE density by sex
+#' patchwork::wrap_plots(plt_hte_sub(res, sub_var = "sex"),
+#'                       plt_hte_cate(res, sub_var = "sex", type = "density"),
+#'                       ncol = 1)
 #' }
 #'
 #' @export
@@ -656,7 +667,7 @@ plt_hte_sub <- function(x,
   if (!is.null(save) && !is.list(save))
     stop("`save` must be `NULL` or a list.", call. = FALSE)
   # grf also has to be loaded for predict() on a forest read back from disk
-  for (pkg in c("grf", "forestplot"))
+  for (pkg in c("grf", "forestplot", "ggplotify"))
     if (!requireNamespace(pkg, quietly = TRUE))
       stop(sprintf("Package '%s' is required for plt_hte_sub().", pkg),
            call. = FALSE)
@@ -860,7 +871,6 @@ plt_hte_sub <- function(x,
       stop(sprintf("`fixed_size` leaves no room for the forest column: the labels alone need %.1f in.",
                    probe$text + probe$over[1L]), call. = FALSE)
     p$graphwidth <- grid::unit(graph_w, "in")
-    p[[".hte_fixed_size"]] <- TRUE
     # Rounded up, as a canvas short of the pinned drawing clips it; a width
     # asked for is kept as it is.
     up   <- function(v) ceiling(10 * v - 1e-8) / 10
@@ -869,9 +879,26 @@ plt_hte_sub <- function(x,
               height = up(row_in * nrow(text) + probe$over[2L]))
   }
 
+  # ---- ggplot ---------------------------------------------------------------
+  # Captured the way ggplotify captures grid plots, on a null PDF device of
+  # `size`, so the text keeps the metrics measured above, then wrapped by
+  # as.ggplot() for patchwork. The capture fills the panel it is drawn in: a
+  # pinned plot holds that panel to `size`; otherwise it stretches as
+  # forestplot does, save for the 5 mm margins, which forestplot turns into a
+  # share of the capture. grid.grabExpr() hands back to the device that was
+  # current, and selecting the null device opens a new one, hence on_null().
+  g <- on_null(grid::grid.grabExpr(print(p), warn = 0, width = size[["width"]],
+                                   height = size[["height"]]))
+  # ggplotify 0.1.2 builds its ggplot with aes_(), deprecated in ggplot2
+  p <- withCallingHandlers(ggplotify::as.ggplot(g),
+                           lifecycle_warning_deprecated = function(w)
+                             invokeRestart("muffleWarning"))
+  if (!isFALSE(fixed_size))
+    p <- p + ggplot2::theme(panel.widths  = grid::unit(size[["width"]], "in"),
+                            panel.heights = grid::unit(size[["height"]], "in"))
+
   attr(p, "subgroup")  <- sub
   attr(p, "plot_size") <- size
-  class(p) <- c("hte_forestplot", class(p))
   if (!is.null(save) && length(save) > 0L) {
     if (!requireNamespace("RegR", quietly = TRUE))
       stop("Package 'RegR' is required for a non-empty `save`.", call. = FALSE)
@@ -880,32 +907,6 @@ plt_hte_sub <- function(x,
     do.call(RegR::save_plt, c(list(plot = p), save))
   }
   p
-}
-
-
-# forestplot() starts a new page only when the object is built, and
-# plt_hte_sub() builds it on a null device, so printing starts one here; else
-# the plot is drawn over whatever the device shows. A pinned plot is laid out
-# in a viewport of exactly its size: every row and column is absolute by then,
-# and the viewport keeps the title, the table and the x-axis strip together
-# instead of letting forestplot glue the axis to the bottom of the device.
-#' @export
-#' @noRd
-print.hte_forestplot <- function(x, ...) {
-  if (!requireNamespace("forestplot", quietly = TRUE))
-    stop("Package 'forestplot' is required to draw this plot.", call. = FALSE)
-  obj <- x
-  class(x) <- setdiff(class(x), "hte_forestplot")
-  grid::grid.newpage()
-  if (isTRUE(x[[".hte_fixed_size"]])) {
-    size <- attr(x, "plot_size")
-    grid::pushViewport(grid::viewport(width  = grid::unit(size[["width"]], "in"),
-                                      height = grid::unit(size[["height"]], "in"),
-                                      name   = "hte_fixed_size"))
-    on.exit(grid::upViewport(0), add = TRUE)
-  }
-  print(x, ...)
-  invisible(obj)
 }
 
 

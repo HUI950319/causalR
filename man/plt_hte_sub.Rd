@@ -66,7 +66,10 @@ its text needs -- rows 0.3 in tall, the graph column a quarter of the
 width and at least 2 in -- so it draws the same on every device: a larger
 one only adds white space, a smaller one clips it. A single positive
 number pins the total width in inches instead, the graph column taking
-what the text leaves. \code{FALSE} stretches the plot over the device.}
+what the text leaves. \code{FALSE} stretches the plot over the device, or over
+its cell of a \pkg{patchwork} composition: that is what
+\code{plot_layout(widths = , heights = )} needs, since patchwork cannot give a
+pinned plot a proportional share.}
 
 \item{save}{\code{NULL} or a list with \code{filename}, \code{width} and \code{height}, passed
 to \code{RegR::save_plt()} for PDF output. \code{list()} and \code{NULL} skip saving; a
@@ -74,10 +77,11 @@ to \code{RegR::save_plt()} for PDF output. \code{list()} and \code{NULL} skip sa
 include the \code{plot} argument; it is supplied internally.}
 }
 \value{
-A \code{forestplot} object of class \code{hte_forestplot}, inheriting
-\code{gforge_forestplot}: printing it draws the plot on a new page, and the
-\verb{fp_*()} functions of \pkg{forestplot} can restyle it (text they enlarge
-can outgrow a pinned size; use \code{fixed_size = FALSE} then).
+A \code{ggplot}: the \pkg{forestplot} drawing, captured on the PDF
+metrics \code{RegR::save_plt()} writes with and wrapped by
+\code{\link[ggplotify:as.ggplot]{ggplotify::as.ggplot()}}. \pkg{patchwork} combines it with other plots
+as one plot (\code{p | q}, \code{p / q}, \code{\link[patchwork:wrap_plots]{patchwork::wrap_plots()}}), but it is a
+picture of the table: themes and scales added to it do not restyle it.
 \code{attr(p, "subgroup")} holds the subgroup estimates drawn, laid out as
 \code{get_hte()$subgroup}, and \code{attr(p, "plot_size")} the \code{c(width, height)}
 in inches the plot is pinned to, or a suggested size with
@@ -88,9 +92,10 @@ PDF through \code{RegR::save_plt()}.
 Recomputes the doubly robust average treatment effect (ATE) within each
 level of the chosen categorical variables from a \code{\link[=get_hte]{get_hte()}} result and
 draws them with \pkg{forestplot}, in the diamond style of
-\code{RegR::plt_eff2()}. The estimates come from the stored forest exactly as
-\code{get_hte(sub_var = )} computes them, so nothing is refitted and the
-subgroups can be chosen after the fact.
+\code{RegR::plt_eff2()}, wrapped as a ggplot by \code{\link[ggplotify:as.ggplot]{ggplotify::as.ggplot()}} so
+\pkg{patchwork} can combine it with other plots. The estimates come from the
+stored forest exactly as \code{get_hte(sub_var = )} computes them, so nothing is
+refitted and the subgroups can be chosen after the fact.
 }
 \section{Subgroup estimates}{
 
@@ -104,7 +109,7 @@ dash, with a warning.
 }
 
 \examples{
-\dontshow{if (requireNamespace("grf", quietly = TRUE) && requireNamespace("forestplot", quietly = TRUE)) withAutoprint(\{ # examplesIf}
+\dontshow{if (requireNamespace("grf", quietly = TRUE) && requireNamespace("forestplot", quietly = TRUE) && requireNamespace("ggplotify", quietly = TRUE) && requireNamespace("patchwork", quietly = TRUE)) withAutoprint(\{ # examplesIf}
 \donttest{
 set.seed(20260923)
 n <- 600
@@ -123,6 +128,11 @@ plt_hte_sub(res)
 # Chosen variables as risk ratios, with both P columns
 plt_hte_sub(res, sub_var = c("sex", "stage"), measure = "ratio",
             show_pvalue = TRUE, show_pinter = TRUE)
+
+# A ggplot, so patchwork stacks it over the CATE density by sex
+patchwork::wrap_plots(plt_hte_sub(res, sub_var = "sex"),
+                      plt_hte_cate(res, sub_var = "sex", type = "density"),
+                      ncol = 1)
 }
 \dontshow{\}) # examplesIf}
 }
