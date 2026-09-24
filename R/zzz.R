@@ -32,5 +32,8 @@ utils::globalVariables(c(
   "conf.high", # plt_hte_dep:       upper interval bound
   "panel",     # plt_hte_dep:       strip label of a panel
   "x1",        # plt_hte_dep:       first covariate of the heat map
-  "x2"         # plt_hte_dep:       second covariate of the heat map
+  "x2",        # plt_hte_dep:       second covariate of the heat map
+  # hte-rate.R (reuses y / conf.low / conf.high / panel above)
+  "q",         # plt_hte_rate:      treated fraction
+  "rule"       # plt_hte_rate:      ranking rule, shown in the legend
 ))

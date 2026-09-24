@@ -1,0 +1,217 @@
+# plt_hte_rate() evaluates how well a ranking of the patients targets the
+# treatment effect (RATE, TOC and Qini curves) from a get_hte() result. grf is
+# a Suggests; every test that needs a forest skips without it.
+
+rate_cache <- new.env()
+
+# Survival: only marker > 0 modifies the effect, age is prognostic.
+rate_surv <- function() {
+  skip_if_not_installed("grf")
+  if (is.null(rate_cache$surv)) {
+    set.seed(20260924)
+    n <- 800L
+    d <- data.frame(age    = round(stats::runif(n, 30, 85)),
+                    marker = stats::rnorm(n),
+                    stage  = factor(sample(c("I", "II", "III"), n, replace = TRUE)))
+    d$z <- stats::rbinom(n, 1, 0.5)
+    haz <- exp(-4 + 0.03 * (d$age - 60) - d$z * (0.1 + 0.9 * (d$marker > 0)))
+    tt  <- stats::rexp(n, haz)
+    cc  <- stats::runif(n, 20, 150)
+    d$time <- pmin(tt, cc)
+    d$DSS  <- as.integer(tt <= cc)
+    rate_cache$surv <- get_hte(d, "z", adj_var = c("age", "marker", "stage"),
+                               time = 60,
+                               grf_args = list(num.trees = 300, seed = 1))
+  }
+  rate_cache$surv
+}
+
+rate_cont <- function() {
+  skip_if_not_installed("grf")
+  if (is.null(rate_cache$cont)) {
+    set.seed(3)
+    n <- 600L
+    d <- data.frame(x1 = stats::rnorm(n), x2 = stats::rnorm(n),
+                    risk = stats::runif(n))
+    d$z <- stats::rbinom(n, 1, 0.5)
+    d$y <- d$x2 + d$z * (1 + d$x1) + stats::rnorm(n)
+    rate_cache$cont <- get_hte(d, "z", adj_var = c("x1", "x2"), surv = "y",
+                               grf_args = list(num.trees = 300, seed = 1))
+  }
+  rate_cache$cont
+}
+
+rate_of <- function(p) attr(p, "rate")
+
+
+test_that("get_hte() keeps the grf arguments that plt_hte_rate() refits with", {
+  res <- rate_surv()
+  ga  <- attr(res, "analysis")$grf_args
+  expect_identical(ga$num.trees, 300)
+  expect_identical(ga$seed, 1)
+  expect_identical(ga$target, "survival.probability")
+  expect_identical(names(formals(plt_hte_rate)),
+                   c("x", "priority", "type", "conf_level", "train_frac",
+                     "seed", "title", "save"))
+})
+
+test_that("a pre-specified rule is evaluated on every patient by grf's RATE", {
+  res <- rate_surv()
+  p <- plt_hte_rate(res, priority = c("marker", "age"))
+  r <- rate_of(p)
+  expect_s3_class(p, "ggplot")
+  expect_identical(names(r), c("rule", "target", "estimate", "std.error",
+                               "conf.low", "conf.high", "p.value", "n"))
+  expect_identical(r$rule, rep(c("marker", "age", "marker - age"), 2L))
+  expect_identical(r$target, rep(c("AUTOC", "QINI"), each = 3L))
+  expect_identical(r$n, rep(nrow(res$data), 6L))
+  pr <- data.frame(marker = res$data$marker, age = res$data$age)
+  for (tg in c("AUTOC", "QINI")) {
+    want <- grf::rank_average_treatment_effect(res$fit, pr, target = tg)
+    expect_equal(r$estimate[r$target == tg], unname(want$estimate))
+  }
+  z <- stats::qnorm(0.975)
+  expect_equal(r$conf.low, r$estimate - z * r$std.error)
+  expect_equal(r$p.value, 2 * stats::pnorm(-abs(r$estimate / r$std.error)))
+  # marker drives the effect, age does not
+  expect_lt(r$p.value[r$rule == "marker" & r$target == "QINI"], 0.05)
+})
+
+test_that("the forest CATE is learnt on one split and evaluated on the other", {
+  res <- rate_surv()
+  p <- plt_hte_rate(res, seed = 7)
+  r <- rate_of(p)
+  expect_identical(r$rule, c("cate", "cate"))
+
+  # the same split and refits by hand, on the original follow-up times
+  n <- nrow(res$data)
+  set.seed(7)
+  train <- sort(sample.int(n, floor(0.5 * n)))
+  ev    <- setdiff(seq_len(n), train)
+  X     <- res$fit$X.orig
+  refit <- function(rows)
+    grf::causal_survival_forest(X[rows, ], res$data$time[rows],
+                                res$fit$W.orig[rows], res$data$DSS[rows],
+                                horizon = 60, target = "survival.probability",
+                                num.trees = 300, seed = 7)
+  prio <- stats::predict(refit(train), X[ev, ])$predictions
+  want <- grf::rank_average_treatment_effect(refit(ev), data.frame(cate = prio),
+                                             target = "AUTOC")
+  expect_equal(r$estimate[r$target == "AUTOC"], unname(want$estimate))
+  expect_identical(r$n, rep(length(ev), 2L))
+
+  # reproducible, and seed, train_frac move it
+  expect_identical(rate_of(plt_hte_rate(res, seed = 7)), r)
+  expect_false(identical(rate_of(plt_hte_rate(res, seed = 8))$estimate,
+                         r$estimate))
+  expect_equal(rate_of(plt_hte_rate(res, seed = 7, train_frac = 0.7))$n[1L],
+               n - floor(0.7 * n))
+  # seed = NULL takes the forest's seed
+  expect_identical(rate_of(plt_hte_rate(res)),
+                   rate_of(plt_hte_rate(res, seed = 1)))
+})
+
+test_that("the global random number stream is left untouched", {
+  res <- rate_surv()
+  set.seed(99)
+  before <- .Random.seed
+  invisible(plt_hte_rate(res, priority = "marker"))
+  expect_identical(.Random.seed, before)
+})
+
+test_that("the forest CATE and a covariate are compared on the held-out half", {
+  res <- rate_cont()
+  expect_message(p <- plt_hte_rate(res, priority = c("cate", "risk")),
+                 "not a forest covariate")
+  r <- rate_of(p)
+  expect_identical(r$rule, rep(c("cate", "risk", "cate - risk"), 2L))
+  expect_equal(r$n, rep(nrow(res$data) - floor(0.5 * nrow(res$data)), 6L))
+  expect_lt(r$p.value[r$rule == "cate - risk" & r$target == "AUTOC"], 0.05)
+})
+
+test_that("the panels hold the TOC and q times the TOC", {
+  res <- rate_surv()
+  p <- plt_hte_rate(res, priority = "marker")
+  pd <- p$data
+  expect_identical(levels(pd$panel), c("TOC", "Qini"))
+  toc  <- pd[pd$panel == "TOC", ]
+  qini <- pd[pd$panel == "Qini", ]
+  expect_equal(qini$y, qini$q * toc$y)
+  expect_equal(range(toc$q), c(0.05, 1))
+  expect_match(p$labels$y, "S(60)", fixed = TRUE)
+  expect_match(p$labels$caption, "all 800 patients")
+  expect_true(any(vapply(p$layers, function(l) inherits(l$geom, "GeomRibbon"),
+                         logical(1L))))
+
+  one <- plt_hte_rate(res, priority = "marker", type = "qini")
+  expect_identical(levels(one$data$panel), "Qini")
+  expect_false(grepl("AUTOC", one$labels$subtitle))
+  expect_identical(names(attr(one, "plot_size")), c("width", "height"))
+
+  pc <- plt_hte_rate(rate_cont(), type = "toc")
+  expect_match(pc$labels$y, "mean", fixed = TRUE)
+  expect_match(pc$labels$caption, "held-out")
+})
+
+test_that("each half needs patients followed past `time` in both arms", {
+  skip_if_not_installed("grf")
+  set.seed(5)
+  n <- 300L
+  d <- data.frame(x = stats::rnorm(n))
+  d$z <- stats::rbinom(n, 1, 0.5)
+  d$time <- stats::runif(n, 1, 100)
+  # only one treated patient is followed past 60
+  late <- which(d$z == 1 & d$time > 60)
+  d$time[late[-1L]] <- stats::runif(length(late) - 1L, 1, 59)
+  d$DSS <- stats::rbinom(n, 1, 0.5)
+  res <- suppressWarnings(get_hte(d, "z", adj_var = "x", time = 60,
+                                  grf_args = list(num.trees = 100, seed = 1)))
+  expect_error(plt_hte_rate(res), "is followed beyond `time` = 60")
+  # a pre-specified rule uses every patient and needs no split
+  expect_no_error(suppressWarnings(plt_hte_rate(res, priority = "x")))
+})
+
+test_that("missing priorities are left out and odd rules are refused", {
+  res <- rate_surv()
+  res$data$marker_na <- replace(res$data$marker, 1:10, NA)
+  expect_message(p <- plt_hte_rate(res, priority = "marker_na"),
+                 "10 patients")
+  expect_identical(rate_of(p)$n[1L], nrow(res$data) - 10L)
+  expect_message(plt_hte_rate(res, priority = "marker_na"),
+                 "not a forest covariate")
+
+  expect_error(plt_hte_rate(list()), "hte_res")
+  expect_error(plt_hte_rate(res, priority = ".cate"), "training split")
+  expect_error(plt_hte_rate(res, priority = "z"), "treatment or the outcome")
+  expect_error(plt_hte_rate(res, priority = "time"), "treatment or the outcome")
+  expect_error(plt_hte_rate(res, priority = "nope"), "nope")
+  expect_error(plt_hte_rate(res, priority = "stage"), "numeric")
+  expect_error(plt_hte_rate(res, priority = c("cate", "age", "marker")),
+               "one or two")
+  expect_error(plt_hte_rate(res, priority = "age", train_frac = 0.6),
+               "train_frac")
+  expect_error(plt_hte_rate(res, train_frac = 1), "train_frac")
+  expect_error(plt_hte_rate(res, conf_level = 1.5), "conf_level")
+  expect_error(plt_hte_rate(res, seed = "a"), "seed")
+  expect_error(plt_hte_rate(res, type = "roc"), "should be one of")
+  expect_error(plt_hte_rate(res, save = "a.pdf"), "`save`")
+})
+
+test_that("a result made before get_hte() kept its grf arguments still refits", {
+  res <- rate_cont()
+  attr(res, "analysis")$grf_args <- NULL
+  r <- rate_of(plt_hte_rate(res, seed = 2))
+  expect_equal(r$n[1L], nrow(res$data) - floor(0.5 * nrow(res$data)))
+})
+
+test_that("save writes one PDF and returns the plot unchanged", {
+  res <- rate_cont()
+  expect_s3_class(plt_hte_rate(res, priority = "x1", save = list()), "ggplot")
+  expect_s3_class(plt_hte_rate(res, priority = "x1", save = NULL), "ggplot")
+  skip_if_not_installed("RegR")
+  f <- tempfile(fileext = ".pdf")
+  p <- plt_hte_rate(res, priority = "x1", save = list(filename = f))
+  expect_true(file.exists(f))
+  expect_s3_class(p, "ggplot")
+  unlink(f)
+})

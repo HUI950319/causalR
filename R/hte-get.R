@@ -412,7 +412,8 @@
 #'   }
 #'   Analysis metadata is attached as `attr(x, "analysis")`, including the
 #'   covariates actually used, the treated level, the propensity range
-#'   (`ps_range`) and the seed of the forest.
+#'   (`ps_range`), the seed of the forest and the `grf_args` it was fitted
+#'   with, which [plt_hte_rate()] refits with.
 #'   Rows missing `cat_var` or the outcome are dropped. Missing covariates are
 #'   left to grf, and each subgroup row, `p_het` and [plt_hte_dep()] panel
 #'   uses the patients whose value of that covariate is observed.
@@ -757,7 +758,7 @@ get_hte <- function(data,
       estimand = estimand, measure = measure, target = target,
       time = if (is_surv) time else NULL, conf_level = conf_level,
       n = length(W), n_treat = sum(W), ps_range = ps_rng,
-      seed = fit[["seed"]], call = match.call()))
+      seed = fit[["seed"]], grf_args = grf_args, call = match.call()))
 }
 
 

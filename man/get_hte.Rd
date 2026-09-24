@@ -145,7 +145,8 @@ CATE, and \code{.dr_score}, the AIPW score (equal to
 }
 Analysis metadata is attached as \code{attr(x, "analysis")}, including the
 covariates actually used, the treated level, the propensity range
-(\code{ps_range}) and the seed of the forest.
+(\code{ps_range}), the seed of the forest and the \code{grf_args} it was fitted
+with, which \code{\link[=plt_hte_rate]{plt_hte_rate()}} refits with.
 Rows missing \code{cat_var} or the outcome are dropped. Missing covariates are
 left to grf, and each subgroup row, \code{p_het} and \code{\link[=plt_hte_dep]{plt_hte_dep()}} panel
 uses the patients whose value of that covariate is observed.
