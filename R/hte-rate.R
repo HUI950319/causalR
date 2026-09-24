@@ -6,13 +6,15 @@
 #
 #   L1  plt_hte_rate()  rank the patients, evaluate the ranking with grf's
 #                       rank-weighted average treatment effect and draw its
-#                       TOC and Qini curves
+#                       TOC and Qini curves, and on request its GATES
 #
 # A ranking learnt from the outcomes -- the forest CATE -- is learnt on one
 # random split and evaluated on the other, as grf's RATE vignette requires. A
 # pre-specified score is not learnt from them, so it is evaluated on every
 # patient with the forest get_hte() stored. With unit costs the Qini curve is
 # q x TOC(q), whose area is grf's QINI, so it needs no further estimation.
+# The GATES of a group, grf's average_treatment_effect() on its patients, is
+# the ATE plus the mean slope of the Qini curve over the group's share.
 # =============================================================================
 
 
@@ -21,7 +23,9 @@
 #' Evaluates how well a ranking of the patients picks out those who benefit
 #' most, with the rank-weighted average treatment effect (RATE) of
 #' [grf::rank_average_treatment_effect()], and draws its targeting operator
-#' characteristic (TOC) and Qini curves from a [get_hte()] result.
+#' characteristic (TOC) and Qini curves from a [get_hte()] result. On request
+#' it also draws the sorted group average treatment effects (GATES): the
+#' doubly robust effect within each group of the ranking.
 #'
 #' @param x An `hte_res` object from [get_hte()].
 #' @param priority One or two ranking rules; patients with larger values are
@@ -44,7 +48,8 @@
 #'   }
 #'   Two rules are drawn together and their difference is tested; with
 #'   `"cate"` among them, both are evaluated on the held-out patients.
-#' @param type Panels to draw, `"toc"` and / or `"qini"` (default both).
+#' @param type Panels to draw, any of `"toc"`, `"qini"` and `"gates"`
+#'   (default `"toc"` and `"qini"`).
 #'   \describe{
 #'     \item{`"toc"`}{TOC(q): the average effect among the share q of
 #'       patients ranked first minus the average effect of all of them. Its
@@ -53,12 +58,21 @@
 #'     \item{`"qini"`}{q x TOC(q): what treating the share q ranked first
 #'       gains over treating a random share q. Its area, the QINI, weights
 #'       every share alike, so it detects an effect that changes gradually.}
+#'     \item{`"gates"`}{The average effect within each of
+#'       `gates_args$n_groups` groups of equal size, highest priority first;
+#'       a ranking that targets the effect gives estimates falling from left
+#'       to right. For `"cate"`, a diamond marks the mean forest CATE of each
+#'       group.}
 #'   }
 #' @param smooth `0` (default) draws the TOC and its band as estimated; a
 #'   number from `0.05` to `1` is a LOESS span that smooths both for display,
 #'   separately for each rule: about `0.1` smooths slightly, `0.3` strongly.
 #'   The Qini panel is then q times the smoothed TOC. The AUTOC, QINI and
 #'   `attr(p, "rate")` do not change.
+#' @param gates_args Named list for the `"gates"` panel: `n_groups` (default
+#'   `5`), the number of groups the ranking is cut into, a whole number of at
+#'   least 2. Tied patients share a group, so a logical rule gives two. Only
+#'   used when `type` includes `"gates"`.
 #' @param conf_level Confidence level of the bands and intervals. Default
 #'   `0.95`.
 #' @param train_frac Share of the patients the ranking forest is refitted to,
@@ -87,6 +101,15 @@
 #' With `"cate"` the result depends on the split, and only the held-out
 #' patients inform the test; `seed` fixes the split.
 #'
+#' The GATES panel draws each group's doubly robust average treatment effect,
+#' [grf::average_treatment_effect()] with `subset` as in [plt_hte_sub()], over
+#' the share of the ranking the group covers. A group's estimate is the ATE
+#' of the evaluated patients plus the mean slope of the Qini curve over that
+#' share, so the panel shows where along the ranking the effect changes. The
+#' subtitle tests the top minus the bottom group, taking the two as
+#' independent. For `"cate"`, diamonds spread less than the estimates mean
+#' the forest shrinks the effect towards its mean.
+#'
 #' @return A `ggplot` with one panel per `type`. The y axis is on the `"diff"`
 #'   scale of [get_hte()]: the S(t) or RMST difference for a survival outcome,
 #'   the risk difference for a binary one and the mean difference otherwise.
@@ -94,15 +117,27 @@
 #'   their difference, and target: `rule`, `target` (`"AUTOC"` or `"QINI"`),
 #'   `estimate`, `std.error` (grf's half-sample bootstrap), `conf.low`,
 #'   `conf.high`, `p.value` (two-sided Wald test of zero) and `n`, the
-#'   patients evaluated. The pinned size is in `attr(p, "plot_size")`. If
-#'   `save` is non-empty, the plot is also written to PDF through
-#'   `RegR::save_plt()`.
+#'   patients evaluated. With `"gates"` in `type`, `attr(p, "gates")` is a
+#'   tibble with one row per rule and group, and per rule one for the top
+#'   minus the bottom group: `rule`, `group` (`"1"` ranked first, `"1 - K"`
+#'   the difference), `q_from` and `q_to` (the share of the ranking the group
+#'   covers, `NA` for the difference), `n`, `estimate`, `std.error`,
+#'   `conf.low`, `conf.high`, `p.value` (two-sided Wald test of zero) and
+#'   `cate_mean`, the mean forest CATE for `"cate"` (`NA` for a pre-specified
+#'   rule). The pinned size is in `attr(p, "plot_size")`. If `save` is
+#'   non-empty, the plot is also written to PDF through `RegR::save_plt()`.
 #'
 #' @references
 #' Yadlowsky S, Fleming S, Shah N, Brunskill E, Wager S (2025). Evaluating
 #' treatment prioritization rules via rank-weighted average treatment
 #' effects. \emph{Journal of the American Statistical Association}
 #' 120(549).
+#'
+#' Chernozhukov V, Demirer M, Duflo E, \enc{Fernández}{Fernandez}-Val I
+#' (2025). Fisher-Schultz lecture: generic machine learning inference on
+#' heterogeneous treatment effects in randomized experiments, with an
+#' application to immunization in India. \emph{Econometrica} 93(4),
+#' 1121-1164.
 #'
 #' @seealso [get_hte()]; [plt_hte_dep()] and [plt_hte_sub()] for how the effect
 #'   varies with one covariate.
@@ -127,6 +162,9 @@
 #'
 #' # The forest against the marker alone
 #' plt_hte_rate(res, priority = c("cate", "marker"))
+#'
+#' # The effect within each fifth of the forest ranking
+#' plt_hte_rate(res, type = "gates")
 #' }
 #'
 #' @export
@@ -134,6 +172,7 @@ plt_hte_rate <- function(x,
                          priority   = "cate",
                          type       = c("toc", "qini"),
                          smooth     = 0,
+                         gates_args = list(n_groups = 5),
                          conf_level = 0.95,
                          train_frac = 0.5,
                          seed       = NULL,
@@ -144,11 +183,24 @@ plt_hte_rate <- function(x,
     stop("`x` must be an `hte_res` object from get_hte().", call. = FALSE)
   if (!requireNamespace("grf", quietly = TRUE))
     stop("Package 'grf' is required for plt_hte_rate().", call. = FALSE)
-  type <- intersect(c("toc", "qini"), match.arg(type, several.ok = TRUE))
+  panels <- c(toc = "TOC", qini = "Qini", gates = "GATES")
+  type   <- intersect(names(panels),
+                      match.arg(type, names(panels), several.ok = TRUE))
+  curves <- intersect(type, c("toc", "qini"))
+  gates  <- "gates" %in% type
   # A LOESS fit on the 96 points of the curve needs a span of 0.05 or more.
   if (!is.numeric(smooth) || length(smooth) != 1L || is.na(smooth) ||
       !(smooth == 0 || (smooth >= 0.05 && smooth <= 1)))
     stop("`smooth` must be 0 (no smoothing) or a LOESS span from 0.05 to 1.",
+         call. = FALSE)
+  if (!gates && !missing(gates_args))
+    stop("`gates_args` only applies when `type` includes \"gates\".",
+         call. = FALSE)
+  gates_args <- .merge_named_arg(gates_args, list(n_groups = 5), "gates_args")
+  n_groups <- gates_args$n_groups
+  if (!is.numeric(n_groups) || length(n_groups) != 1L ||
+      !is.finite(n_groups) || n_groups < 2 || n_groups != round(n_groups))
+    stop("`gates_args$n_groups` must be a whole number of at least 2.",
          call. = FALSE)
   if (!is.numeric(conf_level) || length(conf_level) != 1L ||
       is.na(conf_level) || conf_level <= 0 || conf_level >= 1)
@@ -309,9 +361,55 @@ plt_hte_rate <- function(x,
                stringsAsFactors = FALSE)
   }))
   tbl <- tibble::as_tibble(tbl)
+  lab <- ifelse(priority == "cate", "Forest CATE", priority)
+
+  # ---- GATES: the effect within each group of the ranking --------------------
+  # Groups of equal size, highest priority first; tied patients share the
+  # group of the middle of their tie, so a logical rule gives two. A group's
+  # effect is grf's average_treatment_effect(subset = ) through .hte_estimate(),
+  # as in plt_hte_sub(); the top minus the bottom group takes the two as
+  # independent.
+  if (gates) {
+    grid <- data.frame(estimand = "ATE", measure = "diff",
+                       stringsAsFactors = FALSE)
+    bey  <- .hte_beyond(x)[rows]
+    gt <- do.call(rbind, lapply(seq_along(priority), function(j) {
+      v  <- priority[j]
+      pv <- pri[[v]][sub]
+      g  <- ceiling(n_groups * rank(-pv, ties.method = "average") / length(pv))
+      g  <- match(g, sort(unique(g)))
+      ng <- max(g)
+      if (ng < 2L)
+        stop(sprintf("`priority` `%s` takes one value among the evaluated patients, so it forms a single GATES group.",
+                     v), call. = FALSE)
+      m    <- tabulate(g, ng)
+      from <- (cumsum(m) - m) / length(pv)
+      one  <- do.call(rbind, lapply(seq_len(ng), function(i) {
+        est <- .hte_muffle_ps(.hte_estimate(
+          forest, NULL, seq_along(rows) %in% sub[g == i], grid, FALSE, z,
+          sprintf("GATES of %s, group %d", lab[j], i), bey))
+        data.frame(rule = v, group = as.character(i), q_from = from[i],
+                   q_to = from[i] + m[i] / length(pv), n = m[i],
+                   est[c("estimate", "std.error", "conf.low", "conf.high",
+                         "p.value")],
+                   cate_mean = if (v == "cate") mean(pv[g == i]) else NA_real_,
+                   stringsAsFactors = FALSE)
+      }))
+      dif <- one$estimate[1L] - one$estimate[ng]
+      se  <- sqrt(one$std.error[1L]^2 + one$std.error[ng]^2)
+      rbind(one, data.frame(
+        rule = v, group = sprintf("1 - %d", ng), q_from = NA_real_,
+        q_to = NA_real_, n = m[1L] + m[ng], estimate = dif, std.error = se,
+        conf.low = dif - z * se, conf.high = dif + z * se,
+        p.value = 2 * stats::pnorm(-abs(dif / se)),
+        cate_mean = one$cate_mean[1L] - one$cate_mean[ng],
+        stringsAsFactors = FALSE))
+    }))
+    rownames(gt) <- NULL
+    gt <- tibble::as_tibble(gt)
+  }
 
   # ---- Curves: the TOC, and q x TOC for the Qini panel -----------------------
-  lab <- ifelse(priority == "cate", "Forest CATE", priority)
   toc <- rate$AUTOC$TOC
   toc <- toc[toc$priority %in% priority, , drop = FALSE]
   toc$rule <- factor(toc$priority, levels = priority, labels = lab)
@@ -330,9 +428,18 @@ plt_hte_rate <- function(x,
     data.frame(panel = panel, q = toc$q, rule = toc$rule,
                y = k * toc$estimate, conf.low = k * toc$conf.low,
                conf.high = k * toc$conf.high)
-  pd <- do.call(rbind, list(toc = band("TOC", 1), qini = band("Qini", toc$q))[type])
-  pd$panel <- factor(pd$panel, levels = c(toc = "TOC", qini = "Qini")[type])
+  pd <- do.call(rbind, list(toc = band("TOC", 1), qini = band("Qini", toc$q))[curves])
+  if (is.null(pd)) pd <- band("TOC", 1)[0L, ]    # the GATES panel alone
+  pd$panel <- factor(pd$panel, levels = panels[type])
   rownames(pd) <- NULL
+  if (gates) {
+    gd <- as.data.frame(gt[!is.na(gt$q_from), ])
+    gd$panel <- factor("GATES", levels = panels[type])
+    gd$rule  <- factor(gd$rule, levels = priority, labels = lab)
+    # two rules side by side at the middle of each group
+    gd$x <- (gd$q_from + gd$q_to) / 2 +
+      if (length(priority) == 2L) c(-0.012, 0.012)[as.integer(gd$rule)] else 0
+  }
 
   what <- switch(a$outcome_type,
                  survival   = sprintf("%s(%s)",
@@ -345,11 +452,10 @@ plt_hte_rate <- function(x,
   rlab <- if (length(priority) == 2L)
     c(lab, paste(lab, collapse = " - ")) else lab
   # One line per target, broken between rules rather than inside one.
-  lines_of <- function(tg, width) {
-    r     <- tbl[tbl$target == tg, ]
-    items <- sprintf("%s %.3f (%.3f to %.3f), p %s", rlab, r$estimate,
+  lines_of <- function(head, r, labs, width) {
+    items <- sprintf("%s %.3f (%.3f to %.3f), p %s", labs, r$estimate,
                      r$conf.low, r$conf.high, vapply(r$p.value, fmt_p, ""))
-    out <- paste0(tg, ": ", items[1L])
+    out <- paste0(head, ": ", items[1L])
     for (it in items[-1L]) {
       k <- length(out)
       if (nchar(out[k]) + 2L + nchar(it) <= width) {
@@ -368,19 +474,27 @@ plt_hte_rate <- function(x,
       sprintf("Evaluated on %s%d patients with the doubly robust scores of the stored forest",
               if (all(ok)) "all " else "", length(sub))
     },
-    if (smooth > 0) sprintf("curves smoothed by LOESS span %s", format(smooth)),
-    sprintf("shaded: %g%% CI", 100 * conf_level)), collapse = "; "), ".")
-  size <- c(if (length(type) == 2L) 9.5 else 5.5, 4.4)
+    if (smooth > 0 && length(curves))
+      sprintf("curves smoothed by LOESS span %s", format(smooth)),
+    if (length(curves)) sprintf("shaded: %g%% CI", 100 * conf_level),
+    if (gates) sprintf("GATES bars: %g%% CI", 100 * conf_level),
+    if (gates && learn) "diamonds: mean forest CATE per group"),
+    collapse = "; "), ".")
+  size <- c(c(5.5, 9.5, 13.5)[length(type)], 4.4)
   # About 13 characters fit per inch; wrap so nothing is cut off.
   width    <- floor(13 * size[1L])
-  subtitle <- unlist(lapply(c(toc = "AUTOC", qini = "QINI")[type],
-                            lines_of, width = width))
+  subtitle <- c(
+    unlist(lapply(c(toc = "AUTOC", qini = "QINI")[curves], function(tg)
+      lines_of(tg, tbl[tbl$target == tg, ], rlab, width))),
+    if (gates) lines_of("GATES top - bottom group", gt[is.na(gt$q_from), ],
+                        lab, width))
   caption  <- strwrap(caption, width = width)
   size[2L] <- size[2L] + 0.2 * (length(subtitle) + length(caption) - 2L)
 
   pal   <- stats::setNames(c("firebrick", "steelblue")[seq_along(lab)], lab)
   strip <- c(TOC = "TOC: effect in the top q minus the ATE",
-             Qini = "Qini: gain over treating a random q")
+             Qini = "Qini: gain over treating a random q",
+             GATES = "GATES: effect within each priority group")
   p <- ggplot2::ggplot(pd, ggplot2::aes(x = q, y = y, colour = rule,
                                         fill = rule)) +
     ggplot2::geom_hline(yintercept = 0, colour = "grey50", linetype = 2) +
@@ -401,8 +515,32 @@ plt_hte_rate <- function(x,
     ggplot2::theme_bw() +
     ggplot2::theme(legend.position = if (length(lab) > 1L) "top" else "none",
                    plot.subtitle = ggplot2::element_text(size = 9))
+  # Each group: a line over its share and the estimate with its interval in
+  # the middle; for "cate" a diamond at the group's mean forest CATE.
+  if (gates) {
+    ge <- gd[is.finite(gd$estimate), , drop = FALSE]
+    p <- p +
+      ggplot2::geom_segment(data = ge, ggplot2::aes(x = q_from, xend = q_to,
+                                                    y = estimate,
+                                                    yend = estimate,
+                                                    colour = rule),
+                            linewidth = 0.5, inherit.aes = FALSE) +
+      ggplot2::geom_errorbar(data = ge, ggplot2::aes(x = x, ymin = conf.low,
+                                                     ymax = conf.high,
+                                                     colour = rule),
+                             width = 0.02, inherit.aes = FALSE) +
+      ggplot2::geom_point(data = ge, ggplot2::aes(x = x, y = estimate,
+                                                  colour = rule),
+                          size = 2, inherit.aes = FALSE)
+    dia <- gd[!is.na(gd$cate_mean), , drop = FALSE]
+    if (nrow(dia))
+      p <- p + ggplot2::geom_point(data = dia, ggplot2::aes(x = x, y = cate_mean,
+                                                            colour = rule),
+                                   shape = 5, size = 2.5, inherit.aes = FALSE)
+  }
 
   attr(p, "rate")      <- tbl
+  if (gates) attr(p, "gates") <- gt
   attr(p, "plot_size") <- stats::setNames(size, c("width", "height"))
   if (!is.null(save) && length(save) > 0L) {
     if (!requireNamespace("RegR", quietly = TRUE))

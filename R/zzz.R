@@ -37,7 +37,10 @@ utils::globalVariables(c(
   "cate",      # plt_hte_cate:      out-of-bag CATE of a patient
   "level",     # plt_hte_cate:      subgroup level, shown in the legend
   "ate",       # plt_hte_cate:      overall ATE line
-  # hte-rate.R (reuses y / conf.low / conf.high / panel above)
+  # hte-rate.R (reuses x / y / estimate / conf.low / conf.high / panel above)
   "q",         # plt_hte_rate:      treated fraction
-  "rule"       # plt_hte_rate:      ranking rule, shown in the legend
+  "rule",      # plt_hte_rate:      ranking rule, shown in the legend
+  "q_from",    # plt_hte_rate:      start of a GATES group's share
+  "q_to",      # plt_hte_rate:      end of a GATES group's share
+  "cate_mean"  # plt_hte_rate:      mean forest CATE of a GATES group
 ))

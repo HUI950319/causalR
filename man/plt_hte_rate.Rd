@@ -9,6 +9,7 @@ plt_hte_rate(
   priority = "cate",
   type = c("toc", "qini"),
   smooth = 0,
+  gates_args = list(n_groups = 5),
   conf_level = 0.95,
   train_frac = 0.5,
   seed = NULL,
@@ -40,7 +41,8 @@ column to \code{x$data}.}
 Two rules are drawn together and their difference is tested; with
 \code{"cate"} among them, both are evaluated on the held-out patients.}
 
-\item{type}{Panels to draw, \code{"toc"} and / or \code{"qini"} (default both).
+\item{type}{Panels to draw, any of \code{"toc"}, \code{"qini"} and \code{"gates"}
+(default \code{"toc"} and \code{"qini"}).
 \describe{
 \item{\code{"toc"}}{TOC(q): the average effect among the share q of
 patients ranked first minus the average effect of all of them. Its
@@ -49,6 +51,11 @@ an effect held by a few patients.}
 \item{\code{"qini"}}{q x TOC(q): what treating the share q ranked first
 gains over treating a random share q. Its area, the QINI, weights
 every share alike, so it detects an effect that changes gradually.}
+\item{\code{"gates"}}{The average effect within each of
+\code{gates_args$n_groups} groups of equal size, highest priority first;
+a ranking that targets the effect gives estimates falling from left
+to right. For \code{"cate"}, a diamond marks the mean forest CATE of each
+group.}
 }}
 
 \item{smooth}{\code{0} (default) draws the TOC and its band as estimated; a
@@ -56,6 +63,11 @@ number from \code{0.05} to \code{1} is a LOESS span that smooths both for displa
 separately for each rule: about \code{0.1} smooths slightly, \code{0.3} strongly.
 The Qini panel is then q times the smoothed TOC. The AUTOC, QINI and
 \code{attr(p, "rate")} do not change.}
+
+\item{gates_args}{Named list for the \code{"gates"} panel: \code{n_groups} (default
+\code{5}), the number of groups the ranking is cut into, a whole number of at
+least 2. Tied patients share a group, so a logical rule gives two. Only
+used when \code{type} includes \code{"gates"}.}
 
 \item{conf_level}{Confidence level of the bands and intervals. Default
 \code{0.95}.}
@@ -84,15 +96,23 @@ the risk difference for a binary one and the mean difference otherwise.
 their difference, and target: \code{rule}, \code{target} (\code{"AUTOC"} or \code{"QINI"}),
 \code{estimate}, \code{std.error} (grf's half-sample bootstrap), \code{conf.low},
 \code{conf.high}, \code{p.value} (two-sided Wald test of zero) and \code{n}, the
-patients evaluated. The pinned size is in \code{attr(p, "plot_size")}. If
-\code{save} is non-empty, the plot is also written to PDF through
-\code{RegR::save_plt()}.
+patients evaluated. With \code{"gates"} in \code{type}, \code{attr(p, "gates")} is a
+tibble with one row per rule and group, and per rule one for the top
+minus the bottom group: \code{rule}, \code{group} (\code{"1"} ranked first, \code{"1 - K"}
+the difference), \code{q_from} and \code{q_to} (the share of the ranking the group
+covers, \code{NA} for the difference), \code{n}, \code{estimate}, \code{std.error},
+\code{conf.low}, \code{conf.high}, \code{p.value} (two-sided Wald test of zero) and
+\code{cate_mean}, the mean forest CATE for \code{"cate"} (\code{NA} for a pre-specified
+rule). The pinned size is in \code{attr(p, "plot_size")}. If \code{save} is
+non-empty, the plot is also written to PDF through \code{RegR::save_plt()}.
 }
 \description{
 Evaluates how well a ranking of the patients picks out those who benefit
 most, with the rank-weighted average treatment effect (RATE) of
 \code{\link[grf:rank_average_treatment_effect]{grf::rank_average_treatment_effect()}}, and draws its targeting operator
-characteristic (TOC) and Qini curves from a \code{\link[=get_hte]{get_hte()}} result.
+characteristic (TOC) and Qini curves from a \code{\link[=get_hte]{get_hte()}} result. On request
+it also draws the sorted group average treatment effects (GATES): the
+doubly robust effect within each group of the ranking.
 }
 \section{Reading the curves}{
 
@@ -107,6 +127,15 @@ a clinical judgement on the size of the Qini curve.
 
 With \code{"cate"} the result depends on the split, and only the held-out
 patients inform the test; \code{seed} fixes the split.
+
+The GATES panel draws each group's doubly robust average treatment effect,
+\code{\link[grf:average_treatment_effect]{grf::average_treatment_effect()}} with \code{subset} as in \code{\link[=plt_hte_sub]{plt_hte_sub()}}, over
+the share of the ranking the group covers. A group's estimate is the ATE
+of the evaluated patients plus the mean slope of the Qini curve over that
+share, so the panel shows where along the ranking the effect changes. The
+subtitle tests the top minus the bottom group, taking the two as
+independent. For \code{"cate"}, diamonds spread less than the estimates mean
+the forest shrinks the effect towards its mean.
 }
 
 \examples{
@@ -130,6 +159,9 @@ attr(p, "rate")
 
 # The forest against the marker alone
 plt_hte_rate(res, priority = c("cate", "marker"))
+
+# The effect within each fifth of the forest ranking
+plt_hte_rate(res, type = "gates")
 }
 \dontshow{\}) # examplesIf}
 }
@@ -138,6 +170,12 @@ Yadlowsky S, Fleming S, Shah N, Brunskill E, Wager S (2025). Evaluating
 treatment prioritization rules via rank-weighted average treatment
 effects. \emph{Journal of the American Statistical Association}
 120(549).
+
+Chernozhukov V, Demirer M, Duflo E, \enc{Fernández}{Fernandez}-Val I
+(2025). Fisher-Schultz lecture: generic machine learning inference on
+heterogeneous treatment effects in randomized experiments, with an
+application to immunization in India. \emph{Econometrica} 93(4),
+1121-1164.
 }
 \seealso{
 \code{\link[=get_hte]{get_hte()}}; \code{\link[=plt_hte_dep]{plt_hte_dep()}} and \code{\link[=plt_hte_sub]{plt_hte_sub()}} for how the effect

@@ -42,6 +42,7 @@ rate_cont <- function() {
 }
 
 rate_of <- function(p) attr(p, "rate")
+gates_of <- function(p) attr(p, "gates")
 
 
 test_that("get_hte() keeps the grf arguments that plt_hte_rate() refits with", {
@@ -51,8 +52,8 @@ test_that("get_hte() keeps the grf arguments that plt_hte_rate() refits with", {
   expect_identical(ga$seed, 1)
   expect_identical(ga$target, "survival.probability")
   expect_identical(names(formals(plt_hte_rate)),
-                   c("x", "priority", "type", "smooth", "conf_level",
-                     "train_frac", "seed", "title", "save"))
+                   c("x", "priority", "type", "smooth", "gates_args",
+                     "conf_level", "train_frac", "seed", "title", "save"))
 })
 
 test_that("a pre-specified rule is evaluated on every patient by grf's RATE", {
@@ -183,6 +184,140 @@ test_that("smooth draws LOESS curves per rule and leaves the RATE unchanged", {
   for (bad in list(0.01, 1.5, -0.1, NA, "a", c(0.1, 0.2)))
     expect_error(plt_hte_rate(res, priority = "marker", smooth = bad),
                  "`smooth`")
+})
+
+test_that("GATES of a pre-specified rule are grf's subset ATEs per fifth", {
+  res <- rate_surv()
+  p <- plt_hte_rate(res, priority = "marker", type = "gates")
+  g <- gates_of(p)
+  expect_s3_class(p, "ggplot")
+  expect_identical(names(g), c("rule", "group", "q_from", "q_to", "n",
+                               "estimate", "std.error", "conf.low",
+                               "conf.high", "p.value", "cate_mean"))
+  expect_identical(g$rule, rep("marker", 6L))
+  expect_identical(g$group, c(as.character(1:5), "1 - 5"))
+  expect_identical(g$n, c(rep(160L, 5L), 320L))
+  expect_equal(g$q_from, c((0:4) / 5, NA))
+  expect_equal(g$q_to, c((1:5) / 5, NA))
+  expect_true(all(is.na(g$cate_mean)))
+
+  # the fifths by hand, highest marker first, on the stored forest
+  m   <- res$data$marker
+  grp <- cut(-m, stats::quantile(-m, (0:5) / 5), include.lowest = TRUE,
+             labels = FALSE)
+  for (k in 1:5) {
+    want <- grf::average_treatment_effect(res$fit, subset = which(grp == k))
+    expect_equal(g$estimate[k], unname(want[["estimate"]]))
+    expect_equal(g$std.error[k], unname(want[["std.err"]]))
+  }
+  # the top minus the bottom fifth, the two groups taken as independent
+  d  <- g$estimate[1L] - g$estimate[5L]
+  se <- sqrt(g$std.error[1L]^2 + g$std.error[5L]^2)
+  z  <- stats::qnorm(0.975)
+  expect_equal(g$estimate[6L], d)
+  expect_equal(g$std.error[6L], se)
+  expect_equal(g$conf.low, g$estimate - z * g$std.error)
+  expect_equal(g$p.value[6L], 2 * stats::pnorm(-abs(d / se)))
+  expect_gt(d, 0)                        # marker > 0 carries the effect
+
+  expect_match(p$labels$subtitle, "GATES top - bottom group: marker",
+               fixed = TRUE)
+  expect_false(grepl("AUTOC", p$labels$subtitle))
+  expect_match(p$labels$caption, "GATES bars: 95% CI", fixed = TRUE)
+  expect_false(grepl("diamonds|shaded", p$labels$caption))
+  expect_identical(attr(p, "plot_size")[["width"]], 5.5)
+  expect_null(gates_of(plt_hte_rate(res, priority = "marker")))
+})
+
+test_that("GATES of the forest CATE are estimated on the held-out half", {
+  res <- rate_surv()
+  g <- gates_of(plt_hte_rate(res, seed = 7, type = "gates"))
+  expect_identical(g$rule, rep("cate", 6L))
+  expect_identical(g$n, c(rep(80L, 5L), 160L))
+
+  # the split and refits of the RATE test, on the original follow-up times
+  n <- nrow(res$data)
+  set.seed(7)
+  train <- sort(sample.int(n, floor(0.5 * n)))
+  ev    <- setdiff(seq_len(n), train)
+  X     <- res$fit$X.orig
+  refit <- function(rows)
+    grf::causal_survival_forest(X[rows, ], res$data$time[rows],
+                                res$fit$W.orig[rows], res$data$DSS[rows],
+                                horizon = 60, target = "survival.probability",
+                                num.trees = 300, seed = 7)
+  prio <- stats::predict(refit(train), X[ev, ])$predictions
+  fit  <- refit(ev)
+  grp  <- cut(-prio, stats::quantile(-prio, (0:5) / 5), include.lowest = TRUE,
+              labels = FALSE)
+  for (k in 1:5) {
+    want <- grf::average_treatment_effect(fit, subset = which(grp == k))
+    expect_equal(g$estimate[k], unname(want[["estimate"]]))
+    expect_equal(g$cate_mean[k], mean(prio[grp == k]))
+  }
+  expect_true(all(diff(g$cate_mean[1:5]) < 0))
+  expect_equal(g$cate_mean[6L], g$cate_mean[1L] - g$cate_mean[5L])
+})
+
+test_that("adding GATES leaves the RATE alone and draws a third panel", {
+  res  <- rate_cont()
+  two  <- suppressMessages(plt_hte_rate(res, priority = c("cate", "risk"),
+                                        seed = 7))
+  all3 <- suppressMessages(plt_hte_rate(res, priority = c("cate", "risk"),
+                                        seed = 7,
+                                        type = c("toc", "qini", "gates")))
+  expect_identical(rate_of(all3), rate_of(two))
+  expect_equal(all3$data$y, two$data$y)
+  g <- gates_of(all3)
+  expect_identical(g$rule, rep(c("cate", "risk"), each = 6L))
+  expect_true(all(is.na(g$cate_mean[g$rule == "risk"])))
+  expect_false(anyNA(g$cate_mean[g$rule == "cate"]))
+
+  b <- ggplot2::ggplot_build(all3)
+  expect_identical(as.character(b$layout$layout$panel),
+                   c("TOC", "Qini", "GATES"))
+  expect_identical(attr(all3, "plot_size")[["width"]], 13.5)
+  expect_match(all3$labels$subtitle, "GATES top - bottom group: Forest CATE",
+               fixed = TRUE)
+  expect_match(all3$labels$caption, "diamonds: mean forest CATE",
+               fixed = TRUE)
+  # the diamonds belong to the forest CATE alone
+  dia <- Filter(function(l) identical(l$aes_params$shape, 5), all3$layers)
+  expect_length(dia, 1L)
+  expect_identical(unique(as.character(dia[[1L]]$data$rule)), "Forest CATE")
+})
+
+test_that("tied patients share a GATES group and a constant rule is refused", {
+  res <- rate_cont()
+  res$data$pos  <- res$data$x1 > 0
+  res$data$flat <- 1
+  g <- gates_of(suppressMessages(plt_hte_rate(res, priority = "pos",
+                                              type = "gates")))
+  expect_identical(g$group, c("1", "2", "1 - 2"))
+  expect_identical(g$n, c(sum(res$data$pos), sum(!res$data$pos),
+                          nrow(res$data)))
+  expect_equal(g$q_to[1L], mean(res$data$pos))
+  expect_error(suppressMessages(plt_hte_rate(res, priority = "flat",
+                                             type = "gates")),
+               "single GATES group")
+})
+
+test_that("gates_args sets the number of groups and is checked", {
+  res <- rate_cont()
+  g <- gates_of(plt_hte_rate(res, priority = "x1", type = "gates",
+                             gates_args = list(n_groups = 4)))
+  expect_identical(g$group, c(as.character(1:4), "1 - 4"))
+  expect_identical(g$n, c(rep(150L, 4L), 300L))
+  expect_error(plt_hte_rate(res, priority = "x1",
+                            gates_args = list(n_groups = 4)),
+               "only applies")
+  expect_error(plt_hte_rate(res, priority = "x1", type = "gates",
+                            gates_args = list(k = 4)),
+               "unknown field")
+  for (bad in list(1, 2.5, NA, "5", c(3, 4)))
+    expect_error(plt_hte_rate(res, priority = "x1", type = "gates",
+                              gates_args = list(n_groups = bad)),
+                 "`gates_args$n_groups`", fixed = TRUE)
 })
 
 test_that("each half needs patients followed past `time` in both arms", {
