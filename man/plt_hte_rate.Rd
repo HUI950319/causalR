@@ -8,6 +8,7 @@ plt_hte_rate(
   x,
   priority = "cate",
   type = c("toc", "qini"),
+  smooth = 0,
   conf_level = 0.95,
   train_frac = 0.5,
   seed = NULL,
@@ -49,6 +50,12 @@ an effect held by a few patients.}
 gains over treating a random share q. Its area, the QINI, weights
 every share alike, so it detects an effect that changes gradually.}
 }}
+
+\item{smooth}{\code{0} (default) draws the TOC and its band as estimated; a
+number from \code{0.05} to \code{1} is a LOESS span that smooths both for display,
+separately for each rule: about \code{0.1} smooths slightly, \code{0.3} strongly.
+The Qini panel is then q times the smoothed TOC. The AUTOC, QINI and
+\code{attr(p, "rate")} do not change.}
 
 \item{conf_level}{Confidence level of the bands and intervals. Default
 \code{0.95}.}

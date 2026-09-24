@@ -51,8 +51,8 @@ test_that("get_hte() keeps the grf arguments that plt_hte_rate() refits with", {
   expect_identical(ga$seed, 1)
   expect_identical(ga$target, "survival.probability")
   expect_identical(names(formals(plt_hte_rate)),
-                   c("x", "priority", "type", "conf_level", "train_frac",
-                     "seed", "title", "save"))
+                   c("x", "priority", "type", "smooth", "conf_level",
+                     "train_frac", "seed", "title", "save"))
 })
 
 test_that("a pre-specified rule is evaluated on every patient by grf's RATE", {
@@ -151,6 +151,36 @@ test_that("the panels hold the TOC and q times the TOC", {
   pc <- plt_hte_rate(rate_cont(), type = "toc")
   expect_match(pc$labels$y, "mean", fixed = TRUE)
   expect_match(pc$labels$caption, "held-out")
+})
+
+test_that("smooth draws LOESS curves per rule and leaves the RATE unchanged", {
+  res <- rate_surv()
+  raw <- plt_hte_rate(res, priority = c("marker", "age"))
+  sm  <- plt_hte_rate(res, priority = c("marker", "age"), smooth = 0.2)
+  expect_identical(rate_of(sm), rate_of(raw))
+  expect_identical(plt_hte_rate(res, priority = c("marker", "age"),
+                                smooth = 0)$data, raw$data)
+
+  toc_raw <- raw$data[raw$data$panel == "TOC", ]
+  toc_sm  <- sm$data[sm$data$panel == "TOC", ]
+  for (r in levels(toc_raw$rule)) {
+    i  <- toc_raw$rule == r
+    lo <- function(y) as.numeric(stats::predict(stats::loess(
+      y ~ q, data = data.frame(q = toc_raw$q[i], y = y), span = 0.2)))
+    expect_equal(toc_sm$y[i], lo(toc_raw$y[i]))
+    expect_equal(toc_sm$conf.low[i], lo(toc_raw$conf.low[i]))
+    expect_equal(toc_sm$conf.high[i], lo(toc_raw$conf.high[i]))
+  }
+  qini_sm <- sm$data[sm$data$panel == "Qini", ]
+  expect_equal(qini_sm$y, qini_sm$q * toc_sm$y)
+  expect_equal(qini_sm$conf.low, qini_sm$q * toc_sm$conf.low)
+  expect_match(sm$labels$caption, "LOESS span 0.2", fixed = TRUE)
+  expect_false(grepl("LOESS", raw$labels$caption))
+
+  expect_no_warning(plt_hte_rate(res, priority = "marker", smooth = 0.05))
+  for (bad in list(0.01, 1.5, -0.1, NA, "a", c(0.1, 0.2)))
+    expect_error(plt_hte_rate(res, priority = "marker", smooth = bad),
+                 "`smooth`")
 })
 
 test_that("each half needs patients followed past `time` in both arms", {

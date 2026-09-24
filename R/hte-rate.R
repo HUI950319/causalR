@@ -54,6 +54,11 @@
 #'       gains over treating a random share q. Its area, the QINI, weights
 #'       every share alike, so it detects an effect that changes gradually.}
 #'   }
+#' @param smooth `0` (default) draws the TOC and its band as estimated; a
+#'   number from `0.05` to `1` is a LOESS span that smooths both for display,
+#'   separately for each rule: about `0.1` smooths slightly, `0.3` strongly.
+#'   The Qini panel is then q times the smoothed TOC. The AUTOC, QINI and
+#'   `attr(p, "rate")` do not change.
 #' @param conf_level Confidence level of the bands and intervals. Default
 #'   `0.95`.
 #' @param train_frac Share of the patients the ranking forest is refitted to,
@@ -128,6 +133,7 @@
 plt_hte_rate <- function(x,
                          priority   = "cate",
                          type       = c("toc", "qini"),
+                         smooth     = 0,
                          conf_level = 0.95,
                          train_frac = 0.5,
                          seed       = NULL,
@@ -139,6 +145,11 @@ plt_hte_rate <- function(x,
   if (!requireNamespace("grf", quietly = TRUE))
     stop("Package 'grf' is required for plt_hte_rate().", call. = FALSE)
   type <- intersect(c("toc", "qini"), match.arg(type, several.ok = TRUE))
+  # A LOESS fit on the 96 points of the curve needs a span of 0.05 or more.
+  if (!is.numeric(smooth) || length(smooth) != 1L || is.na(smooth) ||
+      !(smooth == 0 || (smooth >= 0.05 && smooth <= 1)))
+    stop("`smooth` must be 0 (no smoothing) or a LOESS span from 0.05 to 1.",
+         call. = FALSE)
   if (!is.numeric(conf_level) || length(conf_level) != 1L ||
       is.na(conf_level) || conf_level <= 0 || conf_level >= 1)
     stop("`conf_level` must be a single number strictly between 0 and 1.",
@@ -304,11 +315,21 @@ plt_hte_rate <- function(x,
   toc <- rate$AUTOC$TOC
   toc <- toc[toc$priority %in% priority, , drop = FALSE]
   toc$rule <- factor(toc$priority, levels = priority, labels = lab)
+  toc$conf.low  <- toc$estimate - z * toc$std.err
+  toc$conf.high <- toc$estimate + z * toc$std.err
+  # Smoothing touches only what is drawn, one rule at a time.
+  if (smooth > 0)
+    for (r in priority) {
+      i <- toc$priority == r
+      for (v in c("estimate", "conf.low", "conf.high"))
+        toc[[v]][i] <- as.numeric(stats::predict(stats::loess(
+          y ~ q, data = data.frame(q = toc$q[i], y = toc[[v]][i]),
+          span = smooth)))
+    }
   band <- function(panel, k)
     data.frame(panel = panel, q = toc$q, rule = toc$rule,
-               y = k * toc$estimate,
-               conf.low  = k * (toc$estimate - z * toc$std.err),
-               conf.high = k * (toc$estimate + z * toc$std.err))
+               y = k * toc$estimate, conf.low = k * toc$conf.low,
+               conf.high = k * toc$conf.high)
   pd <- do.call(rbind, list(toc = band("TOC", 1), qini = band("Qini", toc$q))[type])
   pd$panel <- factor(pd$panel, levels = c(toc = "TOC", qini = "Qini")[type])
   rownames(pd) <- NULL
@@ -339,13 +360,16 @@ plt_hte_rate <- function(x,
     }
     out
   }
-  caption <- if (learn) {
-    sprintf("Ranking learnt on %d patients and evaluated on %d held-out patients (seed %s); shaded: %g%% CI.",
-            length(train), length(sub), format(seed), 100 * conf_level)
-  } else {
-    sprintf("Evaluated on %s%d patients with the doubly robust scores of the stored forest; shaded: %g%% CI.",
-            if (all(ok)) "all " else "", length(sub), 100 * conf_level)
-  }
+  caption <- paste0(paste(c(
+    if (learn) {
+      sprintf("Ranking learnt on %d patients and evaluated on %d held-out patients (seed %s)",
+              length(train), length(sub), format(seed))
+    } else {
+      sprintf("Evaluated on %s%d patients with the doubly robust scores of the stored forest",
+              if (all(ok)) "all " else "", length(sub))
+    },
+    if (smooth > 0) sprintf("curves smoothed by LOESS span %s", format(smooth)),
+    sprintf("shaded: %g%% CI", 100 * conf_level)), collapse = "; "), ".")
   size <- c(if (length(type) == 2L) 9.5 else 5.5, 4.4)
   # About 13 characters fit per inch; wrap so nothing is cut off.
   width    <- floor(13 * size[1L])
