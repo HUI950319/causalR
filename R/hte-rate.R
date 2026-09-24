@@ -508,7 +508,7 @@ plt_hte_rate <- function(x,
                                 expand = ggplot2::expansion(mult = 0.01)) +
     ggplot2::scale_colour_manual(NULL, values = pal,
                                  aesthetics = c("colour", "fill")) +
-    ggplot2::labs(x = "Treated share q, highest priority first",
+    ggplot2::labs(x = "Treated fraction (q)",
                   y = sprintf("%s difference, %s - %s", what, a$treated, ref),
                   title = title, subtitle = paste(subtitle, collapse = "\n"),
                   caption = paste(caption, collapse = "\n")) +

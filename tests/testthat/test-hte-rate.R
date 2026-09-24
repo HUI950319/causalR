@@ -139,6 +139,7 @@ test_that("the panels hold the TOC and q times the TOC", {
   qini <- pd[pd$panel == "Qini", ]
   expect_equal(qini$y, qini$q * toc$y)
   expect_equal(range(toc$q), c(0.05, 1))
+  expect_identical(p$labels$x, "Treated fraction (q)")
   expect_match(p$labels$y, "S(60)", fixed = TRUE)
   expect_match(p$labels$caption, "all 800 patients")
   expect_true(any(vapply(p$layers, function(l) inherits(l$geom, "GeomRibbon"),
