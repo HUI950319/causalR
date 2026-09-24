@@ -130,7 +130,7 @@ columns or more distinct values score higher even without any effect
 modification. \code{p_het} is the test: a Wald test, on the AIPW scores,
 that the CATE does not vary with the covariate -- equal level means
 for a categorical covariate (\code{df} = levels - 1, the \code{p_inter} of a
-\code{sub_var}), and zero natural-spline terms (\code{df} = 3, HC3 errors) for
+\code{sub_var}), and zero natural-spline terms (\code{df} = 2, HC3 errors) for
 a numeric one with more than 5 distinct values. Levels with fewer
 than two patients in either arm are left out, and so, for a survival
 outcome, are levels in which an arm has no patient followed beyond

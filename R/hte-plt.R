@@ -168,9 +168,9 @@
 #' @param display Layers of a `"dep"` panel, any of
 #'   \describe{
 #'     \item{`"cate"`}{The out-of-bag CATE of every patient (grey), jittered
-#'       for a categorical covariate and smoothed by loess for a continuous
-#'       one. Descriptive only: forest estimates are shrunk towards the
-#'       overall mean.}
+#'       for a categorical covariate and smoothed by loess (span
+#'       `cate_smooth`) for a continuous one. Descriptive only: forest
+#'       estimates are shrunk towards the overall mean.}
 #'     \item{`"dr"`}{The doubly robust estimate with pointwise confidence
 #'       intervals (red): the AIPW score mean per level, or a natural spline
 #'       of the AIPW scores with HC3 errors. The strip adds `p_het`, the Wald
@@ -190,10 +190,15 @@
 #'   Only used by `type = "dep"`.
 #' @param ylim `NULL` (default) or two increasing numbers giving the y range
 #'   of every panel; intervals running past it are clipped.
-#' @param dr_args Named list for the `"dr"` layer: `spline_df` (default `3`),
+#' @param cate_smooth Loess span of the grey `"cate"` line of a continuous
+#'   covariate, from `0.05` to `1`: smaller follows the patients more closely,
+#'   larger is smoother. Default `0.6`. `0` leaves the line out and keeps the
+#'   points. Only used by `type = "dep"`.
+#' @param dr_args Named list for the `"dr"` layer: `spline_df` (default `2`),
 #'   the natural-spline degrees of freedom of a continuous covariate, which
-#'   also sets the degrees of freedom of its `p_het`. Only used by
-#'   `type = "dep"`.
+#'   also sets the degrees of freedom of its `p_het`: fewer is smoother, and
+#'   `1` fits a straight line. At the default the `p_het` equals the one in
+#'   `get_hte()$importance`. Only used by `type = "dep"`.
 #' @param pdp_args Named list for the partial dependence: `grid_n` (default
 #'   `21`), the grid points of a continuous covariate, and `max_n` (default
 #'   `1000`), the most patients averaged over, taken evenly spaced so the
@@ -260,7 +265,8 @@ plt_hte_dep <- function(x,
                         display  = c("cate", "dr"),
                         conf_level = 0.95,
                         ylim     = NULL,
-                        dr_args  = list(spline_df = 3),
+                        cate_smooth = 0.6,
+                        dr_args  = list(spline_df = 2),
                         pdp_args = list(grid_n = 21, max_n = 1000),
                         axis_arg = list(share_y = "all"),
                         title    = NULL,
@@ -271,7 +277,8 @@ plt_hte_dep <- function(x,
   type <- match.arg(type)
   if (type == "heat") {
     used <- c(display = !missing(display), conf_level = !missing(conf_level),
-              dr_args = !missing(dr_args), axis_arg = !missing(axis_arg))
+              cate_smooth = !missing(cate_smooth), dr_args = !missing(dr_args),
+              axis_arg = !missing(axis_arg))
     if (any(used))
       stop(sprintf("%s only applies to type = \"dep\"; the heat map shows the partial dependence.",
                    paste0("`", names(used)[used], "`", collapse = ", ")),
@@ -282,7 +289,12 @@ plt_hte_dep <- function(x,
       is.na(conf_level) || conf_level <= 0 || conf_level >= 1)
     stop("`conf_level` must be a single number strictly between 0 and 1.",
          call. = FALSE)
-  dr_args  <- .merge_named_arg(dr_args, list(spline_df = 3), "dr_args")
+  if (!is.numeric(cate_smooth) || length(cate_smooth) != 1L ||
+      is.na(cate_smooth) ||
+      !(cate_smooth == 0 || (cate_smooth >= 0.05 && cate_smooth <= 1)))
+    stop("`cate_smooth` must be 0 (no line) or a loess span from 0.05 to 1.",
+         call. = FALSE)
+  dr_args  <- .merge_named_arg(dr_args, list(spline_df = 2), "dr_args")
   pdp_args <- .merge_named_arg(pdp_args, list(grid_n = 21, max_n = 1000),
                                "pdp_args")
   axis_arg <- .merge_named_arg(axis_arg, list(share_y = "all"), "axis_arg")
@@ -397,10 +409,11 @@ plt_hte_dep <- function(x,
         q <- q + if (is_n) {
           list(ggplot2::geom_point(data = pts, ggplot2::aes(x = x, y = y),
                                    colour = "grey55", alpha = 0.4, size = 0.8),
-               ggplot2::geom_smooth(data = pts, ggplot2::aes(x = x, y = y),
-                                    method = "loess", formula = y ~ x,
-                                    span = 0.6, se = FALSE, colour = "grey30",
-                                    linewidth = 0.6))
+               if (cate_smooth > 0)
+                 ggplot2::geom_smooth(data = pts, ggplot2::aes(x = x, y = y),
+                                      method = "loess", formula = y ~ x,
+                                      span = cate_smooth, se = FALSE,
+                                      colour = "grey30", linewidth = 0.6))
         } else {
           ggplot2::geom_point(data = pts, ggplot2::aes(x = x, y = y),
                               position = ggplot2::position_jitter(

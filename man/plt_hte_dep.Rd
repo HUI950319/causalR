@@ -11,7 +11,8 @@ plt_hte_dep(
   display = c("cate", "dr"),
   conf_level = 0.95,
   ylim = NULL,
-  dr_args = list(spline_df = 3),
+  cate_smooth = 0.6,
+  dr_args = list(spline_df = 2),
   pdp_args = list(grid_n = 21, max_n = 1000),
   axis_arg = list(share_y = "all"),
   title = NULL,
@@ -34,9 +35,9 @@ the partial dependence of two covariates as a heat map.}
 \item{display}{Layers of a \code{"dep"} panel, any of
 \describe{
 \item{\code{"cate"}}{The out-of-bag CATE of every patient (grey), jittered
-for a categorical covariate and smoothed by loess for a continuous
-one. Descriptive only: forest estimates are shrunk towards the
-overall mean.}
+for a categorical covariate and smoothed by loess (span
+\code{cate_smooth}) for a continuous one. Descriptive only: forest
+estimates are shrunk towards the overall mean.}
 \item{\code{"dr"}}{The doubly robust estimate with pointwise confidence
 intervals (red): the AIPW score mean per level, or a natural spline
 of the AIPW scores with HC3 errors. The strip adds \code{p_het}, the Wald
@@ -59,10 +60,16 @@ Only used by \code{type = "dep"}.}
 \item{ylim}{\code{NULL} (default) or two increasing numbers giving the y range
 of every panel; intervals running past it are clipped.}
 
-\item{dr_args}{Named list for the \code{"dr"} layer: \code{spline_df} (default \code{3}),
+\item{cate_smooth}{Loess span of the grey \code{"cate"} line of a continuous
+covariate, from \code{0.05} to \code{1}: smaller follows the patients more closely,
+larger is smoother. Default \code{0.6}. \code{0} leaves the line out and keeps the
+points. Only used by \code{type = "dep"}.}
+
+\item{dr_args}{Named list for the \code{"dr"} layer: \code{spline_df} (default \code{2}),
 the natural-spline degrees of freedom of a continuous covariate, which
-also sets the degrees of freedom of its \code{p_het}. Only used by
-\code{type = "dep"}.}
+also sets the degrees of freedom of its \code{p_het}: fewer is smoother, and
+\code{1} fits a straight line. At the default the \code{p_het} equals the one in
+\code{get_hte()$importance}. Only used by \code{type = "dep"}.}
 
 \item{pdp_args}{Named list for the partial dependence: \code{grid_n} (default
 \code{21}), the grid points of a continuous covariate, and \code{max_n} (default

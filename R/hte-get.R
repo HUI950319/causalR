@@ -22,7 +22,7 @@
                     ATO = "overlap")
 .HTE_MEASURES  <- c("diff", "ratio", "OR")
 # Natural-spline df of the doubly robust curve for a continuous covariate.
-.HTE_SPLINE_DF <- 3L
+.HTE_SPLINE_DF <- 2L
 
 
 # ---- L2 scores and estimates -----------------------------------------------
@@ -455,7 +455,7 @@
 #'       modification. `p_het` is the test: a Wald test, on the AIPW scores,
 #'       that the CATE does not vary with the covariate -- equal level means
 #'       for a categorical covariate (`df` = levels - 1, the `p_inter` of a
-#'       `sub_var`), and zero natural-spline terms (`df` = 3, HC3 errors) for
+#'       `sub_var`), and zero natural-spline terms (`df` = 2, HC3 errors) for
 #'       a numeric one with more than 5 distinct values. Levels with fewer
 #'       than two patients in either arm are left out, and so, for a survival
 #'       outcome, are levels in which an arm has no patient followed beyond

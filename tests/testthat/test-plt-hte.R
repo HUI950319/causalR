@@ -80,7 +80,7 @@ test_that("get_hte() reports p_het in $importance, equal to the subgroup p_inter
   expect_named(imp, c("variable", "importance", "n_col", "df", "p_het"))
   expect_equal(imp$p_het[imp$variable == "sex"],
                res$subgroup$p_inter[res$subgroup$measure == "diff"][1])
-  expect_identical(imp$df[imp$variable == "age"], 3L)
+  expect_identical(imp$df[imp$variable == "age"], 2L)
   expect_identical(imp$df[imp$variable == "stage"], 2L)
 })
 
@@ -99,6 +99,11 @@ test_that("plt_hte_dep draws one panel per covariate in importance order", {
   num <- plt_hte_dep(res, x_var = "num")
   expect_false(inherits(num, "patchwork"))
   expect_match(strip_of(num), "^age ")
+  # at the default spline df the strip repeats the p_het of $importance
+  p_age <- res$importance$p_het[res$importance$variable == "age"]
+  expect_identical(strip_of(num),
+                   sprintf("age (p_het %s)", if (p_age < 0.001) "< 0.001"
+                           else sprintf("= %.3f", p_age)))
   expect_identical(strip_of(plt_hte_dep(res, x_var = "stage", display = "cate")),
                    "stage")
 })
@@ -127,6 +132,23 @@ test_that("the dr layer is the doubly robust summary; pdp averages forest predic
   line <- layer_data_of(cont, "GeomLine", "estimate")
   expect_identical(nrow(line), 5L)
   expect_equal(line$estimate[1], manual_pdp(res$fit, list(age = min(res$data$age))))
+})
+
+test_that("cate_smooth sets the loess span of the cate line; 0 leaves it out", {
+  res <- dep_res()
+  expect_identical(names(formals(plt_hte_dep))[6:8],
+                   c("ylim", "cate_smooth", "dr_args"))
+  span_of <- function(q) {
+    for (l in q$layers)
+      if (inherits(l$geom, "GeomSmooth")) return(l$stat_params$span)
+    NULL
+  }
+  expect_identical(span_of(plt_hte_dep(res, x_var = "age", display = "cate")), 0.6)
+  expect_identical(span_of(plt_hte_dep(res, x_var = "age", display = "cate",
+                                       cate_smooth = 0.3)), 0.3)
+  p0 <- plt_hte_dep(res, x_var = "age", display = "cate", cate_smooth = 0)
+  expect_null(span_of(p0))
+  expect_identical(nrow(layer_data_of(p0, "GeomPoint")), nrow(res$data))
 })
 
 test_that("type = 'heat' tiles the two-way partial dependence", {
@@ -226,12 +248,12 @@ test_that("survival: levels and values no arm follows past `time` leave the dr l
   line <- layer_data_of(plt_hte_dep(res, x_var = "age", display = "dr"),
                         "GeomLine", "estimate")
   expect_equal(range(line$x), c(lo, hi))
-  fit <- stats::lm(.dr_score ~ splines::ns(age, df = 3),
+  fit <- stats::lm(.dr_score ~ splines::ns(age, df = 2),
                    data = dd[dd$age >= lo & dd$age <= hi, ])
   V   <- sandwich::vcovHC(fit, type = "HC3")
   b   <- stats::coef(fit)[-1]
   expect_equal(imp$p_het[imp$variable == "age"],
-               stats::pchisq(drop(b %*% solve(V[-1, -1], b)), 3,
+               stats::pchisq(drop(b %*% solve(V[-1, -1], b)), 2,
                              lower.tail = FALSE))
 })
 
@@ -244,7 +266,11 @@ test_that("invalid requests stop with a clear message", {
                            display = "dr"), "`display`")
   expect_error(plt_hte_dep(res, x_var = c("age", "sex"), type = "heat",
                            conf_level = 0.9), "`conf_level`")
+  expect_error(plt_hte_dep(res, x_var = c("age", "sex"), type = "heat",
+                           cate_smooth = 0.3), "`cate_smooth` only applies")
   expect_error(plt_hte_dep(res, conf_level = 0), "conf_level")
+  for (bad in list(0.01, 1.5, NA, "a", c(0.3, 0.5)))
+    expect_error(plt_hte_dep(res, cate_smooth = bad), "`cate_smooth` must")
   expect_error(plt_hte_dep(res, dr_args = list(df = 3)), "unknown field")
   expect_error(plt_hte_dep(res, axis_arg = list(share_y = "var")), "share_y")
   expect_error(plt_hte_dep(res, save = "a.pdf"), "`save`")
