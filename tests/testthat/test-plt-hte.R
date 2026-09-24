@@ -650,3 +650,33 @@ test_that("plt_hte_cate adds grf's pointwise intervals and checks its input", {
   expect_true(file.exists(f))
   unlink(f)
 })
+
+
+# ---- Theme ------------------------------------------------------------------
+
+# The fonts and line widths a theme draws with.
+look_of <- function(th) {
+  el <- function(name) ggplot2::calc_element(name, th)
+  list(family = el("text")$family, face = el("text")$face,
+       size = el("text")$size, axis_text = el("axis.text.y")$size,
+       ticks = el("axis.ticks")$linewidth,
+       border = el("panel.border")$linewidth,
+       grid = el("panel.grid.major")$linetype)
+}
+
+test_that("the ggplots draw with the theme of MLR::plt_bar_per()", {
+  res  <- dep_res()
+  want <- look_of(UtilsR::theme_my(base_rect_size = 1.5))
+  dep  <- plt_hte_dep(res)
+  cate <- plt_hte_cate(res, sub_var = c("stage", "sex"))
+  heat <- plt_hte_dep(res, x_var = c("age", "sex"), type = "heat")
+  for (q in c(panels_of(dep), panels_of(cate), list(heat),
+              list(plt_hte_cate(res, type = "density")),
+              list(plt_hte_rate(res, priority = "age", type = c("toc", "gates")))))
+    expect_identical(look_of(q$theme), want)
+  # a patchwork draws its title and caption with it too
+  for (pw in list(dep, cate))
+    expect_identical(look_of(pw$patches$annotation$theme), want)
+  # theme_my() drops legend titles; the heat map keeps the title of its fill
+  expect_false(inherits(heat$theme$legend.title, "element_blank"))
+})

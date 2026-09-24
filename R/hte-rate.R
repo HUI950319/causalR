@@ -480,9 +480,9 @@ plt_hte_rate <- function(x,
     if (gates) sprintf("GATES bars: %g%% CI", 100 * conf_level),
     if (gates && learn) "diamonds: mean forest CATE per group"),
     collapse = "; "), ".")
-  size <- c(c(5.5, 9.5, 13.5)[length(type)], 4.4)
-  # About 13 characters fit per inch; wrap so nothing is cut off.
-  width    <- floor(13 * size[1L])
+  size <- c(c(6, 10.5, 15)[length(type)], 4.4)
+  # About 10 characters fit per inch; wrap so nothing is cut off.
+  width    <- floor(10 * size[1L])
   subtitle <- c(
     unlist(lapply(c(toc = "AUTOC", qini = "QINI")[curves], function(tg)
       lines_of(tg, tbl[tbl$target == tg, ], rlab, width))),
@@ -512,9 +512,16 @@ plt_hte_rate <- function(x,
                   y = sprintf("%s difference, %s - %s", what, a$treated, ref),
                   title = title, subtitle = paste(subtitle, collapse = "\n"),
                   caption = paste(caption, collapse = "\n")) +
-    ggplot2::theme_bw() +
+    # A label of 100% runs about 14 pt past its panel, so the panels and the
+    # right edge get room for it.
+    UtilsR::theme_my(base_rect_size = 1.5, panel.spacing = 21,
+                     plot.margin = c(7, 21, 7, 7)) +
+    # The estimates stay left-aligned, as lines_of() indents their breaks,
+    # and start at the left edge, as it never breaks inside an estimate.
     ggplot2::theme(legend.position = if (length(lab) > 1L) "top" else "none",
-                   plot.subtitle = ggplot2::element_text(size = 9))
+                   plot.subtitle = ggplot2::element_text(size = ggplot2::rel(0.8),
+                                                         hjust = 0),
+                   plot.title.position = "plot")
   # Each group: a line over its share and the estimate with its interval in
   # the middle; for "cate" a diamond at the group's mean forest CATE.
   if (gates) {

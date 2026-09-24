@@ -225,7 +225,7 @@ test_that("GATES of a pre-specified rule are grf's subset ATEs per fifth", {
   expect_false(grepl("AUTOC", p$labels$subtitle))
   expect_match(p$labels$caption, "GATES bars: 95% CI", fixed = TRUE)
   expect_false(grepl("diamonds|shaded", p$labels$caption))
-  expect_identical(attr(p, "plot_size")[["width"]], 5.5)
+  expect_identical(attr(p, "plot_size")[["width"]], 6)
   expect_null(gates_of(plt_hte_rate(res, priority = "marker")))
 })
 
@@ -276,7 +276,7 @@ test_that("adding GATES leaves the RATE alone and draws a third panel", {
   b <- ggplot2::ggplot_build(all3)
   expect_identical(as.character(b$layout$layout$panel),
                    c("TOC", "Qini", "GATES"))
-  expect_identical(attr(all3, "plot_size")[["width"]], 13.5)
+  expect_identical(attr(all3, "plot_size")[["width"]], 15)
   expect_match(all3$labels$subtitle, "GATES top - bottom group: Forest CATE",
                fixed = TRUE)
   expect_match(all3$labels$caption, "diamonds: mean forest CATE",

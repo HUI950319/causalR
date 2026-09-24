@@ -19,6 +19,10 @@
 #
 # The doubly robust layer comes from .hte_dr_var() in hte-get.R, so the p_het
 # in the strips is the one in get_hte()$importance at the default spline df.
+#
+# The ggplots here and in hte-rate.R take UtilsR::theme_my(base_rect_size =
+# 1.5), the theme of MLR::plt_bar_per(). theme_my() reads its colours from
+# ggprism, which UtilsR only suggests, so causalR imports both.
 # =============================================================================
 
 
@@ -375,10 +379,13 @@ plt_hte_dep <- function(x,
       ggplot2::labs(x = vars[1L], y = vars[2L], title = title,
                     caption = sprintf("Partial dependence of the forest CATE, averaged over %d patients",
                                       attr(pd, "n_rows"))) +
-      ggplot2::theme_bw()
+      UtilsR::theme_my(base_rect_size = 1.5) +
+      # theme_my() drops legend titles, and the fill needs its own
+      ggplot2::theme(legend.title = ggplot2::element_text(size = ggplot2::rel(0.8)))
     if (!is.numeric(pd$x1))
       p <- p + ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 30,
-                                                                  hjust = 1))
+                                                                  hjust = 1,
+                                                                  vjust = 1))
     size <- c(7, 5.5)
 
   # ---- One panel per covariate ---------------------------------------------
@@ -465,10 +472,11 @@ plt_hte_dep <- function(x,
 
       q <- q + ggplot2::facet_wrap(~panel) +
         ggplot2::labs(x = NULL, y = ylab) +
-        ggplot2::theme_bw()
+        UtilsR::theme_my(base_rect_size = 1.5)
       if (!is_n)
         q <- q + ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 30,
-                                                                    hjust = 1))
+                                                                    hjust = 1,
+                                                                    vjust = 1))
       list(plot = q, yv = yv)
     }
 
@@ -494,8 +502,8 @@ plt_hte_dep <- function(x,
     ncol <- min(3L, length(plots))
     size <- if (length(plots) == 1L) c(5, 4.2) else
       c(3.4 * ncol + 0.6, 3 * ceiling(length(plots) / ncol) + 0.8)
-    # About 13 caption characters fit per inch; wrap so nothing is cut off.
-    caption <- paste(strwrap(caption, width = floor(13 * size[1L])),
+    # About 10 caption characters fit per inch; wrap so nothing is cut off.
+    caption <- paste(strwrap(caption, width = floor(10 * size[1L])),
                      collapse = "\n")
 
     p <- if (length(plots) == 1L) {
@@ -503,7 +511,8 @@ plt_hte_dep <- function(x,
     } else {
       patchwork::wrap_plots(plots, ncol = ncol) +
         patchwork::plot_layout(axis_titles = "collect") +
-        patchwork::plot_annotation(title = title, caption = caption)
+        patchwork::plot_annotation(title = title, caption = caption,
+                                   theme = UtilsR::theme_my(base_rect_size = 1.5))
     }
   }
 
@@ -1100,7 +1109,7 @@ plt_hte_cate <- function(x,
                                                   colour = level),
                                      linetype = 2, linewidth = 0.8)
       q <- q + ggplot2::labs(x = "Patients ranked by CATE", y = lab) +
-        ggplot2::theme_bw() +
+        UtilsR::theme_my(base_rect_size = 1.5) +
         ggplot2::theme(axis.text.x = ggplot2::element_blank(),
                        axis.ticks.x = ggplot2::element_blank(),
                        panel.grid.major.x = ggplot2::element_blank(),
@@ -1123,7 +1132,8 @@ plt_hte_cate <- function(x,
                                      ggplot2::aes(xintercept = estimate,
                                                   colour = level),
                                      linetype = 2, linewidth = 0.8)
-      q <- q + ggplot2::labs(x = lab, y = "Density") + ggplot2::theme_bw()
+      q <- q + ggplot2::labs(x = lab, y = "Density") +
+        UtilsR::theme_my(base_rect_size = 1.5)
     }
     # 1% of the axis beside the bars or curves instead of ggplot2's 5%
     q <- q + ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = 0.01))
@@ -1149,8 +1159,8 @@ plt_hte_cate <- function(x,
   ncol <- min(3L, length(plots))
   size <- if (length(plots) == 1L) c(if (type == "waterfall") 7 else 6, 4.5) else
     c(3.6 * ncol + 0.6, 3.6 * ceiling(length(plots) / ncol) + 0.8)
-  # About 13 caption characters fit per inch; wrap so nothing is cut off.
-  caption <- paste(strwrap(caption, width = floor(13 * size[1L])),
+  # About 10 caption characters fit per inch; wrap so nothing is cut off.
+  caption <- paste(strwrap(caption, width = floor(10 * size[1L])),
                    collapse = "\n")
 
   p <- if (length(plots) == 1L) {
@@ -1158,7 +1168,8 @@ plt_hte_cate <- function(x,
   } else {
     patchwork::wrap_plots(plots, ncol = ncol) +
       patchwork::plot_layout(axis_titles = "collect") +
-      patchwork::plot_annotation(title = title, caption = caption)
+      patchwork::plot_annotation(title = title, caption = caption,
+                                 theme = UtilsR::theme_my(base_rect_size = 1.5))
   }
 
   attr(p, "subgroup")  <- sub
