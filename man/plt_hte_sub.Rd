@@ -8,6 +8,7 @@ plt_hte_sub(
   x,
   sub_var = NULL,
   measure = c("diff", "ratio", "OR"),
+  conf_level = 0.95,
   overall = TRUE,
   show_n = TRUE,
   show_pvalue = FALSE,
@@ -33,6 +34,9 @@ otherwise add it with \code{get_hte(sub_var = )}.}
 \item{measure}{One of \code{"diff"} (default), \code{"ratio"} or \code{"OR"}, as in
 \code{\link[=get_hte]{get_hte()}}. \code{"ratio"} and \code{"OR"} are drawn on a log axis; \code{"OR"} needs
 an outcome probability, a binary outcome or \eqn{S(t)}.}
+
+\item{conf_level}{Confidence level of the intervals. Default \code{0.95},
+whatever level \code{x} was computed with.}
 
 \item{overall}{Logical. \code{TRUE} (default) adds an "All patients" row with the
 overall ATE.}

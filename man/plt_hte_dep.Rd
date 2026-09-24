@@ -9,6 +9,7 @@ plt_hte_dep(
   x_var = NULL,
   type = c("dep", "heat"),
   display = c("cate", "dr"),
+  conf_level = 0.95,
   ylim = NULL,
   dr_args = list(spline_df = 3),
   pdp_args = list(grid_n = 21, max_n = 1000),
@@ -51,6 +52,9 @@ averaged over the patients with the covariate set to each level or
 grid value, other covariates as observed.}
 }
 Default \code{c("cate", "dr")}. Only used by \code{type = "dep"}.}
+
+\item{conf_level}{Confidence level of the \code{"dr"} intervals. Default \code{0.95}.
+Only used by \code{type = "dep"}.}
 
 \item{ylim}{\code{NULL} (default) or two increasing numbers giving the y range
 of every panel; intervals running past it are clipped.}

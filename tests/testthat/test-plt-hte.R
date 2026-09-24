@@ -110,6 +110,14 @@ test_that("the dr layer is the doubly robust summary; pdp averages forest predic
   dr <- .hte_dr_var(res$data, "stage", res$fit$W.orig, stats::qnorm(0.975), 3L)
   expect_equal(layer_data_of(p, "GeomPointrange")$estimate, dr$levels$estimate)
 
+  expect_identical(names(formals(plt_hte_dep))[4:6],
+                   c("display", "conf_level", "ylim"))
+  p90  <- plt_hte_dep(res, x_var = "stage", display = "dr", conf_level = 0.9)
+  dr90 <- .hte_dr_var(res$data, "stage", res$fit$W.orig, stats::qnorm(0.95), 3L)
+  expect_equal(layer_data_of(p90, "GeomPointrange")$conf.low,
+               dr90$levels$conf.low)
+  expect_match(p90$labels$caption, "90% CI", fixed = TRUE)
+
   pdp <- layer_data_of(p, "GeomPoint", "estimate")
   expect_equal(pdp$estimate[pdp$x == "II"],
                manual_pdp(res$fit, list(stageI = 0, stageII = 1, stageIII = 0)))
@@ -234,6 +242,9 @@ test_that("invalid requests stop with a clear message", {
   expect_error(plt_hte_dep(res, x_var = "age", type = "heat"), "exactly two")
   expect_error(plt_hte_dep(res, x_var = c("age", "sex"), type = "heat",
                            display = "dr"), "`display`")
+  expect_error(plt_hte_dep(res, x_var = c("age", "sex"), type = "heat",
+                           conf_level = 0.9), "`conf_level`")
+  expect_error(plt_hte_dep(res, conf_level = 0), "conf_level")
   expect_error(plt_hte_dep(res, dr_args = list(df = 3)), "unknown field")
   expect_error(plt_hte_dep(res, axis_arg = list(share_y = "var")), "share_y")
   expect_error(plt_hte_dep(res, save = "a.pdf"), "`save`")
@@ -276,6 +287,13 @@ test_that("plt_hte_sub recomputes the get_hte() subgroup estimates", {
   }
   expect_equal(unique(st$p_inter),
                res$importance$p_het[res$importance$variable == "stage"])
+
+  # conf_level sets the intervals and the header, not the estimates
+  p90 <- plt_hte_sub(res, sub_var = "stage", conf_level = 0.9)
+  s90 <- attr(p90, "subgroup")
+  expect_equal(s90$estimate, st$estimate)
+  expect_equal(s90$conf.low, s90$estimate - stats::qnorm(0.95) * s90$std.error)
+  expect_identical(fp_headers(p90)[3], "Risk difference (90% CI)")
 })
 
 test_that("measure = 'ratio' averages the arm scores on a log axis", {
@@ -305,8 +323,9 @@ test_that("overall, show_n, show_pvalue and show_pinter set the rows and columns
   no_all <- plt_hte_sub(res, sub_var = "stage", overall = FALSE)
   expect_false("All patients" %in% trimws(fp_col(no_all, 1)))
 
-  expect_identical(names(formals(plt_hte_sub))[4:7],
-                   c("overall", "show_n", "show_pvalue", "show_pinter"))
+  expect_identical(names(formals(plt_hte_sub))[1:8],
+                   c("x", "sub_var", "measure", "conf_level", "overall",
+                     "show_n", "show_pvalue", "show_pinter"))
   no_n <- plt_hte_sub(res, sub_var = "stage", show_n = FALSE)
   expect_identical(fp_headers(no_n), c("Subgroup", "Risk difference (95% CI)"))
 
@@ -370,6 +389,7 @@ test_that("plt_hte_sub rejects invalid requests and saves a PDF", {
   res <- dep_res()
   expect_error(plt_hte_sub(list()), "hte_res")
   expect_error(plt_hte_sub(res, overall = NA), "overall")
+  expect_error(plt_hte_sub(res, conf_level = 1.5), "conf_level")
   expect_error(plt_hte_sub(res, show_pvalue = "yes"), "show_pvalue")
   expect_error(plt_hte_sub(res, xlim = c(1, 0)), "xlim")
   expect_error(plt_hte_sub(res, measure = "ratio", xlim = c(-1, 2)), "positive")

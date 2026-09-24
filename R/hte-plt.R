@@ -129,6 +129,8 @@
 #'       grid value, other covariates as observed.}
 #'   }
 #'   Default `c("cate", "dr")`. Only used by `type = "dep"`.
+#' @param conf_level Confidence level of the `"dr"` intervals. Default `0.95`.
+#'   Only used by `type = "dep"`.
 #' @param ylim `NULL` (default) or two increasing numbers giving the y range
 #'   of every panel; intervals running past it are clipped.
 #' @param dr_args Named list for the `"dr"` layer: `spline_df` (default `3`),
@@ -199,6 +201,7 @@ plt_hte_dep <- function(x,
                         x_var    = NULL,
                         type     = c("dep", "heat"),
                         display  = c("cate", "dr"),
+                        conf_level = 0.95,
                         ylim     = NULL,
                         dr_args  = list(spline_df = 3),
                         pdp_args = list(grid_n = 21, max_n = 1000),
@@ -210,14 +213,18 @@ plt_hte_dep <- function(x,
     stop("`x` must be an `hte_res` object from get_hte().", call. = FALSE)
   type <- match.arg(type)
   if (type == "heat") {
-    used <- c(display = !missing(display), dr_args = !missing(dr_args),
-              axis_arg = !missing(axis_arg))
+    used <- c(display = !missing(display), conf_level = !missing(conf_level),
+              dr_args = !missing(dr_args), axis_arg = !missing(axis_arg))
     if (any(used))
       stop(sprintf("%s only applies to type = \"dep\"; the heat map shows the partial dependence.",
                    paste0("`", names(used)[used], "`", collapse = ", ")),
            call. = FALSE)
   }
   display  <- match.arg(display, c("cate", "dr", "pdp"), several.ok = TRUE)
+  if (!is.numeric(conf_level) || length(conf_level) != 1L ||
+      is.na(conf_level) || conf_level <= 0 || conf_level >= 1)
+    stop("`conf_level` must be a single number strictly between 0 and 1.",
+         call. = FALSE)
   dr_args  <- .merge_named_arg(dr_args, list(spline_df = 3), "dr_args")
   pdp_args <- .merge_named_arg(pdp_args, list(grid_n = 21, max_n = 1000),
                                "pdp_args")
@@ -313,7 +320,7 @@ plt_hte_dep <- function(x,
 
   # ---- One panel per covariate ---------------------------------------------
   } else {
-    z     <- stats::qnorm(1 - (1 - a$conf_level) / 2)
+    z     <- stats::qnorm(1 - (1 - conf_level) / 2)
     w     <- x$fit$W.orig
     beyond <- .hte_beyond(x)
     fmt_p <- function(p) if (is.na(p)) "NA" else if (p < 0.001) "< 0.001"
@@ -416,7 +423,7 @@ plt_hte_dep <- function(x,
     caption <- paste(c(
       if ("cate" %in% display) "grey: out-of-bag CATE per patient",
       if ("dr" %in% display)
-        sprintf("red: AIPW mean or spline with %g%% CI", 100 * a$conf_level),
+        sprintf("red: AIPW mean or spline with %g%% CI", 100 * conf_level),
       if ("pdp" %in% display) "blue: partial dependence of the forest",
       if (length(ate)) "dashed: ATE"), collapse = "; ")
     caption <- paste0(toupper(substr(caption, 1L, 1L)), substring(caption, 2L))
@@ -469,6 +476,8 @@ plt_hte_dep <- function(x,
 #' @param measure One of `"diff"` (default), `"ratio"` or `"OR"`, as in
 #'   [get_hte()]. `"ratio"` and `"OR"` are drawn on a log axis; `"OR"` needs
 #'   an outcome probability, a binary outcome or \eqn{S(t)}.
+#' @param conf_level Confidence level of the intervals. Default `0.95`,
+#'   whatever level `x` was computed with.
 #' @param overall Logical. `TRUE` (default) adds an "All patients" row with the
 #'   overall ATE.
 #' @param show_n Logical. `TRUE` (default) shows the column of patients per
@@ -533,6 +542,7 @@ plt_hte_dep <- function(x,
 plt_hte_sub <- function(x,
                         sub_var     = NULL,
                         measure     = c("diff", "ratio", "OR"),
+                        conf_level  = 0.95,
                         overall     = TRUE,
                         show_n      = TRUE,
                         show_pvalue = FALSE,
@@ -545,6 +555,10 @@ plt_hte_sub <- function(x,
   if (!inherits(x, "hte_res"))
     stop("`x` must be an `hte_res` object from get_hte().", call. = FALSE)
   measure <- match.arg(measure)
+  if (!is.numeric(conf_level) || length(conf_level) != 1L ||
+      is.na(conf_level) || conf_level <= 0 || conf_level >= 1)
+    stop("`conf_level` must be a single number strictly between 0 and 1.",
+         call. = FALSE)
   flags <- list(overall = overall, show_n = show_n, show_pvalue = show_pvalue,
                 show_pinter = show_pinter)
   for (nm in names(flags))
@@ -610,7 +624,7 @@ plt_hte_sub <- function(x,
   # ---- Estimates from the stored forest -------------------------------------
   fit  <- x$fit
   s    <- .hte_arm_scores(fit)
-  z    <- stats::qnorm(1 - (1 - a$conf_level) / 2)
+  z    <- stats::qnorm(1 - (1 - conf_level) / 2)
   grid <- data.frame(estimand = "ATE", measure = measure,
                      stringsAsFactors = FALSE)
   event_risk <- identical(a$target, "survival.probability")
@@ -665,7 +679,7 @@ plt_hte_sub <- function(x,
             if (show_pinter) "p_inter")
   text <- rbind(c("Subgroup",
                   if (show_n) sprintf("N (%s / %s)", a$treated, ref),
-                  sprintf("%s (%s%% CI)", lab, format(100 * a$conf_level)),
+                  sprintf("%s (%s%% CI)", lab, format(100 * conf_level)),
                   if (show_pvalue) "P", if (show_pinter) "P for interaction"),
                 as.matrix(body[cols]))
   dimnames(text) <- NULL
