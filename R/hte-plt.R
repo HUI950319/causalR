@@ -474,7 +474,7 @@ plt_hte_dep <- function(x,
       }
 
       q <- q + ggplot2::facet_wrap(~panel) +
-        ggplot2::labs(x = NULL, y = ylab) +
+        ggplot2::labs(x = v, y = ylab) +
         UtilsR::theme_my(base_rect_size = 1.5)
       if (!is_n)
         q <- q + ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 30,

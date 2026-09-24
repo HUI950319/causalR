@@ -106,6 +106,9 @@ test_that("plt_hte_dep draws one panel per covariate in importance order", {
                            else sprintf("= %.3f", p_age)))
   expect_identical(strip_of(plt_hte_dep(res, x_var = "stage", display = "cate")),
                    "stage")
+  # each panel names its covariate on the x axis too
+  expect_identical(plt_hte_dep(res, x_var = "stage", display = "cate")$labels$x,
+                   "stage")
 })
 
 test_that("the dr layer is the doubly robust summary; pdp averages forest predictions", {
