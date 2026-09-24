@@ -16,6 +16,7 @@ plt_hte_sub(
   xlim = NULL,
   ticks_at = NULL,
   title = NULL,
+  fixed_size = TRUE,
   save = list()
 )
 }
@@ -60,18 +61,28 @@ estimates.}
 
 \item{title}{Plot title, or \code{NULL} (default).}
 
+\item{fixed_size}{Size policy. \code{TRUE} (default) pins the plot to the size
+its text needs -- rows 0.3 in tall, the graph column a quarter of the
+width and at least 2 in -- so it draws the same on every device: a larger
+one only adds white space, a smaller one clips it. A single positive
+number pins the total width in inches instead, the graph column taking
+what the text leaves. \code{FALSE} stretches the plot over the device.}
+
 \item{save}{\code{NULL} or a list with \code{filename}, \code{width} and \code{height}, passed
 to \code{RegR::save_plt()} for PDF output. \code{list()} and \code{NULL} skip saving; a
-list naming only the file is completed with this figure's suggested size.
-Do not include the \code{plot} argument; it is supplied internally.}
+\code{width} or \code{height} left out is taken from \code{attr(p, "plot_size")}. Do not
+include the \code{plot} argument; it is supplied internally.}
 }
 \value{
-A \code{forestplot} object (class \code{gforge_forestplot}): printing it draws
-the plot, and the \verb{fp_*()} functions of \pkg{forestplot} can restyle it.
+A \code{forestplot} object of class \code{hte_forestplot}, inheriting
+\code{gforge_forestplot}: printing it draws the plot on a new page, and the
+\verb{fp_*()} functions of \pkg{forestplot} can restyle it (text they enlarge
+can outgrow a pinned size; use \code{fixed_size = FALSE} then).
 \code{attr(p, "subgroup")} holds the subgroup estimates drawn, laid out as
-\code{get_hte()$subgroup}, and \code{attr(p, "plot_size")} a suggested
-\code{c(width, height)} in inches. If \code{save} is non-empty, the plot is also
-written to PDF through \code{RegR::save_plt()}.
+\code{get_hte()$subgroup}, and \code{attr(p, "plot_size")} the \code{c(width, height)}
+in inches the plot is pinned to, or a suggested size with
+\code{fixed_size = FALSE}. If \code{save} is non-empty, the plot is also written to
+PDF through \code{RegR::save_plt()}.
 }
 \description{
 Recomputes the doubly robust average treatment effect (ATE) within each

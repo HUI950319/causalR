@@ -493,10 +493,16 @@ plt_hte_dep <- function(x,
 #' @param ticks_at `NULL` (default) or the axis ticks, on the scale of the
 #'   estimates.
 #' @param title Plot title, or `NULL` (default).
+#' @param fixed_size Size policy. `TRUE` (default) pins the plot to the size
+#'   its text needs -- rows 0.3 in tall, the graph column a quarter of the
+#'   width and at least 2 in -- so it draws the same on every device: a larger
+#'   one only adds white space, a smaller one clips it. A single positive
+#'   number pins the total width in inches instead, the graph column taking
+#'   what the text leaves. `FALSE` stretches the plot over the device.
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
-#'   list naming only the file is completed with this figure's suggested size.
-#'   Do not include the `plot` argument; it is supplied internally.
+#'   `width` or `height` left out is taken from `attr(p, "plot_size")`. Do not
+#'   include the `plot` argument; it is supplied internally.
 #'
 #' @section Subgroup estimates:
 #' Every row is the doubly robust estimate within the subgroup, as in
@@ -507,12 +513,15 @@ plt_hte_dep <- function(x,
 #' in an arm followed beyond `time` -- has no estimate: it is drawn with a
 #' dash, with a warning.
 #'
-#' @return A `forestplot` object (class `gforge_forestplot`): printing it draws
-#'   the plot, and the `fp_*()` functions of \pkg{forestplot} can restyle it.
+#' @return A `forestplot` object of class `hte_forestplot`, inheriting
+#'   `gforge_forestplot`: printing it draws the plot on a new page, and the
+#'   `fp_*()` functions of \pkg{forestplot} can restyle it (text they enlarge
+#'   can outgrow a pinned size; use `fixed_size = FALSE` then).
 #'   `attr(p, "subgroup")` holds the subgroup estimates drawn, laid out as
-#'   `get_hte()$subgroup`, and `attr(p, "plot_size")` a suggested
-#'   `c(width, height)` in inches. If `save` is non-empty, the plot is also
-#'   written to PDF through `RegR::save_plt()`.
+#'   `get_hte()$subgroup`, and `attr(p, "plot_size")` the `c(width, height)`
+#'   in inches the plot is pinned to, or a suggested size with
+#'   `fixed_size = FALSE`. If `save` is non-empty, the plot is also written to
+#'   PDF through `RegR::save_plt()`.
 #'
 #' @seealso [get_hte()]; [plt_hte_dep()] for how the CATE varies with a
 #'   covariate.
@@ -550,6 +559,7 @@ plt_hte_sub <- function(x,
                         xlim        = NULL,
                         ticks_at    = NULL,
                         title       = NULL,
+                        fixed_size  = TRUE,
                         save        = list()) {
 
   if (!inherits(x, "hte_res"))
@@ -574,6 +584,11 @@ plt_hte_sub <- function(x,
     stop("`ticks_at` must be `NULL` or a numeric vector.", call. = FALSE)
   if (log_x && any(c(xlim, ticks_at) <= 0))
     stop("`xlim` and `ticks_at` must be positive on the log axis of \"ratio\" and \"OR\".",
+         call. = FALSE)
+  if (!(isTRUE(fixed_size) || isFALSE(fixed_size) ||
+        (is.numeric(fixed_size) && length(fixed_size) == 1L &&
+         is.finite(fixed_size) && fixed_size > 0)))
+    stop("`fixed_size` must be TRUE, FALSE, or a single positive width in inches.",
          call. = FALSE)
   if (!is.null(save) && !is.list(save))
     stop("`save` must be `NULL` or a list.", call. = FALSE)
@@ -731,9 +746,9 @@ plt_hte_sub <- function(x,
   # forestplot() measures its text as it builds, as does the size estimate
   # below: both run on a null PDF device, so no stray window or Rplots.pdf
   # opens, and the device that was current stays current.
-  on_null <- function(expr) {
+  on_null <- function(expr, ...) {
     prev <- grDevices::dev.cur()
-    grDevices::pdf(NULL)
+    grDevices::pdf(NULL, ...)
     dev <- grDevices::dev.cur()
     on.exit({
       grDevices::dev.off(dev)
@@ -742,6 +757,7 @@ plt_hte_sub <- function(x,
     expr
   }
   n_text <- ncol(text)
+  row_in <- 0.3   # row height in inches, pinned or assumed by the suggested size
   rules  <- list("1" = grid::gpar(lty = 1, lwd = 2), "2" = grid::gpar(lty = 2))
   rules[[as.character(nrow(text) + 1L)]] <-
     grid::gpar(lty = 1, lwd = 2, columns = seq_len(n_text))
@@ -758,24 +774,62 @@ plt_hte_sub <- function(x,
                                  xlab  = grid::gpar(cex = 0.9),
                                  title = grid::gpar(cex = 1.2)),
     lwd.zero = 1, lwd.ci = 1.5, lwd.xaxis = 2, ci.vertices = TRUE,
-    ci.vertices.height = 0.2, colgap = grid::unit(6, "mm")))
+    ci.vertices.height = 0.2, colgap = grid::unit(6, "mm"),
+    lineheight = if (isFALSE(fixed_size)) "auto" else grid::unit(row_in, "in")))
 
-  # Suggested size: the widest cell of every text column (bold rows at
-  # forestplot's summary size, 1.1 x the label cex), a graph column that takes
-  # a quarter of the width as in RegR::plt_eff2(), and about 0.3 in a row.
-  text_in <- on_null(sum(vapply(seq_len(n_text), function(j)
-    max(vapply(seq_len(nrow(text)), function(i) {
-      gp <- if (bold[i]) grid::gpar(cex = 0.88, fontface = "bold")
-            else grid::gpar(cex = 0.8)
-      grid::convertWidth(grid::grobWidth(grid::textGrob(text[i, j], gp = gp)),
-                         "in", valueOnly = TRUE)
-    }, numeric(1L))), numeric(1L)))) + n_text * 6 / 25.4
-  size <- round(c(width  = max(text_in / 0.75, text_in + 2) + 0.4,
-                  height = 0.3 * nrow(text) + 0.9 +
-                    if (is.null(title)) 0 else 0.4), 1)
+  if (isFALSE(fixed_size)) {
+    # Suggested size: the widest cell of every text column (bold rows at
+    # forestplot's summary size, 1.1 x the label cex), a graph column that
+    # takes a quarter of the width as in RegR::plt_eff2(), and about 0.3 in a
+    # row.
+    text_in <- on_null(sum(vapply(seq_len(n_text), function(j)
+      max(vapply(seq_len(nrow(text)), function(i) {
+        gp <- if (bold[i]) grid::gpar(cex = 0.88, fontface = "bold")
+              else grid::gpar(cex = 0.8)
+        grid::convertWidth(grid::grobWidth(grid::textGrob(text[i, j], gp = gp)),
+                           "in", valueOnly = TRUE)
+      }, numeric(1L))), numeric(1L)))) + n_text * 6 / 25.4
+    size <- round(c(width  = max(text_in / 0.75, text_in + 2) + 0.4,
+                    height = row_in * nrow(text) + 0.9 +
+                      if (is.null(title)) 0 else 0.4), 1)
+  } else {
+    # Pin the drawing. forestplot sizes the text columns from the rendered
+    # text but leaves the graph column relative, and surrounds the table with
+    # its margins, the title and the x-axis strip: one probe draw, on the PDF
+    # metrics RegR::save_plt() writes with and a page wide enough for any
+    # table, reads the text columns and that overhead back in inches.
+    probe <- on_null({
+      print(p)
+      grid::seekViewport("BaseGrid")
+      w <- grid::convertWidth(grid::current.viewport()$layout$widths, "in",
+                              valueOnly = TRUE)
+      area <- c(grid::convertWidth(grid::unit(1, "npc"), "in", valueOnly = TRUE),
+                grid::convertHeight(grid::unit(1, "npc"), "in", valueOnly = TRUE))
+      grid::upViewport(0)
+      # the graph is the last layout column
+      list(text = sum(w[-length(w)]), over = grDevices::dev.size("in") - area)
+    }, width = 40, height = 40)
+    graph_w <- if (is.numeric(fixed_size)) {
+      fixed_size - probe$text - probe$over[1L]
+    } else {
+      max(probe$text / 3, 2)
+    }
+    if (graph_w <= 0)
+      stop(sprintf("`fixed_size` leaves no room for the forest column: the labels alone need %.1f in.",
+                   probe$text + probe$over[1L]), call. = FALSE)
+    p$graphwidth <- grid::unit(graph_w, "in")
+    p[[".hte_fixed_size"]] <- TRUE
+    # Rounded up, as a canvas short of the pinned drawing clips it; a width
+    # asked for is kept as it is.
+    up   <- function(v) ceiling(10 * v - 1e-8) / 10
+    size <- c(width  = if (is.numeric(fixed_size)) fixed_size
+                       else up(probe$text + graph_w + probe$over[1L]),
+              height = up(row_in * nrow(text) + probe$over[2L]))
+  }
 
   attr(p, "subgroup")  <- sub
   attr(p, "plot_size") <- size
+  class(p) <- c("hte_forestplot", class(p))
   if (!is.null(save) && length(save) > 0L) {
     if (!requireNamespace("RegR", quietly = TRUE))
       stop("Package 'RegR' is required for a non-empty `save`.", call. = FALSE)
@@ -784,4 +838,30 @@ plt_hte_sub <- function(x,
     do.call(RegR::save_plt, c(list(plot = p), save))
   }
   p
+}
+
+
+# forestplot() starts a new page only when the object is built, and
+# plt_hte_sub() builds it on a null device, so printing starts one here; else
+# the plot is drawn over whatever the device shows. A pinned plot is laid out
+# in a viewport of exactly its size: every row and column is absolute by then,
+# and the viewport keeps the title, the table and the x-axis strip together
+# instead of letting forestplot glue the axis to the bottom of the device.
+#' @export
+#' @noRd
+print.hte_forestplot <- function(x, ...) {
+  if (!requireNamespace("forestplot", quietly = TRUE))
+    stop("Package 'forestplot' is required to draw this plot.", call. = FALSE)
+  obj <- x
+  class(x) <- setdiff(class(x), "hte_forestplot")
+  grid::grid.newpage()
+  if (isTRUE(x[[".hte_fixed_size"]])) {
+    size <- attr(x, "plot_size")
+    grid::pushViewport(grid::viewport(width  = grid::unit(size[["width"]], "in"),
+                                      height = grid::unit(size[["height"]], "in"),
+                                      name   = "hte_fixed_size"))
+    on.exit(grid::upViewport(0), add = TRUE)
+  }
+  print(x, ...)
+  invisible(obj)
 }

@@ -270,6 +270,15 @@ fp_col <- function(p, j)
   vapply(p$labels[[j]], function(s) paste(s, collapse = ""), "")
 fp_headers <- function(p) vapply(seq_along(p$labels), function(j) fp_col(p, j)[1], "")
 
+# Page size of a PDF in inches, from its MediaBox, and its number of pages.
+pdf_size <- function(f) {
+  box <- grepRaw("/MediaBox \\[[^]]*\\]", readBin(f, "raw", file.size(f)),
+                 value = TRUE)
+  as.numeric(strsplit(trimws(gsub("[^0-9. ]", "", rawToChar(box))), " +")[[1]][3:4]) / 72
+}
+pdf_pages <- function(f)
+  length(grepRaw("/Type /Page[^s]", readBin(f, "raw", file.size(f)), all = TRUE))
+
 test_that("plt_hte_sub recomputes the get_hte() subgroup estimates", {
   skip_if_not_installed("forestplot")
   res <- dep_res()
@@ -411,4 +420,75 @@ test_that("plt_hte_sub rejects invalid requests and saves a PDF", {
   p <- plt_hte_sub(res, sub_var = "stage", save = list(filename = f))
   expect_true(file.exists(f))
   expect_s3_class(p, "gforge_forestplot")
+  # the page is the pinned size unless `save` names a dimension (PDF pages
+  # are whole points, hence the tolerance)
+  expect_equal(pdf_size(f), unname(attr(p, "plot_size")), tolerance = 0.01)
+  f2 <- tempfile(fileext = ".pdf")
+  plt_hte_sub(res, sub_var = "stage", save = list(filename = f2, width = 10))
+  expect_equal(pdf_size(f2), c(10, attr(p, "plot_size")[["height"]]),
+               tolerance = 0.01)
+  unlink(c(f, f2))
+})
+
+test_that("fixed_size pins the plot to the size its text needs", {
+  skip_if_not_installed("forestplot")
+  res <- dep_res()
+  expect_identical(tail(names(formals(plt_hte_sub)), 2L), c("fixed_size", "save"))
+
+  # The table as drawn on a w x h page, in inches: its column widths and row
+  # heights, the area forestplot gives it and the centre of that area relative
+  # to the centre of the page.
+  drawn <- function(p, w, h) {
+    grDevices::pdf(NULL, width = w, height = h)
+    on.exit(grDevices::dev.off())
+    print(p)
+    grid::seekViewport("BaseGrid")
+    lay <- grid::current.viewport()$layout
+    mid <- grid::deviceLoc(grid::unit(0.5, "npc"), grid::unit(0.5, "npc"),
+                           valueOnly = TRUE)
+    list(widths  = grid::convertWidth(lay$widths, "in", valueOnly = TRUE),
+         heights = grid::convertHeight(lay$heights, "in", valueOnly = TRUE),
+         area    = c(grid::convertWidth(grid::unit(1, "npc"), "in", TRUE),
+                     grid::convertHeight(grid::unit(1, "npc"), "in", TRUE)),
+         centre  = c(mid$x - w / 2, mid$y - h / 2))
+  }
+
+  p <- plt_hte_sub(res, sub_var = "stage")
+  expect_s3_class(p, "hte_forestplot")
+  size <- attr(p, "plot_size")
+  expect_named(size, c("width", "height"))
+  expect_equal(size, round(size, 1))
+  small <- drawn(p, size[["width"]], size[["height"]])
+  expect_equal(small, drawn(p, 14, 10), tolerance = 1e-6)
+  expect_equal(small$heights, rep(0.3, 6L), tolerance = 1e-6)
+  # the size is rounded up, so the table always fits its area
+  expect_true(sum(small$widths) <= small$area[1] + 1e-6)
+  expect_true(sum(small$widths) > small$area[1] - 0.1)
+
+  # a width in inches: the graph column takes exactly what the text leaves
+  p9 <- plt_hte_sub(res, sub_var = "stage", fixed_size = 9)
+  expect_identical(attr(p9, "plot_size")[["width"]], 9)
+  d9 <- drawn(p9, 12, 8)
+  expect_equal(sum(d9$widths), d9$area[1], tolerance = 1e-6)
+  expect_equal(d9$area[1] - small$area[1], 9 - size[["width"]], tolerance = 1e-6)
+  expect_error(plt_hte_sub(res, sub_var = "stage", fixed_size = 2), "no room")
+  for (bad in list("yes", c(5, 6), -1, NA))
+    expect_error(plt_hte_sub(res, fixed_size = bad), "`fixed_size`")
+
+  # FALSE stretches the table over the page, as before
+  pf <- plt_hte_sub(res, sub_var = "stage", fixed_size = FALSE)
+  expect_identical(pf$lineheight, "auto")
+  expect_named(attr(pf, "plot_size"), c("width", "height"))
+  expect_false(isTRUE(all.equal(drawn(pf, 8, 5)$heights,
+                                drawn(pf, 14, 10)$heights)))
+
+  # every print starts its own page instead of drawing over the last plot
+  f <- tempfile(fileext = ".pdf")
+  grDevices::pdf(f)
+  plot(1)
+  print(p)
+  print(pf)
+  grDevices::dev.off()
+  expect_identical(pdf_pages(f), 3L)
+  unlink(f)
 })
