@@ -209,12 +209,11 @@
 #'   for variables the forest conditions on. A patient whose value is missing
 #'   is left out of that column's rows.
 #' @param adj_var Character vector of covariates the forest conditions on, or
-#'   `NULL`. Factor, character and logical columns enter as one indicator
-#'   column per level, with no reference level dropped, so a tree can split
-#'   any single level off from the rest. Missing values are kept and left to
-#'   grf, which splits on missingness; a missing factor value leaves all of
-#'   that factor's indicator columns missing. Other column types, such as
-#'   dates, are rejected: convert them to numbers first.
+#'   `NULL`. Factor, character and logical columns are encoded as
+#'   `factor_encoding` sets. Missing values are kept and left to grf, which
+#'   splits on missingness; a missing factor value leaves its column or
+#'   columns missing. Other column types, such as dates, are rejected:
+#'   convert them to numbers first.
 #' @param surv Outcome selector, following [RegR::get_eff()]:
 #'   \itemize{
 #'     \item `TRUE` (default): survival outcome in the fixed columns `time`
@@ -230,6 +229,21 @@
 #'       competing-risk forest.
 #'   }
 #' @param method Backend. Only `"grf"` is available.
+#' @param factor_encoding How factor, character and logical covariates enter
+#'   the forest:
+#'   \describe{
+#'     \item{`"onehot"` (default)}{One indicator column per level, with no
+#'       reference level dropped, so a tree can split any single level off
+#'       from the rest.}
+#'     \item{`"integer"`}{One column of level codes 1, ..., K in the order of
+#'       the levels -- the factor's own order, alphabetical for character,
+#'       `FALSE` before `TRUE` -- so trees split on thresholds of that order.
+#'       It keeps the order of an ordered factor such as stage, but imposes an
+#'       arbitrary one on a nominal factor.}
+#'   }
+#'   Numeric covariates are unaffected. `$subgroup`, `p_het` and
+#'   [plt_hte_dep()] use the original levels either way; only the forest and
+#'   `$importance$n_col` see the encoding.
 #' @param estimand Character vector, any of `"ATE"` (default), `"ATT"`,
 #'   `"ATC"`, `"ATO"`, passed to grf as `target.sample` `"all"`, `"treated"`,
 #'   `"control"` and `"overlap"`. Survival outcomes support `"ATE"` only.
@@ -403,6 +417,7 @@ get_hte <- function(data,
                     adj_var    = NULL,
                     surv       = TRUE,
                     method     = "grf",
+                    factor_encoding = c("onehot", "integer"),
                     estimand   = "ATE",
                     measure    = "diff",
                     conf_level = 0.95,
@@ -411,6 +426,7 @@ get_hte <- function(data,
                     verbose    = FALSE) {
 
   method <- match.arg(method, "grf")
+  factor_encoding <- match.arg(factor_encoding)
   if (!requireNamespace("grf", quietly = TRUE))
     stop("Package 'grf' is required for method = \"grf\".", call. = FALSE)
   if (!is.numeric(conf_level) || length(conf_level) != 1L ||
@@ -601,7 +617,16 @@ get_hte <- function(data,
          call. = FALSE)
 
   # ---- Fit and estimate ----------------------------------------------------
-  X   <- .sens_model_matrix(data, covars, one_hot = TRUE)
+  # "integer" turns each factor, character and logical covariate into one
+  # column of level codes 1..K first, so the forest splits on thresholds of
+  # the level order; "onehot" gives one indicator column per level.
+  xdat <- data[covars]
+  if (factor_encoding == "integer") {
+    fac <- covars[!vapply(xdat, is.numeric, logical(1L))]
+    xdat[fac] <- lapply(xdat[fac],
+                        function(x) as.integer(droplevels(as.factor(x))))
+  }
+  X   <- .sens_model_matrix(xdat, covars, one_hot = TRUE)
   fit <- do.call(fun, c(list(X = X, Y = Y, W = W),
                         if (is_surv) list(D = D, horizon = time),
                         grf_args))
@@ -715,6 +740,7 @@ get_hte <- function(data,
       forest = class(fit)[1L], outcome_type = type,
       cat_var = cat_var, treated = tz$treated, surv = surv, outcome = outcome,
       sub_var = sub_var, adj_var = adj_var, covariates = covars,
+      factor_encoding = factor_encoding,
       estimand = estimand, measure = measure, target = target,
       time = if (is_surv) time else NULL, conf_level = conf_level,
       n = length(W), n_treat = sum(W), ps_range = ps_rng,

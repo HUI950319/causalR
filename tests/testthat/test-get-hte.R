@@ -90,6 +90,34 @@ test_that("every factor enters the forest with one column per level", {
   expect_identical(attr(res$fit$X.orig, "assign"), c(1L, 2L, 3L, 3L, 4L, 4L, 4L))
 })
 
+test_that("factor_encoding = 'integer' codes each factor as one column of level codes", {
+  skip_if_not_installed("grf")
+  expect_identical(names(formals(get_hte))[6:7], c("method", "factor_encoding"))
+  d <- hte_bin_data()
+  d$stage <- factor(d$stage, levels = c("III", "II", "I"))  # codes follow the levels
+  d$grp   <- sample(c("b", "a"), nrow(d), replace = TRUE)    # character: alphabetical
+  res <- get_hte(d, "z", adj_var = c("age", "sex", "stage", "grp"), surv = "y",
+                 factor_encoding = "integer", grf_args = hte_args)
+  X <- res$fit$X.orig
+  expect_identical(colnames(X), c("age", "sex", "stage", "grp"))
+  expect_equal(unname(X[, "stage"]),
+               as.numeric(match(as.character(d$stage), c("III", "II", "I"))))
+  expect_equal(unname(X[, "grp"]), as.numeric(match(d$grp, c("a", "b"))))
+  expect_identical(res$importance$n_col, rep(1L, 4L))
+  expect_identical(attr(res, "analysis")$factor_encoding, "integer")
+
+  # subgroups and p_het still work on the original levels
+  res <- suppressMessages(get_hte(d, "z", sub_var = "stage", adj_var = "age",
+                                  surv = "y", factor_encoding = "integer",
+                                  grf_args = hte_args))
+  expect_identical(unique(res$subgroup$level), c("III", "II", "I"))
+  imp <- res$importance
+  expect_equal(imp$p_het[imp$variable == "stage"], res$subgroup$p_inter[1])
+
+  expect_error(get_hte(d, "z", adj_var = "age", surv = "y",
+                       factor_encoding = "target"), "should be one of")
+})
+
 test_that("$importance sums grf variable importance back to each covariate", {
   res <- hte_bin()
   imp <- res$importance

@@ -132,6 +132,28 @@ test_that("type = 'heat' tiles the two-way partial dependence", {
                                         stageII = 0, stageIII = 1)))
 })
 
+test_that("pdp sets an integer-coded factor through its level code", {
+  skip_if_not_installed("grf")
+  set.seed(20260923)
+  n <- 500L
+  d <- data.frame(age   = round(stats::runif(n, 20, 85)),
+                  stage = factor(sample(c("I", "II", "III"), n, replace = TRUE)))
+  d$z <- stats::rbinom(n, 1, 0.5)
+  d$y <- stats::rbinom(n, 1, stats::plogis(-1 + d$z * (0.2 + 0.4 * (d$stage == "III"))))
+  res <- get_hte(d, cat_var = "z", adj_var = c("age", "stage"), surv = "y",
+                 factor_encoding = "integer",
+                 grf_args = list(num.trees = 300, seed = 1))
+
+  pdp <- layer_data_of(plt_hte_dep(res, x_var = "stage", display = "pdp"),
+                       "GeomPoint", "estimate")
+  expect_equal(pdp$estimate[pdp$x == "II"], manual_pdp(res$fit, list(stage = 2)))
+  heat <- plt_hte_dep(res, x_var = c("age", "stage"), type = "heat",
+                      pdp_args = list(grid_n = 3))
+  cell <- heat$data[heat$data$stage == "III" & heat$data$age == min(d$age), ]
+  expect_equal(cell$estimate,
+               manual_pdp(res$fit, list(age = min(d$age), stage = 3)))
+})
+
 test_that("a covariate with missing values draws only its observed patients", {
   skip_if_not_installed("grf")
   skip_if_not_installed("sandwich")

@@ -11,6 +11,7 @@ get_hte(
   adj_var = NULL,
   surv = TRUE,
   method = "grf",
+  factor_encoding = c("onehot", "integer"),
   estimand = "ATE",
   measure = "diff",
   conf_level = 0.95,
@@ -36,12 +37,11 @@ for variables the forest conditions on. A patient whose value is missing
 is left out of that column's rows.}
 
 \item{adj_var}{Character vector of covariates the forest conditions on, or
-\code{NULL}. Factor, character and logical columns enter as one indicator
-column per level, with no reference level dropped, so a tree can split
-any single level off from the rest. Missing values are kept and left to
-grf, which splits on missingness; a missing factor value leaves all of
-that factor's indicator columns missing. Other column types, such as
-dates, are rejected: convert them to numbers first.}
+\code{NULL}. Factor, character and logical columns are encoded as
+\code{factor_encoding} sets. Missing values are kept and left to grf, which
+splits on missingness; a missing factor value leaves its column or
+columns missing. Other column types, such as dates, are rejected:
+convert them to numbers first.}
 
 \item{surv}{Outcome selector, following \code{\link[RegR:get_eff]{RegR::get_eff()}}:
 \itemize{
@@ -59,6 +59,22 @@ competing-risk forest.
 }}
 
 \item{method}{Backend. Only \code{"grf"} is available.}
+
+\item{factor_encoding}{How factor, character and logical covariates enter
+the forest:
+\describe{
+\item{\code{"onehot"} (default)}{One indicator column per level, with no
+reference level dropped, so a tree can split any single level off
+from the rest.}
+\item{\code{"integer"}}{One column of level codes 1, ..., K in the order of
+the levels -- the factor's own order, alphabetical for character,
+\code{FALSE} before \code{TRUE} -- so trees split on thresholds of that order.
+It keeps the order of an ordered factor such as stage, but imposes an
+arbitrary one on a nominal factor.}
+}
+Numeric covariates are unaffected. \verb{$subgroup}, \code{p_het} and
+\code{\link[=plt_hte_dep]{plt_hte_dep()}} use the original levels either way; only the forest and
+\verb{$importance$n_col} see the encoding.}
 
 \item{estimand}{Character vector, any of \code{"ATE"} (default), \code{"ATT"},
 \code{"ATC"}, \code{"ATO"}, passed to grf as \code{target.sample} \code{"all"}, \code{"treated"},

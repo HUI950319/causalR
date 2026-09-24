@@ -20,7 +20,9 @@
 # does not depend on the random seed -- gets the covariates in `vars` set to
 # each grid combination, and the forest's CATE is averaged. A factor is set
 # through its one-hot columns, which get_hte() keeps for every level, so no
-# row ever carries two levels at once; a numeric covariate is one column.
+# row ever carries two levels at once -- or, with factor_encoding =
+# "integer", through its one column of level codes; a numeric covariate is
+# one column.
 #' @keywords internal
 #' @noRd
 .hte_pdp <- function(x, vars, grid_n, max_n) {
@@ -50,6 +52,8 @@
       cols <- which(src == v)
       if (is.numeric(d[[v]])) {
         Xk[, cols] <- combo[[v]][k]
+      } else if (identical(attr(x, "analysis")$factor_encoding, "integer")) {
+        Xk[, cols] <- match(combo[[v]][k], grid[[v]])
       } else {
         Xk[, cols] <- 0
         Xk[, cols[match(combo[[v]][k], grid[[v]])]] <- 1
