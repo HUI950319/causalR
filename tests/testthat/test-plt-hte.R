@@ -157,6 +157,11 @@ test_that("cate_smooth sets the loess span of the cate line; 0 leaves it out", {
   expect_identical(colour_of(plt_hte_dep(res, x_var = "age", display = "cate")),
                    "firebrick")
   expect_identical(colour_of(plt_hte_dep(res, x_var = "age")), "grey30")
+  # every curve as thick as the curves of plt_hte_rate()
+  all_lines <- plt_hte_dep(res, x_var = "age", display = c("cate", "dr", "pdp"))
+  widths <- unlist(lapply(all_lines$layers, function(l)
+    if (inherits(l$geom, c("GeomSmooth", "GeomLine"))) l$aes_params$linewidth))
+  expect_identical(unname(widths), rep(0.8, 3L))
   p0 <- plt_hte_dep(res, x_var = "age", display = "cate", cate_smooth = 0)
   expect_null(span_of(p0))
   expect_identical(nrow(layer_data_of(p0, "GeomPoint")), nrow(res$data))

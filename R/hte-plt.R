@@ -424,7 +424,7 @@ plt_hte_dep <- function(x,
                  ggplot2::geom_smooth(data = pts, ggplot2::aes(x = x, y = y),
                                       method = "loess", formula = y ~ x,
                                       span = cate_smooth, se = FALSE,
-                                      colour = cate_line, linewidth = 0.6))
+                                      colour = cate_line, linewidth = 0.8))
         } else {
           ggplot2::geom_point(data = pts, ggplot2::aes(x = x, y = y),
                               position = ggplot2::position_jitter(
@@ -444,7 +444,7 @@ plt_hte_dep <- function(x,
                                                          ymax = conf.high),
                                  fill = "firebrick", alpha = 0.15) +
             ggplot2::geom_line(data = cv, ggplot2::aes(x = x, y = estimate),
-                               colour = "firebrick", linewidth = 0.9)
+                               colour = "firebrick", linewidth = 0.8)
           yv <- c(yv, cv$estimate)
         } else {
           ok <- !is.na(dr$levels$estimate)
@@ -464,7 +464,7 @@ plt_hte_dep <- function(x,
         pd <- data.frame(x = xval(pd[[v]]), estimate = pd$estimate, panel = label)
         q <- q + if (is_n) {
           ggplot2::geom_line(data = pd, ggplot2::aes(x = x, y = estimate),
-                             colour = "steelblue", linewidth = 0.9,
+                             colour = "steelblue", linewidth = 0.8,
                              linetype = "longdash")
         } else {
           ggplot2::geom_point(data = pd, ggplot2::aes(x = x, y = estimate),
