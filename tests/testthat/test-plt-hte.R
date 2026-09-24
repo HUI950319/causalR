@@ -250,3 +250,140 @@ test_that("save writes one PDF and returns the plot unchanged", {
   expect_s3_class(p, "ggplot")
   expect_false(inherits(p, "patchwork"))
 })
+
+
+# ---- plt_hte_sub() ----------------------------------------------------------
+
+# The cells of one forestplot text column, header first, and every header.
+fp_col <- function(p, j)
+  vapply(p$labels[[j]], function(s) paste(s, collapse = ""), "")
+fp_headers <- function(p) vapply(seq_along(p$labels), function(j) fp_col(p, j)[1], "")
+
+test_that("plt_hte_sub recomputes the get_hte() subgroup estimates", {
+  skip_if_not_installed("forestplot")
+  res <- dep_res()
+  devs <- grDevices::dev.list()
+  p <- plt_hte_sub(res, sub_var = "sex")
+  expect_identical(grDevices::dev.list(), devs)   # no stray device opened
+  expect_s3_class(p, "gforge_forestplot")
+  expect_equal(attr(p, "subgroup"), res$subgroup[res$subgroup$measure == "diff", ])
+
+  # a covariate get_hte() was not asked about: grf's own subset estimates
+  st <- attr(plt_hte_sub(res, sub_var = "stage"), "subgroup")
+  for (lv in c("I", "II", "III")) {
+    ref <- grf::average_treatment_effect(res$fit, subset = res$data$stage == lv)
+    expect_equal(st$estimate[st$level == lv], unname(ref[["estimate"]]))
+  }
+  expect_equal(unique(st$p_inter),
+               res$importance$p_het[res$importance$variable == "stage"])
+})
+
+test_that("measure = 'ratio' averages the arm scores on a log axis", {
+  skip_if_not_installed("forestplot")
+  res <- dep_res()
+  p   <- plt_hte_sub(res, sub_var = "stage", measure = "ratio")
+  s   <- .hte_arm_scores(res$fit)
+  idx <- res$data$stage == "II"
+  sg  <- attr(p, "subgroup")
+  expect_equal(sg$estimate[sg$level == "II"], mean(s$g1[idx]) / mean(s$g0[idx]))
+  expect_true(p$xlog)
+  expect_equal(p$zero, 0)                     # log(1): forestplot logs the axis
+  expect_identical(fp_headers(p)[3], "Risk ratio (95% CI)")
+})
+
+test_that("overall, show_pvalue and show_pinter set the rows and columns", {
+  skip_if_not_installed("forestplot")
+  res <- dep_res()
+  p <- plt_hte_sub(res, sub_var = c("stage", "sex"))
+  expect_identical(trimws(fp_col(p, 1)),
+                   c("Subgroup", "All patients", "stage", "I", "II", "III",
+                     "sex", "F", "M"))
+  expect_length(p$labels, 3L)                 # no P columns by default
+  expect_equal(unname(p$estimates[2, 1, 1]),
+               res$stats$estimate[res$stats$measure == "diff"])
+
+  no_all <- plt_hte_sub(res, sub_var = "stage", overall = FALSE)
+  expect_false("All patients" %in% trimws(fp_col(no_all, 1)))
+
+  both <- plt_hte_sub(res, sub_var = "stage", show_pvalue = TRUE,
+                      show_pinter = TRUE)
+  expect_identical(fp_headers(both)[4:5], c("P", "P for interaction"))
+  pint <- attr(both, "subgroup")$p_inter[1]
+  expect_identical(fp_col(both, 5)[trimws(fp_col(both, 1)) == "stage"],
+                   if (pint < 0.001) "<0.001" else sprintf("%.3f", pint))
+})
+
+test_that("sub_var defaults to the categorical covariates and checks columns", {
+  skip_if_not_installed("forestplot")
+  res <- dep_res()
+  cov  <- attr(res, "analysis")$covariates
+  labs <- trimws(fp_col(plt_hte_sub(res, overall = FALSE), 1))
+  expect_identical(labs[labs %in% cov], setdiff(cov, "age"))
+
+  expect_error(plt_hte_sub(res, sub_var = "nope"), "nope")
+  expect_error(plt_hte_sub(res, sub_var = "age"), "continuous")
+  res2 <- res
+  res2$data$grp <- ifelse(res2$data$age > 50, "old", "young")
+  expect_message(p <- plt_hte_sub(res2, sub_var = "grp"),
+                 "not a forest covariate")
+  expect_identical(attr(p, "subgroup")$level, c("old", "young"))
+})
+
+test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("forestplot")
+  set.seed(20260924)
+  n <- 800L
+  d <- data.frame(age   = stats::runif(n, 20, 85),
+                  stage = factor(sample(c("I", "II", "III"), n, replace = TRUE)))
+  d$z  <- stats::rbinom(n, 1, 0.5)
+  ev   <- stats::rexp(n, 0.02)
+  cens <- pmin(stats::rexp(n, 0.01), 120)
+  d$time <- pmin(ev, cens)
+  d$DSS  <- as.integer(ev <= cens)
+  cut <- d$z == 1 & d$stage == "III" & d$time > 50
+  d$time[cut] <- 50
+  d$DSS[cut]  <- 0L
+  res <- get_hte(d, "z", adj_var = c("age", "stage"), surv = TRUE, time = 60,
+                 grf_args = list(num.trees = 300, seed = 1))
+
+  expect_warning(p <- plt_hte_sub(res, sub_var = "stage"),
+                 "stage = III: no patient in one arm")
+  row <- trimws(fp_col(p, 1)) == "III"
+  expect_true(is.na(attr(p, "subgroup")$estimate[3]))
+  expect_identical(fp_col(p, 3)[row], "\u2014")
+  expect_true(is.na(p$estimates[row, 1, 1]))
+  expect_identical(fp_headers(p)[3], "S(60) difference (95% CI)")
+  expect_identical(
+    fp_headers(suppressWarnings(plt_hte_sub(res, sub_var = "stage",
+                                            measure = "ratio")))[3],
+    "Event risk ratio (95% CI)")
+})
+
+test_that("plt_hte_sub rejects invalid requests and saves a PDF", {
+  skip_if_not_installed("forestplot")
+  res <- dep_res()
+  expect_error(plt_hte_sub(list()), "hte_res")
+  expect_error(plt_hte_sub(res, overall = NA), "overall")
+  expect_error(plt_hte_sub(res, show_pvalue = "yes"), "show_pvalue")
+  expect_error(plt_hte_sub(res, xlim = c(1, 0)), "xlim")
+  expect_error(plt_hte_sub(res, measure = "ratio", xlim = c(-1, 2)), "positive")
+  expect_error(plt_hte_sub(res, save = "a.pdf"), "`save`")
+
+  set.seed(2)
+  dc <- data.frame(x = stats::rnorm(300),
+                   g = factor(sample(c("a", "b"), 300, replace = TRUE)))
+  dc$z <- stats::rbinom(300, 1, 0.5)
+  dc$y <- stats::rnorm(300) + dc$z
+  rc <- get_hte(dc, "z", adj_var = c("x", "g"), surv = "y",
+                grf_args = list(num.trees = 100, seed = 1))
+  expect_error(plt_hte_sub(rc, measure = "OR"), "OR")
+
+  expect_identical(names(attr(plt_hte_sub(res), "plot_size")),
+                   c("width", "height"))
+  skip_if_not_installed("RegR")
+  f <- tempfile(fileext = ".pdf")
+  p <- plt_hte_sub(res, sub_var = "stage", save = list(filename = f))
+  expect_true(file.exists(f))
+  expect_s3_class(p, "gforge_forestplot")
+})

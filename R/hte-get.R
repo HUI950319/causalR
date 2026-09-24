@@ -7,6 +7,8 @@
 #   L1  get_hte()          validate, fit one grf forest, assemble the result
 #   L2  .hte_arm_scores()  arm-specific AIPW scores backed out of the forest
 #   L2  .hte_estimate()    one row per estimand x measure for a set of units
+#   L2  .hte_subgroup()    those rows per sub_var level + p_inter
+#                          (shared with plt_hte_sub())
 #   L2  .hte_dr_var()      doubly robust CATE along one covariate + p_het
 #                          (shared with plt_hte_dep())
 #   L3  print.hte_res()
@@ -107,6 +109,57 @@
              estimate = vals[, 1L], std.error = vals[, 2L],
              conf.low = vals[, 3L], conf.high = vals[, 4L],
              p.value = vals[, 5L], stringsAsFactors = FALSE)
+}
+
+# One .hte_estimate() row set per level of each `sub_var`, read from `data`
+# (the original levels, whatever factor_encoding the forest used), with a
+# descriptive estimand-weighted CATE mean and `p_inter`, the Wald test that
+# the levels are equal. get_hte() and plt_hte_sub() share it, so a subgroup
+# gets the same numbers in both.
+#' @keywords internal
+#' @noRd
+.hte_subgroup <- function(fit, s, data, sub_var, grid, event_risk, z,
+                          beyond = NULL) {
+  W <- fit$W.orig
+  # Plug-in weights matching each estimand, for the descriptive cate_mean.
+  h <- list(ATE = rep(1, length(W)), ATT = W, ATC = 1 - W,
+            ATO = fit$W.hat * (1 - fit$W.hat))
+  tbl <- do.call(rbind, lapply(sub_var, function(v) {
+    g <- droplevels(as.factor(data[[v]]))
+    rows <- do.call(rbind, lapply(levels(g), function(lv) {
+      idx <- g %in% lv                 # FALSE where `v` is missing
+      est <- .hte_estimate(fit, s, idx, grid, event_risk, z,
+                           sprintf("%s = %s", v, lv), beyond)
+      cate_mean <- vapply(seq_len(nrow(est)), function(i) {
+        if (est$measure[i] != "diff") return(NA_real_)
+        stats::weighted.mean(s$tau[idx], h[[est$estimand[i]]][idx])
+      }, numeric(1L))
+      data.frame(sub_var = v, level = lv, est[c("estimand", "measure")],
+                 n = sum(idx), n_treat = sum(W[idx]),
+                 est[c("estimate", "std.error", "conf.low", "conf.high",
+                       "p.value")],
+                 cate_mean = cate_mean, stringsAsFactors = FALSE)
+    }))
+    # Equal subgroup effects: Wald chi-square on the analysis scale.
+    rows$p_inter <- NA_real_
+    key <- paste(rows$estimand, rows$measure)
+    for (k in unique(key)) {
+      j  <- which(key == k)
+      th <- if (rows$measure[j[1L]] == "diff") rows$estimate[j]
+            else log(rows$estimate[j])
+      se <- rows$std.error[j]
+      ok <- is.finite(th) & is.finite(se) & se > 0
+      if (sum(ok) >= 2L) {
+        wt <- 1 / se[ok]^2
+        q  <- sum(wt * (th[ok] - sum(wt * th[ok]) / sum(wt))^2)
+        rows$p_inter[j] <- stats::pchisq(q, df = sum(ok) - 1L,
+                                         lower.tail = FALSE)
+      }
+    }
+    rows
+  }))
+  rownames(tbl) <- NULL
+  tibble::as_tibble(tbl)
 }
 
 
@@ -661,48 +714,8 @@ get_hte <- function(data,
     method = method, overall, n = length(W), n_treat = sum(W),
     stringsAsFactors = FALSE))
 
-  sub_tbl <- NULL
-  if (length(sub_var)) {
-    # Plug-in weights matching each estimand, for the descriptive cate_mean.
-    h <- list(ATE = rep(1, length(W)), ATT = W, ATC = 1 - W,
-              ATO = fit$W.hat * (1 - fit$W.hat))
-    sub_tbl <- quiet_ps(do.call(rbind, lapply(sub_var, function(v) {
-      g <- droplevels(as.factor(data[[v]]))
-      rows <- do.call(rbind, lapply(levels(g), function(lv) {
-        idx <- g %in% lv                 # FALSE where `v` is missing
-        est <- .hte_estimate(fit, s, idx, grid, event_risk, z,
-                             sprintf("%s = %s", v, lv), beyond)
-        cate_mean <- vapply(seq_len(nrow(est)), function(i) {
-          if (est$measure[i] != "diff") return(NA_real_)
-          stats::weighted.mean(s$tau[idx], h[[est$estimand[i]]][idx])
-        }, numeric(1L))
-        data.frame(sub_var = v, level = lv, est[c("estimand", "measure")],
-                   n = sum(idx), n_treat = sum(W[idx]),
-                   est[c("estimate", "std.error", "conf.low", "conf.high",
-                         "p.value")],
-                   cate_mean = cate_mean, stringsAsFactors = FALSE)
-      }))
-      # Equal subgroup effects: Wald chi-square on the analysis scale.
-      rows$p_inter <- NA_real_
-      key <- paste(rows$estimand, rows$measure)
-      for (k in unique(key)) {
-        j  <- which(key == k)
-        th <- if (rows$measure[j[1L]] == "diff") rows$estimate[j]
-              else log(rows$estimate[j])
-        se <- rows$std.error[j]
-        ok <- is.finite(th) & is.finite(se) & se > 0
-        if (sum(ok) >= 2L) {
-          wt <- 1 / se[ok]^2
-          q  <- sum(wt * (th[ok] - sum(wt * th[ok]) / sum(wt))^2)
-          rows$p_inter[j] <- stats::pchisq(q, df = sum(ok) - 1L,
-                                           lower.tail = FALSE)
-        }
-      }
-      rows
-    })))
-    rownames(sub_tbl) <- NULL
-    sub_tbl <- tibble::as_tibble(sub_tbl)
-  }
+  sub_tbl <- if (length(sub_var))
+    quiet_ps(.hte_subgroup(fit, s, data, sub_var, grid, event_risk, z, beyond))
   if (ps_warned)
     warning(sprintf("Estimated propensities of `%s` range from %.3f to %.3f; grf flags values at or beyond 0.05 and 0.95, where effects are poorly identified. %s",
                     cat_var, ps_rng[1L], ps_rng[2L],

@@ -6,7 +6,10 @@
 #
 #   L1  plt_hte_dep()  one panel per covariate ("dep") or a two-covariate
 #                      partial-dependence heat map ("heat")
+#   L1  plt_hte_sub()  subgroup forest plot (forestplot) of the doubly robust
+#                      subgroup ATEs, recomputed with .hte_subgroup()
 #   L2  .hte_pdp()     forest CATE averaged with covariates set to grid values
+#   L2  .hte_beyond()  survival patients followed past `time`
 #
 # The doubly robust layer comes from .hte_dr_var() in hte-get.R, so the p_het
 # in the strips is the one in get_hte()$importance at the default spline df.
@@ -70,6 +73,19 @@
                            levels = as.character(grid[[v]]))
   attr(combo, "n_rows") <- nrow(X0)
   combo
+}
+
+# Survival patients followed past `time`, flagged by the rule get_hte()
+# applies -- beyond `time` for S(t), up to it for RMST -- from the original
+# times in `$data`, since grf keeps only the times cut at the horizon. `NULL`
+# for other outcomes.
+#' @keywords internal
+#' @noRd
+.hte_beyond <- function(x) {
+  a <- attr(x, "analysis")
+  if (!identical(a$outcome_type, "survival")) return(NULL)
+  y <- x$data[[a$outcome[1L]]]
+  if (identical(a$target, "RMST")) y >= a$time else y > a$time
 }
 
 
@@ -299,12 +315,7 @@ plt_hte_dep <- function(x,
   } else {
     z     <- stats::qnorm(1 - (1 - a$conf_level) / 2)
     w     <- x$fit$W.orig
-    # patients followed past `time`, flagged by the rule get_hte() applies
-    # (grf keeps only the times cut at the horizon)
-    beyond <- if (identical(a$outcome_type, "survival")) {
-      y <- d[[a$outcome[1L]]]
-      if (identical(a$target, "RMST")) y >= a$time else y > a$time
-    }
+    beyond <- .hte_beyond(x)
     fmt_p <- function(p) if (is.na(p)) "NA" else if (p < 0.001) "< 0.001"
                          else sprintf("= %.3f", p)
 
@@ -431,6 +442,327 @@ plt_hte_dep <- function(x,
       stop("Package 'RegR' is required for a non-empty `save`.", call. = FALSE)
     if (is.null(save$width))  save$width  <- size[1L]
     if (is.null(save$height)) save$height <- size[2L]
+    do.call(RegR::save_plt, c(list(plot = p), save))
+  }
+  p
+}
+
+
+#' Subgroup forest plot for heterogeneous treatment effects
+#'
+#' Recomputes the doubly robust average treatment effect (ATE) within each
+#' level of the chosen categorical variables from a [get_hte()] result and
+#' draws them with \pkg{forestplot}, in the diamond style of
+#' `RegR::plt_eff2()`. The estimates come from the stored forest exactly as
+#' `get_hte(sub_var = )` computes them, so nothing is refitted and the
+#' subgroups can be chosen after the fact.
+#'
+#' @param x An `hte_res` object from [get_hte()].
+#' @param sub_var Character vector of categorical columns of `x$data`, drawn
+#'   in the order given; every level is one subgroup. `NULL` (default) takes
+#'   every categorical covariate of the forest, in the order of `adj_var`. A
+#'   numeric column with more than 5 distinct values is continuous and has to
+#'   be cut into groups first. A column the forest does not condition on is
+#'   accepted with a message: its subgroup estimates hold when it is a
+#'   function of the covariates (as `age_55` is of `Age`) or no confounder;
+#'   otherwise add it with `get_hte(sub_var = )`.
+#' @param measure One of `"diff"` (default), `"ratio"` or `"OR"`, as in
+#'   [get_hte()]. `"ratio"` and `"OR"` are drawn on a log axis; `"OR"` needs
+#'   an outcome probability, a binary outcome or \eqn{S(t)}.
+#' @param overall Logical. `TRUE` (default) adds an "All patients" row with the
+#'   overall ATE.
+#' @param show_pvalue Logical. `TRUE` adds a `P` column with the p-value of
+#'   every row. Default `FALSE`.
+#' @param show_pinter Logical. `TRUE` adds a "P for interaction" column: for
+#'   every variable, the Wald test that its subgroup effects are equal (the
+#'   `p_inter` of [get_hte()]). Default `FALSE`.
+#' @param xlim `NULL` (default) or two increasing numbers giving the axis
+#'   range, positive for `"ratio"` and `"OR"`; intervals running past it end
+#'   in arrows.
+#' @param ticks_at `NULL` (default) or the axis ticks, on the scale of the
+#'   estimates.
+#' @param title Plot title, or `NULL` (default).
+#' @param save `NULL` or a list with `filename`, `width` and `height`, passed
+#'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
+#'   list naming only the file is completed with this figure's suggested size.
+#'   Do not include the `plot` argument; it is supplied internally.
+#'
+#' @section Subgroup estimates:
+#' Every row is the doubly robust estimate within the subgroup, as in
+#' `get_hte()$subgroup`: [grf::average_treatment_effect()] with `subset` for
+#' `"diff"`, and the arm scores averaged over the subgroup for `"ratio"` and
+#' `"OR"`. The counts are patients per arm, treated first. A level with fewer
+#' than two patients in either arm -- or, for a survival outcome, no patient
+#' in an arm followed beyond `time` -- has no estimate: it is drawn with a
+#' dash, with a warning.
+#'
+#' @return A `forestplot` object (class `gforge_forestplot`): printing it draws
+#'   the plot, and the `fp_*()` functions of \pkg{forestplot} can restyle it.
+#'   `attr(p, "subgroup")` holds the subgroup estimates drawn, laid out as
+#'   `get_hte()$subgroup`, and `attr(p, "plot_size")` a suggested
+#'   `c(width, height)` in inches. If `save` is non-empty, the plot is also
+#'   written to PDF through `RegR::save_plt()`.
+#'
+#' @seealso [get_hte()]; [plt_hte_dep()] for how the CATE varies with a
+#'   covariate.
+#'
+#' @examplesIf requireNamespace("grf", quietly = TRUE) && requireNamespace("forestplot", quietly = TRUE)
+#' \donttest{
+#' set.seed(20260923)
+#' n <- 600
+#' d <- data.frame(age   = round(runif(n, 20, 85)),
+#'                 sex   = factor(sample(c("F", "M"), n, replace = TRUE)),
+#'                 stage = factor(sample(c("I", "II", "III"), n, replace = TRUE)))
+#' d$z <- rbinom(n, 1, 0.5)
+#' d$y <- rbinom(n, 1, plogis(-1 + 0.02 * (d$age - 50) +
+#'                              d$z * (0.2 + 0.6 * (d$sex == "M"))))
+#' res <- get_hte(d, cat_var = "z", adj_var = c("age", "sex", "stage"),
+#'                surv = "y", grf_args = list(num.trees = 500, seed = 1))
+#'
+#' # Every categorical covariate, the overall ATE on top
+#' plt_hte_sub(res)
+#'
+#' # Chosen variables as risk ratios, with both P columns
+#' plt_hte_sub(res, sub_var = c("sex", "stage"), measure = "ratio",
+#'             show_pvalue = TRUE, show_pinter = TRUE)
+#' }
+#'
+#' @export
+plt_hte_sub <- function(x,
+                        sub_var     = NULL,
+                        measure     = c("diff", "ratio", "OR"),
+                        overall     = TRUE,
+                        show_pvalue = FALSE,
+                        show_pinter = FALSE,
+                        xlim        = NULL,
+                        ticks_at    = NULL,
+                        title       = NULL,
+                        save        = list()) {
+
+  if (!inherits(x, "hte_res"))
+    stop("`x` must be an `hte_res` object from get_hte().", call. = FALSE)
+  measure <- match.arg(measure)
+  flags <- list(overall = overall, show_pvalue = show_pvalue,
+                show_pinter = show_pinter)
+  for (nm in names(flags))
+    if (!is.logical(flags[[nm]]) || length(flags[[nm]]) != 1L ||
+        is.na(flags[[nm]]))
+      stop(sprintf("`%s` must be TRUE or FALSE.", nm), call. = FALSE)
+  log_x <- measure != "diff"
+  if (!is.null(xlim) && (!is.numeric(xlim) || length(xlim) != 2L ||
+                         anyNA(xlim) || xlim[1L] >= xlim[2L]))
+    stop("`xlim` must be `NULL` or two increasing numbers.", call. = FALSE)
+  if (!is.null(ticks_at) && (!is.numeric(ticks_at) || !length(ticks_at) ||
+                             anyNA(ticks_at)))
+    stop("`ticks_at` must be `NULL` or a numeric vector.", call. = FALSE)
+  if (log_x && any(c(xlim, ticks_at) <= 0))
+    stop("`xlim` and `ticks_at` must be positive on the log axis of \"ratio\" and \"OR\".",
+         call. = FALSE)
+  if (!is.null(save) && !is.list(save))
+    stop("`save` must be `NULL` or a list.", call. = FALSE)
+  # grf also has to be loaded for predict() on a forest read back from disk
+  for (pkg in c("grf", "forestplot"))
+    if (!requireNamespace(pkg, quietly = TRUE))
+      stop(sprintf("Package '%s' is required for plt_hte_sub().", pkg),
+           call. = FALSE)
+
+  a <- attr(x, "analysis")
+  d <- x$data
+  scale <- if (identical(a$outcome_type, "survival")) {
+    if (identical(a$target, "RMST")) "RMST" else "S"
+  } else {
+    a$outcome_type
+  }
+  if (measure == "OR" && scale %in% c("RMST", "continuous"))
+    stop("`measure = \"OR\"` needs an outcome probability: a binary outcome or S(t).",
+         call. = FALSE)
+
+  # ---- Subgroup variables ---------------------------------------------------
+  if (is.null(sub_var)) {
+    sub_var <- a$covariates[!vapply(d[a$covariates], .hte_is_num, logical(1L))]
+  } else {
+    if (!is.character(sub_var) || anyNA(sub_var))
+      stop("`sub_var` must be `NULL` or column names.", call. = FALSE)
+    sub_var <- unique(setdiff(sub_var, a$cat_var))
+    miss <- setdiff(sub_var, names(d))
+    if (length(miss))
+      stop(sprintf("`sub_var` names no column of `x$data`: %s.",
+                   paste0("`", miss, "`", collapse = ", ")), call. = FALSE)
+    num <- sub_var[vapply(d[sub_var], .hte_is_num, logical(1L))]
+    if (length(num))
+      stop(sprintf("%s %s continuous; cut it into groups first, for example with cut().",
+                   paste0("`", num, "`", collapse = ", "),
+                   if (length(num) == 1L) "is" else "are"), call. = FALSE)
+    outside <- setdiff(sub_var, a$covariates)
+    if (length(outside))
+      cli::cli_inform(c("i" = paste(
+        "{.field {outside}} {?is/are} not a forest covariate: the subgroup",
+        "estimates hold for a function of the covariates or a variable that",
+        "is no confounder; otherwise add it with get_hte(sub_var = ).")))
+  }
+  if (!length(sub_var) && !overall)
+    stop("Nothing to draw: `sub_var` holds no categorical variable and `overall = FALSE`.",
+         call. = FALSE)
+
+  # ---- Estimates from the stored forest -------------------------------------
+  fit  <- x$fit
+  s    <- .hte_arm_scores(fit)
+  z    <- stats::qnorm(1 - (1 - a$conf_level) / 2)
+  grid <- data.frame(estimand = "ATE", measure = measure,
+                     stringsAsFactors = FALSE)
+  event_risk <- identical(a$target, "survival.probability")
+  beyond     <- .hte_beyond(x)
+  # get_hte() already reported grf's overlap warning once for this forest
+  quiet <- function(expr) withCallingHandlers(expr, warning = function(w) {
+    if (startsWith(conditionMessage(w), "Estimated treatment propensities"))
+      invokeRestart("muffleWarning")
+  })
+  sub <- if (length(sub_var))
+    quiet(.hte_subgroup(fit, s, d, sub_var, grid, event_risk, z, beyond))
+  ov  <- if (overall)
+    quiet(.hte_estimate(fit, s, rep(TRUE, nrow(d)), grid, event_risk, z,
+                        "Overall", beyond))
+
+  # ---- Table ----------------------------------------------------------------
+  ref <- setdiff(levels(factor(d[[a$cat_var]])), a$treated)[1L]
+  t_x <- format(a$time)
+  lab <- switch(measure,
+    diff  = switch(scale, S = sprintf("S(%s) difference", t_x),
+                   RMST = sprintf("RMST(%s) difference", t_x),
+                   binary = "Risk difference", continuous = "Mean difference"),
+    ratio = switch(scale, S = "Event risk ratio", RMST = "RMST ratio",
+                   binary = "Risk ratio", continuous = "Ratio of means"),
+    OR    = switch(scale, S = "Event odds ratio", binary = "Odds ratio"))
+  num_f   <- paste0("%.", if (!log_x && scale %in% c("S", "binary")) 3 else 2, "f")
+  fmt_est <- function(e, l, h)
+    ifelse(is.na(e), "\u2014",
+           sprintf(paste0(num_f, " (", num_f, ", ", num_f, ")"), e, l, h))
+  fmt_p <- function(p)
+    ifelse(is.na(p), "", ifelse(p < 0.001, "<0.001", sprintf("%.3f", p)))
+  fmt_n <- function(n, nt) sprintf("%d / %d", nt, n - nt)
+  row_df <- function(label, n, est, p, p_inter, mean, lower, upper, bold)
+    data.frame(label = label, n = n, est = est, p = p, p_inter = p_inter,
+               mean = mean, lower = lower, upper = upper, bold = bold,
+               stringsAsFactors = FALSE)
+
+  body <- if (overall)
+    row_df("All patients", fmt_n(nrow(d), sum(fit$W.orig)),
+           fmt_est(ov$estimate, ov$conf.low, ov$conf.high), fmt_p(ov$p.value),
+           "", ov$estimate, ov$conf.low, ov$conf.high, FALSE)
+  for (v in sub_var) {
+    r <- sub[sub$sub_var == v, ]
+    body <- rbind(body,
+                  row_df(v, "", "", "", fmt_p(r$p_inter[1L]), NA, NA, NA, TRUE),
+                  row_df(paste0("   ", r$level), fmt_n(r$n, r$n_treat),
+                         fmt_est(r$estimate, r$conf.low, r$conf.high),
+                         fmt_p(r$p.value), "", r$estimate, r$conf.low,
+                         r$conf.high, FALSE))
+  }
+  cols <- c("label", "n", "est", if (show_pvalue) "p",
+            if (show_pinter) "p_inter")
+  text <- rbind(c("Subgroup", sprintf("N (%s / %s)", a$treated, ref),
+                  sprintf("%s (%s%% CI)", lab, format(100 * a$conf_level)),
+                  if (show_pvalue) "P", if (show_pinter) "P for interaction"),
+                as.matrix(body[cols]))
+  dimnames(text) <- NULL
+  mean  <- c(NA, body$mean)
+  lower <- c(NA, body$lower)
+  upper <- c(NA, body$upper)
+  bold  <- c(TRUE, body$bold)
+
+  # ---- Axis -----------------------------------------------------------------
+  zero <- if (log_x) 1 else 0
+  if (is.null(ticks_at)) {
+    rng <- if (is.null(xlim)) range(c(lower, upper, zero), na.rm = TRUE) else xlim
+    ticks_at <- if (log_x) {
+      cand <- c(0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100)
+      tk <- cand[cand >= max(c(cand[cand <= rng[1L]], cand[1L])) &
+                   cand <= min(c(cand[cand >= rng[2L]], cand[length(cand)]))]
+      # 1-2-5 steps crowd a wide range: thin to 1-5 steps, then to powers of
+      # 10, always keeping the two outer ticks
+      for (drop in list(c(0.02, 0.2, 2, 20), c(0.05, 0.5, 5, 50)))
+        if (length(tk) > 7L)
+          tk <- tk[!tk %in% drop | seq_along(tk) %in% c(1L, length(tk))]
+      tk
+    } else {
+      pretty(rng, n = 4)
+    }
+    if (!is.null(xlim)) {
+      ticks_at <- ticks_at[ticks_at >= xlim[1L] & ticks_at <= xlim[2L]]
+      if (length(ticks_at) < 2L) ticks_at <- xlim
+    }
+  }
+  # forestplot wants every log-axis value positive, so the open clip starts
+  # at the smallest limit or tick rather than at 0
+  clip <- if (!is.null(xlim)) {
+    xlim
+  } else if (log_x) {
+    c(min(c(lower, ticks_at), na.rm = TRUE), Inf)
+  } else {
+    c(-Inf, Inf)
+  }
+  attr(ticks_at, "labels") <- as.character(ticks_at)   # 1, not 1.00
+  xlab <- if (log_x) {
+    sprintf("%s%s, %s vs %s", lab,
+            if (scale == "S") sprintf(" by t = %s", t_x) else "", a$treated, ref)
+  } else {
+    sprintf("%s, %s - %s", lab, a$treated, ref)
+  }
+
+  # ---- forestplot, styled as RegR::plt_eff2() -------------------------------
+  # forestplot() measures its text as it builds, as does the size estimate
+  # below: both run on a null PDF device, so no stray window or Rplots.pdf
+  # opens, and the device that was current stays current.
+  on_null <- function(expr) {
+    prev <- grDevices::dev.cur()
+    grDevices::pdf(NULL)
+    dev <- grDevices::dev.cur()
+    on.exit({
+      grDevices::dev.off(dev)
+      if (prev > 1L) grDevices::dev.set(prev)
+    })
+    expr
+  }
+  n_text <- ncol(text)
+  rules  <- list("1" = grid::gpar(lty = 1, lwd = 2), "2" = grid::gpar(lty = 2))
+  rules[[as.character(nrow(text) + 1L)]] <-
+    grid::gpar(lty = 1, lwd = 2, columns = seq_len(n_text))
+  p <- on_null(forestplot::forestplot(
+    labeltext  = text, mean = mean, lower = lower, upper = upper,
+    is.summary = bold, zero = zero, xlog = log_x, xticks = ticks_at,
+    clip = clip, graph.pos = "right", align = c("l", rep("r", n_text - 1L)),
+    hrzl_lines = rules, xlab = xlab, title = title,
+    fn.ci_norm = forestplot::fpDrawDiamondCI, boxsize = 0.3,
+    col = forestplot::fpColors(box = "blue4", lines = "blue4",
+                               zero = "black"),
+    txt_gp = forestplot::fpTxtGp(label = grid::gpar(cex = 0.8),
+                                 ticks = grid::gpar(cex = 0.8),
+                                 xlab  = grid::gpar(cex = 0.9),
+                                 title = grid::gpar(cex = 1.2)),
+    lwd.zero = 1, lwd.ci = 1.5, lwd.xaxis = 2, ci.vertices = TRUE,
+    ci.vertices.height = 0.2, colgap = grid::unit(6, "mm")))
+
+  # Suggested size: the widest cell of every text column (bold rows at
+  # forestplot's summary size, 1.1 x the label cex), a graph column that takes
+  # a quarter of the width as in RegR::plt_eff2(), and about 0.3 in a row.
+  text_in <- on_null(sum(vapply(seq_len(n_text), function(j)
+    max(vapply(seq_len(nrow(text)), function(i) {
+      gp <- if (bold[i]) grid::gpar(cex = 0.88, fontface = "bold")
+            else grid::gpar(cex = 0.8)
+      grid::convertWidth(grid::grobWidth(grid::textGrob(text[i, j], gp = gp)),
+                         "in", valueOnly = TRUE)
+    }, numeric(1L))), numeric(1L)))) + n_text * 6 / 25.4
+  size <- round(c(width  = max(text_in / 0.75, text_in + 2) + 0.4,
+                  height = 0.3 * nrow(text) + 0.9 +
+                    if (is.null(title)) 0 else 0.4), 1)
+
+  attr(p, "subgroup")  <- sub
+  attr(p, "plot_size") <- size
+  if (!is.null(save) && length(save) > 0L) {
+    if (!requireNamespace("RegR", quietly = TRUE))
+      stop("Package 'RegR' is required for a non-empty `save`.", call. = FALSE)
+    if (is.null(save$width))  save$width  <- size[[1L]]
+    if (is.null(save$height)) save$height <- size[[2L]]
     do.call(RegR::save_plt, c(list(plot = p), save))
   }
   p
