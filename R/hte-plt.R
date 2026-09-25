@@ -410,7 +410,7 @@ plt_hte_dep <- function(x,
       label <- if (is.null(dr)) v else sprintf("%s (p_het %s)", v, fmt_p(dr$p_het))
       yv    <- c(0, ate)
 
-      q <- ggplot2::ggplot() +
+      q <- ggplot2::ggplot(data.frame(panel = label)) +
         ggplot2::geom_hline(yintercept = 0, colour = "grey75")
       if (length(ate))
         q <- q + ggplot2::geom_hline(yintercept = ate, linetype = 2)

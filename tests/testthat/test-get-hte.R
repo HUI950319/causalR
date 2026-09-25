@@ -508,6 +508,38 @@ test_that("print shows the analysis header and the event-risk note", {
   expect_true(any(grepl(".dr_score", out, fixed = TRUE)))
 })
 
+test_that("unavailable diagnostics preserve valid average effects", {
+  skip_if_not_installed("grf")
+  d <- hte_bin_data(n = 400L)
+  d$tied <- c(rep(0, 394), 1:6)
+  expect_warning(r <- get_hte(d, "z", adj_var = c("age", "tied"), surv = "y",
+                              grf_args = hte_args), "tied.*unavailable")
+  expect_equal(r$stats$estimate,
+               unname(grf::average_treatment_effect(r$fit)[["estimate"]]))
+  expect_true(is.na(r$importance$p_het[r$importance$variable == "tied"]))
+  expect_warning(p <- plt_hte_dep(r, x_var = "tied", display = "dr"),
+                 "tied.*unavailable")
+  expect_s3_class(ggplot2::ggplot_build(p), "ggplot_built")
+
+  d$y <- 0
+  for (v in c("age", "sex")) {
+    warnings <- character()
+    r <- withCallingHandlers(
+      get_hte(d, "z", adj_var = v, surv = "y", grf_args = hte_args),
+      warning = function(e) {
+        warnings <<- c(warnings, conditionMessage(e))
+        invokeRestart("muffleWarning")
+      })
+    expect_match(warnings, "unavailable", all = TRUE)
+    expect_equal(r$stats$estimate, 0)
+    expect_equal(r$stats$std.error, 0)
+    expect_true(all(is.na(r$importance$p_het)))
+    expect_identical(r$calibration$term,
+                     c("mean.forest.prediction", "differential.forest.prediction"))
+    expect_true(all(is.na(r$calibration$p.value)))
+  }
+})
+
 test_that("clustered subgroup comparisons include cross-group covariance", {
   skip_if_not_installed("grf")
   set.seed(122)

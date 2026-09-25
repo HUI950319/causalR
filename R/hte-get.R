@@ -52,11 +52,19 @@
   list(estimate = mu, vcov = crossprod(influence))
 }
 
+.hte_wald_p <- function(b, V) {
+  if (!length(b) || any(!is.finite(b)) || any(!is.finite(V)) ||
+      rcond(V) < .Machine$double.eps) return(NA_real_)
+  R <- tryCatch(chol(V), error = function(e) NULL)
+  if (is.null(R)) return(NA_real_)
+  stats::pchisq(sum(backsolve(R, b, transpose = TRUE)^2), length(b),
+                lower.tail = FALSE)
+}
+
 .hte_equal_p <- function(th, V) {
   C <- cbind(-1, diag(length(th) - 1L))
   b <- drop(C %*% th)
-  stats::pchisq(drop(b %*% solve(C %*% V %*% t(C), b)), length(b),
-                lower.tail = FALSE)
+  .hte_wald_p(b, C %*% V %*% t(C))
 }
 
 # grf keeps m(x) = E[Y | X] (`Y.hat`), e(x) (`W.hat`) and the out-of-bag CATE,
@@ -115,8 +123,16 @@
                                     differential.forest.prediction =
                                       wc * (tau - mp)))
   b  <- stats::coef(m)
-  se <- sqrt(diag(sandwich::vcovCL(m, cluster = if (length(cl)) cl
-                                   else seq_along(r), type = "HC3")))
+  se <- stats::setNames(rep(NA_real_, length(b)), names(b))
+  if (m$rank > 0L && m$df.residual > 0L) {
+    V <- sandwich::vcovCL(m, cluster = if (length(cl)) cl
+                          else seq_along(r), type = "HC3")
+    se[rownames(V)] <- sqrt(diag(V))
+  }
+  if (any(!is.finite(b)) || any(!is.finite(se) | se <= 0))
+    warning("Calibration inference is unavailable for one or more degenerate terms.",
+            call. = FALSE)
+  se[!is.finite(se) | se <= 0] <- NA_real_
   tibble::tibble(term = names(b), estimate = unname(b),
                  std.error = unname(se), statistic = unname(b / se),
                  p.value = stats::pt(unname(b / se), m$df.residual,
@@ -300,6 +316,14 @@
   x <- data[[v]]
   s <- data$.dr_score
   if (.hte_is_num(x)) {
+    empty <- list(type = "continuous", df = NA_integer_, p_het = NA_real_,
+                  curve = data.frame(x = numeric(0), estimate = numeric(0),
+                                     conf.low = numeric(0), conf.high = numeric(0)))
+    unavailable <- function(reason) {
+      warning(sprintf("`%s`: heterogeneity inference is unavailable (%s).", v, reason),
+              call. = FALSE)
+      empty
+    }
     if (!is.null(beyond)) {
       x1 <- x[beyond & w == 1 & !is.na(x)]
       x0 <- x[beyond & w == 0 & !is.na(x)]
@@ -307,18 +331,23 @@
         c(max(min(x1), min(x0)), min(max(x1), max(x0))) else c(Inf, -Inf)
       x[!is.na(x) & (x < lim[1L] | x > lim[2L])] <- NA
       if (length(unique(x[!is.na(x)])) <= spline_df + 1L)
-        return(list(type = "continuous", df = NA_integer_, p_het = NA_real_,
-                    curve = data.frame(x = numeric(0), estimate = numeric(0),
-                                       conf.low = numeric(0),
-                                       conf.high = numeric(0))))
+        return(empty)
     }
     i <- which(!is.na(x) & is.finite(s) & weights > 0)
-    fit <- stats::lm(s ~ splines::ns(x, df = spline_df), weights = wt,
-                     data = data.frame(s = s[i], x = x[i], wt = weights[i]))
+    fit <- tryCatch(
+      stats::lm(s ~ splines::ns(x, df = spline_df), weights = wt,
+                 data = data.frame(s = s[i], x = x[i], wt = weights[i])),
+      error = function(e) e)
+    if (inherits(fit, "error")) return(unavailable(conditionMessage(fit)))
+    if (fit$rank < length(stats::coef(fit)) || fit$df.residual <= 0L ||
+        (length(clusters) && length(unique(clusters[i])) < 2L))
+      return(unavailable("insufficient rank, residual degrees of freedom or clusters"))
     V <- if (length(clusters))
       sandwich::vcovCL(fit, cluster = clusters[i], type = "HC3") else
       sandwich::vcovHC(fit, type = "HC3")
     b   <- stats::coef(fit)[-1L]
+    p_het <- .hte_wald_p(b, V[-1L, -1L, drop = FALSE])
+    if (is.na(p_het)) return(unavailable("singular or non-finite covariance"))
     g   <- data.frame(x = seq(min(x, na.rm = TRUE), max(x, na.rm = TRUE),
                               length.out = 100L))
     M   <- stats::model.matrix(stats::delete.response(stats::terms(fit)), g)
@@ -326,8 +355,7 @@
     se  <- sqrt(rowSums((M %*% V) * M))
     return(list(
       type  = "continuous", df = length(b),
-      p_het = stats::pchisq(drop(b %*% solve(V[-1L, -1L], b)), length(b),
-                            lower.tail = FALSE),
+      p_het = p_het,
       curve = data.frame(x = g$x, estimate = est, conf.low = est - z * se,
                          conf.high = est + z * se)))
   }
@@ -502,6 +530,8 @@
 #' out-of-bag estimates, whose smoother bands are not confidence intervals.
 #' `p_het` and the doubly robust layer of [plt_hte_dep()] use the forest's
 #' observation weights and cluster-robust covariance when clusters are supplied.
+#' A degenerate spline or calibration regression gives an unavailable diagnostic
+#' (`NA`, with a warning) without discarding valid average-effect estimates.
 #'
 #' @section Calibration:
 #' `$calibration` is the calibration test of [grf::test_calibration()]: the
