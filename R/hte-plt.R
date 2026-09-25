@@ -557,6 +557,14 @@ plt_hte_dep <- function(x,
 #'   an outcome probability, a binary outcome or \eqn{S(t)}.
 #' @param conf_level Confidence level of the intervals. Default `0.95`,
 #'   whatever level `x` was computed with.
+#' @param effect `NULL` (default) or rows whose estimate is replaced, e.g. by
+#'   one from a published study: a named list whose elements are named by a
+#'   variable of `sub_var`, holding interval strings named by its levels, or
+#'   `"All patients"` for the overall row, holding one string, e.g.
+#'   `list(sex = c(M = "0.12 (0.05, 0.19)"), "All patients" = "0.08 (0.02, 0.14)")`.
+#'   Every form [UtilsR::stat_ci_parse()] reads is accepted. The interval is
+#'   drawn as given, at `conf_level` on the scale of `measure`; see Replaced
+#'   rows.
 #' @param overall Logical. `TRUE` (default) adds an "All patients" row with the
 #'   overall ATE.
 #' @param show_n Logical. `TRUE` (default) shows the column of patients per
@@ -595,13 +603,25 @@ plt_hte_dep <- function(x,
 #' in an arm followed beyond `time` -- has no estimate: it is drawn with a
 #' dash, with a warning.
 #'
+#' @section Replaced rows:
+#' A row named in `effect` is drawn with the supplied estimate and interval,
+#' taken as they are: at `conf_level`, as a difference for `"diff"` and a
+#' ratio for `"ratio"` and `"OR"`. Its standard error and `P` are backed out
+#' of the interval with the normal approximation,
+#' \eqn{SE = (hi - lo) / (2 z)} with \eqn{z} the normal quantile of
+#' `conf_level`, on the log scale for a ratio. A level without an estimate
+#' can be filled in this way. The "P for interaction" of its variable and its
+#' `cate_mean` keep the values from the forest: the Wald test cannot be redone
+#' from a replaced row.
+#'
 #' @return A `ggplot`: the \pkg{forestplot} drawing, captured on the PDF
 #'   metrics `RegR::save_plt()` writes with and wrapped by
 #'   [ggplotify::as.ggplot()]. \pkg{patchwork} combines it with other plots
 #'   as one plot (`p | q`, `p / q`, [patchwork::wrap_plots()]), but it is a
 #'   picture of the table: themes and scales added to it do not restyle it.
 #'   `attr(p, "subgroup")` holds the subgroup estimates drawn, laid out as
-#'   `get_hte()$subgroup`, and `attr(p, "plot_size")` the `c(width, height)`
+#'   `get_hte()$subgroup` with the rows of `effect` replaced, and
+#'   `attr(p, "plot_size")` the `c(width, height)`
 #'   in inches the plot is pinned to, or a suggested size with
 #'   `fixed_size = FALSE`. If `save` is non-empty, the plot is also written to
 #'   PDF through `RegR::save_plt()`.
@@ -633,6 +653,12 @@ plt_hte_dep <- function(x,
 #' patchwork::wrap_plots(plt_hte_sub(res, sub_var = "sex"),
 #'                       plt_hte_cate(res, sub_var = "sex", type = "density"),
 #'                       ncol = 1)
+#'
+#' # Replace rows, e.g. with published estimates: drawn as given, with the
+#' # P backed out of each interval
+#' plt_hte_sub(res, sub_var = c("sex", "stage"), show_pvalue = TRUE,
+#'             effect = list(sex = c(M = "0.150 (0.050, 0.250)"),
+#'                           "All patients" = "0.100 (0.040, 0.160)"))
 #' }
 #'
 #' @export
@@ -640,6 +666,7 @@ plt_hte_sub <- function(x,
                         sub_var     = NULL,
                         measure     = c("diff", "ratio", "OR"),
                         conf_level  = 0.95,
+                        effect      = NULL,
                         overall     = TRUE,
                         show_n      = TRUE,
                         show_pvalue = FALSE,
@@ -721,6 +748,74 @@ plt_hte_sub <- function(x,
   ov  <- if (overall)
     .hte_muffle_ps(.hte_estimate(fit, s, rep(TRUE, nrow(d)), grid, event_risk,
                                  z, "Overall", beyond))
+
+  # ---- Replaced rows ----------------------------------------------------------
+  if (!is.null(effect)) {
+    all_lab <- "All patients"
+    if (!is.list(effect) || !length(effect) || is.null(names(effect)) ||
+        !all(nzchar(names(effect))) || anyDuplicated(names(effect)))
+      stop("`effect` must be `NULL` or a list with unique names, e.g. list(sex = c(M = \"0.12 (0.05, 0.19)\")).",
+           call. = FALSE)
+    drawn   <- c(if (overall) all_lab, sub_var)
+    unknown <- setdiff(names(effect), drawn)
+    if (length(unknown))
+      stop(sprintf("`effect` names no drawn row: %s. Drawn: %s.",
+                   paste(unknown, collapse = ", "), paste(drawn, collapse = ", ")),
+           call. = FALSE)
+    # One row per replaced estimate: variable, level (NA for the overall row)
+    # and interval string
+    edits <- do.call(rbind, lapply(names(effect), function(v) {
+      e  <- effect[[v]]
+      s  <- unlist(e, use.names = FALSE)
+      ok <- is.character(s) && length(s) && length(s) == length(e) && !anyNA(s)
+      if (v == all_lab) {
+        if (!ok || length(s) != 1L)
+          stop("`effect` for \"All patients\" must be a single interval string.",
+               call. = FALSE)
+        return(data.frame(var = v, level = NA_character_, ci = s))
+      }
+      lv  <- sub$level[sub$sub_var == v]
+      nms <- names(e)
+      if (!ok || is.null(nms) || anyDuplicated(nms))
+        stop(sprintf("`effect$%s` must hold interval strings named by distinct levels of `%s`.",
+                     v, v), call. = FALSE)
+      if (!all(nms %in% lv))
+        stop(sprintf("`effect$%s` names no level %s. Levels: %s.", v,
+                     paste(setdiff(nms, lv), collapse = ", "),
+                     paste(lv, collapse = ", ")), call. = FALSE)
+      data.frame(var = v, level = nms, ci = s)
+    }))
+    canon <- suppressWarnings(UtilsR::stat_ci(edits$ci, digits = 8, sep = ", "))
+    m  <- regmatches(canon, regexec("^(-?[0-9.]+) \\((-?[0-9.]+), (-?[0-9.]+)\\)$",
+                                    canon))
+    ci <- t(vapply(m, function(k)
+      if (length(k) == 4L) as.numeric(k[-1L]) else rep(NA_real_, 3L), numeric(3L)))
+    bad <- !(ci[, 2L] < ci[, 3L] & ci[, 1L] >= ci[, 2L] & ci[, 1L] <= ci[, 3L] &
+               (!log_x | ci[, 2L] > 0))
+    bad[is.na(bad)] <- TRUE
+    if (any(bad)) {
+      ids <- ifelse(is.na(edits$level), all_lab,
+                    paste(edits$var, "=", edits$level))
+      stop(sprintf("`effect` for %s: use a form like \"0.12 (0.05, 0.19)\", with lower < upper and the estimate between them%s.",
+                   paste(ids[bad], collapse = ", "),
+                   if (log_x) ", all positive for a ratio" else ""),
+           call. = FALSE)
+    }
+    # The interval is at conf_level, on the log scale for a ratio
+    ws  <- if (log_x) log(ci) else ci
+    se  <- (ws[, 3L] - ws[, 2L]) / (2 * z)
+    new <- data.frame(estimate = ci[, 1L], std.error = se, conf.low = ci[, 2L],
+                      conf.high = ci[, 3L],
+                      p.value = 2 * stats::pnorm(-abs(ws[, 1L] / se)))
+    for (k in seq_len(nrow(edits))) {
+      if (is.na(edits$level[k])) {
+        ov[names(new)] <- new[k, ]
+      } else {
+        j <- sub$sub_var == edits$var[k] & sub$level == edits$level[k]
+        sub[j, names(new)] <- new[k, ]
+      }
+    }
+  }
 
   # ---- Table ----------------------------------------------------------------
   ref <- setdiff(levels(factor(d[[a$cat_var]])), a$treated)[1L]

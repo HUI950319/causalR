@@ -415,9 +415,9 @@ test_that("overall, show_n, show_pvalue and show_pinter set the rows and columns
   no_all <- plt_hte_sub(res, sub_var = "stage", overall = FALSE)
   expect_false("All patients" %in% trimws(fp_col(no_all, 1)))
 
-  expect_identical(names(formals(plt_hte_sub))[1:8],
-                   c("x", "sub_var", "measure", "conf_level", "overall",
-                     "show_n", "show_pvalue", "show_pinter"))
+  expect_identical(names(formals(plt_hte_sub))[1:9],
+                   c("x", "sub_var", "measure", "conf_level", "effect",
+                     "overall", "show_n", "show_pvalue", "show_pinter"))
   no_n <- plt_hte_sub(res, sub_var = "stage", show_n = FALSE)
   expect_identical(fp_headers(no_n), c("Subgroup", "Risk difference (95% CI)"))
 
@@ -427,6 +427,50 @@ test_that("overall, show_n, show_pvalue and show_pinter set the rows and columns
   pint <- attr(both, "subgroup")$p_inter[1]
   expect_identical(fp_col(both, 5)[trimws(fp_col(both, 1)) == "stage"],
                    if (pint < 0.001) "<0.001" else sprintf("%.3f", pint))
+})
+
+test_that("effect replaces the estimate of the rows it names", {
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  res <- dep_res()
+  st  <- attr(plt_hte_sub(res, sub_var = c("stage", "sex")), "subgroup")
+  p <- plt_hte_sub(res, sub_var = c("stage", "sex"), show_pvalue = TRUE,
+                   effect = list(sex = c(M = "0.120 (0.050, 0.190)"),
+                                 "All patients" = "0.100 [0.070; 0.130]"))
+  sg <- attr(p, "subgroup")
+  m  <- sg$sub_var == "sex" & sg$level == "M"
+  se <- 0.14 / (2 * stats::qnorm(0.975))
+  expect_equal(c(sg$estimate[m], sg$conf.low[m], sg$conf.high[m]),
+               c(0.12, 0.05, 0.19))
+  expect_equal(sg$std.error[m], se)
+  expect_equal(sg$p.value[m], 2 * stats::pnorm(-0.12 / se))
+  expect_equal(sg[!m, ], st[!m, ])            # other rows untouched
+  expect_equal(sg$p_inter, st$p_inter)        # the forest's Wald test is kept
+  lab <- trimws(fp_col(p, 1))
+  expect_identical(fp_col(p, 3)[lab %in% c("All patients", "M")],
+                   c("0.100 (0.070, 0.130)", "0.120 (0.050, 0.190)"))
+  expect_identical(fp_col(p, 4)[lab == "M"], "<0.001")
+
+  # a ratio is read on the log scale, at the plot's conf_level, as given
+  pr <- plt_hte_sub(res, sub_var = "sex", measure = "ratio", conf_level = 0.9,
+                    effect = list(sex = list(F = "1.50 (1.20, 1.875)")))
+  f  <- attr(pr, "subgroup")
+  f  <- f[f$level == "F", ]
+  expect_equal(c(f$estimate, f$conf.low, f$conf.high), c(1.5, 1.2, 1.875))
+  expect_equal(f$std.error, log(1.875 / 1.2) / (2 * stats::qnorm(0.95)))
+  expect_equal(f$p.value, 2 * stats::pnorm(-log(1.5) / f$std.error))
+
+  one <- function(...) plt_hte_sub(res, sub_var = "sex", ...)
+  expect_error(one(effect = "0.1 (0, 0.2)"), "`effect`")
+  expect_error(one(effect = list(stage = c(I = "0.1 (0, 0.2)"))), "stage")
+  expect_error(one(overall = FALSE, effect = list("All patients" = "0.1 (0, 0.2)")),
+               "All patients")
+  expect_error(one(effect = list(sex = "0.1 (0, 0.2)")), "level")
+  expect_error(one(effect = list(sex = c(X = "0.1 (0, 0.2)"))), "X")
+  expect_error(one(effect = list(sex = c(M = "abc"))), "sex = M")
+  expect_error(one(effect = list(sex = c(M = "0.3 (0, 0.2)"))), "sex = M")
+  expect_error(one(measure = "ratio", effect = list(sex = c(M = "0.1 (-0.1, 0.3)"))),
+               "sex = M")
 })
 
 test_that("sub_var defaults to the categorical covariates and checks columns", {
@@ -472,6 +516,11 @@ test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
   expect_identical(fp_col(p, 3)[row], "\u2014")
   expect_length(fp_grobs(p, "polygon"), 3L)   # no diamond for III
   expect_identical(fp_headers(p)[3], "S(60) difference (95% CI)")
+  # effect fills the empty level in, diamond and all
+  pf <- suppressWarnings(plt_hte_sub(res, sub_var = "stage",
+                                     effect = list(stage = c(III = "-0.050 (-0.150, 0.050)"))))
+  expect_identical(fp_col(pf, 3)[row], "-0.050 (-0.150, 0.050)")
+  expect_length(fp_grobs(pf, "polygon"), 4L)
   expect_identical(
     fp_headers(suppressWarnings(plt_hte_sub(res, sub_var = "stage",
                                             measure = "ratio")))[3],

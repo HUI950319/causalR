@@ -9,6 +9,7 @@ plt_hte_sub(
   sub_var = NULL,
   measure = c("diff", "ratio", "OR"),
   conf_level = 0.95,
+  effect = NULL,
   overall = TRUE,
   show_n = TRUE,
   show_pvalue = FALSE,
@@ -38,6 +39,15 @@ an outcome probability, a binary outcome or \eqn{S(t)}.}
 
 \item{conf_level}{Confidence level of the intervals. Default \code{0.95},
 whatever level \code{x} was computed with.}
+
+\item{effect}{\code{NULL} (default) or rows whose estimate is replaced, e.g. by
+one from a published study: a named list whose elements are named by a
+variable of \code{sub_var}, holding interval strings named by its levels, or
+\code{"All patients"} for the overall row, holding one string, e.g.
+\code{list(sex = c(M = "0.12 (0.05, 0.19)"), "All patients" = "0.08 (0.02, 0.14)")}.
+Every form \code{\link[UtilsR:stat_ci_parse]{UtilsR::stat_ci_parse()}} reads is accepted. The interval is
+drawn as given, at \code{conf_level} on the scale of \code{measure}; see Replaced
+rows.}
 
 \item{overall}{Logical. \code{TRUE} (default) adds an "All patients" row with the
 overall ATE.}
@@ -83,7 +93,8 @@ metrics \code{RegR::save_plt()} writes with and wrapped by
 as one plot (\code{p | q}, \code{p / q}, \code{\link[patchwork:wrap_plots]{patchwork::wrap_plots()}}), but it is a
 picture of the table: themes and scales added to it do not restyle it.
 \code{attr(p, "subgroup")} holds the subgroup estimates drawn, laid out as
-\code{get_hte()$subgroup}, and \code{attr(p, "plot_size")} the \code{c(width, height)}
+\code{get_hte()$subgroup} with the rows of \code{effect} replaced, and
+\code{attr(p, "plot_size")} the \code{c(width, height)}
 in inches the plot is pinned to, or a suggested size with
 \code{fixed_size = FALSE}. If \code{save} is non-empty, the plot is also written to
 PDF through \code{RegR::save_plt()}.
@@ -106,6 +117,19 @@ Every row is the doubly robust estimate within the subgroup, as in
 than two patients in either arm -- or, for a survival outcome, no patient
 in an arm followed beyond \code{time} -- has no estimate: it is drawn with a
 dash, with a warning.
+}
+
+\section{Replaced rows}{
+
+A row named in \code{effect} is drawn with the supplied estimate and interval,
+taken as they are: at \code{conf_level}, as a difference for \code{"diff"} and a
+ratio for \code{"ratio"} and \code{"OR"}. Its standard error and \code{P} are backed out
+of the interval with the normal approximation,
+\eqn{SE = (hi - lo) / (2 z)} with \eqn{z} the normal quantile of
+\code{conf_level}, on the log scale for a ratio. A level without an estimate
+can be filled in this way. The "P for interaction" of its variable and its
+\code{cate_mean} keep the values from the forest: the Wald test cannot be redone
+from a replaced row.
 }
 
 \examples{
@@ -133,6 +157,12 @@ plt_hte_sub(res, sub_var = c("sex", "stage"), measure = "ratio",
 patchwork::wrap_plots(plt_hte_sub(res, sub_var = "sex"),
                       plt_hte_cate(res, sub_var = "sex", type = "density"),
                       ncol = 1)
+
+# Replace rows, e.g. with published estimates: drawn as given, with the
+# P backed out of each interval
+plt_hte_sub(res, sub_var = c("sex", "stage"), show_pvalue = TRUE,
+            effect = list(sex = c(M = "0.150 (0.050, 0.250)"),
+                          "All patients" = "0.100 (0.040, 0.160)"))
 }
 \dontshow{\}) # examplesIf}
 }
