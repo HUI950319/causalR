@@ -129,10 +129,10 @@ summed over the covariate's design columns, so the column sums to 1)
 so \code{plt_bar_per(res$importance)} plots it directly. \code{importance} is a
 depth-weighted split frequency, not a test: covariates with more
 columns or more distinct values score higher even without any effect
-modification. \code{p_het} is the test: a Wald test, on the AIPW scores,
-that the CATE does not vary with the covariate -- equal level means
-for a categorical covariate (\code{df} = levels - 1, the \code{p_inter} of a
-\code{sub_var}), and zero natural-spline terms (\code{df} = 2, HC3 errors) for
+modification. \code{p_het} is a Wald test on a univariate AIPW projection:
+equal available-level means for a categorical covariate (\code{df} =
+levels - 1, matching \code{p_inter} for ATE differences), and zero
+natural-spline terms (\code{df} = 2, HC3 errors) for
 a numeric one with more than 5 distinct values. Levels with fewer
 than two patients in either arm are left out, and so, for a survival
 outcome, are levels in which an arm has no patient followed beyond
@@ -145,7 +145,7 @@ calibration test, \code{mean.forest.prediction} and
 \code{statistic}, \code{p.value} (one-sided); see the Calibration section.}
 \item{\code{data}}{The rows analysed plus \code{.cate}, the out-of-bag
 CATE, and \code{.dr_score}, the AIPW score (equal to
-\code{\link[grf:get_scores]{grf::get_scores()}}). Both are on the \code{"diff"} scale whatever
+\code{\link[grf:get_scores]{grf::get_scores()}} at interior propensities). Both are on the \code{"diff"} scale whatever
 \code{measure} is.}
 \item{\code{fit}}{The grf forest.}
 }
@@ -205,8 +205,8 @@ only when none remains.
 \code{estimate} is the doubly robust effect within the subgroup:
 \code{\link[grf:average_treatment_effect]{grf::average_treatment_effect()}} with \code{subset} for \code{"diff"}, and the arm
 scores averaged over the subgroup for \code{"ratio"} and \code{"OR"}. \code{cate_mean} is
-the estimand-weighted mean of the out-of-bag CATE in the subgroup, given
-the forest's observation weights (including equal cluster weights) as well,
+mean of the out-of-bag CATE using both estimand weights and the forest's
+observation weights (including equal cluster weights). It is given
 for \code{"diff"} rows only and only as a description: forest estimates are
 shrunk towards the overall mean, so it carries no interval. \code{p_inter} tests
 whether the subgroup estimates of one \code{sub_var} are equal (Wald
@@ -222,13 +222,28 @@ ATT/ATC). A subgroup in which an arm has no patient followed beyond
 \verb{$data} supports two univariate curves over a covariate \code{x}. Regressing
 \code{.dr_score} on a smooth function of \code{x}, for example
 \code{lm(.dr_score ~ splines::ns(x, 4), data = res$data)} with heteroskedasticity
-robust standard errors, estimates \eqn{E[\tau(X) \mid x]} with valid
-pointwise intervals. Plotting \code{.cate} against \code{x} shows the forest's own
+robust standard errors, estimates a projection of \eqn{E[\tau(X) \mid x]}.
+Its pointwise Wald intervals rely on identification, nuisance-estimation
+and projection assumptions; they are not simultaneous confidence bands.
+Plotting \code{.cate} against \code{x} shows the forest's own
 out-of-bag estimates, whose smoother bands are not confidence intervals.
 \code{p_het} and the doubly robust layer of \code{\link[=plt_hte_dep]{plt_hte_dep()}} use the forest's
 observation weights and cluster-robust covariance when clusters are supplied.
 A degenerate spline or calibration regression gives an unavailable diagnostic
 (\code{NA}, with a warning) without discarding valid average-effect estimates.
+}
+
+\section{Interpreting heterogeneity tests}{
+
+\code{p_het} describes a separate, univariate projection for each covariate on
+the ATE difference scale, with the forest's observation weights. It does
+not switch to ATT, ATC, ATO, ratio or OR when those effects are requested.
+A non-significant spline test does not rule out other nonlinear patterns
+or interactions, and a significant result does not establish that this
+covariate modifies the effect independently of correlated covariates.
+The reported p-values are unadjusted. When screening several covariates,
+pre-specify the testing family and consider a correction such as
+\code{p.adjust(res$importance$p_het, method = "BH")}.
 }
 
 \section{Calibration}{

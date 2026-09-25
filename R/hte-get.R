@@ -316,7 +316,7 @@
 # grf::average_treatment_effect(subset = level) -- and a K - 1 df Wald test
 # that the levels are equal, the subgroup p_inter of get_hte(). A continuous
 # one gets a natural spline with HC3 errors and a joint Wald test of the
-# spline terms. Either way `p_het` tests whether the CATE varies with it.
+# spline terms. Both test a univariate projection on the ATE difference scale.
 # `beyond` flags the survival patients followed past `time`: a level in which
 # an arm has none is left out, as in the get_hte() subgroups, and a continuous
 # covariate keeps only the values both arms reach among them.
@@ -533,8 +533,8 @@
 #' `estimate` is the doubly robust effect within the subgroup:
 #' [grf::average_treatment_effect()] with `subset` for `"diff"`, and the arm
 #' scores averaged over the subgroup for `"ratio"` and `"OR"`. `cate_mean` is
-#' the estimand-weighted mean of the out-of-bag CATE in the subgroup, given
-#' the forest's observation weights (including equal cluster weights) as well,
+#' mean of the out-of-bag CATE using both estimand weights and the forest's
+#' observation weights (including equal cluster weights). It is given
 #' for `"diff"` rows only and only as a description: forest estimates are
 #' shrunk towards the overall mean, so it carries no interval. `p_inter` tests
 #' whether the subgroup estimates of one `sub_var` are equal (Wald
@@ -548,13 +548,26 @@
 #' `$data` supports two univariate curves over a covariate `x`. Regressing
 #' `.dr_score` on a smooth function of `x`, for example
 #' `lm(.dr_score ~ splines::ns(x, 4), data = res$data)` with heteroskedasticity
-#' robust standard errors, estimates \eqn{E[\tau(X) \mid x]} with valid
-#' pointwise intervals. Plotting `.cate` against `x` shows the forest's own
+#' robust standard errors, estimates a projection of \eqn{E[\tau(X) \mid x]}.
+#' Its pointwise Wald intervals rely on identification, nuisance-estimation
+#' and projection assumptions; they are not simultaneous confidence bands.
+#' Plotting `.cate` against `x` shows the forest's own
 #' out-of-bag estimates, whose smoother bands are not confidence intervals.
 #' `p_het` and the doubly robust layer of [plt_hte_dep()] use the forest's
 #' observation weights and cluster-robust covariance when clusters are supplied.
 #' A degenerate spline or calibration regression gives an unavailable diagnostic
 #' (`NA`, with a warning) without discarding valid average-effect estimates.
+#'
+#' @section Interpreting heterogeneity tests:
+#' `p_het` describes a separate, univariate projection for each covariate on
+#' the ATE difference scale, with the forest's observation weights. It does
+#' not switch to ATT, ATC, ATO, ratio or OR when those effects are requested.
+#' A non-significant spline test does not rule out other nonlinear patterns
+#' or interactions, and a significant result does not establish that this
+#' covariate modifies the effect independently of correlated covariates.
+#' The reported p-values are unadjusted. When screening several covariates,
+#' pre-specify the testing family and consider a correction such as
+#' `p.adjust(res$importance$p_het, method = "BH")`.
 #'
 #' @section Calibration:
 #' `$calibration` is the calibration test of [grf::test_calibration()]: the
@@ -587,10 +600,10 @@
 #'       so `plt_bar_per(res$importance)` plots it directly. `importance` is a
 #'       depth-weighted split frequency, not a test: covariates with more
 #'       columns or more distinct values score higher even without any effect
-#'       modification. `p_het` is the test: a Wald test, on the AIPW scores,
-#'       that the CATE does not vary with the covariate -- equal level means
-#'       for a categorical covariate (`df` = levels - 1, the `p_inter` of a
-#'       `sub_var`), and zero natural-spline terms (`df` = 2, HC3 errors) for
+#'       modification. `p_het` is a Wald test on a univariate AIPW projection:
+#'       equal available-level means for a categorical covariate (`df` =
+#'       levels - 1, matching `p_inter` for ATE differences), and zero
+#'       natural-spline terms (`df` = 2, HC3 errors) for
 #'       a numeric one with more than 5 distinct values. Levels with fewer
 #'       than two patients in either arm are left out, and so, for a survival
 #'       outcome, are levels in which an arm has no patient followed beyond
@@ -603,7 +616,7 @@
 #'       `statistic`, `p.value` (one-sided); see the Calibration section.}
 #'     \item{`data`}{The rows analysed plus `.cate`, the out-of-bag
 #'       CATE, and `.dr_score`, the AIPW score (equal to
-#'       [grf::get_scores()]). Both are on the `"diff"` scale whatever
+#'       [grf::get_scores()] at interior propensities). Both are on the `"diff"` scale whatever
 #'       `measure` is.}
 #'     \item{`fit`}{The grf forest.}
 #'   }

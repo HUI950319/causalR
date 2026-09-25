@@ -40,8 +40,10 @@ for a categorical covariate and smoothed by loess (span
 estimates are shrunk towards the overall mean.}
 \item{\code{"dr"}}{The doubly robust estimate with pointwise confidence
 intervals (red): the AIPW score mean per level, or a natural spline
-of the AIPW scores with HC3 errors. The strip adds \code{p_het}, the Wald
-test that the CATE does not vary with the covariate. Levels with
+of the AIPW scores with HC3 errors, using the forest's observation
+weights and clusters. The strip adds \code{p_het}, an unadjusted Wald
+test of a univariate projection on the ATE difference scale; see
+\code{\link[=get_hte]{get_hte()}} for interpretation and multiple-testing limitations. Levels with
 fewer than two patients in either arm are left out, and for a
 survival outcome so are levels in which an arm has no patient
 followed beyond \code{time}; the spline of a continuous covariate covers
