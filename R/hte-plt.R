@@ -794,10 +794,12 @@ plt_hte_sub <- function(x,
                (!log_x | ci[, 2L] > 0))
     bad[is.na(bad)] <- TRUE
     if (any(bad)) {
-      ids <- ifelse(is.na(edits$level), all_lab,
-                    paste(edits$var, "=", edits$level))
+      ids <- sprintf("%s (\"%s\")",
+                     ifelse(is.na(edits$level), all_lab,
+                            paste(edits$var, "=", edits$level)),
+                     edits$ci)
       stop(sprintf("`effect` for %s: use a form like \"0.12 (0.05, 0.19)\", with lower < upper and the estimate between them%s.",
-                   paste(ids[bad], collapse = ", "),
+                   paste(ids[bad], collapse = "; "),
                    if (log_x) ", all positive for a ratio" else ""),
            call. = FALSE)
     }

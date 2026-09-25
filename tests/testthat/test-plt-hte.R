@@ -467,7 +467,8 @@ test_that("effect replaces the estimate of the rows it names", {
                "All patients")
   expect_error(one(effect = list(sex = "0.1 (0, 0.2)")), "level")
   expect_error(one(effect = list(sex = c(X = "0.1 (0, 0.2)"))), "X")
-  expect_error(one(effect = list(sex = c(M = "abc"))), "sex = M")
+  expect_error(one(effect = list(sex = c(M = "abc"))), 'sex = M ("abc")',
+               fixed = TRUE)
   expect_error(one(effect = list(sex = c(M = "0.3 (0, 0.2)"))), "sex = M")
   expect_error(one(measure = "ratio", effect = list(sex = c(M = "0.1 (-0.1, 0.3)"))),
                "sex = M")
