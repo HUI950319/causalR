@@ -1,5 +1,7 @@
 # causalR (development version)
 
+* `get_hte()` skips unused spline prediction grids when assembling importance
+  tests; `plt_hte_dep()` still constructs the full curves on demand.
 * `get_hte()` accepts single-level factor, character and logical covariates
   after complete-case filtering, retaining their missing values in the design.
 * `get_hte()` subgroup `cate_mean` combines target-population weights with

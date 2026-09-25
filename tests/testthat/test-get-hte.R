@@ -508,6 +508,19 @@ test_that("print shows the analysis header and the event-risk note", {
   expect_true(any(grepl(".dr_score", out, fixed = TRUE)))
 })
 
+test_that("test-only summaries preserve spline inference without constructing curves", {
+  r <- hte_bin()
+  args <- list(data = r$data, v = "age", w = r$fit$W.orig,
+                z = stats::qnorm(0.975), spline_df = 2L)
+  full <- do.call(.hte_dr_var, args)
+  test <- do.call(.hte_dr_var, c(args, list(curve = FALSE)))
+  expect_identical(test[c("type", "df", "p_het")],
+                   full[c("type", "df", "p_het")])
+  expect_null(test$curve)
+  expect_equal(r$importance$p_het[r$importance$variable == "age"], full$p_het)
+  expect_equal(nrow(full$curve), 100L)
+})
+
 test_that("single-level categorical covariates retain missingness without contrasts", {
   skip_if_not_installed("grf")
   d <- hte_bin_data(n = 400L)

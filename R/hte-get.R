@@ -323,7 +323,8 @@
 #' @keywords internal
 #' @noRd
 .hte_dr_var <- function(data, v, w, z, spline_df, beyond = NULL,
-                        weights = rep(1, length(w)), clusters = NULL) {
+                        weights = rep(1, length(w)), clusters = NULL,
+                        curve = TRUE) {
   x <- data[[v]]
   s <- data$.dr_score
   bad_scores <- any(!is.finite(s[weights > 0]))
@@ -366,6 +367,8 @@
     b   <- stats::coef(fit)[-1L]
     p_het <- .hte_wald_p(b, V[-1L, -1L, drop = FALSE])
     if (is.na(p_het)) return(unavailable("singular or non-finite covariance"))
+    if (!curve)
+      return(list(type = "continuous", df = length(b), p_het = p_het))
     g   <- data.frame(x = seq(min(x, na.rm = TRUE), max(x, na.rm = TRUE),
                               length.out = 100L))
     M   <- stats::model.matrix(stats::delete.response(stats::terms(fit)), g)
@@ -955,11 +958,12 @@ get_hte <- function(data,
   # plt_hte_dep() prints in its strips.
   src <- covars[attr(X, "assign")]
   vi  <- as.numeric(grf::variable_importance(fit))
+  obs_wt <- .hte_weights(fit)
   dr  <- if (any(bad)) lapply(covars, function(v)
     list(df = NA_integer_, p_het = NA_real_)) else
     lapply(covars, function(v) .hte_dr_var(data, v, W, z, .HTE_SPLINE_DF,
-                                                beyond, .hte_weights(fit),
-                                                fit$clusters))
+                                                beyond, obs_wt,
+                                                fit$clusters, curve = FALSE))
   imp_tbl <- tibble::tibble(
     variable   = covars,
     importance = vapply(covars, function(v) sum(vi[src == v]), numeric(1L),
