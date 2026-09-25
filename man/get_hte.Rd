@@ -184,9 +184,11 @@ ratio would, while \code{"diff"} stays on the survival scale of
 \code{\link[RegR:get_eff]{RegR::get_eff()}}. A hazard ratio itself is not available: a causal forest
 estimates contrasts of mean outcomes, which a hazard ratio is not.
 
-Every measure needs overlap: if the propensity (\code{W.hat}, estimated or
-supplied) is exactly 0 or 1 for any patient, the doubly robust scores are
-undefined and the call stops. Propensities at or beyond 0.05 and 0.95 give
+If a propensity (\code{W.hat}, estimated or supplied) is exactly 0 or 1, ordinary
+AIPW scores are undefined. A call requesting only \code{ATO} on the difference
+scale still returns grf's overlap estimate: boundary \code{.dr_score} values and
+all \code{p_het} values are \code{NA}, with a warning. Other requests stop.
+Propensities at or beyond 0.05 and 0.95 give
 one warning with their range, which grf itself would repeat for every
 estimand and subgroup.
 

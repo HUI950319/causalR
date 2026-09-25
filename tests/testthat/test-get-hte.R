@@ -508,6 +508,39 @@ test_that("print shows the analysis header and the event-risk note", {
   expect_true(any(grepl(".dr_score", out, fixed = TRUE)))
 })
 
+test_that("overlap effects remain available at boundary propensities", {
+  skip_if_not_installed("grf")
+  d <- hte_bin_data(n = 400L)
+  e <- rep(0.5, nrow(d))
+  e[1:2] <- c(0, 1)
+  d$z[1:2] <- c(0, 1)
+  expect_warning(r <- get_hte(d, "z", sub_var = "sex", adj_var = c("age", "sex"),
+                              surv = "y", estimand = "ATO",
+                              grf_args = c(hte_args, list(W.hat = e))),
+                 "AIPW.*unavailable")
+  want <- grf::average_treatment_effect(r$fit, target.sample = "overlap")
+  expect_equal(r$stats$estimate, unname(want[["estimate"]]))
+  expect_equal(r$stats$std.error, unname(want[["std.err"]]))
+  expect_true(all(is.na(r$data$.dr_score[1:2])))
+  expect_true(all(is.finite(r$data$.dr_score[-(1:2)])))
+  expect_true(all(is.na(r$importance$p_het)))
+  for (lv in levels(d$sex)) {
+    want <- grf::average_treatment_effect(r$fit, target.sample = "overlap",
+                                          subset = which(d$sex == lv))
+    expect_equal(r$subgroup$estimate[r$subgroup$level == lv],
+                 unname(want[["estimate"]]))
+  }
+  expect_warning(p <- plt_hte_dep(r, x_var = "age", display = "dr"),
+                 "AIPW.*unavailable")
+  expect_s3_class(ggplot2::ggplot_build(p), "ggplot_built")
+  expect_warning(.hte_estimate(r$fit, .hte_arm_scores(r$fit), rep(TRUE, nrow(d)),
+                               data.frame(estimand = "ATE", measure = "diff"),
+                               FALSE, stats::qnorm(0.975), "Overall"),
+                 "AIPW.*unavailable")
+  expect_error(get_hte(d, "z", adj_var = "age", surv = "y", estimand = "ATE",
+                       grf_args = c(hte_args, list(W.hat = e))), "propensity")
+})
+
 test_that("unavailable diagnostics preserve valid average effects", {
   skip_if_not_installed("grf")
   d <- hte_bin_data(n = 400L)

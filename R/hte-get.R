@@ -80,6 +80,9 @@
 .hte_arm_scores <- function(fit) {
   tau <- as.numeric(stats::predict(fit)$predictions)
   e   <- fit$W.hat
+  # Boundary observations have no ordinary AIPW score, but do not prevent
+  # grf's division-free overlap regression from estimating the ATO.
+  e[e <= 0 | e >= 1] <- NA_real_
   wc  <- fit$W.orig - e
   r   <- if (inherits(fit, "causal_survival_forest"))
     fit[["_psi"]]$numerator / wc - wc * tau
@@ -152,6 +155,11 @@
                           beyond = NULL) {
   w <- fit$W.orig[idx]
   one <- function(estimand, measure) {
+    if (estimand != "ATO" && any(!is.finite(s$g1[idx] - s$g0[idx]))) {
+      warning(sprintf("%s: AIPW scores are unavailable; `%s` set to NA.",
+                      label, estimand), call. = FALSE)
+      return(rep(NA_real_, 5L))
+    }
     if (measure == "diff") {
       a  <- grf::average_treatment_effect(
         fit, target.sample = .HTE_ESTIMANDS[[estimand]], subset = which(idx))
@@ -315,10 +323,17 @@
                         weights = rep(1, length(w)), clusters = NULL) {
   x <- data[[v]]
   s <- data$.dr_score
+  bad_scores <- any(!is.finite(s[weights > 0]))
+  if (bad_scores) {
+    warning(sprintf("`%s`: AIPW scores are unavailable; heterogeneity inference set to NA.",
+                    v), call. = FALSE)
+    s[] <- NA_real_
+  }
   if (.hte_is_num(x)) {
     empty <- list(type = "continuous", df = NA_integer_, p_het = NA_real_,
                   curve = data.frame(x = numeric(0), estimate = numeric(0),
                                      conf.low = numeric(0), conf.high = numeric(0)))
+    if (bad_scores) return(empty)
     unavailable <- function(reason) {
       warning(sprintf("`%s`: heterogeneity inference is unavailable (%s).", v, reason),
               call. = FALSE)
@@ -496,9 +511,11 @@
 #' [RegR::get_eff()]. A hazard ratio itself is not available: a causal forest
 #' estimates contrasts of mean outcomes, which a hazard ratio is not.
 #'
-#' Every measure needs overlap: if the propensity (`W.hat`, estimated or
-#' supplied) is exactly 0 or 1 for any patient, the doubly robust scores are
-#' undefined and the call stops. Propensities at or beyond 0.05 and 0.95 give
+#' If a propensity (`W.hat`, estimated or supplied) is exactly 0 or 1, ordinary
+#' AIPW scores are undefined. A call requesting only `ATO` on the difference
+#' scale still returns grf's overlap estimate: boundary `.dr_score` values and
+#' all `p_het` values are `NA`, with a warning. Other requests stop.
+#' Propensities at or beyond 0.05 and 0.95 give
 #' one warning with their range, which grf itself would repeat for every
 #' estimand and subgroup.
 #'
@@ -860,13 +877,18 @@ get_hte <- function(data,
                         grf_args))
   # A propensity of exactly 0 or 1 -- a regression forest reaches it when a
   # covariate region holds one arm only -- divides the AIPW score by zero:
-  # grf's own estimate turns NaN and the ratio scores fail. This also checks
-  # a W.hat passed through grf_args.
+  # ordinary AIPW and ratio scores fail, while overlap regression is still
+  # available. This also checks a W.hat passed through grf_args.
   bad <- !is.finite(fit$W.hat) | fit$W.hat <= 0 | fit$W.hat >= 1
-  if (any(bad))
+  if (any(!is.finite(fit$W.hat) | fit$W.hat < 0 | fit$W.hat > 1))
+    stop("Estimated propensities must be finite and between 0 and 1.", call. = FALSE)
+  if (any(bad) && !all(grid$estimand == "ATO" & grid$measure == "diff"))
     stop(sprintf("The estimated propensity of `%s` is exactly 0 or 1 for %d patient%s, so the doubly robust estimates are undefined. Restrict the data to the region of overlap (for example the patients get_PSW(trim_args = list(method = \"cr\")) keeps), drop covariates that fully determine `%s`, or pass a bounded `W.hat` in `grf_args`.",
                  cat_var, sum(bad), if (sum(bad) == 1L) "" else "s",
                  cat_var), call. = FALSE)
+  if (any(bad))
+    warning("ATO is estimated, but ordinary AIPW scores are unavailable at boundary propensities; p_het is set to NA.",
+            call. = FALSE)
   s  <- .hte_arm_scores(fit)
   z  <- stats::qnorm(1 - (1 - conf_level) / 2)
   event_risk <- identical(target, "survival.probability")
@@ -907,7 +929,9 @@ get_hte <- function(data,
   # plt_hte_dep() prints in its strips.
   src <- covars[attr(X, "assign")]
   vi  <- as.numeric(grf::variable_importance(fit))
-  dr  <- lapply(covars, function(v) .hte_dr_var(data, v, W, z, .HTE_SPLINE_DF,
+  dr  <- if (any(bad)) lapply(covars, function(v)
+    list(df = NA_integer_, p_het = NA_real_)) else
+    lapply(covars, function(v) .hte_dr_var(data, v, W, z, .HTE_SPLINE_DF,
                                                 beyond, .hte_weights(fit),
                                                 fit$clusters))
   imp_tbl <- tibble::tibble(
