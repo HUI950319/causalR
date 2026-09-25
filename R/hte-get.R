@@ -433,7 +433,9 @@
 #'   `NULL`. Factor, character and logical columns are encoded as
 #'   `factor_encoding` sets. Missing values are kept and left to grf, which
 #'   splits on missingness; a missing factor value leaves its column or
-#'   columns missing. Other column types, such as dates, are rejected:
+#'   columns missing. A categorical covariate with one observed level becomes
+#'   a constant column, preserving its missing values. Other column types,
+#'   such as dates, are rejected:
 #'   convert them to numbers first.
 #' @param surv Outcome selector, following [RegR::get_eff()]:
 #'   \itemize{
@@ -870,10 +872,17 @@ get_hte <- function(data,
   # column of level codes 1..K first, so the forest splits on thresholds of
   # the level order; "onehot" gives one indicator column per level.
   xdat <- data[covars]
+  fac <- covars[!vapply(xdat, is.numeric, logical(1L))]
   if (factor_encoding == "integer") {
-    fac <- covars[!vapply(xdat, is.numeric, logical(1L))]
     xdat[fac] <- lapply(xdat[fac],
                         function(x) as.integer(droplevels(as.factor(x))))
+  } else {
+    single <- fac[vapply(xdat[fac], function(x)
+      length(unique(x[!is.na(x)])) == 1L, logical(1L))]
+    # model.matrix() cannot contrast a single level. A numeric indicator
+    # retains any missingness information that grf can still split on.
+    xdat[single] <- lapply(xdat[single], function(x)
+      ifelse(is.na(x), NA_real_, 1))
   }
   X   <- .sens_model_matrix(xdat, covars, one_hot = TRUE)
   fit <- do.call(fun, c(list(X = X, Y = Y, W = W),

@@ -1,5 +1,7 @@
 # causalR (development version)
 
+* `get_hte()` accepts single-level factor, character and logical covariates
+  after complete-case filtering, retaining their missing values in the design.
 * `get_hte()` subgroup `cate_mean` combines target-population weights with
   sample weights or equal cluster weights, matching the analysis population.
 * `get_hte(estimand = "ATO")` accepts boundary propensities without losing

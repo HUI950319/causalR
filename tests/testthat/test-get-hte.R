@@ -508,6 +508,27 @@ test_that("print shows the analysis header and the event-risk note", {
   expect_true(any(grepl(".dr_score", out, fixed = TRUE)))
 })
 
+test_that("single-level categorical covariates retain missingness without contrasts", {
+  skip_if_not_installed("grf")
+  d <- hte_bin_data(n = 400L)
+  d$flat <- factor(c("removed", rep("one", 399)))
+  d$y[1] <- NA
+  d$flat[2:4] <- NA
+  d$text <- "one"
+  d$flag <- TRUE
+  r <- get_hte(d, "z", sub_var = "flat", adj_var = c("age", "flat", "text", "flag"),
+               surv = "y", grf_args = hte_args)
+  expect_equal(r$stats$n, 399L)
+  expect_equal(unname(r$fit$X.orig[, "flat"]), c(rep(NA_real_, 3), rep(1, 396)))
+  expect_equal(unname(r$fit$X.orig[, "text"]), rep(1, 399))
+  expect_equal(unname(r$fit$X.orig[, "flag"]), rep(1, 399))
+  expect_equal(r$importance$n_col, rep(1L, 4))
+  expect_identical(r$subgroup$level, "one")
+  expect_equal(r$subgroup$n, 396L)
+  expect_true(is.na(r$subgroup$p_inter))
+  expect_true(all(is.na(r$importance$p_het[r$importance$variable != "age"])))
+})
+
 test_that("subgroup CATE means combine estimand and observation weights", {
   skip_if_not_installed("grf")
   d <- hte_bin_data(n = 480L)

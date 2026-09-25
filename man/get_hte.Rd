@@ -40,7 +40,9 @@ is left out of that column's rows.}
 \code{NULL}. Factor, character and logical columns are encoded as
 \code{factor_encoding} sets. Missing values are kept and left to grf, which
 splits on missingness; a missing factor value leaves its column or
-columns missing. Other column types, such as dates, are rejected:
+columns missing. A categorical covariate with one observed level becomes
+a constant column, preserving its missing values. Other column types,
+such as dates, are rejected:
 convert them to numbers first.}
 
 \item{surv}{Outcome selector, following \code{\link[RegR:get_eff]{RegR::get_eff()}}:
