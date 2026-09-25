@@ -27,6 +27,38 @@
 
 # ---- L2 scores and estimates -----------------------------------------------
 
+# Observation weights shared by all summaries of the forest.
+.hte_weights <- function(fit) {
+  if (!is.null(fit$sample.weights)) return(fit$sample.weights)
+  cl <- fit$clusters
+  if (length(cl) && isTRUE(fit$equalize.cluster.weights))
+    return(1 / as.numeric(table(cl)[as.character(cl)]))
+  rep(1, length(fit$W.orig))
+}
+
+# Weighted means and their joint covariance, with grf's finite-cluster
+# correction applied to each level. Independent rows are singleton clusters.
+.hte_score_summary <- function(s, groups, weights, clusters) {
+  mu <- vapply(groups, function(i) stats::weighted.mean(s[i], weights[i]),
+               numeric(1L))
+  influence <- vapply(seq_along(groups), function(j) {
+    i <- groups[[j]]
+    u <- numeric(length(s))
+    k <- length(unique(clusters[i][weights[i] > 0]))
+    if (k < 2L) return(rep(NA_real_, length(unique(clusters))))
+    u[i] <- weights[i] * (s[i] - mu[j]) / sum(weights[i])
+    as.numeric(rowsum(u, clusters)) * sqrt(k / (k - 1))
+  }, numeric(length(unique(clusters))))
+  list(estimate = mu, vcov = crossprod(influence))
+}
+
+.hte_equal_p <- function(th, V) {
+  C <- cbind(-1, diag(length(th) - 1L))
+  b <- drop(C %*% th)
+  stats::pchisq(drop(b %*% solve(C %*% V %*% t(C), b)), length(b),
+                lower.tail = FALSE)
+}
+
 # grf keeps m(x) = E[Y | X] (`Y.hat`), e(x) (`W.hat`) and the out-of-bag CATE,
 # and mu_w(x) = m(x) + (w - e(x)) tau(x) recovers both arms -- the identity grf
 # itself uses for its ATT / ATC estimators. The residual Y - mu_W(X) is the
@@ -224,7 +256,8 @@
 # covariate keeps only the values both arms reach among them.
 #' @keywords internal
 #' @noRd
-.hte_dr_var <- function(data, v, w, z, spline_df, beyond = NULL) {
+.hte_dr_var <- function(data, v, w, z, spline_df, beyond = NULL,
+                        weights = rep(1, length(w)), clusters = NULL) {
   x <- data[[v]]
   s <- data$.dr_score
   if (.hte_is_num(x)) {
@@ -240,8 +273,12 @@
                                        conf.low = numeric(0),
                                        conf.high = numeric(0))))
     }
-    fit <- stats::lm(s ~ splines::ns(x, df = spline_df))
-    V   <- sandwich::vcovHC(fit, type = "HC3")
+    i <- which(!is.na(x) & is.finite(s) & weights > 0)
+    fit <- stats::lm(s ~ splines::ns(x, df = spline_df), weights = wt,
+                     data = data.frame(s = s[i], x = x[i], wt = weights[i]))
+    V <- if (length(clusters))
+      sandwich::vcovCL(fit, cluster = clusters[i], type = "HC3") else
+      sandwich::vcovHC(fit, type = "HC3")
     b   <- stats::coef(fit)[-1L]
     g   <- data.frame(x = seq(min(x, na.rm = TRUE), max(x, na.rm = TRUE),
                               length.out = 100L))
@@ -256,16 +293,20 @@
                          conf.high = est + z * se)))
   }
   g  <- droplevels(as.factor(x))
+  if (!length(clusters)) clusters <- seq_along(s)
+  groups <- lapply(levels(g), function(l) which(g == l & weights > 0))
+  summary <- .hte_score_summary(s, groups, weights, clusters)
   lv <- do.call(rbind, lapply(levels(g), function(l) {
-    i  <- which(g == l)
+    j <- match(l, levels(g))
+    i  <- groups[[j]]
     nt <- sum(w[i])
     # the same floors as the get_hte() subgroup rows: two patients per arm
     # and, for survival, someone in each arm followed past `time`
     ok  <- nt >= 2 && length(i) - nt >= 2 &&
       (is.null(beyond) || (any(beyond[i] & w[i] == 1) &&
                              any(beyond[i] & w[i] == 0)))
-    est <- if (ok) mean(s[i]) else NA_real_
-    se  <- if (ok) stats::sd(s[i]) / sqrt(length(i)) else NA_real_
+    est <- if (ok) summary$estimate[j] else NA_real_
+    se  <- if (ok) sqrt(summary$vcov[j, j]) else NA_real_
     data.frame(level = l, n = length(i), n_treat = nt, estimate = est,
                std.error = se, conf.low = est - z * se,
                conf.high = est + z * se, stringsAsFactors = FALSE)
@@ -274,11 +315,9 @@
   if (sum(ok) < 2L)
     return(list(type = "categorical", df = NA_integer_, p_het = NA_real_,
                 levels = lv))
-  wt <- 1 / lv$std.error[ok]^2
   th <- lv$estimate[ok]
   list(type = "categorical", df = sum(ok) - 1L,
-       p_het = stats::pchisq(sum(wt * (th - sum(wt * th) / sum(wt))^2),
-                             sum(ok) - 1L, lower.tail = FALSE),
+       p_het = .hte_equal_p(th, summary$vcov[ok, ok, drop = FALSE]),
        levels = lv)
 }
 
@@ -420,6 +459,8 @@
 #' robust standard errors, estimates \eqn{E[\tau(X) \mid x]} with valid
 #' pointwise intervals. Plotting `.cate` against `x` shows the forest's own
 #' out-of-bag estimates, whose smoother bands are not confidence intervals.
+#' `p_het` and the doubly robust layer of [plt_hte_dep()] use the forest's
+#' observation weights and cluster-robust covariance when clusters are supplied.
 #'
 #' @section Calibration:
 #' `$calibration` is the calibration test of [grf::test_calibration()]: the
@@ -796,7 +837,8 @@ get_hte <- function(data,
   src <- covars[attr(X, "assign")]
   vi  <- as.numeric(grf::variable_importance(fit))
   dr  <- lapply(covars, function(v) .hte_dr_var(data, v, W, z, .HTE_SPLINE_DF,
-                                                beyond))
+                                                beyond, .hte_weights(fit),
+                                                fit$clusters))
   imp_tbl <- tibble::tibble(
     variable   = covars,
     importance = vapply(covars, function(v) sum(vi[src == v]), numeric(1L),

@@ -507,3 +507,47 @@ test_that("print shows the analysis header and the event-risk note", {
   expect_true(any(grepl("1 - S(t)", out, fixed = TRUE)))
   expect_true(any(grepl(".dr_score", out, fixed = TRUE)))
 })
+
+test_that("heterogeneity inherits weights and clusters from the forest", {
+  skip_if_not_installed("grf")
+  d <- hte_bin_data(n = 480L)
+  d$age[1:8] <- NA
+  cl <- rep(seq_len(40), times = rep(c(8, 16), 20))
+  for (ga in list(list(sample.weights = seq(0.1, 2, length.out = 480),
+                       clusters = cl),
+                  list(clusters = cl, equalize.cluster.weights = TRUE))) {
+    res <- get_hte(d, "z", adj_var = c("age", "x2", "sex"), surv = "y",
+                   grf_args = c(hte_args, ga))
+    wt <- if (!is.null(ga$sample.weights)) ga$sample.weights else
+      1 / as.numeric(table(cl)[as.character(cl)])
+    i <- which(!is.na(d$age))
+    m <- stats::lm(.dr_score ~ splines::ns(age, 2), data = res$data[i, ],
+                   weights = wt[i])
+    V <- sandwich::vcovCL(m, cluster = cl[i], type = "HC3")
+    b <- stats::coef(m)[-1L]
+    expect_equal(res$importance$p_het[res$importance$variable == "age"],
+                 stats::pchisq(drop(b %*% solve(V[-1L, -1L], b)), 2,
+                               lower.tail = FALSE))
+
+    mu <- tapply(seq_len(nrow(d)), d$sex,
+                 function(i) stats::weighted.mean(res$data$.dr_score[i], wt[i]))
+    influence <- sapply(levels(d$sex), function(lv) {
+      i <- which(d$sex == lv)
+      u <- numeric(nrow(d))
+      u[i] <- wt[i] * (res$data$.dr_score[i] - mu[lv]) / sum(wt[i])
+      k <- length(unique(cl[i][wt[i] > 0]))
+      as.numeric(rowsum(u, cl)) * sqrt(k / (k - 1))
+    })
+    S <- crossprod(influence)
+    expect_equal(res$importance$p_het[res$importance$variable == "sex"],
+                 stats::pchisq(diff(mu)^2 / (S[1, 1] + S[2, 2] - 2 * S[1, 2]),
+                               1, lower.tail = FALSE), ignore_attr = TRUE)
+    if (requireNamespace("patchwork", quietly = TRUE)) {
+      p <- plt_hte_dep(res, x_var = "sex", display = "dr")
+      layer <- Filter(function(l) inherits(l$geom, "GeomPointrange"), p$layers)[[1]]
+      expect_equal(layer$data$estimate, as.numeric(mu))
+      expect_equal((layer$data$conf.high - layer$data$conf.low) /
+                     (2 * stats::qnorm(0.975)), sqrt(diag(S)), ignore_attr = TRUE)
+    }
+  }
+})

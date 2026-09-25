@@ -405,7 +405,8 @@ plt_hte_dep <- function(x,
       xval  <- function(val) if (is_n) val else factor(as.character(val),
                                                        levels = lv)
       dr    <- if ("dr" %in% display) .hte_dr_var(d, v, w, z, dr_args$spline_df,
-                                                  beyond)
+                                                  beyond, .hte_weights(x$fit),
+                                                  x$fit$clusters)
       label <- if (is.null(dr)) v else sprintf("%s (p_het %s)", v, fmt_p(dr$p_het))
       yv    <- c(0, ate)
 
