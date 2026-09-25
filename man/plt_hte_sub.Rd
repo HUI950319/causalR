@@ -40,14 +40,21 @@ an outcome probability, a binary outcome or \eqn{S(t)}.}
 \item{conf_level}{Confidence level of the intervals. Default \code{0.95},
 whatever level \code{x} was computed with.}
 
-\item{effect}{\code{NULL} (default) or rows whose estimate is replaced, e.g. by
-one from a published study: a named list whose elements are named by a
-variable of \code{sub_var}, holding interval strings named by its levels, or
+\item{effect}{\code{NULL} (default) or rows to replace, e.g. with an estimate
+from a published study: a named list whose elements are named by a
+variable of \code{sub_var}, holding strings named by its levels, or
 \code{"All patients"} for the overall row, holding one string, e.g.
-\code{list(sex = c(M = "0.12 (0.05, 0.19)"), "All patients" = "0.08 (0.02, 0.14)")}.
-Every form \code{\link[UtilsR:stat_ci_parse]{UtilsR::stat_ci_parse()}} reads is accepted. The interval is
-drawn as given, at \code{conf_level} on the scale of \code{measure}; see Replaced
-rows.}
+\code{list(sex = c(M = "0.12 (0.05, 0.19)", F = "0.05"), "All patients" = "conf_0.9")}.
+A string is one of
+\itemize{
+\item an interval, in any form \code{\link[UtilsR:stat_ci_parse]{UtilsR::stat_ci_parse()}} reads, drawn as
+given at \code{conf_level} on the scale of \code{measure};
+\item a bare estimate such as \code{"0.05"}, which keeps the row's standard error;
+\item \code{"conf_<level>"}, e.g. \code{"conf_0.9"}, which shows the row's own interval
+at that level.
+}
+
+See Replaced rows.}
 
 \item{overall}{Logical. \code{TRUE} (default) adds an "All patients" row with the
 overall ATE.}
@@ -121,15 +128,21 @@ dash, with a warning.
 
 \section{Replaced rows}{
 
-A row named in \code{effect} is drawn with the supplied estimate and interval,
-taken as they are: at \code{conf_level}, as a difference for \code{"diff"} and a
-ratio for \code{"ratio"} and \code{"OR"}. Its standard error and \code{P} are backed out
-of the interval with the normal approximation,
-\eqn{SE = (hi - lo) / (2 z)} with \eqn{z} the normal quantile of
-\code{conf_level}, on the log scale for a ratio. A level without an estimate
-can be filled in this way. The "P for interaction" of its variable and its
-\code{cate_mean} keep the values from the forest: the Wald test cannot be redone
-from a replaced row.
+An interval string replaces the row's estimate and interval, taken as they
+are: at \code{conf_level}, as a difference for \code{"diff"} and a ratio for
+\code{"ratio"} and \code{"OR"}. Its standard error and \code{P} are backed out of the
+interval with the normal approximation, \eqn{SE = (hi - lo) / (2 z)} with
+\eqn{z} the normal quantile of \code{conf_level}, on the log scale for a ratio.
+Only an interval can fill in a level without an estimate.
+
+A bare estimate keeps the row's standard error: the interval is centred on
+the new estimate, on the log scale for a ratio, and \code{P} is recomputed.
+\code{"conf_<level>"} keeps the estimate, the standard error and \code{P}, and
+widens or narrows only that row's interval. Nothing on the plot marks such
+a row, whose level then differs from the one in the column header.
+
+The "P for interaction" of a variable and its \code{cate_mean} keep the values
+from the forest: the Wald test cannot be redone from a replaced row.
 }
 
 \examples{
@@ -158,10 +171,11 @@ patchwork::wrap_plots(plt_hte_sub(res, sub_var = "sex"),
                       plt_hte_cate(res, sub_var = "sex", type = "density"),
                       ncol = 1)
 
-# Replace rows, e.g. with published estimates: drawn as given, with the
-# P backed out of each interval
+# Replace rows, e.g. with published estimates: an interval is drawn as
+# given, a bare estimate keeps the row's SE, "conf_" re-levels the row
 plt_hte_sub(res, sub_var = c("sex", "stage"), show_pvalue = TRUE,
-            effect = list(sex = c(M = "0.150 (0.050, 0.250)"),
+            effect = list(sex = c(M = "0.150 (0.050, 0.250)", F = "0.05"),
+                          stage = c(III = "conf_0.9"),
                           "All patients" = "0.100 (0.040, 0.160)"))
 }
 \dontshow{\}) # examplesIf}

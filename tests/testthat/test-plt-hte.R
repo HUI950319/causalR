@@ -460,7 +460,40 @@ test_that("effect replaces the estimate of the rows it names", {
   expect_equal(f$std.error, log(1.875 / 1.2) / (2 * stats::qnorm(0.95)))
   expect_equal(f$p.value, 2 * stats::pnorm(-log(1.5) / f$std.error))
 
+  # a bare estimate keeps the row's SE; "conf_" re-levels that row alone
+  z95 <- stats::qnorm(0.975)
+  z75 <- stats::qnorm(0.875)
+  f0 <- st[st$sub_var == "sex" & st$level == "F", ]
+  m0 <- st[st$sub_var == "sex" & st$level == "M", ]
+  pe <- plt_hte_sub(res, sub_var = "sex",
+                    effect = list(sex = c(F = "\u20130.050", M = "conf_0.75"),
+                                  "All patients" = "conf_0.75"))
+  sp <- attr(pe, "subgroup")
+  f1 <- sp[sp$level == "F", ]
+  m1 <- sp[sp$level == "M", ]
+  expect_equal(c(f1$estimate, f1$std.error), c(-0.05, f0$std.error))
+  expect_equal(c(f1$conf.low, f1$conf.high), -0.05 + c(-1, 1) * z95 * f0$std.error)
+  expect_equal(f1$p.value, 2 * stats::pnorm(-0.05 / f0$std.error))
+  expect_equal(m1[c("estimate", "std.error", "p.value")],
+               m0[c("estimate", "std.error", "p.value")])
+  expect_equal(c(m1$conf.low, m1$conf.high),
+               m0$estimate + c(-1, 1) * z75 * m0$std.error)
+  ov <- res$stats[res$stats$measure == "diff", ]
+  expect_identical(fp_col(pe, 3)[trimws(fp_col(pe, 1)) == "All patients"],
+                   sprintf("%.3f (%.3f, %.3f)", ov$estimate,
+                           ov$estimate - z75 * ov$std.error,
+                           ov$estimate + z75 * ov$std.error))
+  r0 <- attr(plt_hte_sub(res, sub_var = "sex", measure = "ratio"), "subgroup")
+  r1 <- attr(plt_hte_sub(res, sub_var = "sex", measure = "ratio",
+                         effect = list(sex = c(F = "1.20"))), "subgroup")
+  expect_equal(c(r1$conf.low[1], r1$conf.high[1]),
+               exp(log(1.2) + c(-1, 1) * z95 * r0$std.error[1]))
+
   one <- function(...) plt_hte_sub(res, sub_var = "sex", ...)
+  expect_error(one(effect = list(sex = c(M = "conf_1.5"))), 'sex = M ("conf_1.5")',
+               fixed = TRUE)
+  expect_error(one(measure = "ratio", effect = list(sex = c(M = "-0.5"))),
+               "positive")
   expect_error(one(effect = "0.1 (0, 0.2)"), "`effect`")
   expect_error(one(effect = list(stage = c(I = "0.1 (0, 0.2)"))), "stage")
   expect_error(one(overall = FALSE, effect = list("All patients" = "0.1 (0, 0.2)")),
@@ -522,6 +555,10 @@ test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
                                      effect = list(stage = c(III = "-0.050 (-0.150, 0.050)"))))
   expect_identical(fp_col(pf, 3)[row], "-0.050 (-0.150, 0.050)")
   expect_length(fp_grobs(pf, "polygon"), 4L)
+  # a bare estimate or a level needs the row's own estimate
+  expect_error(suppressWarnings(plt_hte_sub(res, sub_var = "stage",
+                                            effect = list(stage = c(III = "0.05")))),
+               "no estimate")
   expect_identical(
     fp_headers(suppressWarnings(plt_hte_sub(res, sub_var = "stage",
                                             measure = "ratio")))[3],

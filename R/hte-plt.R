@@ -557,14 +557,19 @@ plt_hte_dep <- function(x,
 #'   an outcome probability, a binary outcome or \eqn{S(t)}.
 #' @param conf_level Confidence level of the intervals. Default `0.95`,
 #'   whatever level `x` was computed with.
-#' @param effect `NULL` (default) or rows whose estimate is replaced, e.g. by
-#'   one from a published study: a named list whose elements are named by a
-#'   variable of `sub_var`, holding interval strings named by its levels, or
+#' @param effect `NULL` (default) or rows to replace, e.g. with an estimate
+#'   from a published study: a named list whose elements are named by a
+#'   variable of `sub_var`, holding strings named by its levels, or
 #'   `"All patients"` for the overall row, holding one string, e.g.
-#'   `list(sex = c(M = "0.12 (0.05, 0.19)"), "All patients" = "0.08 (0.02, 0.14)")`.
-#'   Every form [UtilsR::stat_ci_parse()] reads is accepted. The interval is
-#'   drawn as given, at `conf_level` on the scale of `measure`; see Replaced
-#'   rows.
+#'   `list(sex = c(M = "0.12 (0.05, 0.19)", F = "0.05"), "All patients" = "conf_0.9")`.
+#'   A string is one of
+#'   * an interval, in any form [UtilsR::stat_ci_parse()] reads, drawn as
+#'     given at `conf_level` on the scale of `measure`;
+#'   * a bare estimate such as `"0.05"`, which keeps the row's standard error;
+#'   * `"conf_<level>"`, e.g. `"conf_0.9"`, which shows the row's own interval
+#'     at that level.
+#'
+#'   See Replaced rows.
 #' @param overall Logical. `TRUE` (default) adds an "All patients" row with the
 #'   overall ATE.
 #' @param show_n Logical. `TRUE` (default) shows the column of patients per
@@ -604,15 +609,21 @@ plt_hte_dep <- function(x,
 #' dash, with a warning.
 #'
 #' @section Replaced rows:
-#' A row named in `effect` is drawn with the supplied estimate and interval,
-#' taken as they are: at `conf_level`, as a difference for `"diff"` and a
-#' ratio for `"ratio"` and `"OR"`. Its standard error and `P` are backed out
-#' of the interval with the normal approximation,
-#' \eqn{SE = (hi - lo) / (2 z)} with \eqn{z} the normal quantile of
-#' `conf_level`, on the log scale for a ratio. A level without an estimate
-#' can be filled in this way. The "P for interaction" of its variable and its
-#' `cate_mean` keep the values from the forest: the Wald test cannot be redone
-#' from a replaced row.
+#' An interval string replaces the row's estimate and interval, taken as they
+#' are: at `conf_level`, as a difference for `"diff"` and a ratio for
+#' `"ratio"` and `"OR"`. Its standard error and `P` are backed out of the
+#' interval with the normal approximation, \eqn{SE = (hi - lo) / (2 z)} with
+#' \eqn{z} the normal quantile of `conf_level`, on the log scale for a ratio.
+#' Only an interval can fill in a level without an estimate.
+#'
+#' A bare estimate keeps the row's standard error: the interval is centred on
+#' the new estimate, on the log scale for a ratio, and `P` is recomputed.
+#' `"conf_<level>"` keeps the estimate, the standard error and `P`, and
+#' widens or narrows only that row's interval. Nothing on the plot marks such
+#' a row, whose level then differs from the one in the column header.
+#'
+#' The "P for interaction" of a variable and its `cate_mean` keep the values
+#' from the forest: the Wald test cannot be redone from a replaced row.
 #'
 #' @return A `ggplot`: the \pkg{forestplot} drawing, captured on the PDF
 #'   metrics `RegR::save_plt()` writes with and wrapped by
@@ -654,10 +665,11 @@ plt_hte_dep <- function(x,
 #'                       plt_hte_cate(res, sub_var = "sex", type = "density"),
 #'                       ncol = 1)
 #'
-#' # Replace rows, e.g. with published estimates: drawn as given, with the
-#' # P backed out of each interval
+#' # Replace rows, e.g. with published estimates: an interval is drawn as
+#' # given, a bare estimate keeps the row's SE, "conf_" re-levels the row
 #' plt_hte_sub(res, sub_var = c("sex", "stage"), show_pvalue = TRUE,
-#'             effect = list(sex = c(M = "0.150 (0.050, 0.250)"),
+#'             effect = list(sex = c(M = "0.150 (0.050, 0.250)", F = "0.05"),
+#'                           stage = c(III = "conf_0.9"),
 #'                           "All patients" = "0.100 (0.040, 0.160)"))
 #' }
 #'
@@ -785,30 +797,52 @@ plt_hte_sub <- function(x,
                      paste(lv, collapse = ", ")), call. = FALSE)
       data.frame(var = v, level = nms, ci = s)
     }))
-    canon <- suppressWarnings(UtilsR::stat_ci(edits$ci, digits = 8, sep = ", "))
+    # A string is an interval, drawn as given at conf_level; a bare estimate,
+    # which keeps the row's SE; or "conf_<level>", which re-levels the row's
+    # own interval. All of it is worked on the log scale for a ratio.
+    tr <- if (log_x) log else identity
+    bt <- if (log_x) exp else identity
+    s  <- trimws(edits$ci)
+    is_conf <- startsWith(s, "conf_")
+    lvl <- suppressWarnings(as.numeric(sub("^conf_", "", s)))
+    num <- suppressWarnings(as.numeric(gsub("[\u2212\u2013\u2014]", "-", s)))
+    is_est  <- !is_conf & !is.na(num)
+    keep_se <- is_conf | is_est
+    canon <- suppressWarnings(UtilsR::stat_ci(s, digits = 8, sep = ", "))
     m  <- regmatches(canon, regexec("^(-?[0-9.]+) \\((-?[0-9.]+), (-?[0-9.]+)\\)$",
                                     canon))
     ci <- t(vapply(m, function(k)
       if (length(k) == 4L) as.numeric(k[-1L]) else rep(NA_real_, 3L), numeric(3L)))
-    bad <- !(ci[, 2L] < ci[, 3L] & ci[, 1L] >= ci[, 2L] & ci[, 1L] <= ci[, 3L] &
-               (!log_x | ci[, 2L] > 0))
+    ids <- sprintf("%s (\"%s\")",
+                   ifelse(is.na(edits$level), all_lab,
+                          paste(edits$var, "=", edits$level)),
+                   edits$ci)
+    bad <- ifelse(is_conf, !(lvl > 0 & lvl < 1),
+                  ifelse(is_est, log_x & num <= 0,
+                         !(ci[, 2L] < ci[, 3L] & ci[, 1L] >= ci[, 2L] &
+                             ci[, 1L] <= ci[, 3L] & (!log_x | ci[, 2L] > 0))))
     bad[is.na(bad)] <- TRUE
-    if (any(bad)) {
-      ids <- sprintf("%s (\"%s\")",
-                     ifelse(is.na(edits$level), all_lab,
-                            paste(edits$var, "=", edits$level)),
-                     edits$ci)
-      stop(sprintf("`effect` for %s: use a form like \"0.12 (0.05, 0.19)\", with lower < upper and the estimate between them%s.",
+    if (any(bad))
+      stop(sprintf("`effect` for %s: give an interval such as \"0.12 (0.05, 0.19)\" with lower < upper and the estimate between them, an estimate such as \"0.12\" or a level such as \"conf_0.9\"%s.",
                    paste(ids[bad], collapse = "; "),
                    if (log_x) ", all positive for a ratio" else ""),
            call. = FALSE)
-    }
-    # The interval is at conf_level, on the log scale for a ratio
-    ws  <- if (log_x) log(ci) else ci
-    se  <- (ws[, 3L] - ws[, 2L]) / (2 * z)
-    new <- data.frame(estimate = ci[, 1L], std.error = se, conf.low = ci[, 2L],
-                      conf.high = ci[, 3L],
-                      p.value = 2 * stats::pnorm(-abs(ws[, 1L] / se)))
+    cur <- t(vapply(seq_len(nrow(edits)), function(k) {
+      r <- if (is.na(edits$level[k])) ov
+           else sub[sub$sub_var == edits$var[k] & sub$level == edits$level[k], ]
+      c(r$estimate, r$std.error)
+    }, numeric(2L)))
+    none <- keep_se & !is.finite(cur[, 2L])
+    if (any(none))
+      stop(sprintf("`effect` for %s: the row has no estimate to move or re-level; give it an interval.",
+                   paste(ids[none], collapse = "; ")), call. = FALSE)
+    est <- ifelse(is_conf, cur[, 1L], ifelse(is_est, num, ci[, 1L]))
+    se  <- ifelse(keep_se, cur[, 2L], (tr(ci[, 3L]) - tr(ci[, 2L])) / (2 * z))
+    zk  <- ifelse(is_conf, stats::qnorm(1 - (1 - lvl) / 2), z)
+    new <- data.frame(estimate = est, std.error = se,
+                      conf.low  = ifelse(keep_se, bt(tr(est) - zk * se), ci[, 2L]),
+                      conf.high = ifelse(keep_se, bt(tr(est) + zk * se), ci[, 3L]),
+                      p.value = 2 * stats::pnorm(-abs(tr(est) / se)))
     for (k in seq_len(nrow(edits))) {
       if (is.na(edits$level[k])) {
         ov[names(new)] <- new[k, ]
