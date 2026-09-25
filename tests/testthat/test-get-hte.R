@@ -508,6 +508,29 @@ test_that("print shows the analysis header and the event-risk note", {
   expect_true(any(grepl(".dr_score", out, fixed = TRUE)))
 })
 
+test_that("subgroup CATE means combine estimand and observation weights", {
+  skip_if_not_installed("grf")
+  d <- hte_bin_data(n = 480L)
+  cl <- rep(1:40, times = rep(c(8, 16), 20))
+  for (ga in list(list(sample.weights = seq(0.1, 2, length.out = nrow(d))),
+                  list(clusters = cl, equalize.cluster.weights = TRUE))) {
+    r <- get_hte(d, "z", sub_var = "sex", adj_var = c("age", "sex"), surv = "y",
+                 estimand = c("ATE", "ATT", "ATC", "ATO"),
+                 grf_args = c(hte_args, ga))
+    wt <- if (!is.null(ga$sample.weights)) ga$sample.weights else
+      1 / as.numeric(table(cl)[as.character(cl)])
+    h <- list(ATE = rep(1, nrow(d)), ATT = d$z, ATC = 1 - d$z,
+              ATO = r$fit$W.hat * (1 - r$fit$W.hat))
+    want <- vapply(seq_len(nrow(r$subgroup)), function(j) {
+      i <- d$sex == r$subgroup$level[j]
+      stats::weighted.mean(r$data$.cate[i], (wt * h[[r$subgroup$estimand[j]]])[i])
+    }, numeric(1L))
+    expect_equal(r$subgroup$cate_mean, want)
+    expect_equal(attr(plt_hte_sub(r), "subgroup")$cate_mean,
+                 want[r$subgroup$estimand == "ATE"])
+  }
+})
+
 test_that("overlap effects remain available at boundary propensities", {
   skip_if_not_installed("grf")
   d <- hte_bin_data(n = 400L)

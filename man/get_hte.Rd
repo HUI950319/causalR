@@ -204,6 +204,7 @@ only when none remains.
 \code{\link[grf:average_treatment_effect]{grf::average_treatment_effect()}} with \code{subset} for \code{"diff"}, and the arm
 scores averaged over the subgroup for \code{"ratio"} and \code{"OR"}. \code{cate_mean} is
 the estimand-weighted mean of the out-of-bag CATE in the subgroup, given
+the forest's observation weights (including equal cluster weights) as well,
 for \code{"diff"} rows only and only as a description: forest estimates are
 shrunk towards the overall mean, so it carries no interval. \code{p_inter} tests
 whether the subgroup estimates of one \code{sub_var} are equal (Wald

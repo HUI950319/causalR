@@ -1,5 +1,7 @@
 # causalR (development version)
 
+* `get_hte()` subgroup `cate_mean` combines target-population weights with
+  sample weights or equal cluster weights, matching the analysis population.
 * `get_hte(estimand = "ATO")` accepts boundary propensities without losing
   valid overlap estimates; unavailable ordinary AIPW diagnostics are marked NA.
 * `get_hte()` retains average effects when spline or calibration diagnostics

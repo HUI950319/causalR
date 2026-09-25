@@ -264,6 +264,8 @@
   # Plug-in weights matching each estimand, for the descriptive cate_mean.
   h <- list(ATE = rep(1, length(W)), ATT = W, ATC = 1 - W,
             ATO = fit$W.hat * (1 - fit$W.hat))
+  obs_wt <- .hte_weights(fit)
+  h <- lapply(h, function(wt) wt * obs_wt)
   tbl <- do.call(rbind, lapply(sub_var, function(v) {
     g <- droplevels(as.factor(data[[v]]))
     rows <- do.call(rbind, lapply(levels(g), function(lv) {
@@ -272,7 +274,8 @@
                            sprintf("%s = %s", v, lv), beyond)
       cate_mean <- vapply(seq_len(nrow(est)), function(i) {
         if (est$measure[i] != "diff") return(NA_real_)
-        stats::weighted.mean(s$tau[idx], h[[est$estimand[i]]][idx])
+        wt <- h[[est$estimand[i]]][idx]
+        if (sum(wt) > 0) stats::weighted.mean(s$tau[idx], wt) else NA_real_
       }, numeric(1L))
       data.frame(sub_var = v, level = lv, est[c("estimand", "measure")],
                  n = sum(idx), n_treat = sum(W[idx]),
@@ -529,6 +532,7 @@
 #' [grf::average_treatment_effect()] with `subset` for `"diff"`, and the arm
 #' scores averaged over the subgroup for `"ratio"` and `"OR"`. `cate_mean` is
 #' the estimand-weighted mean of the out-of-bag CATE in the subgroup, given
+#' the forest's observation weights (including equal cluster weights) as well,
 #' for `"diff"` rows only and only as a description: forest estimates are
 #' shrunk towards the overall mean, so it carries no interval. `p_inter` tests
 #' whether the subgroup estimates of one `sub_var` are equal (Wald
