@@ -508,6 +508,51 @@ test_that("print shows the analysis header and the event-risk note", {
   expect_true(any(grepl(".dr_score", out, fixed = TRUE)))
 })
 
+test_that("clustered subgroup comparisons include cross-group covariance", {
+  skip_if_not_installed("grf")
+  set.seed(122)
+  cl <- rep(1:40, each = 40)
+  d <- data.frame(x = stats::rnorm(1600),
+                  g = factor(rep(rep(c("A", "B"), each = 20), 40)),
+                  z = stats::rbinom(1600, 1, 0.5))
+  d$y <- d$z * (0.3 * (d$g == "B") + stats::rnorm(40, sd = 3)[cl]) +
+    stats::rnorm(1600)
+  r <- get_hte(d, "z", sub_var = "g", adj_var = c("x", "g"), surv = "y",
+               estimand = c("ATE", "ATT", "ATC", "ATO"),
+               grf_args = c(hte_args, list(W.hat = 0.5, clusters = cl)))
+  a <- r$subgroup[r$subgroup$estimand == "ATE", ]
+  u <- sapply(levels(d$g), function(lv) {
+    i <- which(d$g == lv)
+    v <- numeric(nrow(d))
+    v[i] <- (r$data$.dr_score[i] - mean(r$data$.dr_score[i])) / length(i)
+    as.numeric(rowsum(v, cl)) * sqrt(40 / 39)
+  })
+  S <- crossprod(u)
+  expect_equal(diag(S), a$std.error^2, ignore_attr = TRUE)
+  p <- stats::pchisq(diff(a$estimate)^2 / sum(S * matrix(c(1, -1, -1, 1), 2)),
+                     1, lower.tail = FALSE)
+  expect_equal(a$p_inter, rep(p, 2))
+  expect_lt(p, 0.05)
+  expect_equal(r$importance$p_het[r$importance$variable == "g"], p)
+
+  # Independent cluster-level perturbations of each group's residual regression
+  # give the cross-covariance for overlap effects.
+  u <- sapply(levels(d$g), function(lv) {
+    i <- which(d$g == lv)
+    m <- stats::lm(I(d$y[i] - r$fit$Y.hat[i]) ~ I(d$z[i] - 0.5))
+    scores <- sandwich::estfun(m) %*% sandwich::bread(m) / length(i)
+    as.numeric(rowsum(scores[, 2], cl[i])) *
+      sqrt(40 / 39 * (length(i) - 1) / (length(i) - 2))
+  })
+  S <- crossprod(u)
+  a <- r$subgroup[r$subgroup$estimand == "ATO", ]
+  expect_equal(diag(S), a$std.error^2, ignore_attr = TRUE)
+  expect_equal(a$p_inter, rep(stats::pchisq(diff(a$estimate)^2 /
+    sum(S * matrix(c(1, -1, -1, 1), 2)), 1, lower.tail = FALSE), 2))
+  expect_equal(attr(plt_hte_sub(r, sub_var = "g"), "subgroup")$p_inter,
+               r$subgroup$p_inter[r$subgroup$estimand == "ATE"])
+})
+
 test_that("heterogeneity inherits weights and clusters from the forest", {
   skip_if_not_installed("grf")
   d <- hte_bin_data(n = 480L)

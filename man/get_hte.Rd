@@ -206,7 +206,9 @@ for \code{"diff"} rows only and only as a description: forest estimates are
 shrunk towards the overall mean, so it carries no interval. \code{p_inter} tests
 whether the subgroup estimates of one \code{sub_var} are equal (Wald
 chi-square with K - 1 degrees of freedom, on the log scale for \code{"ratio"}
-and \code{"OR"}). A subgroup in which an arm has no patient followed beyond
+and \code{"OR"}). Shared clusters contribute cross-group covariance; marginal
+variances retain grf's convention (including its plug-in variance for
+ATT/ATC). A subgroup in which an arm has no patient followed beyond
 \code{time} gets \code{NA}, like one with fewer than two patients in an arm.
 }
 

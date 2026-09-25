@@ -192,6 +192,46 @@
 # descriptive estimand-weighted CATE mean and `p_inter`, the Wald test that
 # the levels are equal. get_hte() and plt_hte_sub() share it, so a subgroup
 # gets the same numbers in both.
+#
+# grf's ATT/ATC variance adds the plug-in CATE variance to the variance of
+# its normalized residual correction. Retain that convention, adding the
+# cross-group cluster covariance of the residual corrections. For ATO use
+# the slope influence of grf's weighted residual regression (HC1 clusters).
+.hte_subgroup_vcov <- function(fit, s, groups, estimand, se) {
+  cl <- fit$clusters
+  if (!length(cl)) return(diag(se^2, length(se)))
+  wt <- .hte_weights(fit)
+  if (estimand == "ATE")
+    return(.hte_score_summary(s$g1 - s$g0, groups, wt, cl)$vcov)
+  influence <- vapply(groups, function(i) {
+    i <- i[wt[i] > 0]
+    w <- fit$W.orig[i]
+    e <- fit$W.hat[i]
+    a <- wt[i]
+    u <- numeric(length(wt))
+    k <- length(unique(cl[i]))
+    if (estimand == "ATO") {
+      x <- w - e
+      y <- fit$Y.orig[i] - fit$Y.hat[i]
+      m <- stats::lm(y ~ x, weights = a)
+      xc <- x - stats::weighted.mean(x, a)
+      u[i] <- a * xc * stats::residuals(m) / sum(a * xc^2) *
+        sqrt((length(i) - 1) / (length(i) - 2))
+    } else {
+      r <- fit$Y.orig[i] - fit$Y.hat[i] - (w - e) * s$tau[i]
+      h1 <- if (estimand == "ATT") w else w * (1 - e) / e
+      h0 <- if (estimand == "ATT") (1 - w) * e / (1 - e) else 1 - w
+      u[i] <- a * r * (h1 / sum(a * h1) - h0 / sum(a * h0))
+    }
+    as.numeric(rowsum(u, cl)) * sqrt(k / (k - 1))
+  }, numeric(length(unique(cl))))
+  V <- crossprod(influence)
+  # Preserve the exact marginal variances reported by grf, including its
+  # additional plug-in variance for ATT and ATC.
+  diag(V) <- se^2
+  V
+}
+
 #' @keywords internal
 #' @noRd
 .hte_subgroup <- function(fit, s, data, sub_var, grid, event_risk, z,
@@ -226,10 +266,9 @@
       se <- rows$std.error[j]
       ok <- is.finite(th) & is.finite(se) & se > 0
       if (sum(ok) >= 2L) {
-        wt <- 1 / se[ok]^2
-        q  <- sum(wt * (th[ok] - sum(wt * th[ok]) / sum(wt))^2)
-        rows$p_inter[j] <- stats::pchisq(q, df = sum(ok) - 1L,
-                                         lower.tail = FALSE)
+        groups <- lapply(rows$level[j][ok], function(lv) which(g == lv))
+        V <- .hte_subgroup_vcov(fit, s, groups, rows$estimand[j[1L]], se[ok])
+        rows$p_inter[j] <- .hte_equal_p(th[ok], V)
       }
     }
     rows
@@ -449,7 +488,9 @@
 #' shrunk towards the overall mean, so it carries no interval. `p_inter` tests
 #' whether the subgroup estimates of one `sub_var` are equal (Wald
 #' chi-square with K - 1 degrees of freedom, on the log scale for `"ratio"`
-#' and `"OR"`). A subgroup in which an arm has no patient followed beyond
+#' and `"OR"`). Shared clusters contribute cross-group covariance; marginal
+#' variances retain grf's convention (including its plug-in variance for
+#' ATT/ATC). A subgroup in which an arm has no patient followed beyond
 #' `time` gets `NA`, like one with fewer than two patients in an arm.
 #'
 #' @section CATE curves:
