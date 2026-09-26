@@ -206,23 +206,31 @@
 #' @param conf_level Confidence level of the `"dr"` intervals. Default `0.95`.
 #'   Only used by `type = "dep"`.
 #' @param ylim `NULL` (default) or two increasing numbers giving the y range
-#'   of every panel; intervals running past it are clipped.
+#'   of every panel; intervals running past it are clipped. Only used by
+#'   `type = "dep"`.
 #' @param cate_smooth Loess span of the `"cate"` line of a continuous
 #'   covariate, from `0.05` to `1`: smaller follows the patients more closely,
 #'   larger is smoother. Default `0.6`. `0` leaves the line out and keeps the
 #'   points. The line is dark grey beside the red `"dr"` layer and red without
 #'   it. Only used by `type = "dep"`.
-#' @param dr_args Named list for the `"dr"` layer: `spline_df` (default `2`),
-#'   the natural-spline degrees of freedom of a continuous covariate, which
-#'   also sets the degrees of freedom of its `p_het`: fewer is smoother, and
-#'   `1` fits a straight line. At the default the `p_het` equals the one in
-#'   `get_hte()$importance`. Only used by `type = "dep"`.
-#' @param pdp_args Named list for the partial dependence: `grid_n` (default
-#'   `21`), the grid points of a continuous covariate, and `max_n` (default
-#'   `1000`), the most patients averaged over, taken evenly spaced so the
-#'   result does not depend on the random seed; `Inf` uses everyone. The
-#'   forest predicts one row per grid point and patient -- for a heat map, per
-#'   grid combination and patient -- so large values are slow.
+#' @param dr_args Named list for the `"dr"` layer, only used by `type = "dep"`:
+#'   \describe{
+#'     \item{`spline_df`}{Finite whole number of at least 1, default `2`.
+#'       Natural-spline degrees of freedom for a continuous covariate and
+#'       its `p_het`: fewer is smoother; `1` fits a straight line. At the
+#'       default the `p_het` equals `get_hte()$importance`.}
+#'   }
+#' @param pdp_args Named list for partial dependence in the `"pdp"` layer or
+#'   `type = "heat"`:
+#'   \describe{
+#'     \item{`grid_n`}{Finite whole number of at least 2, default `21`.
+#'       Number of grid points for each continuous covariate.}
+#'     \item{`max_n`}{Positive whole number or `Inf`, default `1000`.
+#'       Maximum patients averaged over, taken evenly spaced so the result
+#'       does not depend on the random seed; `Inf` uses everyone.}
+#'   }
+#'   The forest predicts each grid combination for each selected patient in
+#'   batches; large grids and background samples still require more work.
 #' @param axis_arg Named list with `share_y`: `"all"` (default) for one y
 #'   range across panels or `"none"` for a range per panel. Without `ylim` the
 #'   range covers the points and estimates but not the intervals, so a level
@@ -295,6 +303,7 @@ plt_hte_dep <- function(x,
   type <- match.arg(type)
   if (type == "heat") {
     used <- c(display = !missing(display), conf_level = !missing(conf_level),
+              ylim = !missing(ylim),
               cate_smooth = !missing(cate_smooth), dr_args = !missing(dr_args),
               axis_arg = !missing(axis_arg))
     if (any(used))
@@ -320,14 +329,17 @@ plt_hte_dep <- function(x,
       !axis_arg$share_y %in% c("all", "none"))
     stop("`axis_arg$share_y` must be \"all\" or \"none\".", call. = FALSE)
   if (!is.numeric(dr_args$spline_df) || length(dr_args$spline_df) != 1L ||
-      is.na(dr_args$spline_df) || dr_args$spline_df < 1)
-    stop("`dr_args$spline_df` must be a single number of at least 1.",
+      !is.finite(dr_args$spline_df) || dr_args$spline_df < 1 ||
+      dr_args$spline_df != floor(dr_args$spline_df))
+    stop("`dr_args$spline_df` must be a finite whole number of at least 1.",
          call. = FALSE)
   if (!is.numeric(pdp_args$grid_n) || length(pdp_args$grid_n) != 1L ||
-      is.na(pdp_args$grid_n) || pdp_args$grid_n < 2 ||
+      !is.finite(pdp_args$grid_n) || pdp_args$grid_n < 2 ||
+      pdp_args$grid_n != floor(pdp_args$grid_n) ||
       !is.numeric(pdp_args$max_n) || length(pdp_args$max_n) != 1L ||
-      is.na(pdp_args$max_n) || pdp_args$max_n < 1)
-    stop("`pdp_args$grid_n` must be at least 2 and `pdp_args$max_n` at least 1.",
+      is.na(pdp_args$max_n) || pdp_args$max_n < 1 ||
+      (is.finite(pdp_args$max_n) && pdp_args$max_n != floor(pdp_args$max_n)))
+    stop("`pdp_args$grid_n` must be a finite whole number of at least 2 and `pdp_args$max_n` a positive whole number or Inf.",
          call. = FALSE)
   if (!is.null(ylim) && (!is.numeric(ylim) || length(ylim) != 2L ||
                          anyNA(ylim) || ylim[1L] >= ylim[2L]))

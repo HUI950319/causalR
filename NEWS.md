@@ -1,5 +1,7 @@
 # causalR (development version)
 
+* `plt_hte_dep()` rejects unused heat-map `ylim` and invalid non-integer or
+  non-finite grid sizes and spline degrees; `max_n = Inf` remains supported.
 * `plt_hte_cate(overall = FALSE)` skips unused arm-score calculations when no
   subgroup is requested, including when individual CATE intervals are drawn.
 * PDP and heat-map predictions use bounded matrix batches instead of expanding

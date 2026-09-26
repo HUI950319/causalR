@@ -223,6 +223,18 @@ test_that("pdp sets an integer-coded factor through its level code", {
                manual_pdp(res$fit, list(age = min(d$age), stage = 3)))
 })
 
+test_that("dependence plots reject unused limits and invalid grid sizes", {
+  res <- dep_res()
+  expect_error(plt_hte_dep(res, x_var = c("age", "sex"), type = "heat",
+                           ylim = c(-1, 1)), "only applies to type")
+  for (bad in c(2.5, Inf, -Inf, NA_real_)) {
+    expect_error(plt_hte_dep(res, dr_args = list(spline_df = bad)), "spline_df")
+    expect_error(plt_hte_dep(res, pdp_args = list(grid_n = bad)), "grid_n")
+  }
+  for (bad in c(1.5, -Inf, NA_real_))
+    expect_error(plt_hte_dep(res, pdp_args = list(max_n = bad)), "max_n")
+})
+
 test_that("a covariate with missing values draws only its observed patients", {
   skip_if_not_installed("grf")
   skip_if_not_installed("sandwich")

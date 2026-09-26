@@ -60,7 +60,8 @@ Default \code{c("cate", "dr")}. Only used by \code{type = "dep"}.}
 Only used by \code{type = "dep"}.}
 
 \item{ylim}{\code{NULL} (default) or two increasing numbers giving the y range
-of every panel; intervals running past it are clipped.}
+of every panel; intervals running past it are clipped. Only used by
+\code{type = "dep"}.}
 
 \item{cate_smooth}{Loess span of the \code{"cate"} line of a continuous
 covariate, from \code{0.05} to \code{1}: smaller follows the patients more closely,
@@ -68,18 +69,25 @@ larger is smoother. Default \code{0.6}. \code{0} leaves the line out and keeps t
 points. The line is dark grey beside the red \code{"dr"} layer and red without
 it. Only used by \code{type = "dep"}.}
 
-\item{dr_args}{Named list for the \code{"dr"} layer: \code{spline_df} (default \code{2}),
-the natural-spline degrees of freedom of a continuous covariate, which
-also sets the degrees of freedom of its \code{p_het}: fewer is smoother, and
-\code{1} fits a straight line. At the default the \code{p_het} equals the one in
-\code{get_hte()$importance}. Only used by \code{type = "dep"}.}
+\item{dr_args}{Named list for the \code{"dr"} layer, only used by \code{type = "dep"}:
+\describe{
+\item{\code{spline_df}}{Finite whole number of at least 1, default \code{2}.
+Natural-spline degrees of freedom for a continuous covariate and
+its \code{p_het}: fewer is smoother; \code{1} fits a straight line. At the
+default the \code{p_het} equals \code{get_hte()$importance}.}
+}}
 
-\item{pdp_args}{Named list for the partial dependence: \code{grid_n} (default
-\code{21}), the grid points of a continuous covariate, and \code{max_n} (default
-\code{1000}), the most patients averaged over, taken evenly spaced so the
-result does not depend on the random seed; \code{Inf} uses everyone. The
-forest predicts one row per grid point and patient -- for a heat map, per
-grid combination and patient -- so large values are slow.}
+\item{pdp_args}{Named list for partial dependence in the \code{"pdp"} layer or
+\code{type = "heat"}:
+\describe{
+\item{\code{grid_n}}{Finite whole number of at least 2, default \code{21}.
+Number of grid points for each continuous covariate.}
+\item{\code{max_n}}{Positive whole number or \code{Inf}, default \code{1000}.
+Maximum patients averaged over, taken evenly spaced so the result
+does not depend on the random seed; \code{Inf} uses everyone.}
+}
+The forest predicts each grid combination for each selected patient in
+batches; large grids and background samples still require more work.}
 
 \item{axis_arg}{Named list with \code{share_y}: \code{"all"} (default) for one y
 range across panels or \code{"none"} for a range per panel. Without \code{ylim} the
