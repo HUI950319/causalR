@@ -12,8 +12,8 @@ get_hte_select(
   match_var = NULL,
   ps_var = NULL,
   n_select = NULL,
-  rank_metric = "score_sd",
-  select_metric = NULL,
+  imp_metric = "score_sd",
+  sel_metric = NULL,
   fit_args = list(nfolds = 10L, standardize = TRUE),
   eval_args = list(train_frac = 0.5, adjust_var = NULL, target = "RMST", time = NULL,
     num.trees = 2000L),
@@ -51,20 +51,20 @@ fixed across models; they are not weights. Default \code{NULL}. No propensity
 model is fitted and no matching is performed inside this function.}
 
 \item{n_select}{Optional integer from 1 to the number of candidates.
-Overrides the size chosen by \code{select_metric}, while its best step is still
+Overrides the size chosen by \code{sel_metric}, while its best step is still
 reported. Marks the returned size on the plots. Default \code{NULL} uses
-\code{select_metric}, or makes no selection when that is also \code{NULL}.
+\code{sel_metric}, or makes no selection when that is also \code{NULL}.
 The complete path is always computed.}
 
-\item{rank_metric}{Single metric name for single-variable ranking. Default
+\item{imp_metric}{Single metric name for single-variable ranking. Default
 \code{"score_sd"} preserves the original decreasing-SD ranking. Choices are
 \code{"score_sd"}, \code{"score_iqr"}, \code{"score_mean_abs"}, \code{"score_median"},
 \code{"score_mean"}, \code{"autoc"}, \code{"qini"}, \code{"r_loss"} and \code{"dr_loss"}.
 Losses are minimized; all other metrics are maximized. Ties preserve
 candidate input order. The four validation metrics activate \code{eval_args}.}
 
-\item{select_metric}{Single metric name with the same choices and directions
-as \code{rank_metric}, independently applied to the cumulative models. Default
+\item{sel_metric}{Single metric name with the same choices and directions
+as \code{imp_metric}, independently applied to the cumulative models. Default
 \code{NULL} preserves manual selection. Otherwise choose the best step, taking
 the smallest number of variables on exact ties. The combined plot uses
 this metric for its line and red optimum marker; with \code{NULL} it continues
@@ -119,7 +119,7 @@ A plain named list:
 \code{n_eval} (validation rows), \code{score_sd},
 \code{score_mean_abs}, \code{score_median}, \code{score_mean} (signed mean) and
 \code{score_iqr} (interquartile range), \code{autoc}, \code{qini}, \code{r_loss} and \code{dr_loss},
-sorted by \code{rank_metric} in its optimization direction.}
+sorted by \code{imp_metric} in its optimization direction.}
 \item{forward}{Data frame with \code{step}, \code{added_variable}, \code{n_vars}, a
 \code{variables} list column, \code{n}, \code{n_eval} and the same metrics.}
 \item{selected}{Character vector of the selected prefix, or \code{NULL} when
@@ -128,8 +128,8 @@ zero LASSO coefficients.}
 \item{plots}{Named list \code{ranking}, \code{forward} and \code{combined} of ggplot
 objects, not printed or saved automatically. Forward panels use separate
 y scales and omit unavailable metrics. The combined plot aligns bars
-of \code{rank_metric} (bottom axis) with cumulative \code{select_metric} values
-(top axis; signed mean score when \code{select_metric = NULL}). The pink/red
+of \code{imp_metric} (bottom axis) with cumulative \code{sel_metric} values
+(top axis; signed mean score when \code{sel_metric = NULL}). The pink/red
 bar and point mark the first optimum; a different manually selected
 size has a blue dotted line. These markers do not prove generalization.
 The secondary axis uses an invertible linear transformation for display only;
@@ -145,7 +145,7 @@ No fitted model, individual benefit scores or input data are retained.
 }
 \description{
 Fits a separate personalized subgroup model for each candidate, ranks the
-candidates using \code{rank_metric}, then fits every prefix of that fixed ranking.
+candidates using \code{imp_metric}, then fits every prefix of that fixed ranking.
 Returns score summaries and optional validation metrics, with manual or
 metric-based model-size selection. No fitted models are retained.
 }
@@ -170,7 +170,7 @@ mean absolute score, median, signed mean and interquartile range
 These are descriptive score summaries, not HRs, absolute CATE estimates,
 formal variable-importance tests or validated predictive performance.
 Penalty cross-validation does not validate the entire screening procedure.
-The default applies no automatic size rule. Explicit \code{select_metric} applies
+The default applies no automatic size rule. Explicit \code{sel_metric} applies
 a maximum (or minimum loss) rule; maximizing descriptive score spread or
 location alone is not evidence of predictive accuracy. The forward pass
 never reorders remaining candidates or removes earlier variables.
@@ -249,7 +249,7 @@ ans$plots$combined
 # Optional validation-based selection, using the same 40 candidates.
 if (requireNamespace("grf", quietly = TRUE)) {
   validated <- get_hte_select(d, "z", candidates, ps_var = "ps",
-    rank_metric = "score_iqr", select_metric = "autoc",
+    imp_metric = "score_iqr", sel_metric = "autoc",
     fit_args = list(nfolds = 3L),
     eval_args = list(time = 24, num.trees = 500L))
   validated$selected

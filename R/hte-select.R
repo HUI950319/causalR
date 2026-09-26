@@ -101,23 +101,23 @@
 }
 
 .hte_select_plots <- function(ranking, forward, n_select,
-                              rank_metric = "score_sd", select_metric = NULL) {
+                              imp_metric = "score_sd", sel_metric = NULL) {
   labels <- c(score_sd = "Benefit-score SD", score_iqr = "Benefit-score IQR",
                score_mean_abs = "Mean absolute benefit score",
                score_median = "Median benefit score", score_mean = "Mean benefit score",
                autoc = "Validation AUTOC", qini = "Validation QINI",
                r_loss = "Validation R-loss", dr_loss = "Validation DR-loss")
-  line_metric <- if (is.null(select_metric)) "score_mean" else select_metric
+  line_metric <- if (is.null(sel_metric)) "score_mean" else sel_metric
   bar_data <- ranking
-  bar_data$value <- ranking[[rank_metric]]
+  bar_data$value <- ranking[[imp_metric]]
   bar_data$variable <- factor(bar_data$variable,
                               levels = rev(ranking$variable))
   bar <- ggplot2::ggplot(bar_data, ggplot2::aes(x = variable, y = value)) +
     ggplot2::geom_col() + ggplot2::coord_flip() +
-    ggplot2::labs(x = NULL, y = labels[[rank_metric]]) +
+    ggplot2::labs(x = NULL, y = labels[[imp_metric]]) +
     ggplot2::theme_minimal()
   metrics <- intersect(unique(c("score_sd", "score_mean_abs", "score_median", "score_iqr",
-                                 select_metric, "autoc", "qini", "r_loss", "dr_loss")),
+                                 sel_metric, "autoc", "qini", "r_loss", "dr_loss")),
                        names(forward))
   metrics <- metrics[vapply(forward[metrics], function(v) all(is.finite(v)), logical(1))]
   curve_data <- do.call(rbind, lapply(metrics, function(metric) {
@@ -144,7 +144,7 @@
   # One row per ranked candidate; the line follows cumulative-model order.
   combined_data <- ranking
   combined_data$position <- nrow(ranking) + 1L - ranking$rank
-  combined_data$value <- ranking[[rank_metric]]
+  combined_data$value <- ranking[[imp_metric]]
   primary_limits <- range(c(0, combined_data$value))
   if (diff(primary_limits) == 0) primary_limits <- c(0, 1)
   primary_lower <- primary_limits[1]
@@ -190,7 +190,7 @@
                                  labels = combined_data$variable,
                                  expand = ggplot2::expansion(add = 0.7)) +
     ggplot2::scale_x_continuous(
-      name = paste("Single-variable", labels[[rank_metric]]),
+      name = paste("Single-variable", labels[[imp_metric]]),
       limits = primary_limits, expand = ggplot2::expansion(mult = c(0, 0.025)),
       sec.axis = ggplot2::sec_axis(
         transform = ~ (. - primary_lower) / primary_width * score_width + score_lower,
@@ -209,7 +209,7 @@
 #' Screen HTE variables by fixed-order benefit-score accumulation
 #'
 #' Fits a separate personalized subgroup model for each candidate, ranks the
-#' candidates using `rank_metric`, then fits every prefix of that fixed ranking.
+#' candidates using `imp_metric`, then fits every prefix of that fixed ranking.
 #' Returns score summaries and optional validation metrics, with manual or
 #' metric-based model-size selection. No fitted models are retained.
 #'
@@ -236,18 +236,18 @@
 #'   fixed across models; they are not weights. Default `NULL`. No propensity
 #'   model is fitted and no matching is performed inside this function.
 #' @param n_select Optional integer from 1 to the number of candidates.
-#'   Overrides the size chosen by `select_metric`, while its best step is still
+#'   Overrides the size chosen by `sel_metric`, while its best step is still
 #'   reported. Marks the returned size on the plots. Default `NULL` uses
-#'   `select_metric`, or makes no selection when that is also `NULL`.
+#'   `sel_metric`, or makes no selection when that is also `NULL`.
 #'   The complete path is always computed.
-#' @param rank_metric Single metric name for single-variable ranking. Default
+#' @param imp_metric Single metric name for single-variable ranking. Default
 #'   `"score_sd"` preserves the original decreasing-SD ranking. Choices are
 #'   `"score_sd"`, `"score_iqr"`, `"score_mean_abs"`, `"score_median"`,
 #'   `"score_mean"`, `"autoc"`, `"qini"`, `"r_loss"` and `"dr_loss"`.
 #'   Losses are minimized; all other metrics are maximized. Ties preserve
 #'   candidate input order. The four validation metrics activate `eval_args`.
-#' @param select_metric Single metric name with the same choices and directions
-#'   as `rank_metric`, independently applied to the cumulative models. Default
+#' @param sel_metric Single metric name with the same choices and directions
+#'   as `imp_metric`, independently applied to the cumulative models. Default
 #'   `NULL` preserves manual selection. Otherwise choose the best step, taking
 #'   the smallest number of variables on exact ties. The combined plot uses
 #'   this metric for its line and red optimum marker; with `NULL` it continues
@@ -312,7 +312,7 @@
 #' These are descriptive score summaries, not HRs, absolute CATE estimates,
 #' formal variable-importance tests or validated predictive performance.
 #' Penalty cross-validation does not validate the entire screening procedure.
-#' The default applies no automatic size rule. Explicit `select_metric` applies
+#' The default applies no automatic size rule. Explicit `sel_metric` applies
 #' a maximum (or minimum loss) rule; maximizing descriptive score spread or
 #' location alone is not evidence of predictive accuracy. The forward pass
 #' never reorders remaining candidates or removes earlier variables.
@@ -369,7 +369,7 @@
 #'     `n_eval` (validation rows), `score_sd`,
 #'     `score_mean_abs`, `score_median`, `score_mean` (signed mean) and
 #'     `score_iqr` (interquartile range), `autoc`, `qini`, `r_loss` and `dr_loss`,
-#'     sorted by `rank_metric` in its optimization direction.}
+#'     sorted by `imp_metric` in its optimization direction.}
 #'   \item{forward}{Data frame with `step`, `added_variable`, `n_vars`, a
 #'     `variables` list column, `n`, `n_eval` and the same metrics.}
 #'   \item{selected}{Character vector of the selected prefix, or `NULL` when
@@ -378,8 +378,8 @@
 #'   \item{plots}{Named list `ranking`, `forward` and `combined` of ggplot
 #'     objects, not printed or saved automatically. Forward panels use separate
 #'     y scales and omit unavailable metrics. The combined plot aligns bars
-#'     of `rank_metric` (bottom axis) with cumulative `select_metric` values
-#'     (top axis; signed mean score when `select_metric = NULL`). The pink/red
+#'     of `imp_metric` (bottom axis) with cumulative `sel_metric` values
+#'     (top axis; signed mean score when `sel_metric = NULL`). The pink/red
 #'     bar and point mark the first optimum; a different manually selected
 #'     size has a blue dotted line. These markers do not prove generalization.
 #'     The secondary axis uses an invertible linear transformation for display only;
@@ -420,7 +420,7 @@
 #' # Optional validation-based selection, using the same 40 candidates.
 #' if (requireNamespace("grf", quietly = TRUE)) {
 #'   validated <- get_hte_select(d, "z", candidates, ps_var = "ps",
-#'     rank_metric = "score_iqr", select_metric = "autoc",
+#'     imp_metric = "score_iqr", sel_metric = "autoc",
 #'     fit_args = list(nfolds = 3L),
 #'     eval_args = list(time = 24, num.trees = 500L))
 #'   validated$selected
@@ -430,7 +430,7 @@
 #' @export
 get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
                            match_var = NULL, ps_var = NULL, n_select = NULL,
-                           rank_metric = "score_sd", select_metric = NULL,
+                           imp_metric = "score_sd", sel_metric = NULL,
                            fit_args = list(nfolds = 10L, standardize = TRUE),
                            eval_args = list(train_frac = 0.5, adjust_var = NULL,
                                             target = "RMST", time = NULL,
@@ -446,15 +446,15 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
          call. = FALSE)
   available <- c("score_sd", "score_iqr", "score_mean_abs", "score_median", "score_mean",
                   "autoc", "qini", "r_loss", "dr_loss")
-  for (name in c("rank_metric", "select_metric")) {
+  for (name in c("imp_metric", "sel_metric")) {
     metric <- get(name)
-    if (name == "select_metric" && is.null(metric)) next
+    if (name == "sel_metric" && is.null(metric)) next
     if (!is.character(metric) || length(metric) != 1L || is.na(metric) ||
         !metric %in% available)
       stop(sprintf("`%s` must be one of: %s.", name, paste(available, collapse = ", ")),
            call. = FALSE)
   }
-  use_eval <- any(c(rank_metric, select_metric) %in% c("autoc", "qini", "r_loss", "dr_loss"))
+  use_eval <- any(c(imp_metric, sel_metric) %in% c("autoc", "qini", "r_loss", "dr_loss"))
   eval_args <- .merge_named_arg(eval_args,
     list(train_frac = 0.5, adjust_var = NULL, target = "RMST", time = NULL,
          num.trees = 2000L), "eval_args")
@@ -557,7 +557,7 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
     y <- as.numeric(y)
     type <- if (all(y %in% 0:1)) "binary" else "continuous"
   }
-  if (type != "continuous" && any(c(rank_metric, select_metric) %in% c("r_loss", "dr_loss")))
+  if (type != "continuous" && any(c(imp_metric, sel_metric) %in% c("r_loss", "dr_loss")))
     stop("`r_loss` and `dr_loss` currently require a continuous outcome; Cox/logistic benefit scores are not outcome-scale effects.",
          call. = FALSE)
   if (use_eval && type == "survival" && is.null(eval_args$time))
@@ -674,7 +674,7 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
                fit_subset(candidate_var[i], "single", i))
   })
   ranking <- do.call(rbind, single)
-  ranking <- ranking[order(.hte_select_direction(rank_metric) * ranking[[rank_metric]],
+  ranking <- ranking[order(.hte_select_direction(imp_metric) * ranking[[imp_metric]],
                             seq_len(nrow(ranking))), , drop = FALSE]
   rownames(ranking) <- NULL
   ranking <- data.frame(rank = seq_len(nrow(ranking)), ranking)
@@ -685,8 +685,8 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
                fit_subset(vars, "forward", k))
   })
   forward <- do.call(rbind, steps)
-  best_step <- if (!is.null(select_metric))
-    which.min(.hte_select_direction(select_metric) * forward[[select_metric]]) else NULL
+  best_step <- if (!is.null(sel_metric))
+    which.min(.hte_select_direction(sel_metric) * forward[[sel_metric]]) else NULL
   selected_step <- if (!is.null(n_select)) n_select else best_step
   warning_table <- if (length(warnings)) do.call(rbind, warnings) else
     data.frame(stage = character(), step = integer(), variables = character(),
@@ -696,7 +696,7 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
   }, character(1))
   list(ranking = ranking, forward = forward,
        selected = if (!is.null(selected_step)) ranking$variable[seq_len(selected_step)] else NULL,
-       plots = .hte_select_plots(ranking, forward, selected_step, rank_metric, select_metric),
+       plots = .hte_select_plots(ranking, forward, selected_step, imp_metric, sel_metric),
        analysis = list(backend = "personalized", outcome_type = type,
                        outcome = outcome, cat_var = cat_var,
                        treatment_mapping = unique(data.frame(
@@ -704,11 +704,11 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
                        loss = loss, method = "weighting", n = nrow(data),
                        candidate_var = candidate_var, match_var = match_var,
                        ps_var = ps_var, n_select = n_select,
-                       rank_metric = rank_metric, select_metric = select_metric,
+                       imp_metric = imp_metric, sel_metric = sel_metric,
                        best_step = best_step, selected_step = selected_step,
-                       rank_direction = if (.hte_select_direction(rank_metric) == 1) "minimize" else "maximize",
-                       select_direction = if (is.null(select_metric)) NULL else
-                         if (.hte_select_direction(select_metric) == 1) "minimize" else "maximize",
+                       rank_direction = if (.hte_select_direction(imp_metric) == 1) "minimize" else "maximize",
+                       select_direction = if (is.null(sel_metric)) NULL else
+                         if (.hte_select_direction(sel_metric) == 1) "minimize" else "maximize",
                        design_columns = lapply(columns, function(idx) colnames(x)[idx]),
                        seed = seed, fit_args = fit_args, foldid = foldid,
                        eval_args = eval_args, training_rows = train,

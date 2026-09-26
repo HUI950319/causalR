@@ -1,6 +1,10 @@
 # causalR (development version)
 
-* `get_hte_select()` adds independent `rank_metric` and `select_metric`
+* `get_hte_select()` renames `rank_metric` to `imp_metric` (variable importance)
+  and `select_metric` to `sel_metric` (variable selection), including the
+  corresponding `analysis` fields. Defaults and calculations are unchanged;
+  callers using the old argument names must update them.
+* `get_hte_select()` adds independent `imp_metric` and `sel_metric`
   controls, benefit-score IQR, held-out AUTOC/QINI, and continuous-outcome
   R-loss/DR-loss. `eval_args` controls a fixed training/evaluation split and
   a shared GRF evaluator; matched pairs stay together. Selection minimizes

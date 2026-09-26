@@ -205,12 +205,12 @@ test_that("backend errors identify the affected model and warnings are retained"
 test_that("the public signature and documentation expose all defaults", {
   expect_identical(names(formals(get_hte_select)),
                    c("data", "cat_var", "candidate_var", "surv", "match_var", "ps_var",
-                     "n_select", "rank_metric", "select_metric", "fit_args",
+                     "n_select", "imp_metric", "sel_metric", "fit_args",
                      "eval_args", "seed", "verbose"))
   expect_identical(eval(formals(get_hte_select)$fit_args),
                    list(nfolds = 10L, standardize = TRUE))
-  expect_identical(formals(get_hte_select)$rank_metric, "score_sd")
-  expect_identical(formals(get_hte_select)$select_metric, NULL)
+  expect_identical(formals(get_hte_select)$imp_metric, "score_sd")
+  expect_identical(formals(get_hte_select)$sel_metric, NULL)
   expect_identical(eval(formals(get_hte_select)$eval_args),
                    list(train_frac = 0.5, adjust_var = NULL, target = "RMST",
                         time = NULL, num.trees = 2000L))
@@ -225,8 +225,8 @@ test_that("the public signature and documentation expose all defaults", {
   usage <- rd[[which(vapply(rd, function(x) identical(attr(x, "Rd_tag"), "\\usage"), logical(1)))]]
   signature <- parse(text = paste(as.character(usage), collapse = ""))[[1L]]
   expect_identical(eval(signature[["eval_args"]]), eval(formals(get_hte_select)$eval_args))
-  expect_identical(eval(signature[["rank_metric"]]), "score_sd")
-  expect_identical(signature[["select_metric"]], quote(NULL))
+  expect_identical(eval(signature[["imp_metric"]]), "score_sd")
+  expect_identical(signature[["sel_metric"]], quote(NULL))
 })
 
 test_that("ranking and selection metrics are independent and manual size wins", {
@@ -237,11 +237,11 @@ test_that("ranking and selection metrics are independent and manual size wins", 
                            score_mean_abs = 1, score_mean = 0, score_median = 0),
          warnings = character())
   })
-  res <- hte_select_call(rank_metric = "score_iqr", select_metric = "score_sd")
+  res <- hte_select_call(imp_metric = "score_iqr", sel_metric = "score_sd")
   expect_identical(res$ranking$variable, c("group", "x"))
   expect_identical(res$analysis$best_step, 2L)
   expect_identical(res$selected, c("group", "x"))
-  manual <- hte_select_call(rank_metric = "score_iqr", select_metric = "score_sd",
+  manual <- hte_select_call(imp_metric = "score_iqr", sel_metric = "score_sd",
                             n_select = 1L)
   expect_identical(manual$selected, "group")
   expect_identical(manual$analysis$best_step, 2L)
@@ -257,7 +257,7 @@ test_that("validation routes use held-out predictions and match direct calculati
     matched <- route == "match"
     res <- get_hte_select(d, "z", c("x", "group"), surv = "y",
       ps_var = if (!matched) "ps", match_var = if (matched) "pair",
-      rank_metric = "autoc", select_metric = "dr_loss", fit_args = list(nfolds = 3L),
+      imp_metric = "autoc", sel_metric = "dr_loss", fit_args = list(nfolds = 3L),
       eval_args = list(num.trees = 100L))
     train <- res$analysis$training_rows
     val <- res$analysis$evaluation_rows
@@ -302,7 +302,7 @@ test_that("binary and both survival targets support RATE on PS and matched data"
     for (matched in c(FALSE, TRUE)) {
       res <- get_hte_select(d, "z", "x", surv = if (outcome == "binary") "binary" else TRUE,
         ps_var = if (!matched) "ps", match_var = if (matched) "pair",
-        rank_metric = "qini", select_metric = "autoc", fit_args = list(nfolds = 3L),
+        imp_metric = "qini", sel_metric = "autoc", fit_args = list(nfolds = 3L),
         eval_args = list(num.trees = 100L, time = 0.5,
                          target = if (outcome == "binary") "RMST" else outcome))
       expect_identical(res$selected, "x")
@@ -333,7 +333,7 @@ test_that("evaluation nuisances stay fixed, losses sort ascending and ties selec
       score_median = 0, score_mean_abs = 1, autoc = -v, qini = -v, r_loss = v, dr_loss = v),
       warnings = character())
   })
-  res <- hte_select_call(d, rank_metric = "r_loss", select_metric = "dr_loss",
+  res <- hte_select_call(d, imp_metric = "r_loss", sel_metric = "dr_loss",
                          eval_args = list(adjust_var = "confounder"))
   expect_identical(evaluated, 1L)
   expect_identical(res$ranking$variable, c("group", "x"))
@@ -352,7 +352,7 @@ test_that("validation restores RNG, reproduces results and reports failures", {
   skip_if_not_installed("grf")
   withr::local_seed(91)
   before <- .Random.seed
-  call <- function() hte_select_call(select_metric = "r_loss", eval_args = list(num.trees = 100L))
+  call <- function() hte_select_call(sel_metric = "r_loss", eval_args = list(num.trees = 100L))
   first <- call()
   expect_identical(.Random.seed, before)
   second <- call()
@@ -366,8 +366,8 @@ test_that("validation restores RNG, reproduces results and reports failures", {
 
 test_that("new metric and evaluation inputs reject unsupported configurations", {
   d <- hte_select_data()
-  expect_error(hte_select_call(rank_metric = "bad"), "rank_metric")
-  expect_error(hte_select_call(select_metric = c("autoc", "qini")), "select_metric")
+  expect_error(hte_select_call(imp_metric = "bad"), "imp_metric")
+  expect_error(hte_select_call(sel_metric = c("autoc", "qini")), "sel_metric")
   expect_error(hte_select_call(eval_args = list(bad = 1)), "unknown")
   expect_error(hte_select_call(eval_args = list(0.5)), "named")
   expect_error(hte_select_call(eval_args = list(time = 1, time = 2)), "duplicated")
@@ -377,19 +377,19 @@ test_that("new metric and evaluation inputs reject unsupported configurations", 
   expect_error(hte_select_call(eval_args = list(time = Inf)), "time")
   expect_error(hte_select_call(eval_args = list(adjust_var = "y")), "cannot include")
   bad <- d; bad$confounder <- seq_len(nrow(d)); bad$confounder[1] <- NA
-  expect_error(hte_select_call(bad, rank_metric = "autoc",
+  expect_error(hte_select_call(bad, imp_metric = "autoc",
     eval_args = list(adjust_var = "confounder")), "missing or non-finite.*confounder")
-  expect_error(get_hte_select(d, "z", "x", ps_var = "ps", rank_metric = "autoc"), "eval_args\\$time")
+  expect_error(get_hte_select(d, "z", "x", ps_var = "ps", imp_metric = "autoc"), "eval_args\\$time")
   for (outcome in list(TRUE, "binary")) {
     for (metric in c("r_loss", "dr_loss"))
       expect_error(get_hte_select(d, "z", "x", surv = outcome, ps_var = "ps",
-                                  select_metric = metric), "continuous outcome")
+                                  sel_metric = metric), "continuous outcome")
   }
-  expect_error(hte_select_call(rank_metric = "autoc", eval_args = list(train_frac = 0.01)),
+  expect_error(hte_select_call(imp_metric = "autoc", eval_args = list(train_frac = 0.01)),
                 "Each split")
-  expect_error(get_hte_select(d, "z", "x", match_var = "pair", rank_metric = "autoc",
+  expect_error(get_hte_select(d, "z", "x", match_var = "pair", imp_metric = "autoc",
     eval_args = list(time = 1, train_frac = 0.99)), "training pairs")
-  expect_error(get_hte_select(d, "z", "x", ps_var = "ps", rank_metric = "autoc",
+  expect_error(get_hte_select(d, "z", "x", ps_var = "ps", imp_metric = "autoc",
     eval_args = list(time = max(d$time) + 1)), "follow-up")
 })
 
