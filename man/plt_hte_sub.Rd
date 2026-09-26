@@ -43,9 +43,11 @@ whatever level \code{x} was computed with.}
 
 \item{effect}{\code{NULL} (default) or rows to replace, e.g. with an estimate
 from a published study: a named list whose elements are named by a
-variable of \code{sub_var}, holding strings named by its levels, or
-\code{"All patients"} for the overall row, holding one string, e.g.
-\code{list(sex = c(M = "0.12 (0.05, 0.19)", F = "0.05"), "All patients" = "conf_0.9")}.
+variable of \code{sub_var}, holding strings named by its levels; by a level
+drawn under one variable only; or by \code{"All patients"} for the overall
+row. The last two hold one string, e.g.
+\code{list(sex = c(M = "0.12 (0.05, 0.19)", F = "0.05"), III = "conf_0.9")}.
+A name that is a variable of \code{sub_var} is read as the variable.
 A string is one of
 \itemize{
 \item an interval, in any form \code{\link[UtilsR:stat_ci_parse]{UtilsR::stat_ci_parse()}} reads, drawn as
@@ -173,10 +175,11 @@ patchwork::wrap_plots(plt_hte_sub(res, sub_var = "sex"),
                       ncol = 1)
 
 # Replace rows, e.g. with published estimates: an interval is drawn as
-# given, a bare estimate keeps the row's SE, "conf_" re-levels the row
+# given, a bare estimate keeps the row's SE, "conf_" re-levels the row;
+# a level found under one variable only can go without it
 plt_hte_sub(res, sub_var = c("sex", "stage"), show_pvalue = TRUE,
             effect = list(sex = c(M = "0.150 (0.050, 0.250)", F = "0.05"),
-                          stage = c(III = "conf_0.9"),
+                          III = "conf_0.9",
                           "All patients" = "0.100 (0.040, 0.160)"))
 }
 \dontshow{\}) # examplesIf}

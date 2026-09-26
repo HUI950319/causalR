@@ -536,7 +536,22 @@ test_that("effect replaces the estimate of the rows it names", {
   expect_equal(c(r1$conf.low[1], r1$conf.high[1]),
                exp(log(1.2) + c(-1, 1) * z95 * r0$std.error[1]))
 
+  # a level drawn under one variable only may stand alone
+  nested <- plt_hte_sub(res, sub_var = c("stage", "sex"),
+                        effect = list(sex = c(M = "0.120 (0.050, 0.190)"),
+                                      stage = c(III = "conf_0.75")))
+  bare   <- plt_hte_sub(res, sub_var = c("stage", "sex"),
+                        effect = list(M = "0.120 (0.050, 0.190)", III = "conf_0.75"))
+  expect_equal(attr(bare, "subgroup"), attr(nested, "subgroup"))
+  res2 <- res
+  res2$data$grp <- ifelse(res2$data$sex == "M", "I", "II")
+  expect_error(suppressMessages(plt_hte_sub(res2, sub_var = c("stage", "grp"),
+                                            effect = list(I = "0.1 (0, 0.2)"))),
+               "drawn under stage, grp")
+
   one <- function(...) plt_hte_sub(res, sub_var = "sex", ...)
+  expect_error(one(effect = list(M = "0.1 (0, 0.2)", sex = c(M = "conf_0.9"))),
+               "sex = M twice")
   expect_error(one(effect = list(sex = c(M = "conf_1.5"))), 'sex = M ("conf_1.5")',
                fixed = TRUE)
   expect_error(one(measure = "ratio", effect = list(sex = c(M = "-0.5"))),

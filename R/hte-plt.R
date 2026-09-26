@@ -585,9 +585,11 @@ plt_hte_dep <- function(x,
 #'   whatever level `x` was computed with.
 #' @param effect `NULL` (default) or rows to replace, e.g. with an estimate
 #'   from a published study: a named list whose elements are named by a
-#'   variable of `sub_var`, holding strings named by its levels, or
-#'   `"All patients"` for the overall row, holding one string, e.g.
-#'   `list(sex = c(M = "0.12 (0.05, 0.19)", F = "0.05"), "All patients" = "conf_0.9")`.
+#'   variable of `sub_var`, holding strings named by its levels; by a level
+#'   drawn under one variable only; or by `"All patients"` for the overall
+#'   row. The last two hold one string, e.g.
+#'   `list(sex = c(M = "0.12 (0.05, 0.19)", F = "0.05"), III = "conf_0.9")`.
+#'   A name that is a variable of `sub_var` is read as the variable.
 #'   A string is one of
 #'   * an interval, in any form [UtilsR::stat_ci_parse()] reads, drawn as
 #'     given at `conf_level` on the scale of `measure`;
@@ -692,10 +694,11 @@ plt_hte_dep <- function(x,
 #'                       ncol = 1)
 #'
 #' # Replace rows, e.g. with published estimates: an interval is drawn as
-#' # given, a bare estimate keeps the row's SE, "conf_" re-levels the row
+#' # given, a bare estimate keeps the row's SE, "conf_" re-levels the row;
+#' # a level found under one variable only can go without it
 #' plt_hte_sub(res, sub_var = c("sex", "stage"), show_pvalue = TRUE,
 #'             effect = list(sex = c(M = "0.150 (0.050, 0.250)", F = "0.05"),
-#'                           stage = c(III = "conf_0.9"),
+#'                           III = "conf_0.9",
 #'                           "All patients" = "0.100 (0.040, 0.160)"))
 #' }
 #'
@@ -799,27 +802,38 @@ plt_hte_sub <- function(x,
       stop("`effect` must be `NULL` or a list with unique names, e.g. list(sex = c(M = \"0.12 (0.05, 0.19)\")).",
            call. = FALSE)
     drawn   <- c(if (overall) all_lab, sub_var)
-    unknown <- setdiff(names(effect), drawn)
+    # A name that is no variable may be a level drawn under one variable only
+    unknown <- setdiff(names(effect), c(drawn, sub$level))
     if (length(unknown))
       stop(sprintf("`effect` names no drawn row: %s. Drawn: %s.",
-                   paste(unknown, collapse = ", "), paste(drawn, collapse = ", ")),
+                   paste(unknown, collapse = ", "),
+                   paste(c(if (overall) all_lab,
+                           sprintf("%s (%s)", sub_var, vapply(sub_var, function(v)
+                             paste(sub$level[sub$sub_var == v], collapse = ", "), ""))),
+                         collapse = "; ")),
            call. = FALSE)
     # One row per replaced estimate: variable, level (NA for the overall row)
-    # and interval string
+    # and string
     edits <- do.call(rbind, lapply(names(effect), function(v) {
       e  <- effect[[v]]
       s  <- unlist(e, use.names = FALSE)
       ok <- is.character(s) && length(s) && length(s) == length(e) && !anyNA(s)
-      if (v == all_lab) {
+      if (!v %in% sub_var) {
         if (!ok || length(s) != 1L)
-          stop("`effect` for \"All patients\" must be a single interval string.",
+          stop(sprintf("`effect` for \"%s\" must be a single string.", v),
                call. = FALSE)
-        return(data.frame(var = v, level = NA_character_, ci = s))
+        if (v == all_lab)
+          return(data.frame(var = v, level = NA_character_, ci = s))
+        hits <- unique(sub$sub_var[sub$level == v])
+        if (length(hits) > 1L)
+          stop(sprintf("`effect`: level \"%s\" is drawn under %s; name its variable, e.g. list(%s = c(\"%s\" = ...)).",
+                       v, paste(hits, collapse = ", "), hits[1L], v), call. = FALSE)
+        return(data.frame(var = hits, level = v, ci = s))
       }
       lv  <- sub$level[sub$sub_var == v]
       nms <- names(e)
       if (!ok || is.null(nms) || anyDuplicated(nms))
-        stop(sprintf("`effect$%s` must hold interval strings named by distinct levels of `%s`.",
+        stop(sprintf("`effect$%s` must hold strings named by distinct levels of `%s`.",
                      v, v), call. = FALSE)
       if (!all(nms %in% lv))
         stop(sprintf("`effect$%s` names no level %s. Levels: %s.", v,
@@ -827,6 +841,11 @@ plt_hte_sub <- function(x,
                      paste(lv, collapse = ", ")), call. = FALSE)
       data.frame(var = v, level = nms, ci = s)
     }))
+    dup <- duplicated(edits[c("var", "level")])
+    if (any(dup))
+      stop(sprintf("`effect` names %s twice.",
+                   paste(edits$var[dup], "=", edits$level[dup], collapse = ", ")),
+           call. = FALSE)
     # A string is an interval, drawn as given at conf_level; a bare estimate,
     # which keeps the row's SE; or "conf_<level>", which re-levels the row's
     # own interval. All of it is worked on the log scale for a ratio.
