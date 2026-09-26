@@ -1,5 +1,7 @@
 # causalR (development version)
 
+* `plt_hte_cate(overall = FALSE)` skips unused arm-score calculations when no
+  subgroup is requested, including when individual CATE intervals are drawn.
 * PDP and heat-map predictions use bounded matrix batches instead of expanding
   the entire grid-by-patient matrix in memory, retaining the same estimates.
 * GATES groups, population shares and mean CATE use the forest's analysis

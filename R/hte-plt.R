@@ -1190,7 +1190,7 @@ plt_hte_cate <- function(x,
 
   # ---- Estimates: the lines as plt_hte_sub() computes them -------------------
   fit    <- x$fit
-  s      <- .hte_arm_scores(fit)
+  s      <- if (length(sub_var) || overall) .hte_arm_scores(fit)
   z      <- stats::qnorm(1 - (1 - conf_level) / 2)
   grid   <- data.frame(estimand = "ATE", measure = "diff",
                        stringsAsFactors = FALSE)

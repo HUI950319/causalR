@@ -715,6 +715,19 @@ test_that("plt_hte_sub returns a ggplot patchwork can combine", {
 
 # ---- plt_hte_cate() ---------------------------------------------------------
 
+test_that("CATE-only plots do not compute unused arm scores", {
+  res <- dep_res()
+  local_mocked_bindings(.hte_arm_scores = function(...) stop("unused scores"))
+  for (type in c("waterfall", "density")) {
+    p <- plt_hte_cate(res, type = type, overall = FALSE)
+    expect_s3_class(p, "ggplot")
+    expect_null(attr(p, "subgroup"))
+    expect_no_error(ggplot2::ggplot_build(p))
+  }
+  p <- plt_hte_cate(res, show_ci = TRUE, overall = FALSE)
+  expect_true(all(is.finite(layer_data_of(p, "GeomLinerange")$conf.low)))
+})
+
 test_that("plt_hte_cate draws the sorted CATE with the overall and subgroup ATE", {
   res <- dep_res()
   expect_identical(names(formals(plt_hte_cate)),
