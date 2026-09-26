@@ -1,5 +1,11 @@
 # causalR (development version)
 
+* `get_hte_select()` adds independent `rank_metric` and `select_metric`
+  controls, benefit-score IQR, held-out AUTOC/QINI, and continuous-outcome
+  R-loss/DR-loss. `eval_args` controls a fixed training/evaluation split and
+  a shared GRF evaluator; matched pairs stay together. Selection minimizes
+  losses and maximizes other metrics, with manual `n_select` taking precedence.
+  All plots follow the chosen metrics; defaults retain manual SD screening.
 * `get_hte_select()` adds signed `score_mean` and `plots$combined`, aligning
   ranked SD bars with cumulative mean scores on a separate top axis. Red marks
   the first mean-score maximum without automatically selecting variables;

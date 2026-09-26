@@ -17,6 +17,28 @@ hte_select_call <- function(d = hte_select_data(), ...) {
                  fit_args = list(nfolds = 3L), ...)
 }
 
+test_that("validation metrics agree with RATE and effect-scale loss formulas", {
+  skip_if_not_installed("grf")
+  score <- rep(c(-1, 0, 2, 3), 10)
+  evaluation <- list(dr = seq(-3, 4, length.out = 40),
+                     y_residual = seq(-2, 2, length.out = 40),
+                     w_residual = rep(c(-0.4, 0.6), 20), clusters = NULL)
+  value <- causalR:::.hte_select_metrics(score, evaluation, continuous = TRUE)
+  for (metric in c("autoc", "qini")) {
+    direct <- grf::rank_average_treatment_effect.fit(
+      evaluation$dr, score, target = toupper(metric), R = 0)
+    expect_equal(value[[metric]], unname(direct$estimate))
+  }
+  expect_equal(value$r_loss,
+               mean((evaluation$y_residual - evaluation$w_residual * 2 * score)^2))
+  expect_equal(value$dr_loss, mean((evaluation$dr - 2 * score)^2))
+  value <- causalR:::.hte_select_metrics(rep(0, 40), evaluation, continuous = FALSE)
+  expect_equal(value$autoc, 0)
+  expect_equal(value$qini, 0)
+  expect_true(is.na(value$r_loss))
+  expect_true(is.na(value$dr_loss))
+})
+
 test_that("all outcomes and adjustment routes agree with direct personalized fits", {
   skip_if_not_installed("personalized")
   d <- hte_select_data()
@@ -51,12 +73,12 @@ test_that("all outcomes and adjustment routes agree with direct personalized fit
         direct <- withr::with_seed(123L, suppressWarnings(
           do.call(personalized::fit.subgroup, args)))
         score <- as.numeric(predict(direct, newx = args$x, type = "benefit.score"))
-        expected <- c(sd(score), mean(abs(score)), median(score), mean(score))
+        expected <- c(sd(score), mean(abs(score)), median(score), mean(score), IQR(score))
         expect_equal(unname(unlist(res$forward[k, c("score_sd", "score_mean_abs",
-                                                     "score_median", "score_mean")])), expected)
+                                                     "score_median", "score_mean", "score_iqr")])), expected)
         if (k == 1L)
           expect_equal(unname(unlist(res$ranking[1, c("score_sd", "score_mean_abs",
-                                                       "score_median", "score_mean")])), expected)
+                                                       "score_median", "score_mean", "score_iqr")])), expected)
       }
       expect_identical(res$forward$n, rep(nrow(d), 2))
       expect_s3_class(res$plots$ranking, "ggplot")
@@ -183,14 +205,205 @@ test_that("backend errors identify the affected model and warnings are retained"
 test_that("the public signature and documentation expose all defaults", {
   expect_identical(names(formals(get_hte_select)),
                    c("data", "cat_var", "candidate_var", "surv", "match_var", "ps_var",
-                     "n_select", "fit_args", "seed", "verbose"))
+                     "n_select", "rank_metric", "select_metric", "fit_args",
+                     "eval_args", "seed", "verbose"))
   expect_identical(eval(formals(get_hte_select)$fit_args),
                    list(nfolds = 10L, standardize = TRUE))
+  expect_identical(formals(get_hte_select)$rank_metric, "score_sd")
+  expect_identical(formals(get_hte_select)$select_metric, NULL)
+  expect_identical(eval(formals(get_hte_select)$eval_args),
+                   list(train_frac = 0.5, adjust_var = NULL, target = "RMST",
+                        time = NULL, num.trees = 2000L))
   rd <- tools::parse_Rd(test_path("..", "..", "man", "get_hte_select.Rd"))
   text <- paste(capture.output(tools::Rd2txt(rd)), collapse = "\n")
   expect_match(text, "nfolds = 10L, standardize = TRUE", fixed = TRUE)
   expect_match(text, "nfolds Integer", fixed = TRUE)
   expect_match(text, "standardize Logical", fixed = TRUE)
+  expect_match(text, "train_frac Numeric", fixed = TRUE)
+  expect_match(text, "adjust_var Character", fixed = TRUE)
+  expect_match(text, "num.trees Integer", fixed = TRUE)
+  usage <- rd[[which(vapply(rd, function(x) identical(attr(x, "Rd_tag"), "\\usage"), logical(1)))]]
+  signature <- parse(text = paste(as.character(usage), collapse = ""))[[1L]]
+  expect_identical(eval(signature[["eval_args"]]), eval(formals(get_hte_select)$eval_args))
+  expect_identical(eval(signature[["rank_metric"]]), "score_sd")
+  expect_identical(signature[["select_metric"]], quote(NULL))
+})
+
+test_that("ranking and selection metrics are independent and manual size wins", {
+  skip_if_not_installed("personalized")
+  local_mocked_bindings(.hte_select_fit = function(x, ...) {
+    v <- if (ncol(x) > 2L) 0.5 else if (colnames(x)[1] == "x") 1 else 2
+    list(statistics = list(score_sd = 3 - v, score_iqr = v,
+                           score_mean_abs = 1, score_mean = 0, score_median = 0),
+         warnings = character())
+  })
+  res <- hte_select_call(rank_metric = "score_iqr", select_metric = "score_sd")
+  expect_identical(res$ranking$variable, c("group", "x"))
+  expect_identical(res$analysis$best_step, 2L)
+  expect_identical(res$selected, c("group", "x"))
+  manual <- hte_select_call(rank_metric = "score_iqr", select_metric = "score_sd",
+                            n_select = 1L)
+  expect_identical(manual$selected, "group")
+  expect_identical(manual$analysis$best_step, 2L)
+  expect_identical(manual$analysis$selected_step, 1L)
+})
+
+test_that("validation routes use held-out predictions and match direct calculations", {
+  skip_if_not_installed("personalized")
+  skip_if_not_installed("grf")
+  d <- hte_select_data(360L)
+  x <- model.matrix(~x + group, d)[, -1, drop = FALSE]
+  for (route in c("ps", "match")) {
+    matched <- route == "match"
+    res <- get_hte_select(d, "z", c("x", "group"), surv = "y",
+      ps_var = if (!matched) "ps", match_var = if (matched) "pair",
+      rank_metric = "autoc", select_metric = "dr_loss", fit_args = list(nfolds = 3L),
+      eval_args = list(num.trees = 100L))
+    train <- res$analysis$training_rows
+    val <- res$analysis$evaluation_rows
+    expect_length(intersect(train, val), 0L)
+    expect_equal(sort(c(train, val)), seq_len(nrow(d)))
+    if (matched) expect_length(intersect(d$pair[train], d$pair[val]), 0L)
+    forest <- grf::causal_forest(x[val, , drop = FALSE], d$y[val], d$z[val],
+      W.hat = if (matched) rep(0.5, length(val)) else d$ps[val],
+      clusters = if (matched) factor(d$pair[val]), num.trees = 100L, seed = 123L)
+    dr <- as.numeric(grf::get_scores(forest))
+    cols <- unlist(res$analysis$design_columns[res$ranking$variable[1]], use.names = FALSE)
+    args <- list(x = x[train, cols, drop = FALSE], y = d$y[train], trt = d$z[train],
+                  loss = "sq_loss_lasso", method = "weighting", nfolds = 3L,
+                  standardize = TRUE)
+    if (matched) args$match.id <- factor(d$pair[train]) else {
+      args$propensity.func <- function(x, trt) d$ps[train]
+      args$foldid <- res$analysis$foldid
+    }
+    fit <- withr::with_seed(123L, suppressWarnings(do.call(personalized::fit.subgroup, args)))
+    score <- as.numeric(predict(fit, x[val, cols, drop = FALSE]))
+    expected <- c(
+      autoc = unname(grf::rank_average_treatment_effect.fit(dr, score, R = 0)$estimate),
+      qini = unname(grf::rank_average_treatment_effect.fit(dr, score, target = "QINI", R = 0)$estimate),
+      r_loss = mean((d$y[val] - forest$Y.hat - (d$z[val] - forest$W.hat) * 2 * score)^2),
+      dr_loss = mean((dr - 2 * score)^2))
+    expect_equal(unlist(res$ranking[1, names(expected)]), expected, ignore_attr = TRUE)
+    expect_equal(unlist(res$forward[1, names(expected)]), expected, ignore_attr = TRUE)
+    expect_identical(res$analysis$best_step, which.min(res$forward$dr_loss))
+    expect_equal(res$ranking$n_eval, rep(length(val), 2L))
+    expect_identical(res$analysis$eval_args$train_frac, 0.5)
+    expect_equal(res$ranking$autoc, sort(res$ranking$autoc, decreasing = TRUE))
+    expect_identical(res$forward$variables[[2]], res$ranking$variable)
+    expect_silent(ggplot2::ggplot_build(res$plots$combined))
+  }
+})
+
+test_that("binary and both survival targets support RATE on PS and matched data", {
+  skip_if_not_installed("personalized")
+  skip_if_not_installed("grf")
+  d <- hte_select_data(360L)
+  for (outcome in c("binary", "RMST", "survival.probability")) {
+    for (matched in c(FALSE, TRUE)) {
+      res <- get_hte_select(d, "z", "x", surv = if (outcome == "binary") "binary" else TRUE,
+        ps_var = if (!matched) "ps", match_var = if (matched) "pair",
+        rank_metric = "qini", select_metric = "autoc", fit_args = list(nfolds = 3L),
+        eval_args = list(num.trees = 100L, time = 0.5,
+                         target = if (outcome == "binary") "RMST" else outcome))
+      expect_identical(res$selected, "x")
+      expect_equal(res$ranking$autoc, res$forward$autoc)
+      expect_identical(is.finite(res$ranking$qini), TRUE)
+      expect_identical(is.na(res$ranking$r_loss), TRUE)
+      expect_identical(is.na(res$ranking$dr_loss), TRUE)
+      if (outcome != "binary") expect_identical(res$analysis$evaluation$target, outcome)
+    }
+  }
+})
+
+test_that("evaluation nuisances stay fixed, losses sort ascending and ties select first", {
+  skip_if_not_installed("personalized")
+  skip_if_not_installed("grf")
+  d <- hte_select_data()
+  d$confounder <- seq_len(nrow(d))
+  evaluated <- 0L
+  seen <- list()
+  local_mocked_bindings(.hte_select_evaluation = function(x, y, trt, ps, ...) {
+    evaluated <<- evaluated + 1L
+    expect_identical(colnames(x), c("x", "groupB", "groupC", "confounder"))
+    list(dr = seq_along(y), marker = ps)
+  }, .hte_select_fit = function(x, newx, evaluation, ...) {
+    seen[[length(seen) + 1L]] <<- list(x = x, newx = newx, evaluation = evaluation)
+    v <- if (colnames(x)[1] == "x" && ncol(x) == 1) 2 else 1
+    list(statistics = list(score_sd = 1, score_iqr = 1, score_mean = 0,
+      score_median = 0, score_mean_abs = 1, autoc = -v, qini = -v, r_loss = v, dr_loss = v),
+      warnings = character())
+  })
+  res <- hte_select_call(d, rank_metric = "r_loss", select_metric = "dr_loss",
+                         eval_args = list(adjust_var = "confounder"))
+  expect_identical(evaluated, 1L)
+  expect_identical(res$ranking$variable, c("group", "x"))
+  expect_identical(res$analysis$best_step, 1L)
+  expect_identical(res$selected, "group")
+  expect_identical(res$analysis$rank_direction, "minimize")
+  for (item in seen) {
+    expect_identical(item$evaluation, seen[[1]]$evaluation)
+    expect_equal(nrow(item$x), nrow(seen[[1]]$x))
+    expect_equal(nrow(item$newx), nrow(seen[[1]]$newx))
+  }
+})
+
+test_that("validation restores RNG, reproduces results and reports failures", {
+  skip_if_not_installed("personalized")
+  skip_if_not_installed("grf")
+  withr::local_seed(91)
+  before <- .Random.seed
+  call <- function() hte_select_call(select_metric = "r_loss", eval_args = list(num.trees = 100L))
+  first <- call()
+  expect_identical(.Random.seed, before)
+  second <- call()
+  expect_equal(first$ranking, second$ranking)
+  expect_equal(first$forward, second$forward)
+  expect_identical(first$analysis$training_rows, second$analysis$training_rows)
+  local_mocked_bindings(.hte_select_evaluation = function(...) {runif(1); stop("forced evaluation")})
+  expect_error(call(), "HTE evaluation failed: forced evaluation")
+  expect_identical(.Random.seed, before)
+})
+
+test_that("new metric and evaluation inputs reject unsupported configurations", {
+  d <- hte_select_data()
+  expect_error(hte_select_call(rank_metric = "bad"), "rank_metric")
+  expect_error(hte_select_call(select_metric = c("autoc", "qini")), "select_metric")
+  expect_error(hte_select_call(eval_args = list(bad = 1)), "unknown")
+  expect_error(hte_select_call(eval_args = list(0.5)), "named")
+  expect_error(hte_select_call(eval_args = list(time = 1, time = 2)), "duplicated")
+  expect_error(hte_select_call(eval_args = list(train_frac = 1)), "train_frac")
+  expect_error(hte_select_call(eval_args = list(target = "HR")), "target")
+  expect_error(hte_select_call(eval_args = list(num.trees = 1)), "num.trees")
+  expect_error(hte_select_call(eval_args = list(time = Inf)), "time")
+  expect_error(hte_select_call(eval_args = list(adjust_var = "y")), "cannot include")
+  bad <- d; bad$confounder <- seq_len(nrow(d)); bad$confounder[1] <- NA
+  expect_error(hte_select_call(bad, rank_metric = "autoc",
+    eval_args = list(adjust_var = "confounder")), "missing or non-finite.*confounder")
+  expect_error(get_hte_select(d, "z", "x", ps_var = "ps", rank_metric = "autoc"), "eval_args\\$time")
+  for (outcome in list(TRUE, "binary")) {
+    for (metric in c("r_loss", "dr_loss"))
+      expect_error(get_hte_select(d, "z", "x", surv = outcome, ps_var = "ps",
+                                  select_metric = metric), "continuous outcome")
+  }
+  expect_error(hte_select_call(rank_metric = "autoc", eval_args = list(train_frac = 0.01)),
+                "Each split")
+  expect_error(get_hte_select(d, "z", "x", match_var = "pair", rank_metric = "autoc",
+    eval_args = list(time = 1, train_frac = 0.99)), "training pairs")
+  expect_error(get_hte_select(d, "z", "x", ps_var = "ps", rank_metric = "autoc",
+    eval_args = list(time = max(d$time) + 1)), "follow-up")
+})
+
+test_that("metric plots keep negative bars, minimize losses and map the top axis", {
+  ranking <- data.frame(rank = 1:3, variable = letters[1:3], autoc = c(-0.1, -0.2, -0.4))
+  forward <- data.frame(n_vars = 1:3, dr_loss = c(4, 2, 3))
+  p <- causalR:::.hte_select_plots(ranking, forward, 2L, "autoc", "dr_loss")
+  built <- ggplot2::ggplot_build(p$combined)
+  expect_equal(built$data[[1]]$xmin, ranking$autoc)
+  expect_equal(built$data[[2]]$y, 2)
+  expect_equal(built$layout$panel_scales_x[[1]]$secondary.axis$trans(built$data[[4]]$x),
+                forward$dr_loss)
+  expect_match(p$combined$labels$caption, "minimum Validation DR-loss")
+  expect_equal(ggplot2::ggplot_build(p$ranking)$data[[1]]$y, ranking$autoc)
 })
 
 test_that("combined chart aligns ranking rows and cumulative scores on distinct axes", {

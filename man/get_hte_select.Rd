@@ -12,7 +12,11 @@ get_hte_select(
   match_var = NULL,
   ps_var = NULL,
   n_select = NULL,
+  rank_metric = "score_sd",
+  select_metric = NULL,
   fit_args = list(nfolds = 10L, standardize = TRUE),
+  eval_args = list(train_frac = 0.5, adjust_var = NULL, target = "RMST", time = NULL,
+    num.trees = 2000L),
   seed = 123L,
   verbose = FALSE
 )
@@ -47,10 +51,24 @@ fixed across models; they are not weights. Default \code{NULL}. No propensity
 model is fitted and no matching is performed inside this function.}
 
 \item{n_select}{Optional integer from 1 to the number of candidates.
-Returns the first N ranked variables and marks N on the forward and
-combined plots (a blue dotted line when N differs from the mean-score
-peak). The combined plot's red marker always denotes the mean-score peak.
-Default \code{NULL} makes no selection. The complete path is always computed.}
+Overrides the size chosen by \code{select_metric}, while its best step is still
+reported. Marks the returned size on the plots. Default \code{NULL} uses
+\code{select_metric}, or makes no selection when that is also \code{NULL}.
+The complete path is always computed.}
+
+\item{rank_metric}{Single metric name for single-variable ranking. Default
+\code{"score_sd"} preserves the original decreasing-SD ranking. Choices are
+\code{"score_sd"}, \code{"score_iqr"}, \code{"score_mean_abs"}, \code{"score_median"},
+\code{"score_mean"}, \code{"autoc"}, \code{"qini"}, \code{"r_loss"} and \code{"dr_loss"}.
+Losses are minimized; all other metrics are maximized. Ties preserve
+candidate input order. The four validation metrics activate \code{eval_args}.}
+
+\item{select_metric}{Single metric name with the same choices and directions
+as \code{rank_metric}, independently applied to the cumulative models. Default
+\code{NULL} preserves manual selection. Otherwise choose the best step, taking
+the smallest number of variables on exact ties. The combined plot uses
+this metric for its line and red optimum marker; with \code{NULL} it continues
+to display the signed mean-score maximum without automatic selection.}
 
 \item{fit_args}{Named list of fitting settings. Partial overrides are
 supported; unknown, duplicate and unnamed entries are rejected.
@@ -62,6 +80,32 @@ internal cross-validation for the LASSO penalty.}
 inside the backend's penalized fit. Applies to all outcome types.}
 }}
 
+\item{eval_args}{Named list for validation, activated when either metric is
+\code{"autoc"}, \code{"qini"}, \code{"r_loss"} or \code{"dr_loss"}. Partial named overrides
+are supported; unknown, duplicate and unnamed entries are rejected.
+\describe{
+\item{train_frac}{Numeric strictly between 0 and 1, default 0.5. Share
+used to train every personalized model. Splits are stratified by arm
+on the PS route and by whole pairs on the matching route. Training
+must retain enough rows or pairs for \code{fit_args$nfolds}.}
+\item{adjust_var}{Character vector of additional adjustment columns,
+default \code{NULL}. The evaluation forest always uses all candidates
+plus these columns, fixed across all models. Include necessary
+confounders here; effect-modifier selection must not remove them.
+Same column-type, missingness and nonconstant requirements as candidates.}
+\item{target}{Survival estimand: \code{"RMST"} (default), restricted mean
+survival-time difference, or \code{"survival.probability"}, survival
+probability difference. Used only for survival validation.}
+\item{time}{Positive finite numeric horizon in the same units as
+\code{data$time}. Default \code{NULL}; required for survival validation.
+Both evaluation arms must have follow-up through this horizon
+(strictly beyond for survival probability) and the evaluation sample
+must have observed events by it. Unused for other outcomes.}
+\item{num.trees}{Integer at least 2, default 2000. Number of trees for
+the fixed GRF evaluation model. Small values are useful for smoke
+tests but may give unstable or non-finite evaluation scores.}
+}}
+
 \item{seed}{Nonnegative integer, default 123. All model fits start from
 this seed. The caller's random-number state is restored, also on error.}
 
@@ -71,32 +115,39 @@ steps as they are fitted.}
 \value{
 A plain named list:
 \describe{
-\item{ranking}{Data frame with \code{rank}, \code{variable}, \code{n}, \code{score_sd},
-\code{score_mean_abs}, \code{score_median} and \code{score_mean} (signed mean), sorted
-by decreasing \code{score_sd}.}
+\item{ranking}{Data frame with \code{rank}, \code{variable}, \code{n} (training rows),
+\code{n_eval} (validation rows), \code{score_sd},
+\code{score_mean_abs}, \code{score_median}, \code{score_mean} (signed mean) and
+\code{score_iqr} (interquartile range), \code{autoc}, \code{qini}, \code{r_loss} and \code{dr_loss},
+sorted by \code{rank_metric} in its optimization direction.}
 \item{forward}{Data frame with \code{step}, \code{added_variable}, \code{n_vars}, a
-\code{variables} list column, \code{n} and the same four score summaries.}
-\item{selected}{Character vector of the first \code{n_select} variables, or
-\code{NULL}. Included variables can still have zero LASSO coefficients.}
+\code{variables} list column, \code{n}, \code{n_eval} and the same metrics.}
+\item{selected}{Character vector of the selected prefix, or \code{NULL} when
+both selection controls are \code{NULL}. Included variables can still have
+zero LASSO coefficients.}
 \item{plots}{Named list \code{ranking}, \code{forward} and \code{combined} of ggplot
 objects, not printed or saved automatically. Forward panels use separate
-y scales. The combined plot aligns ranked bars (bottom axis: single-model
-score SD) with cumulative-model signed mean scores (top axis). The
-pink/red bar and point with a horizontal dashed line mark the first
-step attaining the maximum mean; they do not imply a validated optimum.
+y scales and omit unavailable metrics. The combined plot aligns bars
+of \code{rank_metric} (bottom axis) with cumulative \code{select_metric} values
+(top axis; signed mean score when \code{select_metric = NULL}). The pink/red
+bar and point mark the first optimum; a different manually selected
+size has a blue dotted line. These markers do not prove generalization.
 The secondary axis uses an invertible linear transformation for display only;
 the two quantities do not share a numerical scale.}
 \item{analysis}{Outcome and treatment mapping, loss, adjustment settings,
-sample size, design-column mapping, seed, fit settings, PS fold IDs
-(\code{NULL} for matching), dependency versions and a warning data frame.}
+sample size, design-column mapping, seed, fit/evaluation settings,
+original row indices of the fixed split, PS training-fold IDs (\code{NULL}
+for matching), metric directions, \code{best_step}, \code{selected_step}, evaluator
+metadata, dependency versions and a warning data frame. \code{n_select}
+retains the caller's manual value; \code{selected_step} is the returned size.}
 }
 No fitted model, individual benefit scores or input data are retained.
 }
 \description{
 Fits a separate personalized subgroup model for each candidate, ranks the
-candidates by the standard deviation of their fitted benefit scores, then
-fits every prefix of that fixed ranking. Returns descriptive statistics and
-plots for choosing a model size manually, without retaining fitted models.
+candidates using \code{rank_metric}, then fits every prefix of that fixed ranking.
+Returns score summaries and optional validation metrics, with manual or
+metric-based model-size selection. No fitted models are retained.
 }
 \details{
 The backend is \code{\link[personalized:fit.subgroup]{personalized::fit.subgroup()}} with \code{method = "weighting"}.
@@ -113,15 +164,57 @@ route shares one balanced random fold assignment. The matched route uses
 the backend's pair-level folds; internal retries can change these folds, so
 identical final folds across matched models are not guaranteed.
 
-Ranking uses only the unweighted sample standard deviation of training
-benefit scores. Mean absolute score, median and signed mean are also reported.
+Descriptive metrics use unweighted training benefit scores: sample SD,
+mean absolute score, median, signed mean and interquartile range
+(\code{score_iqr}, using R's default type-7 quantiles).
 These are descriptive score summaries, not HRs, absolute CATE estimates,
 formal variable-importance tests or validated predictive performance.
 Penalty cross-validation does not validate the entire screening procedure.
-No automatic maximum-SD, elbow or stopping rule is applied. The combined
-plot highlights the first maximum signed mean score for visual comparison,
-without setting \code{selected} or changing the full path. The forward pass never
-reorders remaining candidates or removes earlier variables.
+The default applies no automatic size rule. Explicit \code{select_metric} applies
+a maximum (or minimum loss) rule; maximizing descriptive score spread or
+location alone is not evidence of predictive accuracy. The forward pass
+never reorders remaining candidates or removes earlier variables.
+
+With validation enabled, every personalized model is trained on the same
+training split and predicts the same held-out split. One evaluation forest
+is fitted on the held-out split: \code{\link[grf:causal_forest]{grf::causal_forest()}} for continuous/binary
+outcomes, or \code{\link[grf:causal_survival_forest]{grf::causal_survival_forest()}} for censored survival outcomes.
+It uses fixed adjustment variables, supplied PS (or 0.5 for 1:1 matching),
+and pair clusters when present. \code{\link[grf:get_scores]{grf::get_scores()}} supplies common doubly
+robust (DR) evaluation scores using out-of-bag nuisance predictions. The
+selected HTE learner remains \code{personalized}; GRF supplies evaluation only.
+Neither matching nor a DR score guarantees removal of unmeasured confounding.
+
+Both \code{autoc} and \code{qini} are RATE point estimates from
+\code{\link[grf:rank_average_treatment_effect.fit]{grf::rank_average_treatment_effect.fit()}} with \code{R = 0}, without bootstrap
+standard errors. They evaluate benefit-score rankings, need no conversion
+to an absolute treatment effect and can be negative. QINI here is GRF's
+rank-weighted effect, not a normalized uplift coefficient. Tied scores use
+the backend's tie handling; a constant priority has zero RATE.
+
+For continuous outcomes, weighting with squared loss codes treatment as
+-1/+1; its population-optimal benefit score is half the mean contrast.
+Loss evaluation therefore uses \code{tau = 2 * benefit.score} and computes
+\code{r_loss = mean((Y - m_hat - (A - e_hat) * tau)^2)} and
+\code{dr_loss = mean((DR_score - tau)^2)} on the held-out split. The fixed
+evaluation forest supplies \code{m_hat} and DR scores; \code{e_hat} is the fixed PS.
+These are surrogate losses, not observed individual-effect errors. Raw
+Cox/logistic benefit scores are not RMST/risk differences, so requesting
+either loss for survival or binary outcomes raises an error.
+
+Validation is activated only by the two metric parameters. When active,
+both RATE metrics are reported, and both losses for continuous outcomes;
+unavailable or unrequested validation metrics are \code{NA}. Descriptive
+summaries still use the training split. When inactive, all rows are used
+for training and all validation columns are \code{NA}.
+
+This held-out split is used for variable ranking and/or size tuning, so
+the winning metric is not an unbiased final performance estimate. Use
+independent test data or outer resampling to assess the full selection
+procedure. The function neither performs that assessment nor refits a
+selected model to all data. Supplied PS should also be constructed without
+outcome leakage. Selecting a different metric can activate splitting and
+thus change the training sample as well as the ranking criterion.
 
 A penalized model producing constant scores is retained with SD zero.
 Backend warnings are recorded in \code{analysis$warnings}; errors stop with
@@ -153,6 +246,15 @@ ans <- get_hte_select(d, "z", candidates, ps_var = "ps",
 ans$ranking
 ans$forward
 ans$plots$combined
+# Optional validation-based selection, using the same 40 candidates.
+if (requireNamespace("grf", quietly = TRUE)) {
+  validated <- get_hte_select(d, "z", candidates, ps_var = "ps",
+    rank_metric = "score_iqr", select_metric = "autoc",
+    fit_args = list(nfolds = 3L),
+    eval_args = list(time = 24, num.trees = 500L))
+  validated$selected
+  validated$plots$combined
+}
 }
 \dontshow{\}) # examplesIf}
 }

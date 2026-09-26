@@ -8,8 +8,55 @@
   as.integer(x)
 }
 
+.hte_select_metrics <- function(score, evaluation, continuous) {
+  rate <- lapply(c("AUTOC", "QINI"), function(target) {
+    unname(grf::rank_average_treatment_effect.fit(
+      DR.scores = evaluation$dr, priorities = score, target = target,
+      R = 0, clusters = evaluation$clusters)$estimate)
+  })
+  # The squared-loss weighting model uses treatment coded -1/+1, so its
+  # fitted benefit score is half the mean treatment contrast. Cox and
+  # logistic link scores do not have this outcome-scale interpretation.
+  tau <- 2 * score
+  list(autoc = rate[[1]], qini = rate[[2]],
+       r_loss = if (continuous)
+         mean((evaluation$y_residual - evaluation$w_residual * tau)^2) else NA_real_,
+       dr_loss = if (continuous) mean((evaluation$dr - tau)^2) else NA_real_)
+}
+
+.hte_select_direction <- function(metric) {
+  if (metric %in% c("r_loss", "dr_loss")) 1 else -1
+}
+
+.hte_select_evaluation <- function(x, y, trt, ps, match_id, type, eval_args, seed) {
+  args <- list(X = x, Y = if (type == "survival") y[, 1] else y,
+               W = trt, W.hat = ps, clusters = match_id,
+               num.trees = eval_args$num.trees, seed = seed)
+  if (type == "survival") {
+    beyond <- if (eval_args$target == "RMST") y[, 1] >= eval_args$time else
+      y[, 1] > eval_args$time
+    if (any(vapply(0:1, function(a) !any(beyond & trt == a), logical(1))))
+      stop("Each evaluation arm needs follow-up through the target time (beyond it for survival.probability).",
+           call. = FALSE)
+    if (!any(y[, 2] == 1 & y[, 1] <= eval_args$time))
+      stop("The evaluation sample needs observed events by `eval_args$time`.", call. = FALSE)
+    args <- c(args, list(D = y[, 2], horizon = eval_args$time, target = eval_args$target))
+  }
+  forest <- do.call(if (type == "survival") grf::causal_survival_forest else
+                     grf::causal_forest, args)
+  result <- list(dr = as.numeric(grf::get_scores(forest)), clusters = match_id)
+  if (type == "continuous") {
+    result$y_residual <- y - forest$Y.hat
+    result$w_residual <- trt - ps
+  }
+  if (any(!is.finite(unlist(result[c("dr", "y_residual", "w_residual")]))))
+    stop("Evaluation returned non-finite DR scores or residuals; check sample size, overlap and censoring support.",
+         call. = FALSE)
+  result
+}
+
 .hte_select_fit <- function(x, y, trt, ps, match_id, foldid, loss,
-                            fit_args, seed, context) {
+                            fit_args, seed, context, newx = NULL, evaluation = NULL) {
   warnings <- character()
   # Each call starts at the same seed. The public function restores the RNG.
   set.seed(seed)
@@ -28,9 +75,20 @@
     values <- list(score_sd = stats::sd(scores),
                    score_mean_abs = mean(abs(scores)),
                    score_median = stats::median(scores),
-                   score_mean = mean(scores))
+                   score_mean = mean(scores),
+                   score_iqr = stats::IQR(scores))
     if (any(!is.finite(unlist(values))))
       stop("Score summaries are non-finite.")
+    if (!is.null(evaluation)) {
+      prediction <- as.numeric(stats::predict(fit, newx = newx, type = "benefit.score"))
+      if (length(prediction) != nrow(newx) || any(!is.finite(prediction)))
+        stop("Backend returned invalid evaluation scores.")
+      metrics <- .hte_select_metrics(prediction, evaluation, loss == "sq_loss_lasso")
+      required <- if (loss == "sq_loss_lasso") names(metrics) else c("autoc", "qini")
+      if (any(!is.finite(unlist(metrics[required]))))
+        stop("Validation metrics are non-finite.")
+      values <- c(values, metrics)
+    }
     values
   }, warning = function(w) {
     warnings <<- c(warnings, conditionMessage(w))
@@ -42,15 +100,26 @@
   list(statistics = stats, warnings = warnings)
 }
 
-.hte_select_plots <- function(ranking, forward, n_select) {
+.hte_select_plots <- function(ranking, forward, n_select,
+                              rank_metric = "score_sd", select_metric = NULL) {
+  labels <- c(score_sd = "Benefit-score SD", score_iqr = "Benefit-score IQR",
+               score_mean_abs = "Mean absolute benefit score",
+               score_median = "Median benefit score", score_mean = "Mean benefit score",
+               autoc = "Validation AUTOC", qini = "Validation QINI",
+               r_loss = "Validation R-loss", dr_loss = "Validation DR-loss")
+  line_metric <- if (is.null(select_metric)) "score_mean" else select_metric
   bar_data <- ranking
+  bar_data$value <- ranking[[rank_metric]]
   bar_data$variable <- factor(bar_data$variable,
                               levels = rev(ranking$variable))
-  bar <- ggplot2::ggplot(bar_data, ggplot2::aes(x = variable, y = score_sd)) +
+  bar <- ggplot2::ggplot(bar_data, ggplot2::aes(x = variable, y = value)) +
     ggplot2::geom_col() + ggplot2::coord_flip() +
-    ggplot2::labs(x = NULL, y = "Benefit-score SD") +
+    ggplot2::labs(x = NULL, y = labels[[rank_metric]]) +
     ggplot2::theme_minimal()
-  metrics <- c("score_sd", "score_mean_abs", "score_median")
+  metrics <- intersect(unique(c("score_sd", "score_mean_abs", "score_median", "score_iqr",
+                                 select_metric, "autoc", "qini", "r_loss", "dr_loss")),
+                       names(forward))
+  metrics <- metrics[vapply(forward[metrics], function(v) all(is.finite(v)), logical(1))]
   curve_data <- do.call(rbind, lapply(metrics, function(metric) {
     data.frame(n_vars = forward$n_vars, statistic = metric,
                value = forward[[metric]])
@@ -66,7 +135,7 @@
     ggplot2::facet_wrap(~statistic, scales = "free_y") +
     ggplot2::scale_x_continuous(breaks = step_breaks) +
     ggplot2::labs(x = "Number of variables (fixed ranking)",
-                   y = "Benefit-score statistic") +
+                   y = "Metric value") +
     ggplot2::theme_minimal()
   if (nrow(forward) > 1L) curve <- curve + ggplot2::geom_line()
   if (!is.null(n_select))
@@ -75,23 +144,25 @@
   # One row per ranked candidate; the line follows cumulative-model order.
   combined_data <- ranking
   combined_data$position <- nrow(ranking) + 1L - ranking$rank
-  combined_data$score_mean <- forward$score_mean
-  primary_max <- max(ranking$score_sd)
-  if (primary_max == 0) primary_max <- 1
-  score_limits <- range(forward$score_mean)
+  combined_data$value <- ranking[[rank_metric]]
+  primary_limits <- range(c(0, combined_data$value))
+  if (diff(primary_limits) == 0) primary_limits <- c(0, 1)
+  primary_lower <- primary_limits[1]
+  primary_width <- diff(primary_limits)
+  score_limits <- range(forward[[line_metric]])
   score_span <- diff(score_limits)
   # Keep the secondary-axis transformation invertible for constant scores.
   padding <- if (score_span > 0) score_span * 0.05 else
     max(abs(score_limits), 1) * 0.05
   score_lower <- score_limits[1] - padding
   score_width <- score_span + 2 * padding
-  combined_data$curve_x <- (combined_data$score_mean - score_lower) /
-    score_width * primary_max
+  combined_data$curve_x <- (forward[[line_metric]] - score_lower) /
+    score_width * primary_width + primary_lower
   combined <- ggplot2::ggplot(combined_data,
-                               ggplot2::aes(x = score_sd, y = position)) +
+                               ggplot2::aes(x = value, y = position)) +
     ggplot2::geom_col(ggplot2::aes(fill = rank), orientation = "y", width = 0.82) +
     ggplot2::scale_fill_gradient(low = "#548A9A", high = "#9AC3AD", guide = "none")
-  peak <- which.max(forward$score_mean)
+  peak <- which.min(.hte_select_direction(line_metric) * forward[[line_metric]])
   peak_row <- combined_data[peak, , drop = FALSE]
   combined <- combined +
     ggplot2::geom_col(data = peak_row, fill = "#E97997",
@@ -105,23 +176,25 @@
     ggplot2::aes(x = curve_x), colour = "#414141", size = 1.6)
   combined <- combined + ggplot2::geom_point(
     data = peak_row, ggplot2::aes(x = curve_x), colour = "#D54B77", size = 2.5)
-  caption <- sprintf("Red: maximum mean score at %d variables (first maximum if tied)", peak)
+  optimum <- if (.hte_select_direction(line_metric) == 1) "minimum" else "maximum"
+  caption <- sprintf("Red: %s %s at %d variables (first optimum if tied)",
+                     optimum, labels[[line_metric]], peak)
   if (!is.null(n_select) && n_select != peak) {
     combined <- combined + ggplot2::geom_hline(
       yintercept = nrow(ranking) + 1L - n_select,
       colour = "#397DAB", linetype = "dotted", linewidth = 0.55)
-    caption <- paste0(caption, "\nBlue dotted line: specified n_select = ", n_select)
+    caption <- paste0(caption, "\nBlue dotted line: selected variable count = ", n_select)
   }
   combined <- combined +
     ggplot2::scale_y_continuous(breaks = combined_data$position,
                                  labels = combined_data$variable,
                                  expand = ggplot2::expansion(add = 0.7)) +
     ggplot2::scale_x_continuous(
-      name = "Single-variable benefit-score SD",
-      limits = c(0, primary_max), expand = ggplot2::expansion(mult = c(0, 0.025)),
+      name = paste("Single-variable", labels[[rank_metric]]),
+      limits = primary_limits, expand = ggplot2::expansion(mult = c(0, 0.025)),
       sec.axis = ggplot2::sec_axis(
-        transform = ~ . / primary_max * score_width + score_lower,
-        name = "Mean benefit score (cumulative model)")) +
+        transform = ~ (. - primary_lower) / primary_width * score_width + score_lower,
+        name = paste(labels[[line_metric]], "(cumulative model)"))) +
     ggplot2::labs(y = NULL, caption = caption) +
     ggplot2::theme_minimal(base_size = 11) +
     ggplot2::theme(panel.grid.major.y = ggplot2::element_blank(),
@@ -136,9 +209,9 @@
 #' Screen HTE variables by fixed-order benefit-score accumulation
 #'
 #' Fits a separate personalized subgroup model for each candidate, ranks the
-#' candidates by the standard deviation of their fitted benefit scores, then
-#' fits every prefix of that fixed ranking. Returns descriptive statistics and
-#' plots for choosing a model size manually, without retaining fitted models.
+#' candidates using `rank_metric`, then fits every prefix of that fixed ranking.
+#' Returns score summaries and optional validation metrics, with manual or
+#' metric-based model-size selection. No fitted models are retained.
 #'
 #' @param data Data frame containing all named columns. Used columns must have
 #'   no missing or non-finite values. No rows are dropped or imputed.
@@ -163,10 +236,22 @@
 #'   fixed across models; they are not weights. Default `NULL`. No propensity
 #'   model is fitted and no matching is performed inside this function.
 #' @param n_select Optional integer from 1 to the number of candidates.
-#'   Returns the first N ranked variables and marks N on the forward and
-#'   combined plots (a blue dotted line when N differs from the mean-score
-#'   peak). The combined plot's red marker always denotes the mean-score peak.
-#'   Default `NULL` makes no selection. The complete path is always computed.
+#'   Overrides the size chosen by `select_metric`, while its best step is still
+#'   reported. Marks the returned size on the plots. Default `NULL` uses
+#'   `select_metric`, or makes no selection when that is also `NULL`.
+#'   The complete path is always computed.
+#' @param rank_metric Single metric name for single-variable ranking. Default
+#'   `"score_sd"` preserves the original decreasing-SD ranking. Choices are
+#'   `"score_sd"`, `"score_iqr"`, `"score_mean_abs"`, `"score_median"`,
+#'   `"score_mean"`, `"autoc"`, `"qini"`, `"r_loss"` and `"dr_loss"`.
+#'   Losses are minimized; all other metrics are maximized. Ties preserve
+#'   candidate input order. The four validation metrics activate `eval_args`.
+#' @param select_metric Single metric name with the same choices and directions
+#'   as `rank_metric`, independently applied to the cumulative models. Default
+#'   `NULL` preserves manual selection. Otherwise choose the best step, taking
+#'   the smallest number of variables on exact ties. The combined plot uses
+#'   this metric for its line and red optimum marker; with `NULL` it continues
+#'   to display the signed mean-score maximum without automatic selection.
 #' @param fit_args Named list of fitting settings. Partial overrides are
 #'   supported; unknown, duplicate and unnamed entries are rejected.
 #'   \describe{
@@ -175,6 +260,31 @@
 #'       internal cross-validation for the LASSO penalty.}
 #'     \item{standardize}{Logical, default `TRUE`. Standardize design columns
 #'       inside the backend's penalized fit. Applies to all outcome types.}
+#'   }
+#' @param eval_args Named list for validation, activated when either metric is
+#'   `"autoc"`, `"qini"`, `"r_loss"` or `"dr_loss"`. Partial named overrides
+#'   are supported; unknown, duplicate and unnamed entries are rejected.
+#'   \describe{
+#'     \item{train_frac}{Numeric strictly between 0 and 1, default 0.5. Share
+#'       used to train every personalized model. Splits are stratified by arm
+#'       on the PS route and by whole pairs on the matching route. Training
+#'       must retain enough rows or pairs for `fit_args$nfolds`.}
+#'     \item{adjust_var}{Character vector of additional adjustment columns,
+#'       default `NULL`. The evaluation forest always uses all candidates
+#'       plus these columns, fixed across all models. Include necessary
+#'       confounders here; effect-modifier selection must not remove them.
+#'       Same column-type, missingness and nonconstant requirements as candidates.}
+#'     \item{target}{Survival estimand: `"RMST"` (default), restricted mean
+#'       survival-time difference, or `"survival.probability"`, survival
+#'       probability difference. Used only for survival validation.}
+#'     \item{time}{Positive finite numeric horizon in the same units as
+#'       `data$time`. Default `NULL`; required for survival validation.
+#'       Both evaluation arms must have follow-up through this horizon
+#'       (strictly beyond for survival probability) and the evaluation sample
+#'       must have observed events by it. Unused for other outcomes.}
+#'     \item{num.trees}{Integer at least 2, default 2000. Number of trees for
+#'       the fixed GRF evaluation model. Small values are useful for smoke
+#'       tests but may give unstable or non-finite evaluation scores.}
 #'   }
 #' @param seed Nonnegative integer, default 123. All model fits start from
 #'   this seed. The caller's random-number state is restored, also on error.
@@ -196,15 +306,57 @@
 #' the backend's pair-level folds; internal retries can change these folds, so
 #' identical final folds across matched models are not guaranteed.
 #'
-#' Ranking uses only the unweighted sample standard deviation of training
-#' benefit scores. Mean absolute score, median and signed mean are also reported.
+#' Descriptive metrics use unweighted training benefit scores: sample SD,
+#' mean absolute score, median, signed mean and interquartile range
+#' (`score_iqr`, using R's default type-7 quantiles).
 #' These are descriptive score summaries, not HRs, absolute CATE estimates,
 #' formal variable-importance tests or validated predictive performance.
 #' Penalty cross-validation does not validate the entire screening procedure.
-#' No automatic maximum-SD, elbow or stopping rule is applied. The combined
-#' plot highlights the first maximum signed mean score for visual comparison,
-#' without setting `selected` or changing the full path. The forward pass never
-#' reorders remaining candidates or removes earlier variables.
+#' The default applies no automatic size rule. Explicit `select_metric` applies
+#' a maximum (or minimum loss) rule; maximizing descriptive score spread or
+#' location alone is not evidence of predictive accuracy. The forward pass
+#' never reorders remaining candidates or removes earlier variables.
+#'
+#' With validation enabled, every personalized model is trained on the same
+#' training split and predicts the same held-out split. One evaluation forest
+#' is fitted on the held-out split: [grf::causal_forest()] for continuous/binary
+#' outcomes, or [grf::causal_survival_forest()] for censored survival outcomes.
+#' It uses fixed adjustment variables, supplied PS (or 0.5 for 1:1 matching),
+#' and pair clusters when present. [grf::get_scores()] supplies common doubly
+#' robust (DR) evaluation scores using out-of-bag nuisance predictions. The
+#' selected HTE learner remains `personalized`; GRF supplies evaluation only.
+#' Neither matching nor a DR score guarantees removal of unmeasured confounding.
+#'
+#' Both `autoc` and `qini` are RATE point estimates from
+#' [grf::rank_average_treatment_effect.fit()] with `R = 0`, without bootstrap
+#' standard errors. They evaluate benefit-score rankings, need no conversion
+#' to an absolute treatment effect and can be negative. QINI here is GRF's
+#' rank-weighted effect, not a normalized uplift coefficient. Tied scores use
+#' the backend's tie handling; a constant priority has zero RATE.
+#'
+#' For continuous outcomes, weighting with squared loss codes treatment as
+#' -1/+1; its population-optimal benefit score is half the mean contrast.
+#' Loss evaluation therefore uses `tau = 2 * benefit.score` and computes
+#' `r_loss = mean((Y - m_hat - (A - e_hat) * tau)^2)` and
+#' `dr_loss = mean((DR_score - tau)^2)` on the held-out split. The fixed
+#' evaluation forest supplies `m_hat` and DR scores; `e_hat` is the fixed PS.
+#' These are surrogate losses, not observed individual-effect errors. Raw
+#' Cox/logistic benefit scores are not RMST/risk differences, so requesting
+#' either loss for survival or binary outcomes raises an error.
+#'
+#' Validation is activated only by the two metric parameters. When active,
+#' both RATE metrics are reported, and both losses for continuous outcomes;
+#' unavailable or unrequested validation metrics are `NA`. Descriptive
+#' summaries still use the training split. When inactive, all rows are used
+#' for training and all validation columns are `NA`.
+#'
+#' This held-out split is used for variable ranking and/or size tuning, so
+#' the winning metric is not an unbiased final performance estimate. Use
+#' independent test data or outer resampling to assess the full selection
+#' procedure. The function neither performs that assessment nor refits a
+#' selected model to all data. Supplied PS should also be constructed without
+#' outcome leakage. Selecting a different metric can activate splitting and
+#' thus change the training sample as well as the ranking criterion.
 #'
 #' A penalized model producing constant scores is retained with SD zero.
 #' Backend warnings are recorded in `analysis$warnings`; errors stop with
@@ -213,24 +365,31 @@
 #'
 #' @return A plain named list:
 #' \describe{
-#'   \item{ranking}{Data frame with `rank`, `variable`, `n`, `score_sd`,
-#'     `score_mean_abs`, `score_median` and `score_mean` (signed mean), sorted
-#'     by decreasing `score_sd`.}
+#'   \item{ranking}{Data frame with `rank`, `variable`, `n` (training rows),
+#'     `n_eval` (validation rows), `score_sd`,
+#'     `score_mean_abs`, `score_median`, `score_mean` (signed mean) and
+#'     `score_iqr` (interquartile range), `autoc`, `qini`, `r_loss` and `dr_loss`,
+#'     sorted by `rank_metric` in its optimization direction.}
 #'   \item{forward}{Data frame with `step`, `added_variable`, `n_vars`, a
-#'     `variables` list column, `n` and the same four score summaries.}
-#'   \item{selected}{Character vector of the first `n_select` variables, or
-#'     `NULL`. Included variables can still have zero LASSO coefficients.}
+#'     `variables` list column, `n`, `n_eval` and the same metrics.}
+#'   \item{selected}{Character vector of the selected prefix, or `NULL` when
+#'     both selection controls are `NULL`. Included variables can still have
+#'     zero LASSO coefficients.}
 #'   \item{plots}{Named list `ranking`, `forward` and `combined` of ggplot
 #'     objects, not printed or saved automatically. Forward panels use separate
-#'     y scales. The combined plot aligns ranked bars (bottom axis: single-model
-#'     score SD) with cumulative-model signed mean scores (top axis). The
-#'     pink/red bar and point with a horizontal dashed line mark the first
-#'     step attaining the maximum mean; they do not imply a validated optimum.
+#'     y scales and omit unavailable metrics. The combined plot aligns bars
+#'     of `rank_metric` (bottom axis) with cumulative `select_metric` values
+#'     (top axis; signed mean score when `select_metric = NULL`). The pink/red
+#'     bar and point mark the first optimum; a different manually selected
+#'     size has a blue dotted line. These markers do not prove generalization.
 #'     The secondary axis uses an invertible linear transformation for display only;
 #'     the two quantities do not share a numerical scale.}
 #'   \item{analysis}{Outcome and treatment mapping, loss, adjustment settings,
-#'     sample size, design-column mapping, seed, fit settings, PS fold IDs
-#'     (`NULL` for matching), dependency versions and a warning data frame.}
+#'     sample size, design-column mapping, seed, fit/evaluation settings,
+#'     original row indices of the fixed split, PS training-fold IDs (`NULL`
+#'     for matching), metric directions, `best_step`, `selected_step`, evaluator
+#'     metadata, dependency versions and a warning data frame. `n_select`
+#'     retains the caller's manual value; `selected_step` is the returned size.}
 #' }
 #' No fitted model, individual benefit scores or input data are retained.
 #'
@@ -258,11 +417,24 @@
 #' ans$ranking
 #' ans$forward
 #' ans$plots$combined
+#' # Optional validation-based selection, using the same 40 candidates.
+#' if (requireNamespace("grf", quietly = TRUE)) {
+#'   validated <- get_hte_select(d, "z", candidates, ps_var = "ps",
+#'     rank_metric = "score_iqr", select_metric = "autoc",
+#'     fit_args = list(nfolds = 3L),
+#'     eval_args = list(time = 24, num.trees = 500L))
+#'   validated$selected
+#'   validated$plots$combined
+#' }
 #' }
 #' @export
 get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
                            match_var = NULL, ps_var = NULL, n_select = NULL,
+                           rank_metric = "score_sd", select_metric = NULL,
                            fit_args = list(nfolds = 10L, standardize = TRUE),
+                           eval_args = list(train_frac = 0.5, adjust_var = NULL,
+                                            target = "RMST", time = NULL,
+                                            num.trees = 2000L),
                            seed = 123L, verbose = FALSE) {
   if (!is.data.frame(data) || !nrow(data) || anyDuplicated(names(data)))
     stop("`data` must be a non-empty data frame with unique column names.",
@@ -272,6 +444,36 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
   if (is.null(cat_var) || !length(candidate_var) || anyDuplicated(candidate_var))
     stop("Supply one `cat_var` and nonempty, distinct `candidate_var` names.",
          call. = FALSE)
+  available <- c("score_sd", "score_iqr", "score_mean_abs", "score_median", "score_mean",
+                  "autoc", "qini", "r_loss", "dr_loss")
+  for (name in c("rank_metric", "select_metric")) {
+    metric <- get(name)
+    if (name == "select_metric" && is.null(metric)) next
+    if (!is.character(metric) || length(metric) != 1L || is.na(metric) ||
+        !metric %in% available)
+      stop(sprintf("`%s` must be one of: %s.", name, paste(available, collapse = ", ")),
+           call. = FALSE)
+  }
+  use_eval <- any(c(rank_metric, select_metric) %in% c("autoc", "qini", "r_loss", "dr_loss"))
+  eval_args <- .merge_named_arg(eval_args,
+    list(train_frac = 0.5, adjust_var = NULL, target = "RMST", time = NULL,
+         num.trees = 2000L), "eval_args")
+  fraction <- eval_args$train_frac
+  if (!is.numeric(fraction) || length(fraction) != 1L || is.na(fraction) ||
+      !is.finite(fraction) || fraction <= 0 || fraction >= 1)
+    stop("`eval_args$train_frac` must be a number strictly between 0 and 1.", call. = FALSE)
+  eval_args$num.trees <- .hte_select_count(eval_args$num.trees, "eval_args$num.trees",
+                                          2L, .Machine$integer.max)
+  if (!is.character(eval_args$target) || length(eval_args$target) != 1L ||
+      is.na(eval_args$target) || !eval_args$target %in% c("RMST", "survival.probability"))
+    stop("`eval_args$target` must be 'RMST' or 'survival.probability'.", call. = FALSE)
+  if (!is.null(eval_args$time) && (!is.numeric(eval_args$time) ||
+      length(eval_args$time) != 1L || is.na(eval_args$time) ||
+      !is.finite(eval_args$time) || eval_args$time <= 0))
+    stop("`eval_args$time` must be NULL or a positive finite number.", call. = FALSE)
+  adjust_var <- .sens_check_col(eval_args$adjust_var, data, "eval_args$adjust_var")
+  if (anyDuplicated(adjust_var))
+    stop("`eval_args$adjust_var` must contain distinct names.", call. = FALSE)
   if (is.null(match_var) == is.null(ps_var))
     stop("Supply exactly one of `match_var` and `ps_var`.", call. = FALSE)
   match_var <- .sens_check_col(match_var, data, "match_var", n = 1L)
@@ -288,7 +490,11 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
   if (anyDuplicated(roles) || any(candidate_var %in% roles))
     stop("Treatment, outcome, adjustment and candidate columns must be distinct.",
          call. = FALSE)
-  used <- c(roles, candidate_var)
+  if (any(adjust_var %in% roles))
+    stop("`eval_args$adjust_var` cannot include treatment, outcome, PS or matching columns.",
+         call. = FALSE)
+  model_vars <- unique(c(candidate_var, if (use_eval) adjust_var))
+  used <- c(roles, model_vars)
   valid_type <- vapply(data[used], function(x) {
     is.null(dim(x)) && (is.factor(x) || (!is.object(x) &&
       (is.numeric(x) || is.logical(x) || is.character(x))))
@@ -302,11 +508,11 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
   if (any(bad))
     stop(sprintf("Used columns must have no missing or non-finite values: %s.",
                  paste(used[bad], collapse = ", ")), call. = FALSE)
-  constant <- vapply(data[candidate_var], function(x) length(unique(x)) < 2L,
+  constant <- vapply(data[model_vars], function(x) length(unique(x)) < 2L,
                      logical(1))
   if (any(constant))
-    stop(sprintf("Constant candidate variable(s): %s.",
-                 paste(candidate_var[constant], collapse = ", ")), call. = FALSE)
+    stop(sprintf("Constant candidate or adjustment variable(s): %s.",
+                 paste(model_vars[constant], collapse = ", ")), call. = FALSE)
   if (!is.logical(verbose) || length(verbose) != 1L || is.na(verbose))
     stop("`verbose` must be TRUE or FALSE.", call. = FALSE)
   seed <- .hte_select_count(seed, "seed", 0, .Machine$integer.max)
@@ -351,6 +557,13 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
     y <- as.numeric(y)
     type <- if (all(y %in% 0:1)) "binary" else "continuous"
   }
+  if (type != "continuous" && any(c(rank_metric, select_metric) %in% c("r_loss", "dr_loss")))
+    stop("`r_loss` and `dr_loss` currently require a continuous outcome; Cox/logistic benefit scores are not outcome-scale effects.",
+         call. = FALSE)
+  if (use_eval && type == "survival" && is.null(eval_args$time))
+    stop("Specify `eval_args$time` for survival validation metrics.", call. = FALSE)
+  if (use_eval && !requireNamespace("grf", quietly = TRUE))
+    stop("Install the optional package `grf` for validation metrics.", call. = FALSE)
   if (!requireNamespace("personalized", quietly = TRUE))
     stop("Install the optional package `personalized` to use `get_hte_select()`.",
          call. = FALSE)
@@ -361,8 +574,8 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
   }
   loss <- switch(type, survival = "cox_loss_lasso", continuous = "sq_loss_lasso",
                   binary = "logistic_loss_lasso")
-  encoded <- data[candidate_var]
-  factors <- candidate_var[!vapply(encoded, is.numeric, logical(1))]
+  encoded <- data[model_vars]
+  factors <- model_vars[!vapply(encoded, is.numeric, logical(1))]
   encoded[factors] <- lapply(encoded[factors], function(x) droplevels(as.factor(x)))
   contrasts <- if (length(factors)) lapply(encoded[factors], function(x) {
     stats::contr.treatment(levels(x), base = 1L)
@@ -385,45 +598,105 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
       rm(".Random.seed", envir = genv)
   }, add = TRUE)
   set.seed(seed)
-  foldid <- if (is.null(match_id))
-    sample(rep(seq_len(fit_args$nfolds), length.out = nrow(data))) else NULL
+  train <- seq_len(nrow(data))
+  validation <- integer()
+  evaluation <- NULL
   warnings <- list()
+  if (use_eval) {
+    if (!is.null(match_id)) {
+      ids <- levels(match_id)
+      k <- floor(length(ids) * fraction)
+      if (k < fit_args$nfolds || length(ids) - k < 2L)
+        stop("The split needs at least `fit_args$nfolds` training pairs and two evaluation pairs.",
+             call. = FALSE)
+      train <- which(match_id %in% ids[sample.int(length(ids), k)])
+    } else {
+      # Stratify the one fixed split by arm; never repeatedly search for a
+      # split which improves a metric.
+      train <- sort(unlist(lapply(0:1, function(a) {
+        rows <- which(trt == a)
+        k <- floor(length(rows) * fraction)
+        if (k < 2L || length(rows) - k < 2L)
+          stop("Each split needs at least two observations per treatment arm.", call. = FALSE)
+        rows[sample.int(length(rows), k)]
+      }), use.names = FALSE))
+      if (length(train) < fit_args$nfolds)
+        stop("The training split has fewer rows than `fit_args$nfolds`.", call. = FALSE)
+    }
+    validation <- setdiff(seq_len(nrow(data)), train)
+    if (type == "survival" && !any(y[train, 2] == 1))
+      stop("The training split has no observed events.", call. = FALSE)
+    if (type != "survival" && length(unique(y[train])) < 2L)
+      stop("The outcome is constant in the training split.", call. = FALSE)
+    constant_train <- vapply(data[train, candidate_var, drop = FALSE],
+                              function(v) length(unique(v)) < 2L, logical(1))
+    if (any(constant_train))
+      stop(sprintf("Constant candidate in the training split: %s.",
+                   paste(candidate_var[constant_train], collapse = ", ")), call. = FALSE)
+    evaluation <- tryCatch(withCallingHandlers(
+      .hte_select_evaluation(x[validation, , drop = FALSE],
+        if (type == "survival") y[validation, , drop = FALSE] else y[validation],
+        trt[validation], if (is.null(ps)) rep(0.5, length(validation)) else ps[validation],
+        if (!is.null(match_id)) droplevels(match_id[validation]), type, eval_args, seed),
+      warning = function(w) {
+        warnings[[length(warnings) + 1L]] <<- data.frame(
+          stage = "evaluation", step = NA_integer_, variables = paste(model_vars, collapse = ", "),
+          message = conditionMessage(w))
+        invokeRestart("muffleWarning")
+      }), error = function(e) stop(paste("HTE evaluation failed:", conditionMessage(e)),
+                                    call. = FALSE))
+  }
+  set.seed(seed)
+  foldid <- if (is.null(match_id))
+    sample(rep(seq_len(fit_args$nfolds), length.out = length(train))) else NULL
   fit_subset <- function(vars, stage, step) {
     context <- sprintf("%s %d: %s", stage, step, paste(vars, collapse = ", "))
     if (verbose) cli::cli_inform("{context}")
     indices <- unlist(columns[vars], use.names = FALSE)
-    fit <- .hte_select_fit(x[, indices, drop = FALSE], y, trt, ps, match_id,
-                           foldid, loss, fit_args, seed, context)
+    args <- list(x = x[train, indices, drop = FALSE],
+                  y = if (type == "survival") y[train, , drop = FALSE] else y[train],
+                  trt = trt[train], ps = if (!is.null(ps)) ps[train],
+                  match_id = if (!is.null(match_id)) droplevels(match_id[train]),
+                  foldid = foldid, loss = loss, fit_args = fit_args, seed = seed, context = context)
+    if (use_eval) args <- c(args, list(newx = x[validation, indices, drop = FALSE],
+                                      evaluation = evaluation))
+    fit <- do.call(.hte_select_fit, args)
     if (length(fit$warnings))
       warnings[[length(warnings) + 1L]] <<- data.frame(
         stage = stage, step = step, variables = paste(vars, collapse = ", "),
         message = fit$warnings)
+    if (!use_eval) fit$statistics <- c(fit$statistics,
+      list(autoc = NA_real_, qini = NA_real_, r_loss = NA_real_, dr_loss = NA_real_))
     fit$statistics
   }
   single <- lapply(seq_along(candidate_var), function(i) {
-    data.frame(variable = candidate_var[i], n = nrow(data),
+    data.frame(variable = candidate_var[i], n = length(train), n_eval = length(validation),
                fit_subset(candidate_var[i], "single", i))
   })
   ranking <- do.call(rbind, single)
-  ranking <- ranking[order(-ranking$score_sd, seq_len(nrow(ranking))), , drop = FALSE]
+  ranking <- ranking[order(.hte_select_direction(rank_metric) * ranking[[rank_metric]],
+                            seq_len(nrow(ranking))), , drop = FALSE]
   rownames(ranking) <- NULL
   ranking <- data.frame(rank = seq_len(nrow(ranking)), ranking)
   steps <- lapply(seq_len(nrow(ranking)), function(k) {
     vars <- ranking$variable[seq_len(k)]
     data.frame(step = k, added_variable = vars[k], n_vars = k,
-               variables = I(list(vars)), n = nrow(data),
+               variables = I(list(vars)), n = length(train), n_eval = length(validation),
                fit_subset(vars, "forward", k))
   })
   forward <- do.call(rbind, steps)
+  best_step <- if (!is.null(select_metric))
+    which.min(.hte_select_direction(select_metric) * forward[[select_metric]]) else NULL
+  selected_step <- if (!is.null(n_select)) n_select else best_step
   warning_table <- if (length(warnings)) do.call(rbind, warnings) else
     data.frame(stage = character(), step = integer(), variables = character(),
                message = character())
-  versions <- vapply(c("personalized", "glmnet", "survival"), function(pkg) {
+  versions <- vapply(c("personalized", "glmnet", "survival", if (use_eval) "grf"), function(pkg) {
     as.character(utils::packageVersion(pkg))
   }, character(1))
   list(ranking = ranking, forward = forward,
-       selected = if (!is.null(n_select)) ranking$variable[seq_len(n_select)] else NULL,
-       plots = .hte_select_plots(ranking, forward, n_select),
+       selected = if (!is.null(selected_step)) ranking$variable[seq_len(selected_step)] else NULL,
+       plots = .hte_select_plots(ranking, forward, selected_step, rank_metric, select_metric),
        analysis = list(backend = "personalized", outcome_type = type,
                        outcome = outcome, cat_var = cat_var,
                        treatment_mapping = unique(data.frame(
@@ -431,8 +704,22 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
                        loss = loss, method = "weighting", n = nrow(data),
                        candidate_var = candidate_var, match_var = match_var,
                        ps_var = ps_var, n_select = n_select,
+                       rank_metric = rank_metric, select_metric = select_metric,
+                       best_step = best_step, selected_step = selected_step,
+                       rank_direction = if (.hte_select_direction(rank_metric) == 1) "minimize" else "maximize",
+                       select_direction = if (is.null(select_metric)) NULL else
+                         if (.hte_select_direction(select_metric) == 1) "minimize" else "maximize",
                        design_columns = lapply(columns, function(idx) colnames(x)[idx]),
                        seed = seed, fit_args = fit_args, foldid = foldid,
+                       eval_args = eval_args, training_rows = train,
+                       evaluation_rows = validation,
+                       evaluation = if (use_eval) list(backend = "grf", n = length(validation),
+                         adjust_var = model_vars, target = if (type == "survival") eval_args$target else
+                           if (type == "binary") "risk.difference" else "mean.difference",
+                         time = if (type == "survival") eval_args$time else NULL,
+                         propensity = if (is.null(ps)) "matched 1:1: 0.5" else "fixed ps_var",
+                         nuisance_prediction = "out-of-bag", metric_source = "validation",
+                         effect_conversion = if (type == "continuous") "2 * benefit.score" else NULL) else NULL,
                        score_source = "training", versions = versions,
                        warnings = warning_table))
 }
