@@ -377,7 +377,9 @@
 #' the winning metric is not an unbiased final performance estimate. Use
 #' independent test data or outer resampling to assess the full selection
 #' procedure. The function neither performs that assessment nor refits a
-#' selected model to all data. Supplied PS should also be constructed without
+#' selected model to all data. With validation enabled, `seed` also draws the
+#' split, so repeating the call over seeds gives selection frequencies (see
+#' Examples); these describe screening stability, not test performance. Supplied PS should also be constructed without
 #' outcome leakage. Selecting a different metric can activate splitting and
 #' thus change the training sample as well as the ranking criterion.
 #'
@@ -451,6 +453,16 @@
 #'     eval_args = list(time = 24, num.trees = 500L))
 #'   validated$selected
 #'   validated$plots$combined
+#'   # Screening stability: with validation each seed draws a new split, so
+#'   # repeating the call over seeds resamples the whole selection procedure.
+#'   picks <- lapply(1:5, function(s) {
+#'     get_hte_select(d, "z", candidates, ps_var = "ps",
+#'       imp_metric = "score_iqr", sel_metric = "autoc", fit_args = list(nfolds = 3L),
+#'       eval_args = list(time = 24, num.trees = 500L), seed = s)$selected
+#'   })
+#'   lengths(picks)
+#'   frequency <- table(factor(unlist(picks), levels = candidates)) / length(picks)
+#'   sort(frequency, decreasing = TRUE)
 #' }
 #' }
 #' @export
