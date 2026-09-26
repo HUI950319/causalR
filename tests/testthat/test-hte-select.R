@@ -121,6 +121,28 @@ test_that("ranking ties are stable and accumulation never greedily reorders", {
   }
 })
 
+test_that("PS-route folds are stratified by arm and sparse outcome class", {
+  skip_if_not_installed("personalized")
+  d <- hte_select_data()
+  # Three positives inside one fold of an unstratified assignment.
+  old <- withr::with_seed(123L, sample(rep(1:3, length.out = nrow(d))))
+  d$binary <- 0L
+  d$binary[which(old == 1L)[1:3]] <- 1L
+  res <- get_hte_select(d, "z", c("x", "group"), surv = "binary", ps_var = "ps",
+                        fit_args = list(nfolds = 3L))
+  folds <- res$analysis$foldid
+  expect_identical(as.vector(table(folds[d$binary == 1L])), rep(1L, 3L))
+  expect_true(all(abs(table(folds, d$z) - nrow(d) / 6) <= 1))
+  d$binary <- 0L
+  d$binary[1] <- 1L
+  expect_error(get_hte_select(d, "z", "x", surv = "binary", ps_var = "ps",
+                              fit_args = list(nfolds = 3L)), "training fold")
+  d$DSS <- 0L
+  d$DSS[1] <- 1L
+  expect_error(get_hte_select(d, "z", "x", ps_var = "ps",
+                              fit_args = list(nfolds = 3L)), "training fold")
+})
+
 test_that("factor blocks and non-syntactic names retain fixed encoding", {
   skip_if_not_installed("personalized")
   d <- hte_select_data()

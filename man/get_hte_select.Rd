@@ -160,7 +160,10 @@ outcomes (binary outcome 1); no treatment recommendation is returned.
 Categorical variables use treatment contrasts with the first level as
 reference. Their indicator columns enter together as one original variable.
 Encoding, rows and propensity scores are fixed across all models. The PS
-route shares one balanced random fold assignment. The matched route uses
+route shares one random fold assignment, dealt within treatment arm by
+event status (survival) or outcome class (binary) strata, and stops early
+unless every training fold keeps both arms and some events (both outcome
+classes for binary outcomes). The matched route uses
 the backend's pair-level folds; internal retries can change these folds, so
 identical final folds across matched models are not guaranteed.
 

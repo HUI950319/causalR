@@ -302,7 +302,10 @@
 #' Categorical variables use treatment contrasts with the first level as
 #' reference. Their indicator columns enter together as one original variable.
 #' Encoding, rows and propensity scores are fixed across all models. The PS
-#' route shares one balanced random fold assignment. The matched route uses
+#' route shares one random fold assignment, dealt within treatment arm by
+#' event status (survival) or outcome class (binary) strata, and stops early
+#' unless every training fold keeps both arms and some events (both outcome
+#' classes for binary outcomes). The matched route uses
 #' the backend's pair-level folds; internal retries can change these folds, so
 #' identical final folds across matched models are not guaranteed.
 #'
@@ -647,8 +650,25 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
                                     call. = FALSE))
   }
   set.seed(seed)
-  foldid <- if (is.null(match_id))
-    sample(rep(seq_len(fit_args$nfolds), length.out = length(train))) else NULL
+  foldid <- NULL
+  if (is.null(match_id)) {
+    # Deal folds within arm x event (or binary outcome) strata so that sparse
+    # events cannot collapse into one fold and leave a training fold without them.
+    outcome_class <- if (type == "survival") y[train, 2] else
+      if (type == "binary") y[train] else rep(0, length(train))
+    stratum <- interaction(trt[train], outcome_class, drop = TRUE)
+    foldid <- integer(length(train))
+    foldid[order(stratum, stats::runif(length(train)))] <-
+      sample(fit_args$nfolds)[rep(seq_len(fit_args$nfolds), length.out = length(train))]
+    usable <- vapply(seq_len(fit_args$nfolds), function(k) {
+      keep <- foldid != k
+      all(0:1 %in% trt[train][keep]) && switch(type, continuous = TRUE,
+        survival = any(outcome_class[keep] == 1), binary = all(0:1 %in% outcome_class[keep]))
+    }, logical(1))
+    if (!all(usable))
+      stop("Every training fold needs both arms and, for survival or binary outcomes, observed events or both outcome classes; reduce `fit_args$nfolds` or add data.",
+           call. = FALSE)
+  }
   fit_subset <- function(vars, stage, step) {
     context <- sprintf("%s %d: %s", stage, step, paste(vars, collapse = ", "))
     if (verbose) cli::cli_inform("{context}")

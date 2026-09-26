@@ -1,5 +1,12 @@
 # causalR (development version)
 
+* `get_hte_select()` deals PS-route LASSO folds within treatment-arm by
+  event (survival) or outcome-class (binary) strata, and stops before fitting
+  when any training fold would lack an arm, events or an outcome class.
+  Sparse events previously could share one fold, failing binary fits and
+  silently returning empty Cox models. Fold IDs therefore differ from earlier
+  versions for the same seed.
+
 * `get_hte_select()` renames `rank_metric` to `imp_metric` (variable importance)
   and `select_metric` to `sel_metric` (variable selection), including the
   corresponding `analysis` fields. Defaults and calculations are unchanged;
