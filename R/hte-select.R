@@ -324,6 +324,10 @@
 #' classes for binary outcomes). The matched route uses
 #' the backend's pair-level folds; internal retries can change these folds, so
 #' identical final folds across matched models are not guaranteed.
+#' When a model selects no variable, `personalized` (0.2.8) reruns its penalty
+#' cross-validation up to four more times. With the fixed PS-route folds these
+#' reruns repeat identical work, so an uninformative model can cost up to five
+#' `cv.glmnet()` calls; the matched route redraws pair folds on each rerun.
 #'
 #' Descriptive metrics use unweighted training benefit scores: sample SD,
 #' mean absolute score, median, signed mean and interquartile range
