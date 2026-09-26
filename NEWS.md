@@ -1,5 +1,8 @@
 # causalR (development version)
 
+* `get_hte_select()` ranks candidates by personalized benefit-score SD and
+  returns the full fixed-order accumulation path for survival, continuous and
+  binary outcomes, with existing 1:1 matching or fixed propensity scores.
 * `plt_hte_dep()` rejects unused heat-map `ylim` and invalid non-integer or
   non-finite grid sizes and spline degrees; `max_n = Inf` remains supported.
 * `plt_hte_cate(overall = FALSE)` skips unused arm-score calculations when no

@@ -42,5 +42,7 @@ utils::globalVariables(c(
   "rule",      # plt_hte_rate:      ranking rule, shown in the legend
   "q_from",    # plt_hte_rate:      start of a GATES group's share
   "q_to",      # plt_hte_rate:      end of a GATES group's share
-  "cate_mean"  # plt_hte_rate:      mean forest CATE of a GATES group
+  "cate_mean", # plt_hte_rate:      mean forest CATE of a GATES group
+  # hte-select.R (reuses variable above)
+  "score_sd", "n_vars", "value", "statistic"
 ))
