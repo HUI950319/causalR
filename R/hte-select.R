@@ -27,7 +27,8 @@
       stop("Backend returned missing, non-finite or incorrectly sized scores.")
     values <- list(score_sd = stats::sd(scores),
                    score_mean_abs = mean(abs(scores)),
-                   score_median = stats::median(scores))
+                   score_median = stats::median(scores),
+                   score_mean = mean(scores))
     if (any(!is.finite(unlist(values))))
       stop("Score summaries are non-finite.")
     values
@@ -55,11 +56,15 @@
                value = forward[[metric]])
   }))
   curve_data$statistic <- factor(curve_data$statistic, levels = metrics)
+  step_breaks <- if (nrow(forward) <= 10L) seq_len(nrow(forward)) else
+    pretty(c(1L, nrow(forward)), n = 6L)
+  step_breaks <- sort(unique(c(1L, nrow(forward),
+                                step_breaks[step_breaks >= 1 & step_breaks <= nrow(forward)])))
   curve <- ggplot2::ggplot(curve_data,
                            ggplot2::aes(x = n_vars, y = value)) +
     ggplot2::geom_point() +
     ggplot2::facet_wrap(~statistic, scales = "free_y") +
-    ggplot2::scale_x_continuous(breaks = seq_len(nrow(forward))) +
+    ggplot2::scale_x_continuous(breaks = step_breaks) +
     ggplot2::labs(x = "Number of variables (fixed ranking)",
                    y = "Benefit-score statistic") +
     ggplot2::theme_minimal()
@@ -67,7 +72,65 @@
   if (!is.null(n_select))
     curve <- curve + ggplot2::geom_vline(xintercept = n_select,
                                          linetype = "dashed")
-  list(ranking = bar, forward = curve)
+  # One row per ranked candidate; the line follows cumulative-model order.
+  combined_data <- ranking
+  combined_data$position <- nrow(ranking) + 1L - ranking$rank
+  combined_data$score_mean <- forward$score_mean
+  primary_max <- max(ranking$score_sd)
+  if (primary_max == 0) primary_max <- 1
+  score_limits <- range(forward$score_mean)
+  score_span <- diff(score_limits)
+  # Keep the secondary-axis transformation invertible for constant scores.
+  padding <- if (score_span > 0) score_span * 0.05 else
+    max(abs(score_limits), 1) * 0.05
+  score_lower <- score_limits[1] - padding
+  score_width <- score_span + 2 * padding
+  combined_data$curve_x <- (combined_data$score_mean - score_lower) /
+    score_width * primary_max
+  combined <- ggplot2::ggplot(combined_data,
+                               ggplot2::aes(x = score_sd, y = position)) +
+    ggplot2::geom_col(ggplot2::aes(fill = rank), orientation = "y", width = 0.82) +
+    ggplot2::scale_fill_gradient(low = "#548A9A", high = "#9AC3AD", guide = "none")
+  peak <- which.max(forward$score_mean)
+  peak_row <- combined_data[peak, , drop = FALSE]
+  combined <- combined +
+    ggplot2::geom_col(data = peak_row, fill = "#E97997",
+                       orientation = "y", width = 0.82) +
+    ggplot2::geom_hline(yintercept = peak_row$position,
+                         linetype = "dashed", colour = "#777777", linewidth = 0.4)
+  if (nrow(ranking) > 1L)
+    combined <- combined + ggplot2::geom_path(
+      ggplot2::aes(x = curve_x, group = 1), colour = "#414141", linewidth = 0.55)
+  combined <- combined + ggplot2::geom_point(
+    ggplot2::aes(x = curve_x), colour = "#414141", size = 1.6)
+  combined <- combined + ggplot2::geom_point(
+    data = peak_row, ggplot2::aes(x = curve_x), colour = "#D54B77", size = 2.5)
+  caption <- sprintf("Red: maximum mean score at %d variables (first maximum if tied)", peak)
+  if (!is.null(n_select) && n_select != peak) {
+    combined <- combined + ggplot2::geom_hline(
+      yintercept = nrow(ranking) + 1L - n_select,
+      colour = "#397DAB", linetype = "dotted", linewidth = 0.55)
+    caption <- paste0(caption, "\nBlue dotted line: specified n_select = ", n_select)
+  }
+  combined <- combined +
+    ggplot2::scale_y_continuous(breaks = combined_data$position,
+                                 labels = combined_data$variable,
+                                 expand = ggplot2::expansion(add = 0.7)) +
+    ggplot2::scale_x_continuous(
+      name = "Single-variable benefit-score SD",
+      limits = c(0, primary_max), expand = ggplot2::expansion(mult = c(0, 0.025)),
+      sec.axis = ggplot2::sec_axis(
+        transform = ~ . / primary_max * score_width + score_lower,
+        name = "Mean benefit score (cumulative model)")) +
+    ggplot2::labs(y = NULL, caption = caption) +
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(panel.grid.major.y = ggplot2::element_blank(),
+                   panel.grid.minor = ggplot2::element_blank(),
+                   axis.text.y = ggplot2::element_text(colour = "#333333"),
+                   axis.title.x.top = ggplot2::element_text(margin = ggplot2::margin(b = 9)),
+                   axis.title.x.bottom = ggplot2::element_text(margin = ggplot2::margin(t = 9)),
+                   plot.caption = ggplot2::element_text(hjust = 0, colour = "#666666"))
+  list(ranking = bar, forward = curve, combined = combined)
 }
 
 #' Screen HTE variables by fixed-order benefit-score accumulation
@@ -100,7 +163,9 @@
 #'   fixed across models; they are not weights. Default `NULL`. No propensity
 #'   model is fitted and no matching is performed inside this function.
 #' @param n_select Optional integer from 1 to the number of candidates.
-#'   Returns the first N ranked variables and marks N on the forward plot.
+#'   Returns the first N ranked variables and marks N on the forward and
+#'   combined plots (a blue dotted line when N differs from the mean-score
+#'   peak). The combined plot's red marker always denotes the mean-score peak.
 #'   Default `NULL` makes no selection. The complete path is always computed.
 #' @param fit_args Named list of fitting settings. Partial overrides are
 #'   supported; unknown, duplicate and unnamed entries are rejected.
@@ -132,12 +197,14 @@
 #' identical final folds across matched models are not guaranteed.
 #'
 #' Ranking uses only the unweighted sample standard deviation of training
-#' benefit scores. Mean absolute score and median score are also reported.
+#' benefit scores. Mean absolute score, median and signed mean are also reported.
 #' These are descriptive score summaries, not HRs, absolute CATE estimates,
 #' formal variable-importance tests or validated predictive performance.
 #' Penalty cross-validation does not validate the entire screening procedure.
-#' No automatic maximum-SD, elbow or stopping rule is applied. The forward
-#' pass never reorders remaining candidates or removes earlier variables.
+#' No automatic maximum-SD, elbow or stopping rule is applied. The combined
+#' plot highlights the first maximum signed mean score for visual comparison,
+#' without setting `selected` or changing the full path. The forward pass never
+#' reorders remaining candidates or removes earlier variables.
 #'
 #' A penalized model producing constant scores is retained with SD zero.
 #' Backend warnings are recorded in `analysis$warnings`; errors stop with
@@ -147,28 +214,50 @@
 #' @return A plain named list:
 #' \describe{
 #'   \item{ranking}{Data frame with `rank`, `variable`, `n`, `score_sd`,
-#'     `score_mean_abs` and `score_median`, sorted by decreasing `score_sd`.}
+#'     `score_mean_abs`, `score_median` and `score_mean` (signed mean), sorted
+#'     by decreasing `score_sd`.}
 #'   \item{forward}{Data frame with `step`, `added_variable`, `n_vars`, a
-#'     `variables` list column, `n` and the same three score summaries.}
+#'     `variables` list column, `n` and the same four score summaries.}
 #'   \item{selected}{Character vector of the first `n_select` variables, or
 #'     `NULL`. Included variables can still have zero LASSO coefficients.}
-#'   \item{plots}{Named list `ranking` and `forward` of ggplot objects, not
-#'     printed or saved automatically. Forward panels use separate y scales.}
+#'   \item{plots}{Named list `ranking`, `forward` and `combined` of ggplot
+#'     objects, not printed or saved automatically. Forward panels use separate
+#'     y scales. The combined plot aligns ranked bars (bottom axis: single-model
+#'     score SD) with cumulative-model signed mean scores (top axis). The
+#'     pink/red bar and point with a horizontal dashed line mark the first
+#'     step attaining the maximum mean; they do not imply a validated optimum.
+#'     The secondary axis uses an invertible linear transformation for display only;
+#'     the two quantities do not share a numerical scale.}
 #'   \item{analysis}{Outcome and treatment mapping, loss, adjustment settings,
 #'     sample size, design-column mapping, seed, fit settings, PS fold IDs
 #'     (`NULL` for matching), dependency versions and a warning data frame.}
 #' }
 #' No fitted model, individual benefit scores or input data are retained.
 #'
-#' @examples
-#' if (requireNamespace("personalized", quietly = TRUE)) {
-#'   set.seed(1)
-#'   d <- data.frame(z = rep(0:1, 80), x = rnorm(160), ps = 0.5)
-#'   d$y <- (2 * d$z - 1) * d$x + rnorm(160)
-#'   ans <- get_hte_select(d, "z", "x", surv = "y", ps_var = "ps",
-#'                         fit_args = list(nfolds = 3L))
-#'   ans$ranking
-#'   ans$forward
+#' @examplesIf requireNamespace("personalized", quietly = TRUE)
+#' \donttest{
+#' # Simulated survival data: 40 candidates, 8 true effect modifiers.
+#' set.seed(20260926)
+#' n <- 600L
+#' candidates <- c(sprintf("Modifier_%02d", 1:8),
+#'                 sprintf("Prognostic_%02d", 1:8), sprintf("Noise_%02d", 1:24))
+#' d <- as.data.frame(matrix(rnorm(n * length(candidates)), nrow = n))
+#' names(d) <- candidates
+#' d$z <- sample(rep(0:1, length.out = n))
+#' d$ps <- 0.5
+#' benefit <- as.vector(as.matrix(d[candidates[1:8]]) %*%
+#'                      c(0.8, 0.6, 0.45, 0.35, 0.25, 0.18, 0.12, 0.08))
+#' baseline <- as.vector(as.matrix(d[candidates[9:16]]) %*% seq(0.3, 0.05, length.out = 8))
+#' event <- rexp(n, rate = 0.02 * exp(baseline - (2 * d$z - 1) * benefit / 2))
+#' censor <- rexp(n, rate = 0.008)
+#' d$time <- pmin(event, censor)
+#' d$DSS <- as.integer(event <= censor)
+#' # The plot marks the mean-score peak, but selected remains NULL.
+#' ans <- get_hte_select(d, "z", candidates, ps_var = "ps",
+#'                       fit_args = list(nfolds = 3L))
+#' ans$ranking
+#' ans$forward
+#' ans$plots$combined
 #' }
 #' @export
 get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,

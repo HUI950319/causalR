@@ -47,7 +47,9 @@ fixed across models; they are not weights. Default \code{NULL}. No propensity
 model is fitted and no matching is performed inside this function.}
 
 \item{n_select}{Optional integer from 1 to the number of candidates.
-Returns the first N ranked variables and marks N on the forward plot.
+Returns the first N ranked variables and marks N on the forward and
+combined plots (a blue dotted line when N differs from the mean-score
+peak). The combined plot's red marker always denotes the mean-score peak.
 Default \code{NULL} makes no selection. The complete path is always computed.}
 
 \item{fit_args}{Named list of fitting settings. Partial overrides are
@@ -70,13 +72,20 @@ steps as they are fitted.}
 A plain named list:
 \describe{
 \item{ranking}{Data frame with \code{rank}, \code{variable}, \code{n}, \code{score_sd},
-\code{score_mean_abs} and \code{score_median}, sorted by decreasing \code{score_sd}.}
+\code{score_mean_abs}, \code{score_median} and \code{score_mean} (signed mean), sorted
+by decreasing \code{score_sd}.}
 \item{forward}{Data frame with \code{step}, \code{added_variable}, \code{n_vars}, a
-\code{variables} list column, \code{n} and the same three score summaries.}
+\code{variables} list column, \code{n} and the same four score summaries.}
 \item{selected}{Character vector of the first \code{n_select} variables, or
 \code{NULL}. Included variables can still have zero LASSO coefficients.}
-\item{plots}{Named list \code{ranking} and \code{forward} of ggplot objects, not
-printed or saved automatically. Forward panels use separate y scales.}
+\item{plots}{Named list \code{ranking}, \code{forward} and \code{combined} of ggplot
+objects, not printed or saved automatically. Forward panels use separate
+y scales. The combined plot aligns ranked bars (bottom axis: single-model
+score SD) with cumulative-model signed mean scores (top axis). The
+pink/red bar and point with a horizontal dashed line mark the first
+step attaining the maximum mean; they do not imply a validated optimum.
+The secondary axis uses an invertible linear transformation for display only;
+the two quantities do not share a numerical scale.}
 \item{analysis}{Outcome and treatment mapping, loss, adjustment settings,
 sample size, design-column mapping, seed, fit settings, PS fold IDs
 (\code{NULL} for matching), dependency versions and a warning data frame.}
@@ -105,12 +114,14 @@ the backend's pair-level folds; internal retries can change these folds, so
 identical final folds across matched models are not guaranteed.
 
 Ranking uses only the unweighted sample standard deviation of training
-benefit scores. Mean absolute score and median score are also reported.
+benefit scores. Mean absolute score, median and signed mean are also reported.
 These are descriptive score summaries, not HRs, absolute CATE estimates,
 formal variable-importance tests or validated predictive performance.
 Penalty cross-validation does not validate the entire screening procedure.
-No automatic maximum-SD, elbow or stopping rule is applied. The forward
-pass never reorders remaining candidates or removes earlier variables.
+No automatic maximum-SD, elbow or stopping rule is applied. The combined
+plot highlights the first maximum signed mean score for visual comparison,
+without setting \code{selected} or changing the full path. The forward pass never
+reorders remaining candidates or removes earlier variables.
 
 A penalized model producing constant scores is retained with SD zero.
 Backend warnings are recorded in \code{analysis$warnings}; errors stop with
@@ -118,13 +129,30 @@ variable/step context. This object is not an \code{hte_res} and is not input to
 the grf-specific HTE plotting or RATE functions.
 }
 \examples{
-if (requireNamespace("personalized", quietly = TRUE)) {
-  set.seed(1)
-  d <- data.frame(z = rep(0:1, 80), x = rnorm(160), ps = 0.5)
-  d$y <- (2 * d$z - 1) * d$x + rnorm(160)
-  ans <- get_hte_select(d, "z", "x", surv = "y", ps_var = "ps",
-                        fit_args = list(nfolds = 3L))
-  ans$ranking
-  ans$forward
+\dontshow{if (requireNamespace("personalized", quietly = TRUE)) withAutoprint(\{ # examplesIf}
+\donttest{
+# Simulated survival data: 40 candidates, 8 true effect modifiers.
+set.seed(20260926)
+n <- 600L
+candidates <- c(sprintf("Modifier_\%02d", 1:8),
+                sprintf("Prognostic_\%02d", 1:8), sprintf("Noise_\%02d", 1:24))
+d <- as.data.frame(matrix(rnorm(n * length(candidates)), nrow = n))
+names(d) <- candidates
+d$z <- sample(rep(0:1, length.out = n))
+d$ps <- 0.5
+benefit <- as.vector(as.matrix(d[candidates[1:8]]) \%*\%
+                     c(0.8, 0.6, 0.45, 0.35, 0.25, 0.18, 0.12, 0.08))
+baseline <- as.vector(as.matrix(d[candidates[9:16]]) \%*\% seq(0.3, 0.05, length.out = 8))
+event <- rexp(n, rate = 0.02 * exp(baseline - (2 * d$z - 1) * benefit / 2))
+censor <- rexp(n, rate = 0.008)
+d$time <- pmin(event, censor)
+d$DSS <- as.integer(event <= censor)
+# The plot marks the mean-score peak, but selected remains NULL.
+ans <- get_hte_select(d, "z", candidates, ps_var = "ps",
+                      fit_args = list(nfolds = 3L))
+ans$ranking
+ans$forward
+ans$plots$combined
 }
+\dontshow{\}) # examplesIf}
 }

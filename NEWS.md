@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte_select()` adds signed `score_mean` and `plots$combined`, aligning
+  ranked SD bars with cumulative mean scores on a separate top axis. Red marks
+  the first mean-score maximum without automatically selecting variables;
+  a different `n_select` is marked separately. The example has 40 candidates.
 * `get_hte_select()` ranks candidates by personalized benefit-score SD and
   returns the full fixed-order accumulation path for survival, continuous and
   binary outcomes, with existing 1:1 matching or fixed propensity scores.

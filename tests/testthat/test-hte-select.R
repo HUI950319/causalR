@@ -51,12 +51,12 @@ test_that("all outcomes and adjustment routes agree with direct personalized fit
         direct <- withr::with_seed(123L, suppressWarnings(
           do.call(personalized::fit.subgroup, args)))
         score <- as.numeric(predict(direct, newx = args$x, type = "benefit.score"))
-        expected <- c(sd(score), mean(abs(score)), median(score))
+        expected <- c(sd(score), mean(abs(score)), median(score), mean(score))
         expect_equal(unname(unlist(res$forward[k, c("score_sd", "score_mean_abs",
-                                                     "score_median")])), expected)
+                                                     "score_median", "score_mean")])), expected)
         if (k == 1L)
           expect_equal(unname(unlist(res$ranking[1, c("score_sd", "score_mean_abs",
-                                                       "score_median")])), expected)
+                                                       "score_median", "score_mean")])), expected)
       }
       expect_identical(res$forward$n, rep(nrow(d), 2))
       expect_s3_class(res$plots$ranking, "ggplot")
@@ -82,7 +82,8 @@ test_that("ranking ties are stable and accumulation never greedily reorders", {
                                      folds = foldid)
     # a and b tie; c would appear best if a greedy algorithm tried it after a.
     value <- if (ncol(x) == 1L) if (colnames(x) == "c") 1 else 2 else 99
-    list(statistics = list(score_sd = value, score_mean_abs = 1, score_median = 0),
+    list(statistics = list(score_sd = value, score_mean_abs = 1, score_median = 0,
+                           score_mean = 0),
          warnings = "Recorded backend warning")
   })
   res <- get_hte_select(d, "z", c("b", "a", "c"), surv = "y", ps_var = "ps")
@@ -105,7 +106,8 @@ test_that("factor blocks and non-syntactic names retain fixed encoding", {
   seen <- list()
   local_mocked_bindings(.hte_select_fit = function(x, ...) {
     seen[[length(seen) + 1L]] <<- x
-    list(statistics = list(score_sd = 0, score_mean_abs = 0, score_median = 0),
+    list(statistics = list(score_sd = 0, score_mean_abs = 0, score_median = 0,
+                           score_mean = 0),
          warnings = character())
   })
   res <- get_hte_select(d, "z", c("stage / group", "x"), surv = "y", ps_var = "ps")
@@ -189,4 +191,44 @@ test_that("the public signature and documentation expose all defaults", {
   expect_match(text, "nfolds = 10L, standardize = TRUE", fixed = TRUE)
   expect_match(text, "nfolds Integer", fixed = TRUE)
   expect_match(text, "standardize Logical", fixed = TRUE)
+})
+
+test_that("combined chart aligns ranking rows and cumulative scores on distinct axes", {
+  ranking <- data.frame(rank = 1:4, variable = c("a", "b", "c", "d"),
+                         score_sd = c(0.8, 0.6, 0.3, 0.1))
+  forward <- data.frame(step = 1:4, n_vars = 1:4, score_sd = c(0.8, 1, 0.9, 1),
+                         score_mean_abs = c(0.6, 0.9, 0.8, 1.1), score_median = 0,
+                         score_mean = c(-0.6, -0.2, -0.4, 0.3))
+  plot <- causalR:::.hte_select_plots(ranking, forward, 3L)$combined
+  expect_s3_class(plot, "ggplot")
+  built <- ggplot2::ggplot_build(plot)
+  bars <- built$data[[1]]
+  expect_equal(bars$xmax, ranking$score_sd)
+  expect_equal(bars$y, 4:1)
+  expect_equal(built$data[[2]]$y, 1)
+  expect_equal(built$data[[3]]$yintercept, 1)
+  path <- built$data[[4]]
+  expect_equal(path$y, 4:1)
+  secondary <- built$layout$panel_scales_x[[1]]$secondary.axis
+  expect_equal(secondary$trans(path$x), forward$score_mean)
+  expect_equal(built$data[[6]]$y, 1)
+  expect_equal(built$data[[6]]$x, path$x[4])
+  expect_equal(built$data[[7]]$yintercept, 2)
+  expect_match(secondary$name, "Mean benefit")
+})
+
+test_that("combined chart marks the first tied maximum without a selected cutoff", {
+  for (n in c(1L, 4L)) {
+    ranking <- data.frame(rank = seq_len(n), variable = letters[seq_len(n)], score_sd = 0)
+    forward <- data.frame(step = seq_len(n), n_vars = seq_len(n),
+                           score_sd = 0, score_mean_abs = 0, score_median = 0, score_mean = 0)
+    plot <- causalR:::.hte_select_plots(ranking, forward, NULL)$combined
+    expect_s3_class(plot, "ggplot")
+    built <- ggplot2::ggplot_build(plot)
+    expect_equal(built$data[[1]]$xmax, rep(0, n))
+    expect_equal(built$data[[2]]$y, n)
+    expect_equal(length(built$data), if (n == 1L) 5L else 6L)
+    expect_equal(built$layout$panel_scales_x[[1]]$secondary.axis$trans(
+      built$data[[length(built$data) - 1L]]$x), rep(0, n))
+  }
 })
