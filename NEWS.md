@@ -1,5 +1,7 @@
 # causalR (development version)
 
+* `plt_hte_sub()` rejects relative effects for weighted or clustered forests,
+  matching the restrictions of `get_hte()`.
 * `get_hte()` skips unused spline prediction grids when assembling importance
   tests; `plt_hte_dep()` still constructs the full curves on demand.
 * `get_hte()` accepts single-level factor, character and logical covariates

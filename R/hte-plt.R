@@ -558,6 +558,7 @@ plt_hte_dep <- function(x,
 #' @param measure One of `"diff"` (default), `"ratio"` or `"OR"`, as in
 #'   [get_hte()]. `"ratio"` and `"OR"` are drawn on a log axis; `"OR"` needs
 #'   an outcome probability, a binary outcome or \eqn{S(t)}.
+#'   Relative effects do not support forests with sample weights or clusters.
 #' @param conf_level Confidence level of the intervals. Default `0.95`,
 #'   whatever level `x` was computed with.
 #' @param effect `NULL` (default) or rows to replace, e.g. with an estimate
@@ -735,6 +736,10 @@ plt_hte_sub <- function(x,
   } else {
     a$outcome_type
   }
+  if (measure != "diff" &&
+      (length(x$fit$clusters) || !is.null(x$fit$sample.weights)))
+    stop("`ratio` and `OR` do not support forests with `clusters` or `sample.weights`; use measure = \"diff\".",
+         call. = FALSE)
   if (measure == "OR" && scale %in% c("RMST", "continuous"))
     stop("`measure = \"OR\"` needs an outcome probability: a binary outcome or S(t).",
          call. = FALSE)

@@ -35,7 +35,8 @@ otherwise add it with \code{get_hte(sub_var = )}.}
 
 \item{measure}{One of \code{"diff"} (default), \code{"ratio"} or \code{"OR"}, as in
 \code{\link[=get_hte]{get_hte()}}. \code{"ratio"} and \code{"OR"} are drawn on a log axis; \code{"OR"} needs
-an outcome probability, a binary outcome or \eqn{S(t)}.}
+an outcome probability, a binary outcome or \eqn{S(t)}.
+Relative effects do not support forests with sample weights or clusters.}
 
 \item{conf_level}{Confidence level of the intervals. Default \code{0.95},
 whatever level \code{x} was computed with.}

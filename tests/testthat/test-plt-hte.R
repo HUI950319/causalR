@@ -355,6 +355,18 @@ drawn <- function(p, w, h) {
        centre  = c(mid$x - w / 2, mid$y - h / 2))
 }
 
+test_that("plt_hte_sub rejects relative effects for weighted or clustered forests", {
+  res <- dep_res()
+  for (field in c("sample.weights", "clusters")) {
+    x <- res
+    x$fit[[field]] <- if (field == "clusters") rep(1:50, each = 10) else
+      rep(c(1, 2), length.out = nrow(x$data))
+    for (measure in c("ratio", "OR"))
+      expect_error(plt_hte_sub(x, sub_var = "sex", measure = measure),
+                   "do not support.*clusters.*sample.weights")
+  }
+})
+
 test_that("plt_hte_sub recomputes the get_hte() subgroup estimates", {
   skip_if_not_installed("forestplot")
   skip_if_not_installed("ggplotify")
