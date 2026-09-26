@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte_select()` reuses the top single-variable fit as forward step 1
+  instead of refitting it, reducing model fits from 2p to 2p - 1. Results are
+  unchanged; that fit's warnings are still recorded for both stages.
+
 * `get_hte_select()` deals PS-route LASSO folds within treatment-arm by
   event (survival) or outcome-class (binary) strata, and stops before fitting
   when any training fold would lack an arm, events or an outcome class.

@@ -209,7 +209,8 @@
 #' Screen HTE variables by fixed-order benefit-score accumulation
 #'
 #' Fits a separate personalized subgroup model for each candidate, ranks the
-#' candidates using `imp_metric`, then fits every prefix of that fixed ranking.
+#' candidates using `imp_metric`, then fits every prefix of that fixed ranking
+#' (the one-variable prefix reuses the top single-variable fit).
 #' Returns score summaries and optional validation metrics, with manual or
 #' metric-based model-size selection. No fitted models are retained.
 #'
@@ -669,40 +670,48 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
       stop("Every training fold needs both arms and, for survival or binary outcomes, observed events or both outcome classes; reduce `fit_args$nfolds` or add data.",
            call. = FALSE)
   }
-  fit_subset <- function(vars, stage, step) {
-    context <- sprintf("%s %d: %s", stage, step, paste(vars, collapse = ", "))
-    if (verbose) cli::cli_inform("{context}")
-    indices <- unlist(columns[vars], use.names = FALSE)
-    args <- list(x = x[train, indices, drop = FALSE],
-                  y = if (type == "survival") y[train, , drop = FALSE] else y[train],
-                  trt = trt[train], ps = if (!is.null(ps)) ps[train],
-                  match_id = if (!is.null(match_id)) droplevels(match_id[train]),
-                  foldid = foldid, loss = loss, fit_args = fit_args, seed = seed, context = context)
-    if (use_eval) args <- c(args, list(newx = x[validation, indices, drop = FALSE],
-                                      evaluation = evaluation))
-    fit <- do.call(.hte_select_fit, args)
+  # `fit` reuses an identical earlier fit; its warnings are recorded again.
+  fit_subset <- function(vars, stage, step, fit = NULL) {
+    if (is.null(fit)) {
+      context <- sprintf("%s %d: %s", stage, step, paste(vars, collapse = ", "))
+      if (verbose) cli::cli_inform("{context}")
+      indices <- unlist(columns[vars], use.names = FALSE)
+      args <- list(x = x[train, indices, drop = FALSE],
+                    y = if (type == "survival") y[train, , drop = FALSE] else y[train],
+                    trt = trt[train], ps = if (!is.null(ps)) ps[train],
+                    match_id = if (!is.null(match_id)) droplevels(match_id[train]),
+                    foldid = foldid, loss = loss, fit_args = fit_args, seed = seed, context = context)
+      if (use_eval) args <- c(args, list(newx = x[validation, indices, drop = FALSE],
+                                        evaluation = evaluation))
+      fit <- do.call(.hte_select_fit, args)
+      if (!use_eval) fit$statistics <- c(fit$statistics,
+        list(autoc = NA_real_, qini = NA_real_, r_loss = NA_real_, dr_loss = NA_real_))
+    }
     if (length(fit$warnings))
       warnings[[length(warnings) + 1L]] <<- data.frame(
         stage = stage, step = step, variables = paste(vars, collapse = ", "),
         message = fit$warnings)
-    if (!use_eval) fit$statistics <- c(fit$statistics,
-      list(autoc = NA_real_, qini = NA_real_, r_loss = NA_real_, dr_loss = NA_real_))
-    fit$statistics
+    fit
   }
   single <- lapply(seq_along(candidate_var), function(i) {
-    data.frame(variable = candidate_var[i], n = length(train), n_eval = length(validation),
-               fit_subset(candidate_var[i], "single", i))
+    fit_subset(candidate_var[i], "single", i)
   })
-  ranking <- do.call(rbind, single)
+  ranking <- do.call(rbind, lapply(seq_along(candidate_var), function(i) {
+    data.frame(variable = candidate_var[i], n = length(train), n_eval = length(validation),
+               single[[i]]$statistics)
+  }))
   ranking <- ranking[order(.hte_select_direction(imp_metric) * ranking[[imp_metric]],
                             seq_len(nrow(ranking))), , drop = FALSE]
   rownames(ranking) <- NULL
   ranking <- data.frame(rank = seq_len(nrow(ranking)), ranking)
   steps <- lapply(seq_len(nrow(ranking)), function(k) {
     vars <- ranking$variable[seq_len(k)]
+    # The one-variable prefix is the top single-variable model.
+    fit <- fit_subset(vars, "forward", k,
+                      if (k == 1L) single[[match(vars, candidate_var)]])
     data.frame(step = k, added_variable = vars[k], n_vars = k,
                variables = I(list(vars)), n = length(train), n_eval = length(validation),
-               fit_subset(vars, "forward", k))
+               fit$statistics)
   })
   forward <- do.call(rbind, steps)
   best_step <- if (!is.null(sel_metric))

@@ -110,10 +110,14 @@ test_that("ranking ties are stable and accumulation never greedily reorders", {
   })
   res <- get_hte_select(d, "z", c("b", "a", "c"), surv = "y", ps_var = "ps")
   expect_identical(res$ranking$variable, c("b", "a", "c"))
+  # The one-variable prefix reuses the top single-variable fit.
   expect_identical(lapply(seen, `[[`, "cols"),
-                   list("b", "a", "c", "b", c("b", "a"), c("b", "a", "c")))
+                   list("b", "a", "c", c("b", "a"), c("b", "a", "c")))
   expect_identical(res$selected, NULL)
+  expect_identical(res$forward$score_sd[1], res$ranking$score_sd[1])
   expect_identical(nrow(res$analysis$warnings), 6L)
+  expect_identical(res$analysis$warnings$stage[4], "forward")
+  expect_identical(res$analysis$warnings$step[4], 1L)
   for (call in seen) {
     expect_identical(call$ps, d$ps)
     expect_identical(call$n, nrow(d))
@@ -157,7 +161,7 @@ test_that("factor blocks and non-syntactic names retain fixed encoding", {
   res <- get_hte_select(d, "z", c("stage / group", "x"), surv = "y", ps_var = "ps")
   expect_identical(ncol(seen[[1]]), 2L)
   expect_equal(unname(seen[[1]]), unname(1 * cbind(d$group == "B", d$group == "A")))
-  expect_equal(seen[[1]], seen[[4]][, 1:2, drop = FALSE])
+  expect_equal(seen[[1]], seen[[3]][, 1:2, drop = FALSE])
   expect_identical(res$ranking$variable, c("stage / group", "x"))
   expect_equal(res$ranking$score_sd, c(0, 0))
 })

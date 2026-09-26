@@ -145,7 +145,8 @@ No fitted model, individual benefit scores or input data are retained.
 }
 \description{
 Fits a separate personalized subgroup model for each candidate, ranks the
-candidates using \code{imp_metric}, then fits every prefix of that fixed ranking.
+candidates using \code{imp_metric}, then fits every prefix of that fixed ranking
+(the one-variable prefix reuses the top single-variable fit).
 Returns score summaries and optional validation metrics, with manual or
 metric-based model-size selection. No fitted models are retained.
 }
