@@ -101,7 +101,8 @@
 }
 
 .hte_select_plots <- function(ranking, forward, n_select,
-                              imp_metric = "score_sd", sel_metric = NULL) {
+                              imp_metric = "score_sd", sel_metric = NULL,
+                              best_step = NULL) {
   labels <- c(score_sd = "Benefit-score SD", score_iqr = "Benefit-score IQR",
                score_mean_abs = "Mean absolute benefit score",
                score_median = "Median benefit score", score_mean = "Mean benefit score",
@@ -162,23 +163,29 @@
                                ggplot2::aes(x = value, y = position)) +
     ggplot2::geom_col(ggplot2::aes(fill = rank), orientation = "y", width = 0.82) +
     ggplot2::scale_fill_gradient(low = "#548A9A", high = "#9AC3AD", guide = "none")
-  peak <- which.min(.hte_select_direction(line_metric) * forward[[line_metric]])
+  # A supplied best step of 0 means no step beat the constant-effect baseline.
+  peak <- if (is.null(best_step))
+    which.min(.hte_select_direction(line_metric) * forward[[line_metric]]) else best_step
   peak_row <- combined_data[peak, , drop = FALSE]
-  combined <- combined +
-    ggplot2::geom_col(data = peak_row, fill = "#E97997",
-                       orientation = "y", width = 0.82) +
-    ggplot2::geom_hline(yintercept = peak_row$position,
-                         linetype = "dashed", colour = "#777777", linewidth = 0.4)
+  if (peak > 0L)
+    combined <- combined +
+      ggplot2::geom_col(data = peak_row, fill = "#E97997",
+                         orientation = "y", width = 0.82) +
+      ggplot2::geom_hline(yintercept = peak_row$position,
+                           linetype = "dashed", colour = "#777777", linewidth = 0.4)
   if (nrow(ranking) > 1L)
     combined <- combined + ggplot2::geom_path(
       ggplot2::aes(x = curve_x, group = 1), colour = "#414141", linewidth = 0.55)
   combined <- combined + ggplot2::geom_point(
     ggplot2::aes(x = curve_x), colour = "#414141", size = 1.6)
-  combined <- combined + ggplot2::geom_point(
-    data = peak_row, ggplot2::aes(x = curve_x), colour = "#D54B77", size = 2.5)
   optimum <- if (.hte_select_direction(line_metric) == 1) "minimum" else "maximum"
-  caption <- sprintf("Red: %s %s at %d variables (first optimum if tied)",
-                     optimum, labels[[line_metric]], peak)
+  caption <- if (peak > 0L) {
+    combined <- combined + ggplot2::geom_point(
+      data = peak_row, ggplot2::aes(x = curve_x), colour = "#D54B77", size = 2.5)
+    sprintf("Red: %s %s at %d variables (first optimum if tied)",
+            optimum, labels[[line_metric]], peak)
+  } else sprintf("No cumulative model beats the constant-effect baseline for %s",
+                 labels[[line_metric]])
   if (!is.null(n_select) && n_select != peak) {
     combined <- combined + ggplot2::geom_hline(
       yintercept = nrow(ranking) + 1L - n_select,
@@ -249,8 +256,16 @@
 #'   candidate input order. The four validation metrics activate `eval_args`.
 #' @param sel_metric Single metric name with the same choices and directions
 #'   as `imp_metric`, independently applied to the cumulative models. Default
-#'   `NULL` preserves manual selection. Otherwise choose the best step, taking
-#'   the smallest number of variables on exact ties. The combined plot uses
+#'   `NULL` preserves manual selection. Otherwise choose the best eligible
+#'   step, taking the smallest number of variables on exact ties. A step is
+#'   eligible only when its training scores are nonconstant (`score_sd > 0`)
+#'   and, where a constant-effect baseline exists, it strictly beats that
+#'   baseline: 0 for `"autoc"`, `"qini"`, `"score_sd"` and `"score_iqr"`; the
+#'   loss of the best constant effect on the evaluation split for `"r_loss"`
+#'   and `"dr_loss"`. Location metrics (`"score_mean_abs"`, `"score_median"`,
+#'   `"score_mean"`) have no such baseline. Without an eligible step no
+#'   variable is selected. This is a minimal null exit, not a significance
+#'   test: a small positive AUTOC can still be noise. The combined plot uses
 #'   this metric for its line and red optimum marker; with `NULL` it continues
 #'   to display the signed mean-score maximum without automatic selection.
 #' @param fit_args Named list of fitting settings. Partial overrides are
@@ -377,21 +392,24 @@
 #'   \item{forward}{Data frame with `step`, `added_variable`, `n_vars`, a
 #'     `variables` list column, `n`, `n_eval` and the same metrics.}
 #'   \item{selected}{Character vector of the selected prefix, or `NULL` when
-#'     both selection controls are `NULL`. Included variables can still have
-#'     zero LASSO coefficients.}
+#'     both selection controls are `NULL`. `character(0)` when `sel_metric`
+#'     finds no eligible step and `n_select` is `NULL`. Included variables can
+#'     still have zero LASSO coefficients.}
 #'   \item{plots}{Named list `ranking`, `forward` and `combined` of ggplot
 #'     objects, not printed or saved automatically. Forward panels use separate
 #'     y scales and omit unavailable metrics. The combined plot aligns bars
 #'     of `imp_metric` (bottom axis) with cumulative `sel_metric` values
 #'     (top axis; signed mean score when `sel_metric = NULL`). The pink/red
-#'     bar and point mark the first optimum; a different manually selected
+#'     bar and point mark the first optimum (the best eligible step when
+#'     `sel_metric` is set; omitted when none is eligible); a different manually selected
 #'     size has a blue dotted line. These markers do not prove generalization.
 #'     The secondary axis uses an invertible linear transformation for display only;
 #'     the two quantities do not share a numerical scale.}
 #'   \item{analysis}{Outcome and treatment mapping, loss, adjustment settings,
 #'     sample size, design-column mapping, seed, fit/evaluation settings,
 #'     original row indices of the fixed split, PS training-fold IDs (`NULL`
-#'     for matching), metric directions, `best_step`, `selected_step`, evaluator
+#'     for matching), metric directions, `best_step` (0 when no step is
+#'     eligible), `sel_baseline` (`NA` without a baseline), `selected_step`, evaluator
 #'     metadata, dependency versions and a warning data frame. `n_select`
 #'     retains the caller's manual value; `selected_step` is the returned size.}
 #' }
@@ -714,8 +732,24 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
                fit$statistics)
   })
   forward <- do.call(rbind, steps)
-  best_step <- if (!is.null(sel_metric))
-    which.min(.hte_select_direction(sel_metric) * forward[[sel_metric]]) else NULL
+  best_step <- sel_baseline <- NULL
+  if (!is.null(sel_metric)) {
+    # Constant-effect reference: a constant priority has zero RATE and zero
+    # spread; losses use the best constant effect on the evaluation split.
+    sel_baseline <- switch(sel_metric,
+      autoc = , qini = , score_sd = , score_iqr = 0,
+      r_loss = mean((evaluation$y_residual - evaluation$w_residual *
+        sum(evaluation$y_residual * evaluation$w_residual) /
+        sum(evaluation$w_residual^2))^2),
+      dr_loss = mean((evaluation$dr - mean(evaluation$dr))^2),
+      NA_real_)
+    direction <- .hte_select_direction(sel_metric)
+    value <- direction * forward[[sel_metric]]
+    eligible <- forward$score_sd > 0 &
+      (is.na(sel_baseline) | value < direction * sel_baseline)
+    best_step <- if (any(eligible))
+      which(eligible)[which.min(value[eligible])] else 0L
+  }
   selected_step <- if (!is.null(n_select)) n_select else best_step
   warning_table <- if (length(warnings)) do.call(rbind, warnings) else
     data.frame(stage = character(), step = integer(), variables = character(),
@@ -725,7 +759,8 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
   }, character(1))
   list(ranking = ranking, forward = forward,
        selected = if (!is.null(selected_step)) ranking$variable[seq_len(selected_step)] else NULL,
-       plots = .hte_select_plots(ranking, forward, selected_step, imp_metric, sel_metric),
+       plots = .hte_select_plots(ranking, forward, selected_step, imp_metric, sel_metric,
+                                 best_step),
        analysis = list(backend = "personalized", outcome_type = type,
                        outcome = outcome, cat_var = cat_var,
                        treatment_mapping = unique(data.frame(
@@ -734,7 +769,8 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
                        candidate_var = candidate_var, match_var = match_var,
                        ps_var = ps_var, n_select = n_select,
                        imp_metric = imp_metric, sel_metric = sel_metric,
-                       best_step = best_step, selected_step = selected_step,
+                       best_step = best_step, sel_baseline = sel_baseline,
+                       selected_step = selected_step,
                        rank_direction = if (.hte_select_direction(imp_metric) == 1) "minimize" else "maximize",
                        select_direction = if (is.null(sel_metric)) NULL else
                          if (.hte_select_direction(sel_metric) == 1) "minimize" else "maximize",

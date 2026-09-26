@@ -373,6 +373,56 @@ test_that("evaluation nuisances stay fixed, losses sort ascending and ties selec
   }
 })
 
+test_that("selection returns no variable unless a step beats the constant-effect baseline", {
+  skip_if_not_installed("personalized")
+  skip_if_not_installed("grf")
+  evaluation <- list(dr = c(1, 3, 2, 6), y_residual = c(1, -1, 2, 0),
+                     w_residual = c(0.5, -0.5, 0.5, -0.5))
+  stats <- list()
+  local_mocked_bindings(.hte_select_evaluation = function(...) evaluation,
+    .hte_select_fit = function(x, ...) {
+      list(statistics = stats[[paste(colnames(x), collapse = "+")]],
+           warnings = character())
+    })
+  make <- function(sd, autoc, r_loss, mean = 0) {
+    list(score_sd = sd, score_iqr = sd, score_mean_abs = abs(mean), score_median = mean,
+         score_mean = mean, autoc = autoc, qini = autoc, r_loss = r_loss, dr_loss = 99)
+  }
+  # Constant scores everywhere: zero AUTOC must not select the first candidate.
+  stats <- list(x = make(0, 0, 9), `groupB+groupC` = make(0, 0, 9),
+                `x+groupB+groupC` = make(0, 0, 9),
+                `groupB+groupC+x` = make(0, 0, 9))
+  for (candidates in list(c("x", "group"), c("group", "x"))) {
+    res <- get_hte_select(hte_select_data(), "z", candidates, surv = "y", ps_var = "ps",
+                          sel_metric = "autoc", fit_args = list(nfolds = 3L))
+    expect_identical(res$selected, character())
+    expect_identical(res$analysis$best_step, 0L)
+    expect_identical(res$analysis$sel_baseline, 0)
+    expect_match(res$plots$combined$labels$caption, "No cumulative model beats")
+    expect_silent(ggplot2::ggplot_build(res$plots$combined))
+  }
+  # R-loss must beat the best constant effect on the evaluation split.
+  constant <- sum(evaluation$y_residual * evaluation$w_residual) / sum(evaluation$w_residual^2)
+  baseline <- mean((evaluation$y_residual - evaluation$w_residual * constant)^2)
+  stats$x <- make(1, 0.2, baseline - 0.1)
+  stats$`groupB+groupC+x` <- make(1, 0.1, baseline - 0.2)
+  stats$`groupB+groupC` <- make(1, 0.3, baseline + 1)
+  res <- hte_select_call(imp_metric = "autoc", sel_metric = "r_loss")
+  expect_identical(res$ranking$variable, c("group", "x"))
+  expect_equal(res$analysis$sel_baseline, baseline)
+  expect_identical(res$analysis$best_step, 2L)
+  stats$`groupB+groupC+x` <- make(1, 0.1, baseline)
+  res <- hte_select_call(imp_metric = "autoc", sel_metric = "r_loss")
+  expect_identical(res$selected, character())
+  # Location metrics have no baseline, but constant-score steps stay ineligible.
+  stats$`groupB+groupC` <- make(0, 0.3, 9, mean = 5)
+  stats$`groupB+groupC+x` <- make(1, 0.1, 9, mean = 1)
+  res <- hte_select_call(imp_metric = "autoc", sel_metric = "score_mean")
+  expect_identical(res$analysis$best_step, 2L)
+  expect_identical(res$analysis$sel_baseline, NA_real_)
+  expect_identical(hte_select_call(imp_metric = "autoc", n_select = 1L)$selected, "group")
+})
+
 test_that("validation restores RNG, reproduces results and reports failures", {
   skip_if_not_installed("personalized")
   skip_if_not_installed("grf")

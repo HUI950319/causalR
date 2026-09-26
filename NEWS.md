@@ -1,5 +1,14 @@
 # causalR (development version)
 
+* `get_hte_select()` with `sel_metric` now selects only a step whose training
+  scores are nonconstant and which strictly beats a constant-effect baseline
+  (0 for AUTOC/QINI/score SD/IQR; the best constant effect on the evaluation
+  split for R-loss/DR-loss). Without such a step `selected` is `character(0)`,
+  `analysis$best_step` is 0 and the combined plot omits the red optimum.
+  Previously constant-effect data still selected the first candidate, so the
+  result depended on candidate order. `analysis$sel_baseline` reports the
+  reference; default `sel_metric = NULL` and manual `n_select` are unchanged.
+
 * `get_hte_select()` reuses the top single-variable fit as forward step 1
   instead of refitting it, reducing model fits from 2p to 2p - 1. Results are
   unchanged; that fit's warnings are still recorded for both stages.

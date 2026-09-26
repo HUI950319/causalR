@@ -65,8 +65,16 @@ candidate input order. The four validation metrics activate \code{eval_args}.}
 
 \item{sel_metric}{Single metric name with the same choices and directions
 as \code{imp_metric}, independently applied to the cumulative models. Default
-\code{NULL} preserves manual selection. Otherwise choose the best step, taking
-the smallest number of variables on exact ties. The combined plot uses
+\code{NULL} preserves manual selection. Otherwise choose the best eligible
+step, taking the smallest number of variables on exact ties. A step is
+eligible only when its training scores are nonconstant (\code{score_sd > 0})
+and, where a constant-effect baseline exists, it strictly beats that
+baseline: 0 for \code{"autoc"}, \code{"qini"}, \code{"score_sd"} and \code{"score_iqr"}; the
+loss of the best constant effect on the evaluation split for \code{"r_loss"}
+and \code{"dr_loss"}. Location metrics (\code{"score_mean_abs"}, \code{"score_median"},
+\code{"score_mean"}) have no such baseline. Without an eligible step no
+variable is selected. This is a minimal null exit, not a significance
+test: a small positive AUTOC can still be noise. The combined plot uses
 this metric for its line and red optimum marker; with \code{NULL} it continues
 to display the signed mean-score maximum without automatic selection.}
 
@@ -123,21 +131,24 @@ sorted by \code{imp_metric} in its optimization direction.}
 \item{forward}{Data frame with \code{step}, \code{added_variable}, \code{n_vars}, a
 \code{variables} list column, \code{n}, \code{n_eval} and the same metrics.}
 \item{selected}{Character vector of the selected prefix, or \code{NULL} when
-both selection controls are \code{NULL}. Included variables can still have
-zero LASSO coefficients.}
+both selection controls are \code{NULL}. \code{character(0)} when \code{sel_metric}
+finds no eligible step and \code{n_select} is \code{NULL}. Included variables can
+still have zero LASSO coefficients.}
 \item{plots}{Named list \code{ranking}, \code{forward} and \code{combined} of ggplot
 objects, not printed or saved automatically. Forward panels use separate
 y scales and omit unavailable metrics. The combined plot aligns bars
 of \code{imp_metric} (bottom axis) with cumulative \code{sel_metric} values
 (top axis; signed mean score when \code{sel_metric = NULL}). The pink/red
-bar and point mark the first optimum; a different manually selected
+bar and point mark the first optimum (the best eligible step when
+\code{sel_metric} is set; omitted when none is eligible); a different manually selected
 size has a blue dotted line. These markers do not prove generalization.
 The secondary axis uses an invertible linear transformation for display only;
 the two quantities do not share a numerical scale.}
 \item{analysis}{Outcome and treatment mapping, loss, adjustment settings,
 sample size, design-column mapping, seed, fit/evaluation settings,
 original row indices of the fixed split, PS training-fold IDs (\code{NULL}
-for matching), metric directions, \code{best_step}, \code{selected_step}, evaluator
+for matching), metric directions, \code{best_step} (0 when no step is
+eligible), \code{sel_baseline} (\code{NA} without a baseline), \code{selected_step}, evaluator
 metadata, dependency versions and a warning data frame. \code{n_select}
 retains the caller's manual value; \code{selected_step} is the returned size.}
 }
