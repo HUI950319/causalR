@@ -60,7 +60,8 @@
 #'       gains over treating a random share q. Its area, the QINI, weights
 #'       every share alike, so it detects an effect that changes gradually.}
 #'     \item{`"gates"`}{The average effect within each of
-#'       `gates_args$n_groups` groups of equal size, highest priority first;
+#'       `gates_args$n_groups` groups of approximately equal analysis weight,
+#'       highest priority first (equal size without observation weights);
 #'       a ranking that targets the effect gives estimates falling from left
 #'       to right. For `"cate"`, a diamond marks the mean forest CATE of each
 #'       group.}
@@ -119,13 +120,14 @@
 #'   their difference, and target: `rule`, `target` (`"AUTOC"` or `"QINI"`),
 #'   `estimate`, `std.error` (grf's half-sample bootstrap), `conf.low`,
 #'   `conf.high`, `p.value` (two-sided Wald test of zero) and `n`, the
-#'   patients evaluated. With `"gates"` in `type`, `attr(p, "gates")` is a
+#'   patients evaluated, excluding zero-weight observations. With `"gates"`
+#'   in `type`, `attr(p, "gates")` is a
 #'   tibble with one row per rule and group, and per rule one for the top
 #'   minus the bottom group: `rule`, `group` (`"1"` ranked first, `"1 - K"`
 #'   the difference), `q_from` and `q_to` (the share of the ranking the group
-#'   covers, `NA` for the difference), `n`, `estimate`, `std.error`,
+#'   covers in analysis weight, `NA` for the difference), `n`, `estimate`, `std.error`,
 #'   `conf.low`, `conf.high`, `p.value` (two-sided Wald test of zero) and
-#'   `cate_mean`, the mean forest CATE for `"cate"` (`NA` for a pre-specified
+#'   `cate_mean`, the analysis-weighted mean forest CATE for `"cate"` (`NA` for a pre-specified
 #'   rule). The pinned size is in `attr(p, "plot_size")`. If `save` is
 #'   non-empty, the plot is also written to PDF through `RegR::save_plt()`.
 #'
@@ -354,7 +356,9 @@ plt_hte_rate <- function(x,
   pri <- data.frame(lapply(stats::setNames(priority, priority), function(v)
     if (v == "cate") as.numeric(cate) else as.numeric(d[[v]][rows])),
     check.names = FALSE)
-  sub  <- which(ok[rows])
+  weights <- .hte_weights(forest)
+  sub  <- which(ok[rows] & weights > 0)
+  weighted <- length(unique(weights[sub])) > 1L
   qs   <- (5:100) / 100
   rate <- lapply(c(AUTOC = "AUTOC", QINI = "QINI"), function(tg)
     grf::rank_average_treatment_effect(forest, pri[sub, , drop = FALSE],
@@ -375,7 +379,7 @@ plt_hte_rate <- function(x,
   lab <- ifelse(priority == "cate", "Forest CATE", priority)
 
   # ---- GATES: the effect within each group of the ranking --------------------
-  # Groups of equal size, highest priority first; tied patients share the
+  # Groups of equal analysis weight, highest priority first; tied patients share the
   # group of the middle of their tie, so a logical rule gives two. A group's
   # effect is grf's average_treatment_effect(subset = ) through .hte_estimate(),
   # as in plt_hte_sub(), including cross-group covariance for shared clusters.
@@ -387,23 +391,32 @@ plt_hte_rate <- function(x,
     gt <- do.call(rbind, lapply(seq_along(priority), function(j) {
       v  <- priority[j]
       pv <- pri[[v]][sub]
-      g  <- ceiling(n_groups * rank(-pv, ties.method = "average") / length(pv))
+      wt <- weights[sub]
+      g <- if (weighted) {
+        rank <- match(pv, sort(unique(pv), decreasing = TRUE))
+        mass <- as.numeric(rowsum(wt, rank))
+        ceiling(n_groups * ((cumsum(mass) - mass / 2) / sum(mass))[rank])
+      } else {
+        ceiling(n_groups * rank(-pv, ties.method = "average") / length(pv))
+      }
       g  <- match(g, sort(unique(g)))
       ng <- max(g)
       if (ng < 2L)
         stop(sprintf("`priority` `%s` takes one value among the evaluated patients, so it forms a single GATES group.",
                      v), call. = FALSE)
       m    <- tabulate(g, ng)
-      from <- (cumsum(m) - m) / length(pv)
+      share <- as.numeric(rowsum(wt, g)) / sum(wt)
+      from <- cumsum(share) - share
       one  <- do.call(rbind, lapply(seq_len(ng), function(i) {
         est <- .hte_muffle_ps(.hte_estimate(
           forest, NULL, seq_along(rows) %in% sub[g == i], grid, FALSE, z,
           sprintf("GATES of %s, group %d", lab[j], i), bey))
         data.frame(rule = v, group = as.character(i), q_from = from[i],
-                   q_to = from[i] + m[i] / length(pv), n = m[i],
+                   q_to = from[i] + share[i], n = m[i],
                    est[c("estimate", "std.error", "conf.low", "conf.high",
                          "p.value")],
-                   cate_mean = if (v == "cate") mean(pv[g == i]) else NA_real_,
+                   cate_mean = if (v == "cate")
+                     stats::weighted.mean(pv[g == i], wt[g == i]) else NA_real_,
                    stringsAsFactors = FALSE)
       }))
       dif <- one$estimate[1L] - one$estimate[ng]
@@ -525,7 +538,8 @@ plt_hte_rate <- function(x,
                                 expand = ggplot2::expansion(mult = 0.01)) +
     ggplot2::scale_colour_manual(NULL, values = pal,
                                  aesthetics = c("colour", "fill")) +
-    ggplot2::labs(x = "Treated fraction (q)",
+    ggplot2::labs(x = if (weighted) "Weighted treated fraction (q)" else
+                    "Treated fraction (q)",
                   y = sprintf("%s difference, %s - %s", what, a$treated, ref),
                   title = title, subtitle = paste(subtitle, collapse = "\n"),
                   caption = paste(caption, collapse = "\n")) +

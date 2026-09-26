@@ -80,10 +80,13 @@ test_that("RATE learns and evaluates on disjoint whole clusters", {
 test_that("GATES top-bottom inference includes cross-group cluster covariance", {
   res <- rate_clustered()
   gt <- gates_of(plt_hte_rate(res, priority = "x1", type = "gates"))
-  group <- ceiling(5 * rank(-res$data$x1) / nrow(res$data))
   scores <- grf::get_scores(res$fit)
   wt <- res$fit$sample.weights
   cl <- res$fit$clusters
+  o <- order(res$data$x1, decreasing = TRUE)
+  group <- integer(length(o))
+  group[o] <- cut((cumsum(wt[o]) - wt[o] / 2) / sum(wt), (0:5) / 5,
+                   include.lowest = TRUE, labels = FALSE)
   influence <- vapply(c(1, 5), function(k) {
     i <- which(group == k)
     u <- numeric(length(scores))
@@ -95,6 +98,22 @@ test_that("GATES top-bottom inference includes cross-group cluster covariance", 
   expect_equal(tail(gt$std.error, 1L), se)
   expect_equal(tail(gt$p.value, 1L),
                2 * pnorm(-abs(tail(gt$estimate, 1L) / se)))
+})
+
+test_that("GATES uses analysis weights for population shares and excludes zero weights", {
+  res <- rate_clustered()
+  res$data$positive <- res$data$x1 > 0
+  res$fit$sample.weights[1:20] <- 0
+  wt <- res$fit$sample.weights
+  p <- suppressMessages(plt_hte_rate(res, priority = "positive", type = "gates"))
+  gt <- gates_of(p)
+  expect_equal(gt$q_to[1L], sum(wt[res$data$positive]) / sum(wt))
+  expect_equal(gt$n[1L], sum(res$data$positive & wt > 0))
+  expect_equal(rate_of(p)$n, rep(sum(wt > 0), 2L))
+  want <- grf::average_treatment_effect(res$fit,
+                                        subset = which(res$data$positive & wt > 0))
+  expect_equal(gt$estimate[1L], unname(want[["estimate"]]))
+  expect_match(p$labels$x, "weighted", ignore.case = TRUE)
 })
 
 test_that("get_hte() keeps the grf arguments that plt_hte_rate() refits with", {

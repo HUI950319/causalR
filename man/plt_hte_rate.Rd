@@ -53,7 +53,8 @@ an effect held by a few patients.}
 gains over treating a random share q. Its area, the QINI, weights
 every share alike, so it detects an effect that changes gradually.}
 \item{\code{"gates"}}{The average effect within each of
-\code{gates_args$n_groups} groups of equal size, highest priority first;
+\code{gates_args$n_groups} groups of approximately equal analysis weight,
+highest priority first (equal size without observation weights);
 a ranking that targets the effect gives estimates falling from left
 to right. For \code{"cate"}, a diamond marks the mean forest CATE of each
 group.}
@@ -98,13 +99,14 @@ the risk difference for a binary one and the mean difference otherwise.
 their difference, and target: \code{rule}, \code{target} (\code{"AUTOC"} or \code{"QINI"}),
 \code{estimate}, \code{std.error} (grf's half-sample bootstrap), \code{conf.low},
 \code{conf.high}, \code{p.value} (two-sided Wald test of zero) and \code{n}, the
-patients evaluated. With \code{"gates"} in \code{type}, \code{attr(p, "gates")} is a
+patients evaluated, excluding zero-weight observations. With \code{"gates"}
+in \code{type}, \code{attr(p, "gates")} is a
 tibble with one row per rule and group, and per rule one for the top
 minus the bottom group: \code{rule}, \code{group} (\code{"1"} ranked first, \code{"1 - K"}
 the difference), \code{q_from} and \code{q_to} (the share of the ranking the group
-covers, \code{NA} for the difference), \code{n}, \code{estimate}, \code{std.error},
+covers in analysis weight, \code{NA} for the difference), \code{n}, \code{estimate}, \code{std.error},
 \code{conf.low}, \code{conf.high}, \code{p.value} (two-sided Wald test of zero) and
-\code{cate_mean}, the mean forest CATE for \code{"cate"} (\code{NA} for a pre-specified
+\code{cate_mean}, the analysis-weighted mean forest CATE for \code{"cate"} (\code{NA} for a pre-specified
 rule). The pinned size is in \code{attr(p, "plot_size")}. If \code{save} is
 non-empty, the plot is also written to PDF through \code{RegR::save_plt()}.
 }

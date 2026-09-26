@@ -1,5 +1,7 @@
 # causalR (development version)
 
+* GATES groups, population shares and mean CATE use the forest's analysis
+  weights, matching TOC/Qini; zero-weight observations are excluded.
 * GATES top-bottom contrasts include covariance from shared clusters in
   their standard errors, confidence intervals and p-values.
 * `plt_hte_rate()` separates whole clusters when learning a CATE ranking,
