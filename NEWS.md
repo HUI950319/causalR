@@ -1,5 +1,7 @@
 # causalR (development version)
 
+* `plt_hte_rate()` separates whole clusters when learning a CATE ranking,
+  requiring at least two clusters in both training and evaluation samples.
 * `plt_hte_sub()` rejects relative effects for weighted or clustered forests,
   matching the restrictions of `get_hte()`.
 * `get_hte()` skips unused spline prediction grids when assembling importance

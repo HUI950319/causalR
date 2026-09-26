@@ -37,7 +37,8 @@
 #'       `train_frac` of them ranks the rest, and a forest refitted to the
 #'       rest evaluates that ranking. Both refits take the `grf_args` of
 #'       [get_hte()] with `seed`; for a survival outcome, each half needs
-#'       patients of both arms followed past `time`.}
+#'       patients of both arms followed past `time`. With clusters, whole
+#'       clusters are split and each half needs at least two clusters.}
 #'     \item{A numeric or logical column of `x$data`}{A pre-specified score,
 #'       such as a biomarker or a published risk score, evaluated on every
 #'       patient with the doubly robust scores of the stored forest. Patients
@@ -77,7 +78,8 @@
 #'   `0.95`.
 #' @param train_frac Share of the patients the ranking forest is refitted to,
 #'   strictly between 0 and 1. Default `0.5`. Only used when `priority`
-#'   includes `"cate"`.
+#'   includes `"cate"`. With clusters this is the share of clusters, so the
+#'   share of patients can differ when cluster sizes vary.
 #' @param seed Seed of the split, the refitted forests and grf's bootstrap
 #'   standard errors, so a call can be repeated exactly; `NULL` (default)
 #'   takes the seed of the forest in `x`. The random number stream of the
@@ -282,7 +284,16 @@ plt_hte_rate <- function(x,
   X    <- fit$X.orig
   W    <- fit$W.orig
   if (learn) {
-    train  <- sort(sample.int(n, floor(train_frac * n)))
+    train <- if (length(fit$clusters)) {
+      ids <- unique(fit$clusters)
+      k <- floor(train_frac * length(ids))
+      if (k < 2L || length(ids) - k < 2L)
+        stop("Each split needs at least two clusters; change `train_frac` or use more clusters.",
+             call. = FALSE)
+      which(fit$clusters %in% ids[sample.int(length(ids), k)])
+    } else {
+      sort(sample.int(n, floor(train_frac * n)))
+    }
     rows   <- setdiff(seq_len(n), train)
     halves <- list(training = train, evaluation = rows)
     for (h in names(halves)) {

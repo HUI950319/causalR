@@ -29,7 +29,8 @@ it, so the patients are split at random: a forest refitted to a share
 \code{train_frac} of them ranks the rest, and a forest refitted to the
 rest evaluates that ranking. Both refits take the \code{grf_args} of
 \code{\link[=get_hte]{get_hte()}} with \code{seed}; for a survival outcome, each half needs
-patients of both arms followed past \code{time}.}
+patients of both arms followed past \code{time}. With clusters, whole
+clusters are split and each half needs at least two clusters.}
 \item{A numeric or logical column of \code{x$data}}{A pre-specified score,
 such as a biomarker or a published risk score, evaluated on every
 patient with the doubly robust scores of the stored forest. Patients
@@ -74,7 +75,8 @@ used when \code{type} includes \code{"gates"}.}
 
 \item{train_frac}{Share of the patients the ranking forest is refitted to,
 strictly between 0 and 1. Default \code{0.5}. Only used when \code{priority}
-includes \code{"cate"}.}
+includes \code{"cate"}. With clusters this is the share of clusters, so the
+share of patients can differ when cluster sizes vary.}
 
 \item{seed}{Seed of the split, the refitted forests and grf's bootstrap
 standard errors, so a call can be repeated exactly; \code{NULL} (default)

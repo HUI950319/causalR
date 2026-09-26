@@ -44,6 +44,38 @@ rate_cont <- function() {
 rate_of <- function(p) attr(p, "rate")
 gates_of <- function(p) attr(p, "gates")
 
+rate_clustered <- function() {
+  if (is.null(rate_cache$clustered)) {
+    d <- rate_cont()$data
+    set.seed(312)
+    d$y <- d$y + d$z * rep(rnorm(60, sd = 3), each = 10)
+    rate_cache$clustered <- get_hte(
+      d, "z", adj_var = c("x1", "x2"), surv = "y",
+      grf_args = list(num.trees = 200, seed = 1, num.threads = 2,
+                      clusters = rep(1:60, each = 10),
+                      sample.weights = ifelse(d$x1 > 0, 8, 1)))
+  }
+  rate_cache$clustered
+}
+
+test_that("RATE learns and evaluates on disjoint whole clusters", {
+  res <- rate_clustered()
+  seen <- list()
+  original <- grf::causal_forest
+  local_mocked_bindings(causal_forest = function(...) {
+    args <- list(...)
+    seen[[length(seen) + 1L]] <<- args$clusters
+    original(...)
+  }, .package = "grf")
+  p <- plt_hte_rate(res, seed = 7)
+  expect_length(seen, 2L)
+  expect_length(intersect(seen[[1L]], seen[[2L]]), 0L)
+  expect_true(all(table(seen[[1L]]) == 10L))
+  expect_true(all(table(seen[[2L]]) == 10L))
+  expect_equal(attr(p, "rate")$n, rep(300L, 2L))
+  expect_error(plt_hte_rate(res, train_frac = 0.01), "two clusters")
+})
+
 
 test_that("get_hte() keeps the grf arguments that plt_hte_rate() refits with", {
   res <- rate_surv()
