@@ -1,5 +1,7 @@
 # causalR (development version)
 
+* PDP and heat-map predictions use bounded matrix batches instead of expanding
+  the entire grid-by-patient matrix in memory, retaining the same estimates.
 * GATES groups, population shares and mean CATE use the forest's analysis
   weights, matching TOC/Qini; zero-weight observations are excluded.
 * GATES top-bottom contrasts include covariance from shared clusters in

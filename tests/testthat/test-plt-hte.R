@@ -178,6 +178,29 @@ test_that("type = 'heat' tiles the two-way partial dependence", {
                                         stageII = 0, stageIII = 1)))
 })
 
+test_that("PDP predicts bounded batches without changing grid estimates", {
+  res <- dep_res()
+  cells <- numeric()
+  original <- stats::predict
+  local_mocked_bindings(predict = function(object, newdata, ...) {
+    cells <<- c(cells, length(newdata))
+    original(object, newdata, ...)
+  }, .package = "stats")
+  p <- plt_hte_dep(res, x_var = c("age", "stage"), type = "heat",
+                   pdp_args = list(grid_n = 121, max_n = Inf))
+  expect_gt(length(cells), 1L)
+  expect_lte(max(cells), 1e6)
+  expect_equal(sum(cells), 121 * 3 * length(res$fit$X.orig))
+  for (k in c(1L, 121L, 242L, 363L)) {
+    row <- p$data[k, ]
+    value <- manual_pdp(res$fit, list(age = row$age,
+      stageI = as.integer(row$stage == "I"),
+      stageII = as.integer(row$stage == "II"),
+      stageIII = as.integer(row$stage == "III")))
+    expect_equal(row$estimate, value)
+  }
+})
+
 test_that("pdp sets an integer-coded factor through its level code", {
   skip_if_not_installed("grf")
   set.seed(20260923)

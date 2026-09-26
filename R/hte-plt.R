@@ -59,8 +59,16 @@
   })
   combo <- expand.grid(grid, KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
 
-  big <- do.call(rbind, lapply(seq_len(nrow(combo)), function(k) {
-    Xk <- X0
+  # Traverse grid x patients in bounded batches, including when max_n = Inf.
+  # At most one million numeric cells (~8 MB) per prediction matrix.
+  batch_n <- max(1, floor(1e6 / ncol(X0)))
+  n0 <- nrow(X0)
+  total <- nrow(combo) * as.double(n0)
+  combo$estimate <- numeric(nrow(combo))
+  for (start in seq(1, total, by = batch_n)) {
+    index <- seq(start, min(total, start + batch_n - 1)) - 1
+    k <- index %/% n0 + 1L
+    Xk <- X0[index %% n0 + 1L, , drop = FALSE]
     for (v in vars) {
       cols <- which(src == v)
       if (is.numeric(d[[v]])) {
@@ -69,13 +77,15 @@
         Xk[, cols] <- match(combo[[v]][k], grid[[v]])
       } else {
         Xk[, cols] <- 0
-        Xk[, cols[match(combo[[v]][k], grid[[v]])]] <- 1
+        Xk[cbind(seq_len(nrow(Xk)), cols[match(combo[[v]][k], grid[[v]])])] <- 1
       }
     }
-    Xk
-  }))
-  pred <- as.numeric(stats::predict(fit, big)$predictions)
-  combo$estimate <- colMeans(matrix(pred, nrow = nrow(X0)))
+    pred <- as.numeric(stats::predict(fit, Xk)$predictions)
+    sums <- rowsum(pred, k)
+    ids <- as.integer(rownames(sums))
+    combo$estimate[ids] <- combo$estimate[ids] + sums[, 1L]
+  }
+  combo$estimate <- combo$estimate / n0
 
   for (v in vars)
     if (!.hte_is_num(d[[v]]))
