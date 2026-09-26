@@ -1,5 +1,7 @@
 # causalR (development version)
 
+* GATES top-bottom contrasts include covariance from shared clusters in
+  their standard errors, confidence intervals and p-values.
 * `plt_hte_rate()` separates whole clusters when learning a CATE ranking,
   requiring at least two clusters in both training and evaluation samples.
 * `plt_hte_sub()` rejects relative effects for weighted or clustered forests,

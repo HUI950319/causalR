@@ -135,8 +135,8 @@ The GATES panel draws each group's doubly robust average treatment effect,
 the share of the ranking the group covers. A group's estimate is the ATE
 of the evaluated patients plus the mean slope of the Qini curve over that
 share, so the panel shows where along the ranking the effect changes. The
-subtitle tests the top minus the bottom group, taking the two as
-independent. For \code{"cate"}, diamonds spread less than the estimates mean
+subtitle tests the top minus the bottom group, accounting for shared
+clusters when present. For \code{"cate"}, diamonds spread less than the estimates mean
 the forest shrinks the effect towards its mean.
 }
 

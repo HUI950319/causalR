@@ -77,6 +77,26 @@ test_that("RATE learns and evaluates on disjoint whole clusters", {
 })
 
 
+test_that("GATES top-bottom inference includes cross-group cluster covariance", {
+  res <- rate_clustered()
+  gt <- gates_of(plt_hte_rate(res, priority = "x1", type = "gates"))
+  group <- ceiling(5 * rank(-res$data$x1) / nrow(res$data))
+  scores <- grf::get_scores(res$fit)
+  wt <- res$fit$sample.weights
+  cl <- res$fit$clusters
+  influence <- vapply(c(1, 5), function(k) {
+    i <- which(group == k)
+    u <- numeric(length(scores))
+    u[i] <- wt[i] * (scores[i] - weighted.mean(scores[i], wt[i])) / sum(wt[i])
+    nc <- length(unique(cl[i]))
+    as.numeric(rowsum(u, cl)) * sqrt(nc / (nc - 1))
+  }, numeric(length(unique(cl))))
+  se <- sqrt(sum((influence[, 1L] - influence[, 2L])^2))
+  expect_equal(tail(gt$std.error, 1L), se)
+  expect_equal(tail(gt$p.value, 1L),
+               2 * pnorm(-abs(tail(gt$estimate, 1L) / se)))
+})
+
 test_that("get_hte() keeps the grf arguments that plt_hte_rate() refits with", {
   res <- rate_surv()
   ga  <- attr(res, "analysis")$grf_args

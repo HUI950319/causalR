@@ -108,8 +108,8 @@
 #' the share of the ranking the group covers. A group's estimate is the ATE
 #' of the evaluated patients plus the mean slope of the Qini curve over that
 #' share, so the panel shows where along the ranking the effect changes. The
-#' subtitle tests the top minus the bottom group, taking the two as
-#' independent. For `"cate"`, diamonds spread less than the estimates mean
+#' subtitle tests the top minus the bottom group, accounting for shared
+#' clusters when present. For `"cate"`, diamonds spread less than the estimates mean
 #' the forest shrinks the effect towards its mean.
 #'
 #' @return A `ggplot` with one panel per `type`. The y axis is on the `"diff"`
@@ -378,12 +378,12 @@ plt_hte_rate <- function(x,
   # Groups of equal size, highest priority first; tied patients share the
   # group of the middle of their tie, so a logical rule gives two. A group's
   # effect is grf's average_treatment_effect(subset = ) through .hte_estimate(),
-  # as in plt_hte_sub(); the top minus the bottom group takes the two as
-  # independent.
+  # as in plt_hte_sub(), including cross-group covariance for shared clusters.
   if (gates) {
     grid <- data.frame(estimand = "ATE", measure = "diff",
                        stringsAsFactors = FALSE)
     bey  <- .hte_beyond(x)[rows]
+    scores <- if (length(forest$clusters)) .hte_arm_scores(forest)
     gt <- do.call(rbind, lapply(seq_along(priority), function(j) {
       v  <- priority[j]
       pv <- pri[[v]][sub]
@@ -408,6 +408,12 @@ plt_hte_rate <- function(x,
       }))
       dif <- one$estimate[1L] - one$estimate[ng]
       se  <- sqrt(one$std.error[1L]^2 + one$std.error[ng]^2)
+      if (length(forest$clusters) && all(is.finite(one$std.error[c(1L, ng)]))) {
+        groups <- lapply(c(1L, ng), function(i) sub[g == i])
+        V <- .hte_subgroup_vcov(forest, scores, groups, "ATE",
+                                one$std.error[c(1L, ng)])
+        se <- sqrt(max(0, V[1L, 1L] + V[2L, 2L] - 2 * V[1L, 2L]))
+      }
       rbind(one, data.frame(
         rule = v, group = sprintf("1 - %d", ng), q_from = NA_real_,
         q_to = NA_real_, n = m[1L] + m[ng], estimate = dif, std.error = se,
