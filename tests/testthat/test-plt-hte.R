@@ -552,6 +552,11 @@ test_that("effect replaces the estimate of the rows it names", {
   one <- function(...) plt_hte_sub(res, sub_var = "sex", ...)
   expect_error(one(effect = list(M = "0.1 (0, 0.2)", sex = c(M = "conf_0.9"))),
                "sex = M twice")
+  # a number is a bare estimate
+  by_str <- attr(one(effect = list(F = "-0.05")), "subgroup")
+  expect_equal(attr(one(effect = list(F = -0.05)), "subgroup"), by_str)
+  expect_equal(attr(one(effect = list(sex = c(F = -0.05))), "subgroup"), by_str)
+  expect_error(one(effect = list(F = Inf)), 'sex = F ("Inf")', fixed = TRUE)
   expect_error(one(effect = list(sex = c(M = "conf_1.5"))), 'sex = M ("conf_1.5")',
                fixed = TRUE)
   expect_error(one(measure = "ratio", effect = list(sex = c(M = "-0.5"))),

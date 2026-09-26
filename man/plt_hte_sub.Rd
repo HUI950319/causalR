@@ -52,7 +52,8 @@ A string is one of
 \itemize{
 \item an interval, in any form \code{\link[UtilsR:stat_ci_parse]{UtilsR::stat_ci_parse()}} reads, drawn as
 given at \code{conf_level} on the scale of \code{measure};
-\item a bare estimate such as \code{"0.05"}, which keeps the row's standard error;
+\item a bare estimate such as \code{"0.05"}, or the number \code{0.05}, which keeps the
+row's standard error;
 \item \code{"conf_<level>"}, e.g. \code{"conf_0.9"}, which shows the row's own interval
 at that level.
 }

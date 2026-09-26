@@ -593,7 +593,8 @@ plt_hte_dep <- function(x,
 #'   A string is one of
 #'   * an interval, in any form [UtilsR::stat_ci_parse()] reads, drawn as
 #'     given at `conf_level` on the scale of `measure`;
-#'   * a bare estimate such as `"0.05"`, which keeps the row's standard error;
+#'   * a bare estimate such as `"0.05"`, or the number `0.05`, which keeps the
+#'     row's standard error;
 #'   * `"conf_<level>"`, e.g. `"conf_0.9"`, which shows the row's own interval
 #'     at that level.
 #'
@@ -817,6 +818,7 @@ plt_hte_sub <- function(x,
     edits <- do.call(rbind, lapply(names(effect), function(v) {
       e  <- effect[[v]]
       s  <- unlist(e, use.names = FALSE)
+      if (is.numeric(s)) s <- as.character(s)   # a number is a bare estimate
       ok <- is.character(s) && length(s) && length(s) == length(e) && !anyNA(s)
       if (!v %in% sub_var) {
         if (!ok || length(s) != 1L)
@@ -867,7 +869,7 @@ plt_hte_sub <- function(x,
                           paste(edits$var, "=", edits$level)),
                    edits$ci)
     bad <- ifelse(is_conf, !(lvl > 0 & lvl < 1),
-                  ifelse(is_est, log_x & num <= 0,
+                  ifelse(is_est, !is.finite(num) | (log_x & num <= 0),
                          !(ci[, 2L] < ci[, 3L] & ci[, 1L] >= ci[, 2L] &
                              ci[, 1L] <= ci[, 3L] & (!log_x | ci[, 2L] > 0))))
     bad[is.na(bad)] <- TRUE
