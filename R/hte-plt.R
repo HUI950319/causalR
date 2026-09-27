@@ -644,7 +644,9 @@ plt_hte_dep <- function(x,
 #' `"OR"`. The counts are patients per arm, treated first. A level with fewer
 #' than two patients in either arm -- or, for a survival outcome, no patient
 #' in an arm followed beyond `time` -- has no estimate: it is drawn with a
-#' dash, with a warning.
+#' dash, with a warning. For a survival probability the `"diff"` column and
+#' axis read `St(<time / 12>-year)`, e.g. `St(10-year)` for `time = 120`:
+#' `time` is taken in months, as in \pkg{RegR}.
 #'
 #' @section Replaced rows:
 #' An interval string replaces the row's estimate and interval, taken as they
@@ -926,7 +928,8 @@ plt_hte_sub <- function(x,
   ref <- setdiff(levels(factor(d[[a$cat_var]])), a$treated)[1L]
   t_x <- format(a$time)
   lab <- switch(measure,
-    diff  = switch(scale, S = sprintf("S(%s) difference", t_x),
+    # time in months, written in years as RegR does: S(120) is St(10-year)
+    diff  = switch(scale, S = sprintf("St(%s-year) difference", format(a$time / 12)),
                    RMST = sprintf("RMST(%s) difference", t_x),
                    binary = "Risk difference", continuous = "Mean difference"),
     ratio = switch(scale, S = "Event risk ratio", RMST = "RMST ratio",

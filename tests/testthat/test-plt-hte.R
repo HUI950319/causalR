@@ -648,7 +648,7 @@ test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
   expect_true(is.na(attr(p, "subgroup")$estimate[3]))
   expect_identical(fp_col(p, 3)[row], "\u2014")
   expect_length(fp_grobs(p, "polygon"), 3L)   # no diamond for III
-  expect_identical(fp_headers(p)[3], "S(60) difference (95% CI)")
+  expect_identical(fp_headers(p)[3], "St(5-year) difference (95% CI)")   # months
   # effect fills the empty level in, diamond and all
   pf <- suppressWarnings(plt_hte_sub(res, sub_var = "stage",
                                      effect = list(stage = c(III = "-0.050 (-0.150, 0.050)"))))

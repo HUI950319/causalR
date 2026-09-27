@@ -137,7 +137,9 @@ Every row is the doubly robust estimate within the subgroup, as in
 \code{"OR"}. The counts are patients per arm, treated first. A level with fewer
 than two patients in either arm -- or, for a survival outcome, no patient
 in an arm followed beyond \code{time} -- has no estimate: it is drawn with a
-dash, with a warning.
+dash, with a warning. For a survival probability the \code{"diff"} column and
+axis read \verb{St(<time / 12>-year)}, e.g. \code{St(10-year)} for \code{time = 120}:
+\code{time} is taken in months, as in \pkg{RegR}.
 }
 
 \section{Replaced rows}{
