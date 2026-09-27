@@ -15407,5 +15407,236 @@
       "causalR 包函数手册",
       "<span class='chapter-number'>223</span>  <span class='chapter-title'>1. 异质性治疗效应（get_hte / plt_hte_*）</span>"
     ]
+  },
+  {
+    "objectID": "notes/causalR/03-ps.html",
+    "href": "notes/causalR/03-ps.html",
+    "title": "3. 倾向评分匹配、加权与平衡：get_PSM() / get_PSW() / get_bal()",
+    "section": "",
+    "text": "安装与核对环境\n这三个函数处理的是同一件事的三个侧面：用一个倾向得分构造可比的两组，并检查它们是否真的可比。 它们只做”设计”——构造权重、匹配队列、诊断平衡——不估计治疗效应； 效应留给你挑定方案之后的结局模型。\nget_PSW() 与 get_PSM() 是一对：共用倾向得分模型、w_ 权重列命名和诊断表结构。 有一个参数名要特别注意：\nhalfmoon 给 get_PSW() / get_PSM() 算平衡表（balance = TRUE，默认）； optmatch 是 \"optimal\" 与 \"full\" 匹配的后端；gtsummary + survey 只有 get_bal(tbl = TRUE) 要用。本页核对于 2026 年 9 月 28 日，代码块由本站渲染时真实执行：",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. 倾向评分匹配、加权与平衡（get_PSM / get_PSW / get_bal）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/03-ps.html#sec-ps-env",
+    "href": "notes/causalR/03-ps.html#sec-ps-env",
+    "title": "3. 倾向评分匹配、加权与平衡：get_PSM() / get_PSW() / get_bal()",
+    "section": "",
+    "text": "remotes::install_github(\"HUI950319/causalR\")   # Imports 已含 MatchIt、WeightIt、cobalt\ninstall.packages(c(\"halfmoon\", \"optmatch\", \"gtsummary\", \"survey\"))\n\n\n\n\n项目\n值\n\n\n\n\ncausalR\n0.0.0.9000（GitHub main）\n\n\nMatchIt / WeightIt\n4.7.2 / 1.4.0\n\n\ncobalt / halfmoon\n4.6.0 / 0.2.0",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. 倾向评分匹配、加权与平衡（get_PSM / get_PSW / get_bal）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/03-ps.html#sec-ps-data",
+    "href": "notes/causalR/03-ps.html#sec-ps-data",
+    "title": "3. 倾向评分匹配、加权与平衡：get_PSM() / get_PSW() / get_bal()",
+    "section": "示例数据",
+    "text": "示例数据\n一个有混杂的观察性队列：年龄、性别、分期、BMI、吸烟都影响是否接受治疗， 其中年龄、分期、吸烟同时影响结局。治疗效应恒为 1，所以 ATE、ATT、ATO 等估计量的真值都是 1。\n\nset.seed(20260928)\nn &lt;- 1000\nd &lt;- data.frame(\n  age    = round(rnorm(n, 62, 10)),\n  sex    = factor(sample(c(\"Female\", \"Male\"), n, replace = TRUE)),\n  stage  = factor(sample(c(\"I\", \"II\", \"III\"), n, replace = TRUE,\n                         prob = c(0.40, 0.35, 0.25))),\n  bmi    = round(rnorm(n, 25, 4), 1),\n  smoker = rbinom(n, 1, 0.3)\n)\nlp &lt;- -1.4 + 0.06 * (d$age - 62) + 0.5 * (d$sex == \"Male\") +\n  0.7 * (d$stage == \"II\") + 1.4 * (d$stage == \"III\") -\n  0.05 * (d$bmi - 25) + 0.6 * d$smoker\nd$z &lt;- rbinom(n, 1, plogis(lp))\nd$y &lt;- round(10 + 0.2 * (d$age - 62) + 1.5 * (d$stage == \"III\") +\n               0.8 * d$smoker + 1 * d$z + rnorm(n, sd = 2), 2)\nadj &lt;- c(\"age\", \"sex\", \"stage\", \"bmi\", \"smoker\")\n\nc(treated = mean(d$z), naive_diff = unname(diff(tapply(d$y, d$z, mean))))\n#&gt;    treated naive_diff \n#&gt;   0.414000   1.935951\n\n不调整的组间差约为真值的两倍——治疗组更老、分期更晚、吸烟更多。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. 倾向评分匹配、加权与平衡（get_PSM / get_PSW / get_bal）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/03-ps.html#sec-psw",
+    "href": "notes/causalR/03-ps.html#sec-psw",
+    "title": "3. 倾向评分匹配、加权与平衡：get_PSM() / get_PSW() / get_bal()",
+    "section": "get_PSW()：六种权重一次看完",
+    "text": "get_PSW()：六种权重一次看完\n\npw &lt;- get_PSW(d, treat = \"z\", adj_var = adj)\npw\n#&gt; &lt;psw_res&gt; n = 1000 (0 trimmed), treat = z (treated = 1), score from method = \"glm\"\n#&gt;   score range c(0.0746, 0.856)\n#&gt; \n#&gt; # A tibble: 6 × 15\n#&gt;   estimand     n n_treat n_ctrl   ess ess_treat ess_ctrl ess_pct  w_min w_max\n#&gt;   &lt;chr&gt;    &lt;int&gt;   &lt;int&gt;  &lt;int&gt; &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;   &lt;dbl&gt;  &lt;dbl&gt; &lt;dbl&gt;\n#&gt; 1 ATE       1000     414    586  840.      347.     531.   0.840 1.08   7.83 \n#&gt; 2 ATT       1000     414    586  777.      414      365.   0.777 0.0806 3.41 \n#&gt; 3 ATC       1000     414    586  730.      265.     586    0.730 0.169  6.83 \n#&gt; 4 ATO       1000     414    586  863.      378.     503.   0.863 0.0746 0.872\n#&gt; 5 ATM       1000     414    586  847.      383.     474.   0.847 0.0806 1    \n#&gt; 6 EW        1000     414    586  861.      372.     511.   0.861 0.287  2.99 \n#&gt; # ℹ 5 more variables: w_mean &lt;dbl&gt;, w_sd &lt;dbl&gt;, w_cv &lt;dbl&gt;, smd_max &lt;dbl&gt;,\n#&gt; #   smd_over &lt;dbl&gt;\n#&gt; \n#&gt; # ESS is (sum w)^2 / sum w^2. smd_max / smd_over are NA unless balance = TRUE.\n#&gt; # plt_PSW: type = \"love\"\n\n倾向得分只拟合一次，六种权重共用它。$stats 每种权重一行，15 列固定：\n\npw$stats[, c(\"estimand\", \"ess\", \"ess_pct\", \"w_min\", \"w_max\", \"w_cv\",\n             \"smd_max\", \"smd_over\")]\n#&gt; # A tibble: 6 × 8\n#&gt;   estimand   ess ess_pct  w_min w_max  w_cv  smd_max smd_over\n#&gt;   &lt;chr&gt;    &lt;dbl&gt;   &lt;dbl&gt;  &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;\n#&gt; 1 ATE       840.   0.840 1.08   7.83  0.437 1.74e- 2        0\n#&gt; 2 ATT       777.   0.777 0.0806 3.41  0.536 3.32e- 2        0\n#&gt; 3 ATC       730.   0.730 0.169  6.83  0.608 3.32e- 2        0\n#&gt; 4 ATO       863.   0.863 0.0746 0.872 0.399 8.31e-14        0\n#&gt; 5 ATM       847.   0.847 0.0806 1     0.425 1.07e- 2        0\n#&gt; 6 EW        861.   0.861 0.287  2.99  0.401 3.69e- 3        0\n\n有效样本量 \\(\\text{ESS} = (\\sum w)^2 / \\sum w^2\\)：本例 ATO 保留的信息最多， ATC 最少；ess_pct 是它占样本量的比例。 smd_max 是各协变量绝对 SMD 的最大值， smd_over 数超过 0.1 的个数。ATO 一行的 smd_max 小到 \\(10^{-13}\\) 量级： 倾向得分是对同一组协变量的 logistic 回归时，重叠权重让两臂协变量均值精确相等， 这是它的代数性质，不是巧合。\n\n六种权重\n记 \\(e = P(Z = 1 \\mid X)\\)，倾斜函数 \\(h(e)\\) 决定目标人群，权重为 \\(h(e)/e\\)（处理组）与 \\(h(e)/(1-e)\\)（对照组）（Li, Morgan & Zaslavsky, 2018）：\n\n\n\nestimand\n\\(h(e)\\)\n处理组 / 对照组权重\n常见名称\n\n\n\n\n\"ATE\"\n\\(1\\)\n\\(1/e\\) / \\(1/(1-e)\\)\nIPTW\n\n\n\"ATT\"\n\\(e\\)\n\\(1\\) / \\(e/(1-e)\\)\nSMR 加权\n\n\n\"ATC\"\n\\(1-e\\)\n\\((1-e)/e\\) / \\(1\\)\n也写作 ATU\n\n\n\"ATO\"\n\\(e(1-e)\\)\n\\(1-e\\) / \\(e\\)\n重叠权重（OW）\n\n\n\"ATM\"\n\\(\\min(e, 1-e)\\)\n—\n匹配权重\n\n\n\"EW\"\n\\(-\\{e\\ln e + (1-e)\\ln(1-e)\\}\\)\n—\n熵权重（ATEN）\n\n\n\n默认 method = \"glm\" 时，这里的权重与 WeightIt::weightit() 自己的权重逐位一致 （\"EW\" 在 WeightIt 里没有对应）。\"cbps\" 和 \"gbm\" 会针对某个估计量去拟合得分， 而 get_PSW() 统一用 estimand = \"ATE\" 拟合一次再共享，所以与 weightit(method = \"cbps\", estimand = \"ATO\") 有意不同；\"gbm\" 还是随机的，先 set.seed()。\n\n\n修剪、截断与稳定化\n处理顺序固定为：拟合（或读 ps）→ 修剪 → 可选在保留样本上重拟合 → 截断 → 构造权重 → 稳定化。\n\n# Crump 等 (2009) 的最优对称修剪：被修剪的行保留，但得分与权重记 NA\npw_cr &lt;- get_PSW(d, treat = \"z\", adj_var = adj, estimand = c(\"ATE\", \"ATO\"),\n                 trim_args = list(method = \"cr\"), verbose = TRUE)\n#&gt; ℹ Trimmed 12 units outside [0.122, 0.878].\npw_cr$stats[, c(\"estimand\", \"n\", \"n_treat\", \"n_ctrl\", \"ess\", \"w_max\")]\n#&gt; # A tibble: 2 × 6\n#&gt;   estimand     n n_treat n_ctrl   ess w_max\n#&gt;   &lt;chr&gt;    &lt;int&gt;   &lt;int&gt;  &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;\n#&gt; 1 ATE        988     414    574  839. 7.50 \n#&gt; 2 ATO        988     414    574  863. 0.867\n\n# 按分位数截断得分，再做稳定化 IPTW\npw_st &lt;- get_PSW(d, treat = \"z\", adj_var = adj, estimand = \"ATE\",\n                 stabilize = TRUE,\n                 trunc_args = list(method = \"pctl\", lower = 0.01, upper = 0.99))\npw_st$stats[, c(\"estimand\", \"ess\", \"w_min\", \"w_max\", \"w_mean\")]\n#&gt; # A tibble: 1 × 5\n#&gt;   estimand   ess w_min w_max w_mean\n#&gt;   &lt;chr&gt;    &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt;\n#&gt; 1 ATE       877. 0.529  3.24  0.999\n\n\n修剪（trim_args）把单位移出分析人群：\"ps\" 按得分绝对界（默认 0.1 / 0.9）、 \"pctl\" 按分位数（默认 1% / 99%）、\"cr\" 用数据算 Crump 最优界（不接受 lower / upper）。 refit = TRUE（默认）在保留样本上重拟合得分；重拟合后的得分不再修剪，所以保留单位的得分 可能落在窗口外，.trimmed 列记录的是第一轮。\n截断（trunc_args）不删人，只把极端得分拉回界内。\n稳定化（stabilize = TRUE）乘以观察到的处理的边际概率，只对 ATE 有定义； 所选估计量里没有 ATE 时设 TRUE 会报错，而不是静默忽略。\n\n\n\n参数\n\n\n\n\n\n\n\n\n参数\n默认\n说明\n\n\n\n\ndata、treat\n—\n数据与二分类处理列（0/1、逻辑，或第二个水平为治疗组的两水平因子 / 字符）\n\n\nadj_var\nNULL\n倾向得分模型的协变量；不给 ps 时必填，balance = TRUE 时也必填\n\n\nps\nNULL\n已算好的得分列，严格在 (0, 1) 内；给了就跳过建模\n\n\nestimand\n六种全选\n每种一列权重、一行 $stats\n\n\nmethod\n\"glm\"\n倾向得分模型，经 WeightIt::weightit() 拟合、只取得分；\"super\" 要在 ps_args 里写 SL.library\n\n\nstabilize\nFALSE\n稳定化，仅 ATE\n\n\ntrim_args\nlist(method = \"none\", lower = NULL, upper = NULL, refit = TRUE)\n修剪\n\n\ntrunc_args\nlist(method = \"none\", lower = 0.01, upper = 0.99)\n截断\n\n\nbalance\nTRUE\n用 halfmoon::check_balance() 算每种权重下的 SMD\n\n\nps_args\nlist()\n传给 WeightIt::weightit()，如 list(link = \"probit\")\n\n\nverbose\nFALSE\n报告修剪掉多少、删了多少不完整行\n\n\n\n返回的 $data 是原数据加 ps、.trimmed 和 w_ate … w_ew 六列权重； $balance 是 halfmoon 的长表；$fit 是 weightit 对象（给了 ps 时为 NULL）。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. 倾向评分匹配、加权与平衡（get_PSM / get_PSW / get_bal）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/03-ps.html#sec-plt-psw",
+    "href": "notes/causalR/03-ps.html#sec-plt-psw",
+    "title": "3. 倾向评分匹配、加权与平衡：get_PSM() / get_PSW() / get_bal()",
+    "section": "plt_PSW()：四种诊断图",
+    "text": "plt_PSW()：四种诊断图\ntype 取 \"love\"（默认，有平衡表时）、\"ess\"、\"weight\"、\"ps\"， estimand 可只画其中几种：\n\nplt_PSW(pw, \"love\")\n\n\n\n\n\n\n\n\n\nplt_PSW(pw, \"ess\")\n\n\n\n\n\n\n\n\n\nplt_PSW(pw, \"weight\")\n\n\n\n\n\n\n\n\n\nplt_PSW(pw, \"ps\", estimand = c(\"ATE\", \"ATT\", \"ATO\", \"ATM\"))\n\n\n\n\n\n\n\n\n\"ps\" 图把两臂的得分直方图上下镜像，淡色是加权前、实色是加权后； ATO、ATM 把得分两端的人压下去，ATE 反而把它们放大。 分期在 love plot 里按水平逐行显示（stageI、stageII、stageIII），这是 halfmoon 的口径。\n\n\n\n\n\n\n\n\n参数\n默认\n说明\n\n\n\n\nx\n—\nget_PSW() 的结果\n\n\ntype\n\"love\"\n\"love\" / \"ess\" / \"weight\" / \"ps\"\n\n\nestimand\nNULL\n只画其中几种；\"love\" 总是保留未加权作参照\n\n\nthreshold\n0.1\nlove plot 的参考线\n\n\nbins\n40L\n\"ps\" 直方图的分箱数\n\n\ntitle、save\nNULL、list()\n标题；PDF 输出（缺省宽高取 attr(p, \"plot_size\")）",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. 倾向评分匹配、加权与平衡（get_PSM / get_PSW / get_bal）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/03-ps.html#sec-psm",
+    "href": "notes/causalR/03-ps.html#sec-psm",
+    "title": "3. 倾向评分匹配、加权与平衡：get_PSM() / get_PSW() / get_bal()",
+    "section": "get_PSM()：几种匹配并排比较",
+    "text": "get_PSM()：几种匹配并排比较\n\npm &lt;- get_PSM(d, treat = \"z\", adj_var = adj,\n              method = c(\"nearest\", \"full\"), caliper = 0.2)\npm\n#&gt; &lt;psm_res&gt; n = 1000, treat = z (treated = 1), estimand = ATT, score from ps_method = \"glm\"\n#&gt;   range c(0.0746, 0.856), ratio = 1, caliper = 0.2 SD of the score\n#&gt; \n#&gt; # A tibble: 2 × 17\n#&gt;   method  estimand     n n_treat n_ctrl n_unmatched n_discarded pct_retained\n#&gt;   &lt;chr&gt;   &lt;chr&gt;    &lt;int&gt;   &lt;int&gt;  &lt;int&gt;       &lt;int&gt;       &lt;int&gt;        &lt;dbl&gt;\n#&gt; 1 nearest ATT        714     357    357         286           0         71.4\n#&gt; 2 full    ATT        994     410    584           6           0         99.4\n#&gt; # ℹ 9 more variables: n_pairs &lt;int&gt;, ess &lt;dbl&gt;, ess_treat &lt;dbl&gt;,\n#&gt; #   ess_ctrl &lt;dbl&gt;, ess_pct &lt;dbl&gt;, w_max &lt;dbl&gt;, w_cv &lt;dbl&gt;, smd_max &lt;dbl&gt;,\n#&gt; #   smd_over &lt;dbl&gt;\n#&gt; \n#&gt; # Weights are unnormalised, so an ATT control column sums to the number of treated units.\n#&gt; # n_unmatched (no partner) and n_discarded (outside common support) are different things.\n#&gt; # plt_PSM: type = \"love\"\n\n\npm$stats[, c(\"method\", \"n\", \"n_treat\", \"n_ctrl\", \"n_unmatched\",\n             \"n_discarded\", \"pct_retained\", \"n_pairs\", \"ess\", \"smd_max\")]\n#&gt; # A tibble: 2 × 10\n#&gt;   method     n n_treat n_ctrl n_unmatched n_discarded pct_retained n_pairs   ess\n#&gt;   &lt;chr&gt;  &lt;int&gt;   &lt;int&gt;  &lt;int&gt;       &lt;int&gt;       &lt;int&gt;        &lt;dbl&gt;   &lt;int&gt; &lt;dbl&gt;\n#&gt; 1 neare…   714     357    357         286           0         71.4     357  714 \n#&gt; 2 full     994     410    584           6           0         99.4     312  552.\n#&gt; # ℹ 1 more variable: smd_max &lt;dbl&gt;\n\n\nn_unmatched（没找到配对）与 n_discarded（在共同支撑之外被丢弃）是两回事，分开报告。\n1:1 最近邻加卡钳丢掉了约三成样本；全匹配几乎人人保留，但有效样本量反而更小—— 它靠大小不一的匹配集保留所有人，对照组权重高度不均。这就是为什么要同时看 ess， 而不只看”匹配上了多少人”。\ncaliper 的单位是倾向得分（概率尺度）的标准差。Austin 常用的 0.2 SD 是 logit 尺度上的， 这里无法完全复现。\n\n$data 保留全部输入行，每个方案各加两列：权重 w_&lt;method&gt;（未匹配为 0） 和匹配集编号 s_&lt;method&gt;（未匹配为 NA；有放回匹配时整列为 NA）：\n\nhead(pm$data[, c(\"z\", \"ps\", \"w_nearest\", \"s_nearest\", \"w_full\", \"s_full\")])\n#&gt;   z         ps w_nearest s_nearest     w_full s_full\n#&gt; 1 1 0.36246524         1         1 1.00000000      1\n#&gt; 2 0 0.09566826         0        NA 0.04166667     41\n#&gt; 3 1 0.41904954         1         2 1.00000000     91\n#&gt; 4 0 0.39447192         1       196 0.33333333    152\n#&gt; 5 0 0.42260102         1       148 1.00000000    207\n#&gt; 6 1 0.40841134         1         3 1.00000000    178\n\n\n每种算法接受什么\n以下按 MatchIt 4.7.2 实测，而非推断：\n\n\n\n\n\n\n\n\n\nmethod\n允许的 estimand\n用到的参数\n依赖\n\n\n\n\n\"nearest\"（默认）\nATT、ATC\nratio、caliper、replace\n—\n\n\n\"optimal\"\nATT、ATC\nratio\noptmatch\n\n\n\"full\"\nATT、ATC、ATE\ncaliper\noptmatch\n\n\n\"genetic\"\nATT、ATC\nratio、caliper、replace\nMatching + rgenoud，慢\n\n\n\"cem\"\nATT、ATC、ATE\n—\n—\n\n\n\"exact\"\nATT、ATC、ATE\n—\n—（连续协变量会失败）\n\n\n\"subclass\"\nATT、ATC、ATE\n—\n—\n\n\n\n每种算法只拿到它用得上的参数（MatchIt 对每个被忽略的参数都会警告），实际收到的参数记在 attr(x, \"analysis\")$specs。\"cem\" 与 \"exact\" 不用倾向得分，直接在协变量上粗化或精确匹配。 任何一个方法失败，整个调用就停下并报出方法名，不返回部分结果。\nget_PSM() 固定 normalize = FALSE：ATT 的对照组权重之和等于处理组人数， 与教科书里的权重一致；有效样本量与这个设置无关。\n\n\n参数\n\n\n\n\n\n\n\n\n参数\n默认\n说明\n\n\n\n\ndata、treat\n—\n同 get_PSW()\n\n\nadj_var\nNULL\n匹配与报告平衡用的协变量\n\n\nps\nNULL\n已算好的得分列\n\n\nmethod\n\"nearest\"\n可多选的匹配算法，每种一行 $stats、两列 w_ / s_\n\n\nestimand\n\"ATT\"\n只取一个，对每种算法校验\n\n\nratio\n1\n每个处理单位配几个对照\n\n\ncaliper\nNULL\n卡钳，单位为得分的标准差（概率尺度），常用 0.1–0.2\n\n\nreplace\nFALSE\n有放回匹配；对照权重变为被使用的次数\n\n\nps_method\n\"glm\"\n倾向得分模型，同 get_PSW() 的 method\n\n\nmatch_args\nlist()\n其它 MatchIt::matchit() 参数，如 exact、mahvars、m.order、discard\n\n\nbalance、ps_args、verbose\nTRUE、list()、FALSE\n同 get_PSW()",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. 倾向评分匹配、加权与平衡（get_PSM / get_PSW / get_bal）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/03-ps.html#sec-plt-psm",
+    "href": "notes/causalR/03-ps.html#sec-plt-psm",
+    "title": "3. 倾向评分匹配、加权与平衡：get_PSM() / get_PSW() / get_bal()",
+    "section": "plt_PSM()：同样的四种图",
+    "text": "plt_PSM()：同样的四种图\n\nplt_PSM(pm, \"love\")\n\n\n\n\n\n\n\n\n\nplt_PSM(pm, \"ess\")\n\n\n\n\n\n\n\n\n\nplt_PSM(pm, \"ps\")\n\n\n\n\n\n\n\n\n\"ps\" 图的淡色是全队列、实色是匹配后样本；\"weight\" 图只画匹配上的单位。 参数与 plt_PSW() 相同，只是按 method 而不是 estimand 选方案。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. 倾向评分匹配、加权与平衡（get_PSM / get_PSW / get_bal）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/03-ps.html#sec-ps-effect",
+    "href": "notes/causalR/03-ps.html#sec-ps-effect",
+    "title": "3. 倾向评分匹配、加权与平衡：get_PSM() / get_PSW() / get_bal()",
+    "section": "选定方案之后：估计效应",
+    "text": "选定方案之后：估计效应\n两个函数都不估计效应。挑定方案后，把对应的权重列交给结局模型。以重叠权重为例：\n\nfit_w &lt;- lm(y ~ z, data = pw$data, weights = w_ato)\nc(estimate = unname(coef(fit_w)[\"z\"]),\n  robust_se = unname(sqrt(diag(sandwich::vcovHC(fit_w, type = \"HC0\")))[\"z\"]))\n#&gt;  estimate robust_se \n#&gt; 0.7857157 0.1899417\n\n无放回匹配要按匹配集聚类计算标准误。s_nearest 在未匹配的行上是 NA， 先取匹配上的行，否则 sandwich::vcovCL() 会因聚类变量含 NA 报错：\n\nm &lt;- subset(pm$data, w_nearest &gt; 0)\nfit_m &lt;- lm(y ~ z, data = m, weights = w_nearest)\nc(estimate = unname(coef(fit_m)[\"z\"]),\n  cluster_se = unname(sqrt(diag(sandwich::vcovCL(fit_m, cluster = m$s_nearest)))[\"z\"]))\n#&gt;   estimate cluster_se \n#&gt;   0.890112   0.174271\n\n两个估计都落在真值 1 的两个标准误以内。这里的稳健标准误没有计入倾向得分本身的估计误差。 有放回匹配要用 MatchIt::get_matches() 展开 pm$fit 里对应的对象， 同时考虑匹配集与重复使用的单位。生存结局同理，例如 survival::coxph(Surv(time, event) ~ z, data = pw$data, weights = w_ato, robust = TRUE)。\n\n\n\n\n\n\n注记权重列不要交给 RegR::get_eff_cat()\n\n\n\nRegR::get_eff_cat() 会在内部重新拟合自己的倾向得分模型， 所以这里做的修剪、截断和重拟合都不会传过去。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. 倾向评分匹配、加权与平衡（get_PSM / get_PSW / get_bal）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/03-ps.html#sec-bal",
+    "href": "notes/causalR/03-ps.html#sec-bal",
+    "title": "3. 倾向评分匹配、加权与平衡：get_PSM() / get_PSW() / get_bal()",
+    "section": "get_bal()：所有方案放在一张 love plot 上",
+    "text": "get_bal()：所有方案放在一张 love plot 上\nget_PSW() 与 get_PSM() 各自只比同一类方案。get_bal() 把匹配和加权混在一起拟合， 用同一个分母计算 SMD，画在一张图上。默认用全部 7 个简写：\n\ngb &lt;- get_bal(d, treat = \"z\", adj_var = adj)\ngb$plt\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n简写\n展开为\n图例标签\n\n\n\n\n\"PSM\"\nget_PSM(method = \"nearest\", estimand = \"ATT\", ratio = 1, caliper = 0.2)\nPS matching (nearest, ATT)\n\n\n\"ATE\"\nget_PSW(estimand = \"ATE\")，logistic 得分\nIPTW (ATE)\n\n\n\"ATT\" / \"ATC\"\n同上\nSMR weighting (ATT) / (ATC)\n\n\n\"ATO\" / \"ATM\" / \"EW\"\n同上\nOverlap / Matching / Entropy weighting\n\n\n\n\nhead(gb$balance, 10)\n#&gt;    variable                     method         smd\n#&gt; 1       age                 Unadjusted  0.46145833\n#&gt; 2       sex                 Unadjusted  0.16729106\n#&gt; 3     stage                 Unadjusted  0.45317145\n#&gt; 4       bmi                 Unadjusted -0.09998033\n#&gt; 5    smoker                 Unadjusted  0.14173105\n#&gt; 6       age PS matching (nearest, ATT)  0.02673233\n#&gt; 7       sex PS matching (nearest, ATT)  0.01125369\n#&gt; 8     stage PS matching (nearest, ATT)  0.08838266\n#&gt; 9       bmi PS matching (nearest, ATT) -0.01950403\n#&gt; 10   smoker PS matching (nearest, ATT)  0.03047949\nnames(gb$data)\n#&gt;  [1] \"age\"                        \"sex\"                       \n#&gt;  [3] \"stage\"                      \"bmi\"                       \n#&gt;  [5] \"smoker\"                     \"z\"                         \n#&gt;  [7] \"y\"                          \"PS matching (nearest, ATT)\"\n#&gt;  [9] \"IPTW (ATE)\"                 \"SMR weighting (ATT)\"       \n#&gt; [11] \"SMR weighting (ATC)\"        \"Overlap weighting (ATO)\"   \n#&gt; [13] \"Matching weighting (ATM)\"   \"Entropy weighting (EW)\"\n\n返回列表有 plt（love plot）、balance（variable、method、带符号的 smd）、 data（完整病例，每个方案一列权重，以方案标签命名；未匹配与被修剪的单位权重为 0）， 以及只在要求时生成的 tbl。\n\n自定义方案\nmethods 也可以是一个命名列表：名字是图例标签，元素写明 design = \"matching\" 或 \"weighting\"，其余字段就是 get_PSM() / get_PSW() 的参数。未命名的元素按简写展开， 所以调过参的方案和默认方案可以写在一起：\n\ngb2 &lt;- get_bal(\n  d, treat = \"z\", adj_var = adj,\n  methods = list(\n    `PSM 1:2, caliper 0.1`  = list(design = \"matching\", ratio = 2, caliper = 0.1),\n    `Stabilized IPTW (ATE)` = list(design = \"weighting\", estimand = \"ATE\",\n                                   stabilize = TRUE),\n    \"ATO\"\n  ),\n  cat_smd   = \"level\",\n  var_names = c(age = \"Age (years)\", bmi = \"BMI\", smoker = \"Current smoker\"),\n  love_args = list(threshold = 0.05, legend_position = \"bottom\")\n)\n#&gt; Warning: Not all treated units will get 2 matches.\ngb2$plt\n\n\n\n\n\n\n\n\nMatchIt 的警告是说对照组不够给每个处理单位配满 2 个，1:2 匹配在对照不足两倍时就会这样。 方案里的 method 沿用两个函数各自的含义：\"matching\" 下是匹配算法， \"weighting\" 下是倾向得分模型。data、treat、adj_var、balance 由 get_bal() 设定， 写进方案会报错；最多 14 个方案。稳定化只在每臂内乘一个常数， 所以稳定化 IPTW 的平衡与未稳定化的完全相同。\n\n\nSMD 的口径\n三处 SMD 数值会略有出入，都是约定不同，不是算错：\n\n\n\n\n\n\n\n\n位置\n分母\n三水平以上的因子\n\n\n\n\nget_bal() 的图与 $balance\n未加权合并 SD \\(\\sqrt{(s_1^2 + s_0^2)/2}\\)（cobalt，方差除以 \\(n-1\\)）\ncat_smd = \"overall\"（默认）：一行无符号的 Yang & Dalton 多元 SMD；\"level\"：逐水平带符号\n\n\nplt_PSW() / plt_PSM()\n同样是未加权合并 SD，但经 halfmoon / smd::smd()，方差除以 \\(n\\)；get_PSW() 在修剪后的行上算\n逐水平\n\n\nget_bal() 的 $tbl\ngtsummary 的 add_difference(test = ~ \"smd\")，取绝对值\n等于 \"overall\"\n\n\n\n多元 SMD 永远不小于单个水平的最大绝对 SMD，所以对它用同一个阈值更严格。\n\n\n基线表\ntbl = TRUE 为未调整样本和每个方案各生成一段”均值 (SD) / n (%) + SMD + P”， 并排合并成一张 gtsummary 表。加权方案通过 survey 设计汇总，零权重行保留在设计里：\n\ngb3 &lt;- get_bal(d, treat = \"z\", adj_var = adj, methods = c(\"PSM\", \"ATO\"),\n               tbl = TRUE)\ngb3$tbl\n\n\n\n\n  \n    \n      Characteristic\n      \n        Unadjusted\n      \n      \n        PS matching (nearest, ATT)\n      \n      \n        Overlap weighting (ATO)\n      \n    \n    \n      0\nN = 5861\n      1\nN = 4141\n      SMD2\n      p-value3\n      0\nN = 3571\n      1\nN = 3571\n      SMD2\n      p-value4\n      0\nN = 2161\n      1\nN = 2161\n      SMD2\n      p-value4\n    \n  \n  \n    age\n60 (9)\n64 (9)\n0.462\n&lt;0.001\n63 (8)\n63 (9)\n0.027\n0.779\n62 (9)\n62 (9)\n0.000\n0.705\n    sex\n\n\n0.167\n0.009\n\n\n0.011\n0.881\n\n\n0.000\n&gt;0.999\n        Female\n305 (52%)\n181 (44%)\n\n\n169 (47%)\n167 (47%)\n\n\n101 (47%)\n101 (47%)\n\n\n        Male\n281 (48%)\n233 (56%)\n\n\n188 (53%)\n190 (53%)\n\n\n115 (53%)\n115 (53%)\n\n\n    stage\n\n\n0.453\n&lt;0.001\n\n\n0.088\n0.518\n\n\n0.000\n&gt;0.999\n        I\n267 (46%)\n113 (27%)\n\n\n115 (32%)\n105 (29%)\n\n\n74 (34%)\n74 (34%)\n\n\n        II\n215 (37%)\n160 (39%)\n\n\n147 (41%)\n144 (40%)\n\n\n86 (40%)\n86 (40%)\n\n\n        III\n104 (18%)\n141 (34%)\n\n\n95 (27%)\n108 (30%)\n\n\n56 (26%)\n56 (26%)\n\n\n    bmi\n25.0 (3.9)\n24.6 (4.1)\n0.100\n0.112\n24.9 (3.8)\n24.8 (4.1)\n0.020\n0.860\n24.8 (3.8)\n24.8 (4.1)\n0.000\n0.953\n    smoker\n160 (27%)\n140 (34%)\n0.142\n0.027\n107 (30%)\n112 (31%)\n0.030\n0.685\n66 (31%)\n66 (31%)\n0.000\n&gt;0.999\n  \n  \n    \n      Abbreviation: CI = Confidence Interval\n    \n  \n  \n    \n      1 Mean (SD); n (%)\n    \n    \n      2 Standardized Mean Difference\n    \n    \n      3 Wilcoxon rank sum test; Pearson’s Chi-squared test\n    \n    \n      4 Design-based KruskalWallis test; Pearson’s X^2: Rao & Scott adjustment\n    \n  \n\n\n\n\n建表比算平衡慢得多：cores（默认 NULL）控制并行的进程数，Linux / macOS 用 fork， Windows 起 PSOCK 集群（要多花几秒）。连续变量的 P 值是秩检验，比较的是整个分布， 所以 SMD 很小时 P 也可能很小。\n\n\n参数\n\n\n\n\n\n\n\n\n参数\n默认\n说明\n\n\n\n\ndata、treat、adj_var\n—\n同上；adj_var 必填\n\n\nmethods\n7 个简写\n简写向量，或命名的方案列表（可混入未命名简写）\n\n\ncat_smd\n\"overall\"\n三水平以上因子的汇总方式\n\n\ntbl\nFALSE\n是否生成 $tbl（需要 gtsummary + survey）\n\n\ncores\nNULL\n建表的并行进程数\n\n\nvar_names\nRegR::name_map_seer\n显示标签，与 SEER 字典合并、你的标签优先；NULL 保留列名\n\n\nlove_args\nlist()\nthreshold、colors、shapes、size、line、var_order、base_size、ref_color、legend_position、legend_justification\n\n\nsave_plt\nlist()\n经 RegR::save_plt() 存 PDF\n\n\nsave_tbl\nlist()\n经 RegR::save_tb() 存 Word；非空时即使 tbl = FALSE 也会建表",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. 倾向评分匹配、加权与平衡（get_PSM / get_PSW / get_bal）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/03-ps.html#sec-ps-refs",
+    "href": "notes/causalR/03-ps.html#sec-ps-refs",
+    "title": "3. 倾向评分匹配、加权与平衡：get_PSM() / get_PSW() / get_bal()",
+    "section": "参考文献",
+    "text": "参考文献\n\nLi F, Morgan KL, Zaslavsky AM (2018). Balancing covariates via propensity score weighting. Journal of the American Statistical Association 113(521):390–400.\nCrump RK, Hotz VJ, Imbens GW, Mitnik OA (2009). Dealing with limited overlap in estimation of average treatment effects. Biometrika 96(1):187–199.\nHo DE, Imai K, King G, Stuart EA (2011). MatchIt: nonparametric preprocessing for parametric causal inference. Journal of Statistical Software 42(8):1–28.\nAustin PC (2011). Optimal caliper widths for propensity-score matching when estimating differences in means and differences in proportions in observational studies. Pharmaceutical Statistics 10(2):150–161.\nYang D, Dalton JE (2012). A unified approach to measuring the effect size between two groups using SAS. SAS Global Forum 2012, Paper 335-2012.\n\n完整说明见 ?get_PSW、?get_PSM、?get_bal、?plt_PSW、?plt_PSM。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. 倾向评分匹配、加权与平衡（get_PSM / get_PSW / get_bal）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/02-hte-select.html",
+    "href": "notes/causalR/02-hte-select.html",
+    "title": "2. 效应修饰变量筛选：get_hte_select()",
+    "section": "",
+    "text": "安装与核对环境\n候选变量有几十个、真正修饰治疗效应的只有少数几个时，get_hte_select() 做的是 第一道粗筛：逐个候选变量拟合一个个体化获益模型、按获益得分的离散程度排序， 再沿着这个固定顺序逐步累加变量，把每一步的得分摘要（可选再加留出样本上的验证指标） 列成一张表、画成一张图，由你（或一个事先指定的指标）决定留几个。\n它和第 1 页的 get_hte() 是两条独立的路线：\nget_hte_select() 的结果不是 hte_res，不能交给 plt_hte_*()。 筛出的变量可以再放进 get_hte() 细看；但混杂变量不能因为”不是修饰变量”就从 get_hte(adj_var = ) 里删掉。\n本页核对于 2026 年 9 月 28 日，代码块由本站渲染时真实执行：",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. 效应修饰变量筛选（get_hte_select）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/02-hte-select.html#sec-sel-env",
+    "href": "notes/causalR/02-hte-select.html#sec-sel-env",
+    "title": "2. 效应修饰变量筛选：get_hte_select()",
+    "section": "",
+    "text": "remotes::install_github(\"HUI950319/causalR\")\ninstall.packages(\"personalized\")   # 必需：拟合获益模型\ninstall.packages(\"grf\")            # 可选：只有验证指标（AUTOC/QINI/损失）要用\n\n\n\n\n项目\n值\n\n\n\n\ncausalR\n0.0.0.9000（GitHub main）\n\n\npersonalized\n0.2.8\n\n\nglmnet\n5.0\n\n\ngrf\n2.6.1",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. 效应修饰变量筛选（get_hte_select）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/02-hte-select.html#sec-sel-data",
+    "href": "notes/causalR/02-hte-select.html#sec-sel-data",
+    "title": "2. 效应修饰变量筛选：get_hte_select()",
+    "section": "示例数据：40 个候选、8 个真修饰变量",
+    "text": "示例数据：40 个候选、8 个真修饰变量\n仿帮助页的模拟：一个 1:1 随机化试验（已知倾向得分 0.5），生存结局。 40 个候选里 8 个是效应修饰变量（强度从 0.8 递减到 0.08），8 个只影响基线风险， 24 个是纯噪声：\n\nset.seed(20260928)\nn &lt;- 600L\ncandidates &lt;- c(sprintf(\"Modifier_%02d\", 1:8),\n                sprintf(\"Prognostic_%02d\", 1:8),\n                sprintf(\"Noise_%02d\", 1:24))\nd &lt;- as.data.frame(matrix(round(rnorm(n * length(candidates)), 3), nrow = n))\nnames(d) &lt;- candidates\nd$z  &lt;- sample(rep(0:1, length.out = n))   # 1:1 随机化\nd$ps &lt;- 0.5                                # 已知倾向得分\n\nbenefit  &lt;- as.vector(as.matrix(d[candidates[1:8]]) %*%\n                        c(0.8, 0.6, 0.45, 0.35, 0.25, 0.18, 0.12, 0.08))\nbaseline &lt;- as.vector(as.matrix(d[candidates[9:16]]) %*%\n                        seq(0.3, 0.05, length.out = 8))\nevent  &lt;- rexp(n, rate = 0.02 * exp(baseline - (2 * d$z - 1) * benefit / 2))\ncensor &lt;- rexp(n, rate = 0.008)\nd$time &lt;- round(pmin(event, censor), 2)\nd$DSS  &lt;- as.integer(event &lt;= censor)\nmean(d$DSS)\n#&gt; [1] 0.7033333\n\n生存结局与 get_hte() 一样固定读 time 和 DSS 两列。所用各列不允许有缺失或非有限值， 函数不删行也不插补。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. 效应修饰变量筛选（get_hte_select）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/02-hte-select.html#sec-sel-default",
+    "href": "notes/causalR/02-hte-select.html#sec-sel-default",
+    "title": "2. 效应修饰变量筛选：get_hte_select()",
+    "section": "默认调用：只排序、不自动选",
+    "text": "默认调用：只排序、不自动选\n\nans &lt;- get_hte_select(d, cat_var = \"z\", candidate_var = candidates,\n                      ps_var = \"ps\", fit_args = list(nfolds = 5L))\nnames(ans)\n#&gt; [1] \"ranking\"  \"forward\"  \"selected\" \"plots\"    \"analysis\"\nans$selected\n#&gt; NULL\n\n默认 imp_metric = \"score_sd\"、sel_metric = NULL、n_select = NULL： 按获益得分的标准差排序、走完整条累加路径，但不替你选（selected 为 NULL）。\n\n单变量排序\n\nhead(ans$ranking[, c(\"rank\", \"variable\", \"score_sd\", \"score_iqr\", \"score_mean\")], 12)\n#&gt;    rank      variable   score_sd  score_iqr score_mean\n#&gt; 1     1   Modifier_01 0.29168728 0.42829323 0.09870626\n#&gt; 2     2   Modifier_02 0.24956742 0.31196691 0.09064391\n#&gt; 3     3   Modifier_07 0.18870121 0.25297813 0.09735624\n#&gt; 4     4   Modifier_03 0.18567344 0.23649312 0.10112796\n#&gt; 5     5      Noise_21 0.14541172 0.20132318 0.09802787\n#&gt; 6     6   Modifier_04 0.11927668 0.15673229 0.10292446\n#&gt; 7     7 Prognostic_03 0.07327202 0.09598129 0.08624172\n#&gt; 8     8      Noise_24 0.06631757 0.08939429 0.09874653\n#&gt; 9     9 Prognostic_06 0.05736282 0.08042327 0.09944379\n#&gt; 10   10   Modifier_08 0.05381436 0.07378238 0.10031584\n#&gt; 11   11      Noise_01 0.04157894 0.05843388 0.09736506\n#&gt; 12   12      Noise_11 0.03122669 0.03941614 0.09757644\n\n8 个真修饰变量里，排进前 8 名的有 5 个。 最强的两个排在最前，但前 8 名里也混进了噪声和预后变量，弱修饰变量的名次也不按真实强度排列。 有 28 个候选被 LASSO 压成常数得分（score_sd 为 0）， 其中包括修饰变量 Modifier_05、Modifier_06； 它们排在末尾，并列时保持候选的输入顺序。\n\n\n固定顺序的累加路径\n\nhead(ans$forward[, c(\"step\", \"added_variable\", \"n_vars\", \"score_sd\",\n                     \"score_iqr\", \"score_mean\")], 12)\n#&gt;    step added_variable n_vars  score_sd score_iqr score_mean\n#&gt; 1     1    Modifier_01      1 0.2916873 0.4282932 0.09870626\n#&gt; 2     2    Modifier_02      2 0.4345148 0.6308062 0.08654797\n#&gt; 3     3    Modifier_07      3 0.4784858 0.6582358 0.09224781\n#&gt; 4     4    Modifier_03      4 0.5116009 0.7161074 0.09932128\n#&gt; 5     5       Noise_21      5 0.5221468 0.7019165 0.10008567\n#&gt; 6     6    Modifier_04      6 0.5333281 0.7199506 0.10364451\n#&gt; 7     7  Prognostic_03      7 0.5492411 0.7498129 0.08606225\n#&gt; 8     8       Noise_24      8 0.5568207 0.7552145 0.08239358\n#&gt; 9     9  Prognostic_06      9 0.5265283 0.7202280 0.08574468\n#&gt; 10   10    Modifier_08     10 0.5313483 0.7291763 0.08730584\n#&gt; 11   11       Noise_01     11 0.5279876 0.7157205 0.08684739\n#&gt; 12   12       Noise_11     12 0.5279876 0.7157205 0.08684739\n\n累加时从不重排剩余候选、也从不剔除已加入的变量；第 1 步直接复用排序第一名的单变量拟合。 加入一个变量后 score_sd 下降并不稀奇：LASSO 在新的设计矩阵上重新选惩罚， 可能把已有变量的系数一起收缩。\n\n\n组合图\nans$plots 里有三张 ggplot（不会自动打印或保存）：ranking、forward 和 combined。 combined 把单变量排序的条形图（下横轴）与累加路径（上横轴）对齐：\n\nans$plots$combined\n\n\n\n\n\n\n\n\n没有设 sel_metric 时，折线画的是累加模型的平均获益得分，红色标出它的第一个最大值—— 这只是一个标记，不会写进 selected。上下两根横轴的数值没有共同尺度， 次坐标轴只是为了显示做的线性变换。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. 效应修饰变量筛选（get_hte_select）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/02-hte-select.html#sec-sel-validate",
+    "href": "notes/causalR/02-hte-select.html#sec-sel-validate",
+    "title": "2. 效应修饰变量筛选：get_hte_select()",
+    "section": "用验证指标选模型大小",
+    "text": "用验证指标选模型大小\nimp_metric 或 sel_metric 取 \"autoc\"、\"qini\"、\"r_loss\"、\"dr_loss\" 之一时， 验证模式自动打开：\n\n按 eval_args$train_frac（默认 0.5）把样本切成训练与评估两半 （PS 路线按处理臂分层，匹配路线整对切分）；\n所有 personalized 模型只在训练半拟合，对评估半预测获益得分；\n在评估半上拟合一片固定的 grf 森林（生存结局用 causal_survival_forest()）， 用它的双稳健得分评估每个模型的得分排序：AUTOC、QINI 是 RATE 点估计（不做 bootstrap）， 连续结局另给 R-loss 与 DR-loss。\n\n\nval &lt;- get_hte_select(d, cat_var = \"z\", candidate_var = candidates,\n                      ps_var = \"ps\",\n                      imp_metric = \"score_iqr\", sel_metric = \"autoc\",\n                      fit_args  = list(nfolds = 5L),\n                      eval_args = list(time = 24, num.trees = 500L))\nval$selected\n#&gt; [1] \"Modifier_01\" \"Modifier_07\" \"Modifier_02\" \"Modifier_03\" \"Noise_14\"   \n#&gt; [6] \"Noise_24\"    \"Modifier_08\" \"Noise_19\"\nhead(val$forward[, c(\"step\", \"added_variable\", \"n\", \"n_eval\", \"score_iqr\",\n                     \"autoc\", \"qini\")], 10)\n#&gt;    step added_variable   n n_eval score_iqr    autoc      qini\n#&gt; 1     1    Modifier_01 300    300 0.5133470 2.997737 0.9001096\n#&gt; 2     2    Modifier_07 300    300 0.5897451 3.313619 0.9645972\n#&gt; 3     3    Modifier_02 300    300 0.7877517 3.669050 1.3353473\n#&gt; 4     4    Modifier_03 300    300 0.7230083 4.011668 1.4745113\n#&gt; 5     5       Noise_14 300    300 0.6926148 3.961692 1.4142799\n#&gt; 6     6       Noise_24 300    300 0.6758360 4.129161 1.4748842\n#&gt; 7     7    Modifier_08 300    300 0.7038069 4.190920 1.4464837\n#&gt; 8     8       Noise_19 300    300 0.7172253 4.320192 1.4187631\n#&gt; 9     9       Noise_03 300    300 0.7719328 4.108137 1.2916637\n#&gt; 10   10       Noise_09 300    300 0.8302703 3.992744 1.2714174\n\n生存验证需要 eval_args$time，单位与 time 列相同；target 默认 \"RMST\"， 所以 AUTOC 与 time 同单位。AUTOC 在第 8 步取到最大， 选出的 8 个变量里有 3 个是纯噪声。 这些 RATE 点估计不带标准误（R = 0），相邻两步的差异是否超出抽样误差，函数不作判断。\n\nval$plots$combined\n\n\n\n\n\n\n\n\n设了 sel_metric 后，组合图的折线换成该指标，红色标出被选中的那一步； 手工给 n_select 时另画一条蓝色点线，n_select 优先于 sel_metric。\n\n\n\n\n\n\n警告验证指标选出来的不是无偏的最终表现\n\n\n\n同一个评估半既用来挑模型大小（或排序），又报告挑中那一步的指标， 所以胜出的 AUTOC 偏乐观。要评估整个筛选流程，需要独立测试集或外层重抽样； 函数不做这一步，也不会把选中的模型在全样本上重拟合。 一步要成为”合格”的候选，只需训练得分不是常数，且（对有基线的指标）严格优于无异质性的基线 （AUTOC / QINI / score_sd / score_iqr 的基线是 0）——这只是最低门槛，不是显著性检验。\n\n\n\n换种子看筛选稳定性\n验证模式下 seed 同时决定切分，所以换种子重复调用，相当于对整个筛选流程重抽样。 被选中的频率描述的是筛选的稳定性，不是测试集表现：\n\npicks &lt;- lapply(1:5, function(s) {\n  get_hte_select(d, cat_var = \"z\", candidate_var = candidates, ps_var = \"ps\",\n                 imp_metric = \"score_iqr\", sel_metric = \"autoc\",\n                 fit_args = list(nfolds = 5L),\n                 eval_args = list(time = 24, num.trees = 500L),\n                 seed = s)$selected\n})\nlengths(picks)\n#&gt; [1] 3 8 4 5 3\nfreq &lt;- table(factor(unlist(picks), levels = candidates)) / length(picks)\nhead(sort(freq, decreasing = TRUE), 12)\n#&gt; \n#&gt; Modifier_01 Modifier_03 Modifier_02 Modifier_07    Noise_21 Modifier_04 \n#&gt;         1.0         1.0         0.8         0.6         0.4         0.2 \n#&gt;    Noise_04    Noise_10    Noise_24 Modifier_05 Modifier_06 Modifier_08 \n#&gt;         0.2         0.2         0.2         0.0         0.0         0.0",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. 效应修饰变量筛选（get_hte_select）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/02-hte-select.html#sec-sel-other",
+    "href": "notes/causalR/02-hte-select.html#sec-sel-other",
+    "title": "2. 效应修饰变量筛选：get_hte_select()",
+    "section": "连续与二分类结局",
+    "text": "连续与二分类结局\nsurv 换成列名即可。连续结局可以用 R-loss / DR-loss 这两个替代损失选模型大小（越小越好）； 二分类和生存结局的原始获益得分不是风险差或 RMST 差，不能用这两个损失，会直接报错。\n\nd$y &lt;- round(1 + as.vector(as.matrix(d[candidates[9:16]]) %*%\n                             seq(0.6, 0.1, length.out = 8)) +\n               d$z * benefit + rnorm(n), 3)\ncy &lt;- get_hte_select(d, cat_var = \"z\", candidate_var = candidates,\n                     surv = \"y\", ps_var = \"ps\", sel_metric = \"r_loss\",\n                     fit_args = list(nfolds = 5L),\n                     eval_args = list(num.trees = 500L))\ncy$selected\n#&gt; [1] \"Modifier_04\" \"Modifier_03\" \"Modifier_01\" \"Modifier_02\"\nhead(cy$forward[, c(\"step\", \"added_variable\", \"score_sd\", \"autoc\",\n                    \"r_loss\", \"dr_loss\")], 8)\n#&gt;   step added_variable  score_sd     autoc   r_loss  dr_loss\n#&gt; 1    1    Modifier_04 0.4452691 0.3714279 2.398824 9.595298\n#&gt; 2    2    Modifier_03 0.6117454 0.7313936 2.268387 9.073549\n#&gt; 3    3    Modifier_01 0.6859945 0.6616043 2.236615 8.946462\n#&gt; 4    4    Modifier_02 0.7447687 0.7456149 2.172494 8.689976\n#&gt; 5    5       Noise_20 0.7530553 0.7053998 2.219296 8.877183\n#&gt; 6    6       Noise_15 0.7779856 0.6636944 2.234155 8.936622\n#&gt; 7    7  Prognostic_02 0.7862016 0.6709235 2.233981 8.935922\n#&gt; 8    8       Noise_14 0.8057766 0.6050001 2.283735 9.134939\n\n连续结局下，加权法的平方损失把处理编码成 −1/+1，总体最优的获益得分是均值差的一半， 所以两个损失都用 tau = 2 * benefit.score 计算。它们是替代损失，不是个体效应的真实误差。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. 效应修饰变量筛选（get_hte_select）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/02-hte-select.html#sec-sel-routes",
+    "href": "notes/causalR/02-hte-select.html#sec-sel-routes",
+    "title": "2. 效应修饰变量筛选：get_hte_select()",
+    "section": "两条混杂处理路线",
+    "text": "两条混杂处理路线\nps_var 与 match_var 必须且只能给一个，函数内部不拟合倾向得分、也不做匹配：\n\n\n\n\n\n\n\n\n\n路线\n参数\n数据要求\n交叉验证折\n\n\n\n\n倾向得分\nps_var\n一列已算好的处理概率，严格在 (0, 1) 内；随机试验就是常数\n按”处理臂 × 事件（或结局类别）“分层发折，所有模型共用；任何训练折缺臂或缺事件时提前报错\n\n\n1:1 匹配\nmatch_var\n标识匹配对的列，每对恰好一个处理、一个对照（例如 get_PSM() 的 s_nearest，只保留匹配上的行）\n由 personalized 按对发折，不能事先固定\n\n\n\n倾向得分应当在不看结局的情况下构造，否则会把结局信息漏进筛选。 无论哪条路线，匹配或双稳健得分都不能消除未测混杂。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. 效应修饰变量筛选（get_hte_select）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/02-hte-select.html#sec-sel-args",
+    "href": "notes/causalR/02-hte-select.html#sec-sel-args",
+    "title": "2. 效应修饰变量筛选：get_hte_select()",
+    "section": "参数",
+    "text": "参数\n\n\n\n\n\n\n\n\n参数\n默认\n说明\n\n\n\n\ndata\n—\n数据框；所用各列不得缺失\n\n\ncat_var\n—\n二分类处理列，规则同 get_hte()（第二个水平是治疗组）\n\n\ncandidate_var\n—\n候选修饰变量；数值、逻辑、因子、字符均可，常数列被拒绝；分类变量的哑变量列作为一个整体进出\n\n\nsurv\nTRUE\nTRUE 读 time + DSS（Cox 损失）；列名为连续（平方损失）或 0/1 二分类（logistic 损失）；FALSE 不支持\n\n\nmatch_var / ps_var\nNULL\n两条路线二选一，见上\n\n\nn_select\nNULL\n手工指定保留前几个；优先于 sel_metric，但 sel_metric 的最优步仍会报告\n\n\nimp_metric\n\"score_sd\"\n单变量排序指标，见下表\n\n\nsel_metric\nNULL\n累加路径上的选择指标；NULL 为不自动选\n\n\nfit_args\nlist(nfolds = 10L, standardize = TRUE)\nLASSO 惩罚交叉验证的折数（至少 3）与是否标准化；可只覆盖其中一项\n\n\neval_args\nlist(train_frac = 0.5, adjust_var = NULL, target = \"RMST\", time = NULL, num.trees = 2000L)\n验证模式的设置；adjust_var 是评估森林额外调整的列（必要的混杂放这里），time 在生存验证时必填\n\n\nseed\n123L\n所有拟合（及验证切分）的种子；结束后恢复调用者的随机数状态\n\n\nverbose\nFALSE\n逐个报告正在拟合的变量与累加步\n\n\n\n\n指标\n\n\n\n\n\n\n\n\n\n指标\n类型\n方向\n说明\n\n\n\n\nscore_sd\n描述（训练样本）\n越大越好\n获益得分的标准差（默认排序指标）\n\n\nscore_iqr\n描述\n越大越好\n四分位距，对极端得分更稳健\n\n\nscore_mean_abs\n描述\n越大越好\n得分绝对值的均值\n\n\nscore_median、score_mean\n描述\n越大越好\n得分的中位数、带符号均值（位置指标，没有基线）\n\n\nautoc、qini\n验证\n越大越好\n评估半上的 RATE 点估计，可以为负\n\n\nr_loss、dr_loss\n验证（仅连续结局）\n越小越好\n评估半上的替代损失\n\n\n\n描述指标只是得分的摘要，不是 HR、不是绝对 CATE、也不是变量重要性检验； 把得分离散度或位置最大化本身，不构成预测准确的证据。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. 效应修饰变量筛选（get_hte_select）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/02-hte-select.html#sec-sel-value",
+    "href": "notes/causalR/02-hte-select.html#sec-sel-value",
+    "title": "2. 效应修饰变量筛选：get_hte_select()",
+    "section": "返回值",
+    "text": "返回值\n\n\n\n\n\n\n\n元素\n内容\n\n\n\n\nranking\n每个候选一行：rank、variable、n（训练行数）、n_eval（验证行数），以及上表全部指标，按 imp_metric 排好序\n\n\nforward\n累加路径每步一行：step、added_variable、n_vars、variables（列表列）、n、n_eval 与全部指标\n\n\nselected\n选中的前缀变量；两个选择控制都为 NULL 时是 NULL；sel_metric 找不到合格步时是 character(0)\n\n\nplots\nranking、forward、combined 三张 ggplot\n\n\nanalysis\n结局与处理映射、损失函数、设计列映射、种子、切分行号、PS 路线的折号、best_step、sel_baseline、selected_step、依赖版本、warnings 等\n\n\n\n不保留任何拟合模型、个体获益得分或输入数据。后端的警告都收进 analysis$warnings； 本机 glmnet 5.0 会对每次 Cox 拟合提示下一版的并列处理方式将改变， 所以这张表在生存结局下会很长（本例 1152 行），不代表拟合出错。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. 效应修饰变量筛选（get_hte_select）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/02-hte-select.html#sec-sel-speed",
+    "href": "notes/causalR/02-hte-select.html#sec-sel-speed",
+    "title": "2. 效应修饰变量筛选：get_hte_select()",
+    "section": "慢在哪里",
+    "text": "慢在哪里\n默认路线要拟合 \\(2p - 1\\) 个模型（\\(p\\) 为候选数），每个都含一轮 cv.glmnet()。 personalized 0.2.8 在模型一个变量都没选中时，会写死地再重跑惩罚交叉验证最多 4 次； PS 路线的折是固定的，这几次重跑是完全重复的计算，所以全是噪声的候选反而最费时。 本页的默认调用在本机十来秒；候选上百个、样本上万时，先减 fit_args$nfolds （例如 5）再考虑其它办法。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. 效应修饰变量筛选（get_hte_select）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/02-hte-select.html#sec-sel-refs",
+    "href": "notes/causalR/02-hte-select.html#sec-sel-refs",
+    "title": "2. 效应修饰变量筛选：get_hte_select()",
+    "section": "参考文献",
+    "text": "参考文献\n\nChen S, Tian L, Cai T, Yu M (2017). A general statistical framework for subgroup identification and comparative treatment scoring. Biometrics 73(4):1199–1209.\nHuling JD, Yu M (2021). Subgroup identification using the personalized package. Journal of Statistical Software 98(5):1–60.\nYadlowsky S, Fleming S, Shah N, Brunskill E, Wager S (2025). Evaluating treatment prioritization rules via rank-weighted average treatment effects. Journal of the American Statistical Association 120(549).\nNie X, Wager S (2021). Quasi-oracle estimation of heterogeneous treatment effects. Biometrika 108(2):299–319.\n\n完整说明见 ?get_hte_select。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. 效应修饰变量筛选（get_hte_select）</span>"
+    ]
   }
 ]

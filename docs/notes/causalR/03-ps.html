@@ -1,0 +1,3662 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hans" xml:lang="zh-Hans"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>3. 倾向评分匹配、加权与平衡：get_PSM() / get_PSW() / get_bal() – 因果推断读书笔记</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<link href="../../notes/causalR/02-hte-select.html" rel="prev">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-4571e413af9019dfdcc70175faf53a1f.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-5974fafaa78df73e29b0e498382124b0.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-f4ac1763815fd7e6e4ac068bcc624570.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../../site_libs/bootstrap/bootstrap-dark-20ce10291bf0c12c4093354e53c28dd5.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-f4ac1763815fd7e6e4ac068bcc624570.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "没有结果",
+    "search-matching-documents-text": "匹配的文档",
+    "search-copy-link-title": "复制搜索链接",
+    "search-hide-matches-text": "隐藏其它匹配结果",
+    "search-more-match-text": "更多匹配结果",
+    "search-more-matches-text": "更多匹配结果",
+    "search-clear-button-title": "清除",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "取消",
+    "search-submit-button-title": "提交",
+    "search-label": "搜索"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar docked quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../notes/causalR/01-hte.html">causalR 包函数手册</a></li><li class="breadcrumb-item"><a href="../../notes/causalR/03-ps.html"><span class="chapter-title">3. 倾向评分匹配、加权与平衡（get_PSM / get_PSW / get_bal）</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="展开或折叠侧边栏导航" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="搜索" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header sidebar-header-stacked">
+      <a href="../../index.html" class="sidebar-logo-link">
+      </a>
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../../">因果推断读书笔记</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/HUI950319/causalR" title="源代码" class="quarto-navigation-tool px-1" aria-label="源代码"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="切换深色模式"><i class="bi"></i></a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="搜索"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">关于这份笔记</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">Causal Inference: What If · 原书笔记</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-logic-chain.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">前三章逻辑链</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/notation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">记号与约定</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/identifiability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">三条识别条件</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/formulas.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">公式卡</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-potential-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 1 章 · Zeus 的心脏移植</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-randomized-experiments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 2 章 · 一枚硬币，还是两枚</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-observational-studies.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 3 章 · 一枚硬币也没抛</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-effect-modification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 4 章 · 没有「治疗的因果效应」这种东西</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w01-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 5 章 · 两个处理，一起动手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-causal-diagrams.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 6 章 · 先画假设，再下结论</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-confounding.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 7 章 · 后门关上，可交换性才回来</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-selection-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 8 章 · 进了分析的人，未必还能互换</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-measurement-bias.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 9 章 · 带星号的变量，与担不起因果的箭头</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w02-random-variability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 10 章 · 该不该撤稿</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w03-why-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 11 章 · 数据不会自己说话</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w03-ip-weighting-msm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 12 章 · 把权重交给模型去估</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w04-standardization-gformula.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 13 章 · 把模型挪到结局那一侧</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w04-g-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 14 章 · 猜一个数，直到它与处理无关</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w05-outcome-regression-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 15 章 · 最常用的方法，为什么排在最后</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w05-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 16 章 · 不要求可交换性的那条路</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w06-causal-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 17 章 · 风险比里藏着一个碰撞变量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w06-variable-selection.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 18 章 · 调整得越多，不等于偏倚越小</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w07-time-varying-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 19 章 · 先说清策略，才有效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w07-treatment-confounder-feedback.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 20 章 · 调了混杂，反而更错</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w08-g-methods-time-varying.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 21 章 · 三条路线，同一个 0</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w11-target-trial-emulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 22 章 · 先写协议，再看数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/w11-causal-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">第 23 章 · 把中介问题改写成能做的试验</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">郑老师因果推理课程讲义</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-overview.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">课程讲义总览</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w01.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W01 · 因果推断理论与方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w02.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W02 · DAG 与回归、反事实与 G 计算</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w03.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W03 · 倾向得分方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w04.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W04 · 机器学习与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w05.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W05 · 双重稳健估计与双重机器学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w06.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W06 · TMLE 及其衍生方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w07.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W07 · 缺失数据与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w08.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W08 · 中介分析与因果中介</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/course-zheng-w09.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">W09 · 处理效应异质性分析</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">Duke STA 640 · 因果推断课程讲义中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">课程讲义总览（21 份）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/01-chapter-1-background-and-potential-outcome-framework.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 1 · Background and Potential Outcome Framework</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/02-chapter-2-1-randomized-experiments-fisher-s-and-neyman-s-mode-of-inference.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 2.1 · Randomized Experiments: Fisher’s and Neyman’s Mode of Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/03-chapter-2-2-randomized-experiments-covariate-balance-and-adjustment.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 2.2 · Randomized Experiments: Covariate Balance and Adjustment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/04-chapter-3-1-observational-studies-outcome-regression.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.1 · Observational Studies: Outcome Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/05-chapter-3-2-observational-studies-propensity-score.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.2 · Observational Studies: Propensity Score</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/06-chapter-3-3-observational-studies-stratification-and-matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.3 · Observational Studies: Stratification and Matching</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/07-chapter-3-4-propensity-score-weighting.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.4 · Propensity Score Weighting</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/08-chapter-3-5-doubly-robust-estimation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.5 · Doubly Robust Estimation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/09-chapter-3-6-non-binary-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 3.6 · Non-binary Treatments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/10-chapter-4-1-treatment-effect-heterogeneity-causal-subgroup-analysis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 4.1 · Treatment Effect Heterogeneity: Causal Subgroup Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/11-chapter-4-2-treatment-effect-heterogeneity-machine-learning-approaches.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 4.2 · Treatment Effect Heterogeneity: Machine Learning Approaches</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/12-chapter-5-sensitivity-analysis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 5 · Sensitivity Analysis</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/13-chapter-6-1-instrumental-variables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 6.1 · Instrumental Variables</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/14-chapter-6-2-principal-stratification.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 6.2 · Principal Stratification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/15-chapter-7-regression-discontinuity-designs.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 7 · Regression Discontinuity Designs</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/16-chapter-8-difference-in-differences-synthetic-control-and-beyond.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 8 · Difference-in-Differences, Synthetic Control, and Beyond</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/17-chapter-9-sequential-and-longitudinal-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 9 · Sequential and Longitudinal Treatments</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/18-chapter-10-bayesian-causal-inference.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 10 · Bayesian Causal Inference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/19-chapter-11-causal-inference-with-survival-outcomes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Chapter 11 · Causal Inference with Survival Outcomes</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/20-lab-2-propensity-score-matching-and-weighting-binary-treatment.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Lab 2 · Propensity Score Matching and Weighting: Binary Treatment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/duke-sta640/21-lab-3-propensity-score-weighting-with-multiple-treatments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Lab 3 · Propensity Score Weighting with Multiple Treatments</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">causatr 官方文档中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-introduction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 介绍</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-gcomp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的 G-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-ipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的逆概率加权</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-aipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的增强 IPW（双稳健估计）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的倾向评分匹配</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-snm.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的结构嵌套均值模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-interventions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">causatr 中的干预类型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-natural-history-mtps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">自然历史修改处理政策（宽限期）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-triangulation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">方法论三角：g-computation、IPW、AIPW、匹配和 SNM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-longitudinal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">纵向处理：ICE g-computation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-transportability.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">可转运性和可推广性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-missing-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">处理缺失数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-diagnostics.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">使用 causatr 的诊断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-validation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">针对参考实现的验证</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果效应的方差估计</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causatr-ipw-variance-theory.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IPW 密度比权重和方差理论</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false">
+ <span class="menu-text">Causal Inference in R · 原书中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/01-casual-to-causal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">从随意推断到因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/02-whole-game.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">完整实践：蚊帐与疟疾</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/03-po-counterfactuals.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">潜在结局与反事实</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/04-dags.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">用 DAG 表达因果问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/05-not-just-a-stats-problem.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果推断不只是统计问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/06-stats-models-ci.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">从问题到答案：分层与结局模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/07-prep-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">准备数据以回答因果问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/08-propensity-scores.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">倾向评分</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/09-evaluating-ps.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">评估倾向评分模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/10-estimands.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果估计目标</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/11-outcome-model.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">拟合加权结局模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/12-other-exposures.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">连续型与分类暴露</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/13-g-comp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">G 计算</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/14-interaction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">异质性处理效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/15-missingness-and-measurement.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">缺失与测量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/16-sensitivity.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">敏感性分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/17-mediation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果中介分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/18-longitudinal.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">跨时间的因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/19-time-to-event.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">因果生存时间模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/20-doubly-robust.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">双稳健模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/21-machine-learning.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">机器学习与因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/22-iv-and-friends.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">工具变量及相关方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/23-diff-in-diff.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">双重差分</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/24-evidence.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">证据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/chapters/99-references.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">参考文献</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/r-causal/appendices/A-bootstrap.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">自助法（Bootstrap）</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false">
+ <span class="menu-text">lmtp 包官方文档中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/00-welcome.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">欢迎！</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/00-instructors.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">讲师介绍</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/01-introduction.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1. 引言</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/02-defining-interventions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">2. 定义干预</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/03-estimators.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">3. 估计量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/04-lmtp-package.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4a. lmtp 包</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/05-static.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4b. 静态效应与因果对比</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/06-dtr.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4c. 动态处理方案</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/07-mtp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4d. 修正处理策略</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/08-ipsi.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4e. IPSI</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/09-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4f. 生存分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/10-multivariate.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4g. 多元暴露</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/lmtp-workshop/11-conclusion.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">5. 结语</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false">
+ <span class="menu-text">marginaleffects 官方文档中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/who.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1. 这本书写给谁</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/challenge.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">I·2. 模型与意义</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/framework.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">I·3. 概念框架</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/hypothesis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">II·4. 假设与等价检验</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/predictions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">II·5. 预测</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/comparisons.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">II·6. 反事实比较</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/slopes.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">II·7. 斜率</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/gcomputation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">III·8. 使用 G-计算进行因果推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/experiments.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">III·9. 实验</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/interactions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">III·10. 交互作用与多项式</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/categorical.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">III·11. 分类与有序结果</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/mrp.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">III·12. 使用后分层的多层回归</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/ml.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">III·13. 机器学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/model-to-meaning/uncertainty.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">III·14. 不确定性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/get_started.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IV·R+Python 快速上手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/plot.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IV·R+Python 绘图</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/elasticity.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IV·R+Python 弹性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/interrupted_time_series.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">IV·R+Python 中断时间序列</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/brms.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 贝叶斯模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/bootstrap.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 自助法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/conjoint.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 联合分析实验</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/gam.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 广义可加模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/grids.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 数据网格</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/heterogeneity.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 异质性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/equivalence.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 等价检验</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/hypothesis.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 假设检验</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/ipw.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 逆概率加权</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/lme4.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 混合效应模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/logit.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R Logit 模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/matching.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 匹配</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/mlogit.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 多项 Logit</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/multiple_imputation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 缺失数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/power.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 功效分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 生存分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/total_marginal_effect.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 总边际效应</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/uncertainty.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">V·R 不确定性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/sklearn.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VI·Python Scikit-learn</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/numpyro.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VI·Python NumPyro</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/help.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VII·获取帮助</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/alternative_software.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VII·R 同类软件对比</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/extensions.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VII·R 扩展支持的模型</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/faq.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VII·R 常见问题</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/performance.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VII·R 性能调优</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/svalues.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VII·R S 值</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/tables.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">VII·R 结果表格</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/functions_r.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Fn·R 函数参考</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/functions_python.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Fn·Python 函数参考</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/news_r.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">News (R)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/marginaleffects/citation.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">引用与许可</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false">
+ <span class="menu-text">grf 包官方教程中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/00-get-started.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">快速上手</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/01-grf-guide.html" class="sidebar-item-text sidebar-link"><span class="chapter-title"><code>grf</code> 简介</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/02-rate.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">用 RATE 评估异质性</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/03-categorical-inputs.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">分类协变量</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/04-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">事件发生时间数据下的因果森林</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/05-rate-cv.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">异质性的交叉折验证</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/06-ate-transport.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">在新的目标人群上估计 ATE</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/07-muhats.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">估计条件均值</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/08-diagnostics.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">评估因果森林的拟合效果</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/09-llf.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">局部线性森林简介</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/10-policy-learning.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">用最优决策树做策略学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/grf/11-maq.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Qini 曲线：自动化的成本效益分析</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="false">
+ <span class="menu-text">Targeted Learning in R · tlverse 手册中译</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/00-welcome.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">欢迎</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/01-intro.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">导论</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/02-tlverse.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1-2. 关于 tlverse 与软件配置</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/03-data.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">3. 示例数据集</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/04-roadmap.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4. 从数据中学习：一份路线图</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/05-origami.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">5. 交叉验证</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/06-sl3.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">6. 超级学习</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/07-tmle3.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">7. TMLE 框架</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/08-tmle3mopttx.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">8. 动态与最优个体化处理方案</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/09-tmle3shift.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">9. 随机化处理方案</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/10-tmle3mediate.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">10. 因果中介分析</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tlverse/11-tmle3survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">11. 事件发生时间结局的一步 TMLE（上游草稿）</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../../notes/sources.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">sources</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/sources/effect-modifier-discovery.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">观察性研究中的效应修饰变量识别</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/sources/quick-screening-r-packages.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">快速筛选 modifier 的 R 包</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/sources/modifier-screening-audit.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">筛选软件与方法核查</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/sources/effect-modifier-effect-scale.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">效应修饰的效应尺度</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../../notes/model4you.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">model4you 包函数手册</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-11" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-11" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/01-pmtree.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1. pmtree()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/02-pmtree-methods.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">2. pmtree 的方法</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/03-pmforest.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">3. pmforest() 与 gettree()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/04-pmodel.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4. pmodel()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/05-varimp-pmtest.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">5. varimp() 与 pmtest()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/06-plots.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">6. 可视化</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/07-objfun-internals.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">7. objfun 与内部函数</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/model4you/08-pitfalls.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">8. 实测清单与工作流</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../../notes/stratifiedmedicine.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">StratifiedMedicine 包函数手册</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-12" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-12" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/01-overview.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1. 总览、对象结构与数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/02-filter-train.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">2. filter_train()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/03-ple-train.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">3. ple_train()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/04-submod-train.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4. submod_train()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/05-param-est.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">5. param_est() 与 param_combine()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/06-prism.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">6. PRISM()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/07-plots.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">7. 可视化</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/stratifiedmedicine/08-pitfalls.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">8. 实测清单与工作流</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../../notes/tidyhte.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">tidyhte 包函数手册</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-13" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-13" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/01-overview.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1. 总览、对象结构与数据</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/02-recipe-api.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">2. 配方 API</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/03-model-cfg.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">3. 模型配置类</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/04-splits.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4. make_splits() 与数据对象</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/05-plugin-pseudo.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">5. 冗余函数与伪结局</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/06-estimate-qoi.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">6. estimate_QoI()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/07-diagnostics-plots.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">7. 诊断与可视化</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/tidyhte/08-pitfalls.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">8. 实测清单与工作流</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../../notes/unihtee.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">unihtee 包函数手册</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-14" role="navigation" aria-expanded="false" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-14" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/unihtee/01-parameter.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1. TEM-VIP 参数</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/unihtee/02-unihtee.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">2. unihtee()</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/unihtee/03-nuisance.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">3. nuisance 与 sl3 学习器</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/unihtee/04-estimators.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">4. 三个估计量与推断</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/unihtee/05-survival.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">5. 生存结局</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/unihtee/06-print-plot.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">6. 结果可视化</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/unihtee/07-pitfalls.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">7. 实测清单与工作流</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="true">
+ <span class="menu-text">causalR 包函数手册</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-15" role="navigation" aria-expanded="true" aria-label="展开或折叠此栏">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-15" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causalR/01-hte.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">1. 异质性治疗效应（get_hte / plt_hte_*）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causalR/02-hte-select.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">2. 效应修饰变量筛选（get_hte_select）</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../notes/causalR/03-ps.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">3. 倾向评分匹配、加权与平衡（get_PSM / get_PSW / get_bal）</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">目录</h2>
+   
+  <ul>
+  <li><a href="#sec-ps-env" id="toc-sec-ps-env" class="nav-link active" data-scroll-target="#sec-ps-env">安装与核对环境</a></li>
+  <li><a href="#sec-ps-data" id="toc-sec-ps-data" class="nav-link" data-scroll-target="#sec-ps-data">示例数据</a></li>
+  <li><a href="#sec-psw" id="toc-sec-psw" class="nav-link" data-scroll-target="#sec-psw">get_PSW()：六种权重一次看完</a>
+  <ul class="collapse">
+  <li><a href="#sec-psw-schemes" id="toc-sec-psw-schemes" class="nav-link" data-scroll-target="#sec-psw-schemes">六种权重</a></li>
+  <li><a href="#sec-psw-trim" id="toc-sec-psw-trim" class="nav-link" data-scroll-target="#sec-psw-trim">修剪、截断与稳定化</a></li>
+  <li><a href="#sec-psw-args" id="toc-sec-psw-args" class="nav-link" data-scroll-target="#sec-psw-args">参数</a></li>
+  </ul></li>
+  <li><a href="#sec-plt-psw" id="toc-sec-plt-psw" class="nav-link" data-scroll-target="#sec-plt-psw">plt_PSW()：四种诊断图</a></li>
+  <li><a href="#sec-psm" id="toc-sec-psm" class="nav-link" data-scroll-target="#sec-psm">get_PSM()：几种匹配并排比较</a>
+  <ul class="collapse">
+  <li><a href="#sec-psm-methods" id="toc-sec-psm-methods" class="nav-link" data-scroll-target="#sec-psm-methods">每种算法接受什么</a></li>
+  <li><a href="#sec-psm-args" id="toc-sec-psm-args" class="nav-link" data-scroll-target="#sec-psm-args">参数</a></li>
+  </ul></li>
+  <li><a href="#sec-plt-psm" id="toc-sec-plt-psm" class="nav-link" data-scroll-target="#sec-plt-psm">plt_PSM()：同样的四种图</a></li>
+  <li><a href="#sec-ps-effect" id="toc-sec-ps-effect" class="nav-link" data-scroll-target="#sec-ps-effect">选定方案之后：估计效应</a></li>
+  <li><a href="#sec-bal" id="toc-sec-bal" class="nav-link" data-scroll-target="#sec-bal">get_bal()：所有方案放在一张 love plot 上</a>
+  <ul class="collapse">
+  <li><a href="#sec-bal-custom" id="toc-sec-bal-custom" class="nav-link" data-scroll-target="#sec-bal-custom">自定义方案</a></li>
+  <li><a href="#sec-bal-smd" id="toc-sec-bal-smd" class="nav-link" data-scroll-target="#sec-bal-smd">SMD 的口径</a></li>
+  <li><a href="#sec-bal-tbl" id="toc-sec-bal-tbl" class="nav-link" data-scroll-target="#sec-bal-tbl">基线表</a></li>
+  <li><a href="#sec-bal-args" id="toc-sec-bal-args" class="nav-link" data-scroll-target="#sec-bal-args">参数</a></li>
+  </ul></li>
+  <li><a href="#sec-ps-refs" id="toc-sec-ps-refs" class="nav-link" data-scroll-target="#sec-ps-refs">参考文献</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/causalR/03-ps.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content page-columns page-full" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../notes/causalR/01-hte.html">causalR 包函数手册</a></li><li class="breadcrumb-item"><a href="../../notes/causalR/03-ps.html"><span class="chapter-title">3. 倾向评分匹配、加权与平衡（get_PSM / get_PSW / get_bal）</span></a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-title">3. 倾向评分匹配、加权与平衡：get_PSM() / get_PSW() / get_bal()</span></h1>
+<p class="subtitle lead">causalR 包函数手册</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>这三个函数处理的是同一件事的三个侧面：<strong>用一个倾向得分构造可比的两组，并检查它们是否真的可比。</strong> 它们只做”设计”——构造权重、匹配队列、诊断平衡——<strong>不估计治疗效应</strong>； 效应留给你挑定方案之后的结局模型。</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>函数</th>
+<th>做什么</th>
+<th>返回</th>
+<th>配套绘图</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>get_PSW()</code></td>
+<td>一个倾向得分 → 最多六种倾斜函数权重（IPTW、SMR、重叠、匹配、熵权重），并排比较有效样本量、权重分布与平衡</td>
+<td><code>psw_res</code></td>
+<td><code>plt_PSW()</code></td>
+</tr>
+<tr class="even">
+<td><code>get_PSM()</code></td>
+<td>一个倾向得分 → MatchIt 的任意几种匹配算法，并排比较保留样本、匹配权重与平衡</td>
+<td><code>psm_res</code></td>
+<td><code>plt_PSM()</code></td>
+</tr>
+<tr class="odd">
+<td><code>get_bal()</code></td>
+<td>匹配与加权方案混在一起，画在<strong>同一张</strong> love plot 上；可选生成每个方案的基线表</td>
+<td>列表（图、平衡表、权重、表）</td>
+<td>自带</td>
+</tr>
+</tbody>
+</table>
+<p><code>get_PSW()</code> 与 <code>get_PSM()</code> 是一对：共用倾向得分模型、<code>w_</code> 权重列命名和诊断表结构。 有一个参数名要特别注意：</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th></th>
+<th><code>get_PSW()</code></th>
+<th><code>get_PSM()</code></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>选<strong>倾向得分模型</strong></td>
+<td><code>method</code>（<code>"glm"</code>、<code>"gbm"</code>、<code>"cbps"</code>、<code>"bart"</code>、<code>"super"</code>）</td>
+<td><code>ps_method</code></td>
+</tr>
+<tr class="even">
+<td>选<strong>方案</strong></td>
+<td><code>estimand</code>（六种权重）</td>
+<td><code>method</code>（匹配算法），<code>estimand</code> 只取一个</td>
+</tr>
+</tbody>
+</table>
+<section id="sec-ps-env" class="level2">
+<h2 class="anchored" data-anchor-id="sec-ps-env">安装与核对环境</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>remotes<span class="sc">::</span><span class="fu">install_github</span>(<span class="st">"HUI950319/causalR"</span>)   <span class="co"># Imports 已含 MatchIt、WeightIt、cobalt</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">install.packages</span>(<span class="fu">c</span>(<span class="st">"halfmoon"</span>, <span class="st">"optmatch"</span>, <span class="st">"gtsummary"</span>, <span class="st">"survey"</span>))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>halfmoon</code> 给 <code>get_PSW()</code> / <code>get_PSM()</code> 算平衡表（<code>balance = TRUE</code>，默认）； <code>optmatch</code> 是 <code>"optimal"</code> 与 <code>"full"</code> 匹配的后端；<code>gtsummary</code> + <code>survey</code> 只有 <code>get_bal(tbl = TRUE)</code> 要用。本页核对于 <strong>2026 年 9 月 28 日</strong>，代码块由本站渲染时真实执行：</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>项目</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>causalR</td>
+<td>0.0.0.9000（GitHub <code>main</code>）</td>
+</tr>
+<tr class="even">
+<td>MatchIt / WeightIt</td>
+<td>4.7.2 / 1.4.0</td>
+</tr>
+<tr class="odd">
+<td>cobalt / halfmoon</td>
+<td>4.6.0 / 0.2.0</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="sec-ps-data" class="level2">
+<h2 class="anchored" data-anchor-id="sec-ps-data">示例数据</h2>
+<p>一个有混杂的观察性队列：年龄、性别、分期、BMI、吸烟都影响是否接受治疗， 其中年龄、分期、吸烟同时影响结局。治疗效应恒为 <strong>1</strong>，所以 ATE、ATT、ATO 等估计量的真值都是 1。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">20260928</span>)</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">1000</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>d <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">age    =</span> <span class="fu">round</span>(<span class="fu">rnorm</span>(n, <span class="dv">62</span>, <span class="dv">10</span>)),</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">sex    =</span> <span class="fu">factor</span>(<span class="fu">sample</span>(<span class="fu">c</span>(<span class="st">"Female"</span>, <span class="st">"Male"</span>), n, <span class="at">replace =</span> <span class="cn">TRUE</span>)),</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">stage  =</span> <span class="fu">factor</span>(<span class="fu">sample</span>(<span class="fu">c</span>(<span class="st">"I"</span>, <span class="st">"II"</span>, <span class="st">"III"</span>), n, <span class="at">replace =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>                         <span class="at">prob =</span> <span class="fu">c</span>(<span class="fl">0.40</span>, <span class="fl">0.35</span>, <span class="fl">0.25</span>))),</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">bmi    =</span> <span class="fu">round</span>(<span class="fu">rnorm</span>(n, <span class="dv">25</span>, <span class="dv">4</span>), <span class="dv">1</span>),</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">smoker =</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fl">0.3</span>)</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>lp <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fl">1.4</span> <span class="sc">+</span> <span class="fl">0.06</span> <span class="sc">*</span> (d<span class="sc">$</span>age <span class="sc">-</span> <span class="dv">62</span>) <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> (d<span class="sc">$</span>sex <span class="sc">==</span> <span class="st">"Male"</span>) <span class="sc">+</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  <span class="fl">0.7</span> <span class="sc">*</span> (d<span class="sc">$</span>stage <span class="sc">==</span> <span class="st">"II"</span>) <span class="sc">+</span> <span class="fl">1.4</span> <span class="sc">*</span> (d<span class="sc">$</span>stage <span class="sc">==</span> <span class="st">"III"</span>) <span class="sc">-</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>  <span class="fl">0.05</span> <span class="sc">*</span> (d<span class="sc">$</span>bmi <span class="sc">-</span> <span class="dv">25</span>) <span class="sc">+</span> <span class="fl">0.6</span> <span class="sc">*</span> d<span class="sc">$</span>smoker</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>d<span class="sc">$</span>z <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fu">plogis</span>(lp))</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>d<span class="sc">$</span>y <span class="ot">&lt;-</span> <span class="fu">round</span>(<span class="dv">10</span> <span class="sc">+</span> <span class="fl">0.2</span> <span class="sc">*</span> (d<span class="sc">$</span>age <span class="sc">-</span> <span class="dv">62</span>) <span class="sc">+</span> <span class="fl">1.5</span> <span class="sc">*</span> (d<span class="sc">$</span>stage <span class="sc">==</span> <span class="st">"III"</span>) <span class="sc">+</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>               <span class="fl">0.8</span> <span class="sc">*</span> d<span class="sc">$</span>smoker <span class="sc">+</span> <span class="dv">1</span> <span class="sc">*</span> d<span class="sc">$</span>z <span class="sc">+</span> <span class="fu">rnorm</span>(n, <span class="at">sd =</span> <span class="dv">2</span>), <span class="dv">2</span>)</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>adj <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"age"</span>, <span class="st">"sex"</span>, <span class="st">"stage"</span>, <span class="st">"bmi"</span>, <span class="st">"smoker"</span>)</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">treated =</span> <span class="fu">mean</span>(d<span class="sc">$</span>z), <span class="at">naive_diff =</span> <span class="fu">unname</span>(<span class="fu">diff</span>(<span class="fu">tapply</span>(d<span class="sc">$</span>y, d<span class="sc">$</span>z, mean))))</span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;    treated naive_diff </span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   0.414000   1.935951</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>不调整的组间差约为真值的两倍——治疗组更老、分期更晚、吸烟更多。</p>
+</section>
+<section id="sec-psw" class="level2">
+<h2 class="anchored" data-anchor-id="sec-psw">get_PSW()：六种权重一次看完</h2>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>pw <span class="ot">&lt;-</span> <span class="fu">get_PSW</span>(d, <span class="at">treat =</span> <span class="st">"z"</span>, <span class="at">adj_var =</span> adj)</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>pw</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; &lt;psw_res&gt; n = 1000 (0 trimmed), treat = z (treated = 1), score from method = "glm"</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   score range c(0.0746, 0.856)</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 6 × 15</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   estimand     n n_treat n_ctrl   ess ess_treat ess_ctrl ess_pct  w_min w_max</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;    &lt;int&gt;   &lt;int&gt;  &lt;int&gt; &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;   &lt;dbl&gt;  &lt;dbl&gt; &lt;dbl&gt;</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 ATE       1000     414    586  840.      347.     531.   0.840 1.08   7.83 </span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 ATT       1000     414    586  777.      414      365.   0.777 0.0806 3.41 </span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 3 ATC       1000     414    586  730.      265.     586    0.730 0.169  6.83 </span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 4 ATO       1000     414    586  863.      378.     503.   0.863 0.0746 0.872</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 5 ATM       1000     414    586  847.      383.     474.   0.847 0.0806 1    </span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 6 EW        1000     414    586  861.      372.     511.   0.861 0.287  2.99 </span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # ℹ 5 more variables: w_mean &lt;dbl&gt;, w_sd &lt;dbl&gt;, w_cv &lt;dbl&gt;, smd_max &lt;dbl&gt;,</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; #   smd_over &lt;dbl&gt;</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # ESS is (sum w)^2 / sum w^2. smd_max / smd_over are NA unless balance = TRUE.</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # plt_PSW: type = "love"</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>倾向得分只拟合一次，六种权重共用它。<code>$stats</code> 每种权重一行，15 列固定：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>pw<span class="sc">$</span>stats[, <span class="fu">c</span>(<span class="st">"estimand"</span>, <span class="st">"ess"</span>, <span class="st">"ess_pct"</span>, <span class="st">"w_min"</span>, <span class="st">"w_max"</span>, <span class="st">"w_cv"</span>,</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>             <span class="st">"smd_max"</span>, <span class="st">"smd_over"</span>)]</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 6 × 8</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   estimand   ess ess_pct  w_min w_max  w_cv  smd_max smd_over</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;    &lt;dbl&gt;   &lt;dbl&gt;  &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 ATE       840.   0.840 1.08   7.83  0.437 1.74e- 2        0</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 ATT       777.   0.777 0.0806 3.41  0.536 3.32e- 2        0</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 3 ATC       730.   0.730 0.169  6.83  0.608 3.32e- 2        0</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 4 ATO       863.   0.863 0.0746 0.872 0.399 8.31e-14        0</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 5 ATM       847.   0.847 0.0806 1     0.425 1.07e- 2        0</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 6 EW        861.   0.861 0.287  2.99  0.401 3.69e- 3        0</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>有效样本量 <span class="math inline">\(\text{ESS} = (\sum w)^2 / \sum w^2\)</span>：本例 ATO 保留的信息最多， ATC 最少；<code>ess_pct</code> 是它占样本量的比例。 <code>smd_max</code> 是各协变量绝对 SMD 的最大值， <code>smd_over</code> 数超过 0.1 的个数。ATO 一行的 <code>smd_max</code> 小到 <span class="math inline">\(10^{-13}\)</span> 量级： 倾向得分是对同一组协变量的 logistic 回归时，<strong>重叠权重让两臂协变量均值精确相等</strong>， 这是它的代数性质，不是巧合。</p>
+<section id="sec-psw-schemes" class="level3">
+<h3 class="anchored" data-anchor-id="sec-psw-schemes">六种权重</h3>
+<p>记 <span class="math inline">\(e = P(Z = 1 \mid X)\)</span>，倾斜函数 <span class="math inline">\(h(e)\)</span> 决定目标人群，权重为 <span class="math inline">\(h(e)/e\)</span>（处理组）与 <span class="math inline">\(h(e)/(1-e)\)</span>（对照组）（Li, Morgan &amp; Zaslavsky, 2018）：</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th><code>estimand</code></th>
+<th><span class="math inline">\(h(e)\)</span></th>
+<th>处理组 / 对照组权重</th>
+<th>常见名称</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>"ATE"</code></td>
+<td><span class="math inline">\(1\)</span></td>
+<td><span class="math inline">\(1/e\)</span> / <span class="math inline">\(1/(1-e)\)</span></td>
+<td>IPTW</td>
+</tr>
+<tr class="even">
+<td><code>"ATT"</code></td>
+<td><span class="math inline">\(e\)</span></td>
+<td><span class="math inline">\(1\)</span> / <span class="math inline">\(e/(1-e)\)</span></td>
+<td>SMR 加权</td>
+</tr>
+<tr class="odd">
+<td><code>"ATC"</code></td>
+<td><span class="math inline">\(1-e\)</span></td>
+<td><span class="math inline">\((1-e)/e\)</span> / <span class="math inline">\(1\)</span></td>
+<td>也写作 ATU</td>
+</tr>
+<tr class="even">
+<td><code>"ATO"</code></td>
+<td><span class="math inline">\(e(1-e)\)</span></td>
+<td><span class="math inline">\(1-e\)</span> / <span class="math inline">\(e\)</span></td>
+<td>重叠权重（OW）</td>
+</tr>
+<tr class="odd">
+<td><code>"ATM"</code></td>
+<td><span class="math inline">\(\min(e, 1-e)\)</span></td>
+<td>—</td>
+<td>匹配权重</td>
+</tr>
+<tr class="even">
+<td><code>"EW"</code></td>
+<td><span class="math inline">\(-\{e\ln e + (1-e)\ln(1-e)\}\)</span></td>
+<td>—</td>
+<td>熵权重（ATEN）</td>
+</tr>
+</tbody>
+</table>
+<p>默认 <code>method = "glm"</code> 时，这里的权重与 <code>WeightIt::weightit()</code> 自己的权重逐位一致 （<code>"EW"</code> 在 WeightIt 里没有对应）。<code>"cbps"</code> 和 <code>"gbm"</code> 会针对某个估计量去拟合得分， 而 <code>get_PSW()</code> 统一用 <code>estimand = "ATE"</code> 拟合一次再共享，所以与 <code>weightit(method = "cbps", estimand = "ATO")</code> <strong>有意不同</strong>；<code>"gbm"</code> 还是随机的，先 <code>set.seed()</code>。</p>
+</section>
+<section id="sec-psw-trim" class="level3">
+<h3 class="anchored" data-anchor-id="sec-psw-trim">修剪、截断与稳定化</h3>
+<p>处理顺序固定为：拟合（或读 <code>ps</code>）→ <strong>修剪</strong> → 可选在保留样本上重拟合 → <strong>截断</strong> → 构造权重 → 稳定化。</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Crump 等 (2009) 的最优对称修剪：被修剪的行保留，但得分与权重记 NA</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>pw_cr <span class="ot">&lt;-</span> <span class="fu">get_PSW</span>(d, <span class="at">treat =</span> <span class="st">"z"</span>, <span class="at">adj_var =</span> adj, <span class="at">estimand =</span> <span class="fu">c</span>(<span class="st">"ATE"</span>, <span class="st">"ATO"</span>),</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>                 <span class="at">trim_args =</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"cr"</span>), <span class="at">verbose =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ Trimmed 12 units outside [0.122, 0.878].</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>pw_cr<span class="sc">$</span>stats[, <span class="fu">c</span>(<span class="st">"estimand"</span>, <span class="st">"n"</span>, <span class="st">"n_treat"</span>, <span class="st">"n_ctrl"</span>, <span class="st">"ess"</span>, <span class="st">"w_max"</span>)]</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 2 × 6</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   estimand     n n_treat n_ctrl   ess w_max</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;    &lt;int&gt;   &lt;int&gt;  &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 ATE        988     414    574  839. 7.50 </span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 ATO        988     414    574  863. 0.867</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="co"># 按分位数截断得分，再做稳定化 IPTW</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>pw_st <span class="ot">&lt;-</span> <span class="fu">get_PSW</span>(d, <span class="at">treat =</span> <span class="st">"z"</span>, <span class="at">adj_var =</span> adj, <span class="at">estimand =</span> <span class="st">"ATE"</span>,</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>                 <span class="at">stabilize =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>                 <span class="at">trunc_args =</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"pctl"</span>, <span class="at">lower =</span> <span class="fl">0.01</span>, <span class="at">upper =</span> <span class="fl">0.99</span>))</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>pw_st<span class="sc">$</span>stats[, <span class="fu">c</span>(<span class="st">"estimand"</span>, <span class="st">"ess"</span>, <span class="st">"w_min"</span>, <span class="st">"w_max"</span>, <span class="st">"w_mean"</span>)]</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 1 × 5</span></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   estimand   ess w_min w_max w_mean</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;    &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt;</span></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 ATE       877. 0.529  3.24  0.999</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<ul>
+<li><strong>修剪</strong>（<code>trim_args</code>）把单位移出分析人群：<code>"ps"</code> 按得分绝对界（默认 0.1 / 0.9）、 <code>"pctl"</code> 按分位数（默认 1% / 99%）、<code>"cr"</code> 用数据算 Crump 最优界（不接受 <code>lower</code> / <code>upper</code>）。 <code>refit = TRUE</code>（默认）在保留样本上重拟合得分；重拟合后的得分不再修剪，所以保留单位的得分 可能落在窗口外，<code>.trimmed</code> 列记录的是第一轮。</li>
+<li><strong>截断</strong>（<code>trunc_args</code>）不删人，只把极端得分拉回界内。</li>
+<li><strong>稳定化</strong>（<code>stabilize = TRUE</code>）乘以观察到的处理的边际概率，只对 ATE 有定义； 所选估计量里没有 ATE 时设 <code>TRUE</code> 会报错，而不是静默忽略。</li>
+</ul>
+</section>
+<section id="sec-psw-args" class="level3">
+<h3 class="anchored" data-anchor-id="sec-psw-args">参数</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>参数</th>
+<th>默认</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>data</code>、<code>treat</code></td>
+<td>—</td>
+<td>数据与二分类处理列（0/1、逻辑，或第二个水平为治疗组的两水平因子 / 字符）</td>
+</tr>
+<tr class="even">
+<td><code>adj_var</code></td>
+<td><code>NULL</code></td>
+<td>倾向得分模型的协变量；不给 <code>ps</code> 时必填，<code>balance = TRUE</code> 时也必填</td>
+</tr>
+<tr class="odd">
+<td><code>ps</code></td>
+<td><code>NULL</code></td>
+<td>已算好的得分列，严格在 (0, 1) 内；给了就跳过建模</td>
+</tr>
+<tr class="even">
+<td><code>estimand</code></td>
+<td>六种全选</td>
+<td>每种一列权重、一行 <code>$stats</code></td>
+</tr>
+<tr class="odd">
+<td><code>method</code></td>
+<td><code>"glm"</code></td>
+<td>倾向得分模型，经 <code>WeightIt::weightit()</code> 拟合、只取得分；<code>"super"</code> 要在 <code>ps_args</code> 里写 <code>SL.library</code></td>
+</tr>
+<tr class="even">
+<td><code>stabilize</code></td>
+<td><code>FALSE</code></td>
+<td>稳定化，仅 ATE</td>
+</tr>
+<tr class="odd">
+<td><code>trim_args</code></td>
+<td><code>list(method = "none", lower = NULL, upper = NULL, refit = TRUE)</code></td>
+<td>修剪</td>
+</tr>
+<tr class="even">
+<td><code>trunc_args</code></td>
+<td><code>list(method = "none", lower = 0.01, upper = 0.99)</code></td>
+<td>截断</td>
+</tr>
+<tr class="odd">
+<td><code>balance</code></td>
+<td><code>TRUE</code></td>
+<td>用 <code>halfmoon::check_balance()</code> 算每种权重下的 SMD</td>
+</tr>
+<tr class="even">
+<td><code>ps_args</code></td>
+<td><code>list()</code></td>
+<td>传给 <code>WeightIt::weightit()</code>，如 <code>list(link = "probit")</code></td>
+</tr>
+<tr class="odd">
+<td><code>verbose</code></td>
+<td><code>FALSE</code></td>
+<td>报告修剪掉多少、删了多少不完整行</td>
+</tr>
+</tbody>
+</table>
+<p>返回的 <code>$data</code> 是原数据加 <code>ps</code>、<code>.trimmed</code> 和 <code>w_ate</code> … <code>w_ew</code> 六列权重； <code>$balance</code> 是 halfmoon 的长表；<code>$fit</code> 是 <code>weightit</code> 对象（给了 <code>ps</code> 时为 <code>NULL</code>）。</p>
+</section>
+</section>
+<section id="sec-plt-psw" class="level2">
+<h2 class="anchored" data-anchor-id="sec-plt-psw">plt_PSW()：四种诊断图</h2>
+<p><code>type</code> 取 <code>"love"</code>（默认，有平衡表时）、<code>"ess"</code>、<code>"weight"</code>、<code>"ps"</code>， <code>estimand</code> 可只画其中几种：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_PSW</span>(pw, <span class="st">"love"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="03-ps_files/figure-html/plt-psw-love-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_PSW</span>(pw, <span class="st">"ess"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="03-ps_files/figure-html/plt-psw-ess-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_PSW</span>(pw, <span class="st">"weight"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="03-ps_files/figure-html/plt-psw-weight-1.png" class="img-fluid figure-img" width="768"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_PSW</span>(pw, <span class="st">"ps"</span>, <span class="at">estimand =</span> <span class="fu">c</span>(<span class="st">"ATE"</span>, <span class="st">"ATT"</span>, <span class="st">"ATO"</span>, <span class="st">"ATM"</span>))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="03-ps_files/figure-html/plt-psw-ps-1.png" class="img-fluid figure-img" width="768"></p>
+</figure>
+</div>
+</div>
+</div>
+<p><code>"ps"</code> 图把两臂的得分直方图上下镜像，淡色是加权前、实色是加权后； ATO、ATM 把得分两端的人压下去，ATE 反而把它们放大。 分期在 love plot 里按<strong>水平</strong>逐行显示（<code>stageI</code>、<code>stageII</code>、<code>stageIII</code>），这是 halfmoon 的口径。</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>参数</th>
+<th>默认</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>x</code></td>
+<td>—</td>
+<td><code>get_PSW()</code> 的结果</td>
+</tr>
+<tr class="even">
+<td><code>type</code></td>
+<td><code>"love"</code></td>
+<td><code>"love"</code> / <code>"ess"</code> / <code>"weight"</code> / <code>"ps"</code></td>
+</tr>
+<tr class="odd">
+<td><code>estimand</code></td>
+<td><code>NULL</code></td>
+<td>只画其中几种；<code>"love"</code> 总是保留未加权作参照</td>
+</tr>
+<tr class="even">
+<td><code>threshold</code></td>
+<td><code>0.1</code></td>
+<td>love plot 的参考线</td>
+</tr>
+<tr class="odd">
+<td><code>bins</code></td>
+<td><code>40L</code></td>
+<td><code>"ps"</code> 直方图的分箱数</td>
+</tr>
+<tr class="even">
+<td><code>title</code>、<code>save</code></td>
+<td><code>NULL</code>、<code>list()</code></td>
+<td>标题；PDF 输出（缺省宽高取 <code>attr(p, "plot_size")</code>）</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="sec-psm" class="level2">
+<h2 class="anchored" data-anchor-id="sec-psm">get_PSM()：几种匹配并排比较</h2>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>pm <span class="ot">&lt;-</span> <span class="fu">get_PSM</span>(d, <span class="at">treat =</span> <span class="st">"z"</span>, <span class="at">adj_var =</span> adj,</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>              <span class="at">method =</span> <span class="fu">c</span>(<span class="st">"nearest"</span>, <span class="st">"full"</span>), <span class="at">caliper =</span> <span class="fl">0.2</span>)</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>pm</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; &lt;psm_res&gt; n = 1000, treat = z (treated = 1), estimand = ATT, score from ps_method = "glm"</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   range c(0.0746, 0.856), ratio = 1, caliper = 0.2 SD of the score</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 2 × 17</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   method  estimand     n n_treat n_ctrl n_unmatched n_discarded pct_retained</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;   &lt;chr&gt;    &lt;int&gt;   &lt;int&gt;  &lt;int&gt;       &lt;int&gt;       &lt;int&gt;        &lt;dbl&gt;</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 nearest ATT        714     357    357         286           0         71.4</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 full    ATT        994     410    584           6           0         99.4</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # ℹ 9 more variables: n_pairs &lt;int&gt;, ess &lt;dbl&gt;, ess_treat &lt;dbl&gt;,</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; #   ess_ctrl &lt;dbl&gt;, ess_pct &lt;dbl&gt;, w_max &lt;dbl&gt;, w_cv &lt;dbl&gt;, smd_max &lt;dbl&gt;,</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; #   smd_over &lt;dbl&gt;</span></span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # Weights are unnormalised, so an ATT control column sums to the number of treated units.</span></span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # n_unmatched (no partner) and n_discarded (outside common support) are different things.</span></span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # plt_PSM: type = "love"</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>pm<span class="sc">$</span>stats[, <span class="fu">c</span>(<span class="st">"method"</span>, <span class="st">"n"</span>, <span class="st">"n_treat"</span>, <span class="st">"n_ctrl"</span>, <span class="st">"n_unmatched"</span>,</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>             <span class="st">"n_discarded"</span>, <span class="st">"pct_retained"</span>, <span class="st">"n_pairs"</span>, <span class="st">"ess"</span>, <span class="st">"smd_max"</span>)]</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 2 × 10</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   method     n n_treat n_ctrl n_unmatched n_discarded pct_retained n_pairs   ess</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;  &lt;int&gt;   &lt;int&gt;  &lt;int&gt;       &lt;int&gt;       &lt;int&gt;        &lt;dbl&gt;   &lt;int&gt; &lt;dbl&gt;</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 neare…   714     357    357         286           0         71.4     357  714 </span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 full     994     410    584           6           0         99.4     312  552.</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # ℹ 1 more variable: smd_max &lt;dbl&gt;</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<ul>
+<li><code>n_unmatched</code>（没找到配对）与 <code>n_discarded</code>（在共同支撑之外被丢弃）是两回事，分开报告。</li>
+<li>1:1 最近邻加卡钳丢掉了约三成样本；全匹配几乎人人保留，<strong>但有效样本量反而更小</strong>—— 它靠大小不一的匹配集保留所有人，对照组权重高度不均。这就是为什么要同时看 <code>ess</code>， 而不只看”匹配上了多少人”。</li>
+<li><code>caliper</code> 的单位是<strong>倾向得分（概率尺度）的标准差</strong>。Austin 常用的 0.2 SD 是 logit 尺度上的， 这里无法完全复现。</li>
+</ul>
+<p><code>$data</code> 保留全部输入行，每个方案各加两列：权重 <code>w_&lt;method&gt;</code>（未匹配为 0） 和匹配集编号 <code>s_&lt;method&gt;</code>（未匹配为 <code>NA</code>；有放回匹配时整列为 <code>NA</code>）：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(pm<span class="sc">$</span>data[, <span class="fu">c</span>(<span class="st">"z"</span>, <span class="st">"ps"</span>, <span class="st">"w_nearest"</span>, <span class="st">"s_nearest"</span>, <span class="st">"w_full"</span>, <span class="st">"s_full"</span>)])</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   z         ps w_nearest s_nearest     w_full s_full</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 1 0.36246524         1         1 1.00000000      1</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 0 0.09566826         0        NA 0.04166667     41</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 3 1 0.41904954         1         2 1.00000000     91</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 4 0 0.39447192         1       196 0.33333333    152</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 5 0 0.42260102         1       148 1.00000000    207</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 6 1 0.40841134         1         3 1.00000000    178</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<section id="sec-psm-methods" class="level3">
+<h3 class="anchored" data-anchor-id="sec-psm-methods">每种算法接受什么</h3>
+<p>以下按 MatchIt 4.7.2 实测，而非推断：</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th><code>method</code></th>
+<th>允许的 <code>estimand</code></th>
+<th>用到的参数</th>
+<th>依赖</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>"nearest"</code>（默认）</td>
+<td>ATT、ATC</td>
+<td><code>ratio</code>、<code>caliper</code>、<code>replace</code></td>
+<td>—</td>
+</tr>
+<tr class="even">
+<td><code>"optimal"</code></td>
+<td>ATT、ATC</td>
+<td><code>ratio</code></td>
+<td>optmatch</td>
+</tr>
+<tr class="odd">
+<td><code>"full"</code></td>
+<td>ATT、ATC、ATE</td>
+<td><code>caliper</code></td>
+<td>optmatch</td>
+</tr>
+<tr class="even">
+<td><code>"genetic"</code></td>
+<td>ATT、ATC</td>
+<td><code>ratio</code>、<code>caliper</code>、<code>replace</code></td>
+<td>Matching + rgenoud，慢</td>
+</tr>
+<tr class="odd">
+<td><code>"cem"</code></td>
+<td>ATT、ATC、ATE</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr class="even">
+<td><code>"exact"</code></td>
+<td>ATT、ATC、ATE</td>
+<td>—</td>
+<td>—（连续协变量会失败）</td>
+</tr>
+<tr class="odd">
+<td><code>"subclass"</code></td>
+<td>ATT、ATC、ATE</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>每种算法只拿到它用得上的参数（MatchIt 对每个被忽略的参数都会警告），实际收到的参数记在 <code>attr(x, "analysis")$specs</code>。<code>"cem"</code> 与 <code>"exact"</code> 不用倾向得分，直接在协变量上粗化或精确匹配。 任何一个方法失败，整个调用就停下并报出方法名，不返回部分结果。</p>
+<p><code>get_PSM()</code> 固定 <code>normalize = FALSE</code>：ATT 的对照组权重之和等于处理组人数， 与教科书里的权重一致；有效样本量与这个设置无关。</p>
+</section>
+<section id="sec-psm-args" class="level3">
+<h3 class="anchored" data-anchor-id="sec-psm-args">参数</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>参数</th>
+<th>默认</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>data</code>、<code>treat</code></td>
+<td>—</td>
+<td>同 <code>get_PSW()</code></td>
+</tr>
+<tr class="even">
+<td><code>adj_var</code></td>
+<td><code>NULL</code></td>
+<td>匹配与报告平衡用的协变量</td>
+</tr>
+<tr class="odd">
+<td><code>ps</code></td>
+<td><code>NULL</code></td>
+<td>已算好的得分列</td>
+</tr>
+<tr class="even">
+<td><code>method</code></td>
+<td><code>"nearest"</code></td>
+<td>可多选的匹配算法，每种一行 <code>$stats</code>、两列 <code>w_</code> / <code>s_</code></td>
+</tr>
+<tr class="odd">
+<td><code>estimand</code></td>
+<td><code>"ATT"</code></td>
+<td>只取一个，对每种算法校验</td>
+</tr>
+<tr class="even">
+<td><code>ratio</code></td>
+<td><code>1</code></td>
+<td>每个处理单位配几个对照</td>
+</tr>
+<tr class="odd">
+<td><code>caliper</code></td>
+<td><code>NULL</code></td>
+<td>卡钳，单位为得分的标准差（概率尺度），常用 0.1–0.2</td>
+</tr>
+<tr class="even">
+<td><code>replace</code></td>
+<td><code>FALSE</code></td>
+<td>有放回匹配；对照权重变为被使用的次数</td>
+</tr>
+<tr class="odd">
+<td><code>ps_method</code></td>
+<td><code>"glm"</code></td>
+<td>倾向得分模型，同 <code>get_PSW()</code> 的 <code>method</code></td>
+</tr>
+<tr class="even">
+<td><code>match_args</code></td>
+<td><code>list()</code></td>
+<td>其它 <code>MatchIt::matchit()</code> 参数，如 <code>exact</code>、<code>mahvars</code>、<code>m.order</code>、<code>discard</code></td>
+</tr>
+<tr class="odd">
+<td><code>balance</code>、<code>ps_args</code>、<code>verbose</code></td>
+<td><code>TRUE</code>、<code>list()</code>、<code>FALSE</code></td>
+<td>同 <code>get_PSW()</code></td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="sec-plt-psm" class="level2">
+<h2 class="anchored" data-anchor-id="sec-plt-psm">plt_PSM()：同样的四种图</h2>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_PSM</span>(pm, <span class="st">"love"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="03-ps_files/figure-html/plt-psm-love-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_PSM</span>(pm, <span class="st">"ess"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="03-ps_files/figure-html/plt-psm-ess-1.png" class="img-fluid figure-img" width="720"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_PSM</span>(pm, <span class="st">"ps"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="03-ps_files/figure-html/plt-psm-ps-1.png" class="img-fluid figure-img" width="768"></p>
+</figure>
+</div>
+</div>
+</div>
+<p><code>"ps"</code> 图的淡色是全队列、实色是匹配后样本；<code>"weight"</code> 图只画匹配上的单位。 参数与 <code>plt_PSW()</code> 相同，只是按 <code>method</code> 而不是 <code>estimand</code> 选方案。</p>
+</section>
+<section id="sec-ps-effect" class="level2">
+<h2 class="anchored" data-anchor-id="sec-ps-effect">选定方案之后：估计效应</h2>
+<p>两个函数都不估计效应。挑定方案后，把对应的权重列交给结局模型。以重叠权重为例：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>fit_w <span class="ot">&lt;-</span> <span class="fu">lm</span>(y <span class="sc">~</span> z, <span class="at">data =</span> pw<span class="sc">$</span>data, <span class="at">weights =</span> w_ato)</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">estimate =</span> <span class="fu">unname</span>(<span class="fu">coef</span>(fit_w)[<span class="st">"z"</span>]),</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">robust_se =</span> <span class="fu">unname</span>(<span class="fu">sqrt</span>(<span class="fu">diag</span>(sandwich<span class="sc">::</span><span class="fu">vcovHC</span>(fit_w, <span class="at">type =</span> <span class="st">"HC0"</span>)))[<span class="st">"z"</span>]))</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  estimate robust_se </span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 0.7857157 0.1899417</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>无放回匹配要按匹配集聚类计算标准误。<code>s_nearest</code> 在未匹配的行上是 <code>NA</code>， <strong>先取匹配上的行</strong>，否则 <code>sandwich::vcovCL()</code> 会因聚类变量含 <code>NA</code> 报错：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>m <span class="ot">&lt;-</span> <span class="fu">subset</span>(pm<span class="sc">$</span>data, w_nearest <span class="sc">&gt;</span> <span class="dv">0</span>)</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>fit_m <span class="ot">&lt;-</span> <span class="fu">lm</span>(y <span class="sc">~</span> z, <span class="at">data =</span> m, <span class="at">weights =</span> w_nearest)</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">estimate =</span> <span class="fu">unname</span>(<span class="fu">coef</span>(fit_m)[<span class="st">"z"</span>]),</span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">cluster_se =</span> <span class="fu">unname</span>(<span class="fu">sqrt</span>(<span class="fu">diag</span>(sandwich<span class="sc">::</span><span class="fu">vcovCL</span>(fit_m, <span class="at">cluster =</span> m<span class="sc">$</span>s_nearest)))[<span class="st">"z"</span>]))</span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   estimate cluster_se </span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   0.890112   0.174271</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>两个估计都落在真值 1 的两个标准误以内。这里的稳健标准误没有计入倾向得分本身的估计误差。 有放回匹配要用 <code>MatchIt::get_matches()</code> 展开 <code>pm$fit</code> 里对应的对象， 同时考虑匹配集与重复使用的单位。生存结局同理，例如 <code>survival::coxph(Surv(time, event) ~ z, data = pw$data, weights = w_ato, robust = TRUE)</code>。</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">注记</span>权重列不要交给 <code>RegR::get_eff_cat()</code>
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><code>RegR::get_eff_cat()</code> 会在内部<strong>重新拟合</strong>自己的倾向得分模型， 所以这里做的修剪、截断和重拟合都不会传过去。</p>
+</div>
+</div>
+</section>
+<section id="sec-bal" class="level2 page-columns page-full">
+<h2 class="anchored" data-anchor-id="sec-bal">get_bal()：所有方案放在一张 love plot 上</h2>
+<p><code>get_PSW()</code> 与 <code>get_PSM()</code> 各自只比同一类方案。<code>get_bal()</code> 把匹配和加权混在一起拟合， 用<strong>同一个分母</strong>计算 SMD，画在一张图上。默认用全部 7 个简写：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>gb <span class="ot">&lt;-</span> <span class="fu">get_bal</span>(d, <span class="at">treat =</span> <span class="st">"z"</span>, <span class="at">adj_var =</span> adj)</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>gb<span class="sc">$</span>plt</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="03-ps_files/figure-html/bal-default-1.png" class="img-fluid figure-img" width="768"></p>
+</figure>
+</div>
+</div>
+</div>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>简写</th>
+<th>展开为</th>
+<th>图例标签</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>"PSM"</code></td>
+<td><code>get_PSM(method = "nearest", estimand = "ATT", ratio = 1, caliper = 0.2)</code></td>
+<td>PS matching (nearest, ATT)</td>
+</tr>
+<tr class="even">
+<td><code>"ATE"</code></td>
+<td><code>get_PSW(estimand = "ATE")</code>，logistic 得分</td>
+<td>IPTW (ATE)</td>
+</tr>
+<tr class="odd">
+<td><code>"ATT"</code> / <code>"ATC"</code></td>
+<td>同上</td>
+<td>SMR weighting (ATT) / (ATC)</td>
+</tr>
+<tr class="even">
+<td><code>"ATO"</code> / <code>"ATM"</code> / <code>"EW"</code></td>
+<td>同上</td>
+<td>Overlap / Matching / Entropy weighting</td>
+</tr>
+</tbody>
+</table>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(gb<span class="sc">$</span>balance, <span class="dv">10</span>)</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;    variable                     method         smd</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1       age                 Unadjusted  0.46145833</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2       sex                 Unadjusted  0.16729106</span></span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 3     stage                 Unadjusted  0.45317145</span></span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 4       bmi                 Unadjusted -0.09998033</span></span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 5    smoker                 Unadjusted  0.14173105</span></span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 6       age PS matching (nearest, ATT)  0.02673233</span></span>
+<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 7       sex PS matching (nearest, ATT)  0.01125369</span></span>
+<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 8     stage PS matching (nearest, ATT)  0.08838266</span></span>
+<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 9       bmi PS matching (nearest, ATT) -0.01950403</span></span>
+<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 10   smoker PS matching (nearest, ATT)  0.03047949</span></span>
+<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a><span class="fu">names</span>(gb<span class="sc">$</span>data)</span>
+<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  [1] "age"                        "sex"                       </span></span>
+<span id="cb19-15"><a href="#cb19-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  [3] "stage"                      "bmi"                       </span></span>
+<span id="cb19-16"><a href="#cb19-16" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  [5] "smoker"                     "z"                         </span></span>
+<span id="cb19-17"><a href="#cb19-17" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  [7] "y"                          "PS matching (nearest, ATT)"</span></span>
+<span id="cb19-18"><a href="#cb19-18" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  [9] "IPTW (ATE)"                 "SMR weighting (ATT)"       </span></span>
+<span id="cb19-19"><a href="#cb19-19" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [11] "SMR weighting (ATC)"        "Overlap weighting (ATO)"   </span></span>
+<span id="cb19-20"><a href="#cb19-20" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; [13] "Matching weighting (ATM)"   "Entropy weighting (EW)"</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>返回列表有 <code>plt</code>（love plot）、<code>balance</code>（<code>variable</code>、<code>method</code>、带符号的 <code>smd</code>）、 <code>data</code>（完整病例，每个方案一列权重，以方案标签命名；未匹配与被修剪的单位权重为 0）， 以及只在要求时生成的 <code>tbl</code>。</p>
+<section id="sec-bal-custom" class="level3">
+<h3 class="anchored" data-anchor-id="sec-bal-custom">自定义方案</h3>
+<p><code>methods</code> 也可以是一个命名列表：名字是图例标签，元素写明 <code>design = "matching"</code> 或 <code>"weighting"</code>，其余字段就是 <code>get_PSM()</code> / <code>get_PSW()</code> 的参数。未命名的元素按简写展开， 所以调过参的方案和默认方案可以写在一起：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>gb2 <span class="ot">&lt;-</span> <span class="fu">get_bal</span>(</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>  d, <span class="at">treat =</span> <span class="st">"z"</span>, <span class="at">adj_var =</span> adj,</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">methods =</span> <span class="fu">list</span>(</span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">PSM 1:2, caliper 0.1</span><span class="st">`</span>  <span class="ot">=</span> <span class="fu">list</span>(<span class="at">design =</span> <span class="st">"matching"</span>, <span class="at">ratio =</span> <span class="dv">2</span>, <span class="at">caliper =</span> <span class="fl">0.1</span>),</span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">Stabilized IPTW (ATE)</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">list</span>(<span class="at">design =</span> <span class="st">"weighting"</span>, <span class="at">estimand =</span> <span class="st">"ATE"</span>,</span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a>                                   <span class="at">stabilize =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">"ATO"</span></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a>  ),</span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">cat_smd   =</span> <span class="st">"level"</span>,</span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">var_names =</span> <span class="fu">c</span>(<span class="at">age =</span> <span class="st">"Age (years)"</span>, <span class="at">bmi =</span> <span class="st">"BMI"</span>, <span class="at">smoker =</span> <span class="st">"Current smoker"</span>),</span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">love_args =</span> <span class="fu">list</span>(<span class="at">threshold =</span> <span class="fl">0.05</span>, <span class="at">legend_position =</span> <span class="st">"bottom"</span>)</span>
+<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Warning: Not all treated units will get 2 matches.</span></span>
+<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a>gb2<span class="sc">$</span>plt</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="03-ps_files/figure-html/bal-custom-1.png" class="img-fluid figure-img" width="768"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>MatchIt 的警告是说对照组不够给每个处理单位配满 2 个，1:2 匹配在对照不足两倍时就会这样。 方案里的 <code>method</code> 沿用两个函数各自的含义：<code>"matching"</code> 下是匹配算法， <code>"weighting"</code> 下是倾向得分模型。<code>data</code>、<code>treat</code>、<code>adj_var</code>、<code>balance</code> 由 <code>get_bal()</code> 设定， 写进方案会报错；最多 14 个方案。稳定化只在每臂内乘一个常数， 所以稳定化 IPTW 的平衡与未稳定化的<strong>完全相同</strong>。</p>
+</section>
+<section id="sec-bal-smd" class="level3">
+<h3 class="anchored" data-anchor-id="sec-bal-smd">SMD 的口径</h3>
+<p>三处 SMD 数值会略有出入，都是约定不同，不是算错：</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>位置</th>
+<th>分母</th>
+<th>三水平以上的因子</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>get_bal()</code> 的图与 <code>$balance</code></td>
+<td>未加权合并 SD <span class="math inline">\(\sqrt{(s_1^2 + s_0^2)/2}\)</span>（cobalt，方差除以 <span class="math inline">\(n-1\)</span>）</td>
+<td><code>cat_smd = "overall"</code>（默认）：一行无符号的 Yang &amp; Dalton 多元 SMD；<code>"level"</code>：逐水平带符号</td>
+</tr>
+<tr class="even">
+<td><code>plt_PSW()</code> / <code>plt_PSM()</code></td>
+<td>同样是未加权合并 SD，但经 halfmoon / <code>smd::smd()</code>，方差除以 <span class="math inline">\(n\)</span>；<code>get_PSW()</code> 在修剪后的行上算</td>
+<td>逐水平</td>
+</tr>
+<tr class="odd">
+<td><code>get_bal()</code> 的 <code>$tbl</code></td>
+<td>gtsummary 的 <code>add_difference(test = ~ "smd")</code>，取绝对值</td>
+<td>等于 <code>"overall"</code></td>
+</tr>
+</tbody>
+</table>
+<p>多元 SMD 永远不小于单个水平的最大绝对 SMD，所以对它用同一个阈值更严格。</p>
+</section>
+<section id="sec-bal-tbl" class="level3 page-columns page-full">
+<h3 class="anchored" data-anchor-id="sec-bal-tbl">基线表</h3>
+<p><code>tbl = TRUE</code> 为未调整样本和每个方案各生成一段”均值 (SD) / n (%) + SMD + P”， 并排合并成一张 gtsummary 表。加权方案通过 survey 设计汇总，零权重行保留在设计里：</p>
+<div class="cell page-columns page-full">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>gb3 <span class="ot">&lt;-</span> <span class="fu">get_bal</span>(d, <span class="at">treat =</span> <span class="st">"z"</span>, <span class="at">adj_var =</span> adj, <span class="at">methods =</span> <span class="fu">c</span>(<span class="st">"PSM"</span>, <span class="st">"ATO"</span>),</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>               <span class="at">tbl =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>gb3<span class="sc">$</span>tbl</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display column-page">
+<div id="umiiftfyhl" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#umiiftfyhl table {
+  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#umiiftfyhl thead, #umiiftfyhl tbody, #umiiftfyhl tfoot, #umiiftfyhl tr, #umiiftfyhl td, #umiiftfyhl th {
+  border-style: none;
+}
+
+#umiiftfyhl p {
+  margin: 0;
+  padding: 0;
+}
+
+#umiiftfyhl .gt_table {
+  display: table;
+  border-collapse: collapse;
+  line-height: normal;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#umiiftfyhl .gt_caption {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+#umiiftfyhl .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#umiiftfyhl .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 3px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#umiiftfyhl .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#umiiftfyhl .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#umiiftfyhl .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#umiiftfyhl .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#umiiftfyhl .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#umiiftfyhl .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#umiiftfyhl .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#umiiftfyhl .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#umiiftfyhl .gt_spanner_row {
+  border-bottom-style: hidden;
+}
+
+#umiiftfyhl .gt_group_heading {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  text-align: left;
+}
+
+#umiiftfyhl .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#umiiftfyhl .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#umiiftfyhl .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#umiiftfyhl .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#umiiftfyhl .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#umiiftfyhl .gt_stub_row_group {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+  vertical-align: top;
+}
+
+#umiiftfyhl .gt_row_group_first td {
+  border-top-width: 2px;
+}
+
+#umiiftfyhl .gt_row_group_first th {
+  border-top-width: 2px;
+}
+
+#umiiftfyhl .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#umiiftfyhl .gt_first_summary_row {
+  border-top-style: solid;
+  border-top-color: #D3D3D3;
+}
+
+#umiiftfyhl .gt_first_summary_row.thick {
+  border-top-width: 2px;
+}
+
+#umiiftfyhl .gt_last_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#umiiftfyhl .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#umiiftfyhl .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#umiiftfyhl .gt_last_grand_summary_row_top {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: double;
+  border-bottom-width: 6px;
+  border-bottom-color: #D3D3D3;
+}
+
+#umiiftfyhl .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#umiiftfyhl .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#umiiftfyhl .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#umiiftfyhl .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#umiiftfyhl .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#umiiftfyhl .gt_sourcenote {
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#umiiftfyhl .gt_left {
+  text-align: left;
+}
+
+#umiiftfyhl .gt_center {
+  text-align: center;
+}
+
+#umiiftfyhl .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#umiiftfyhl .gt_font_normal {
+  font-weight: normal;
+}
+
+#umiiftfyhl .gt_font_bold {
+  font-weight: bold;
+}
+
+#umiiftfyhl .gt_font_italic {
+  font-style: italic;
+}
+
+#umiiftfyhl .gt_super {
+  font-size: 65%;
+}
+
+#umiiftfyhl .gt_footnote_marks {
+  font-size: 75%;
+  vertical-align: 0.4em;
+  position: initial;
+}
+
+#umiiftfyhl .gt_asterisk {
+  font-size: 100%;
+  vertical-align: 0;
+}
+
+#umiiftfyhl .gt_indent_1 {
+  text-indent: 5px;
+}
+
+#umiiftfyhl .gt_indent_2 {
+  text-indent: 10px;
+}
+
+#umiiftfyhl .gt_indent_3 {
+  text-indent: 15px;
+}
+
+#umiiftfyhl .gt_indent_4 {
+  text-indent: 20px;
+}
+
+#umiiftfyhl .gt_indent_5 {
+  text-indent: 25px;
+}
+
+#umiiftfyhl .katex-display {
+  display: inline-flex !important;
+  margin-bottom: 0.75em !important;
+}
+
+#umiiftfyhl div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+  height: 0px !important;
+}
+</style>
+<table class="gt_table" data-quarto-disable-processing="false" data-quarto-bootstrap="false">
+  <thead>
+    <tr class="gt_col_headings gt_spanner_row">
+      <th class="gt_col_heading gt_columns_bottom_border gt_left" rowspan="2" colspan="1" scope="col" id="label"><span data-qmd-base64="KipDaGFyYWN0ZXJpc3RpYyoq"><span class="gt_from_md"><strong>Characteristic</strong></span></span></th>
+      <th class="gt_center gt_columns_top_border gt_column_spanner_outer" rowspan="1" colspan="4" scope="colgroup" id="level 1; stat_1_1">
+        <div class="gt_column_spanner"><span data-qmd-base64="KipVbmFkanVzdGVkKio="><span class="gt_from_md"><strong>Unadjusted</strong></span></span></div>
+      </th>
+      <th class="gt_center gt_columns_top_border gt_column_spanner_outer" rowspan="1" colspan="4" scope="colgroup" id="level 1; stat_1_2">
+        <div class="gt_column_spanner"><span data-qmd-base64="KipQUyBtYXRjaGluZyAobmVhcmVzdCwgQVRUKSoq"><span class="gt_from_md"><strong>PS matching (nearest, ATT)</strong></span></span></div>
+      </th>
+      <th class="gt_center gt_columns_top_border gt_column_spanner_outer" rowspan="1" colspan="4" scope="colgroup" id="level 1; stat_1_3">
+        <div class="gt_column_spanner"><span data-qmd-base64="KipPdmVybGFwIHdlaWdodGluZyAoQVRPKSoq"><span class="gt_from_md"><strong>Overlap weighting (ATO)</strong></span></span></div>
+      </th>
+    </tr>
+    <tr class="gt_col_headings">
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1" scope="col" id="stat_1_1"><span data-qmd-base64="KiowKiogIApOID0gNTg2"><span class="gt_from_md"><strong>0</strong><br>
+N = 586</span></span><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>1</sup></span></th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1" scope="col" id="stat_2_1"><span data-qmd-base64="KioxKiogIApOID0gNDE0"><span class="gt_from_md"><strong>1</strong><br>
+N = 414</span></span><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>1</sup></span></th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1" scope="col" id="estimate_1"><span data-qmd-base64="KipTTUQqKg=="><span class="gt_from_md"><strong>SMD</strong></span></span><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>2</sup></span></th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1" scope="col" id="p.value_1"><span data-qmd-base64="KipwLXZhbHVlKio="><span class="gt_from_md"><strong>p-value</strong></span></span><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>3</sup></span></th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1" scope="col" id="stat_1_2"><span data-qmd-base64="KiowKiogIApOID0gMzU3"><span class="gt_from_md"><strong>0</strong><br>
+N = 357</span></span><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>1</sup></span></th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1" scope="col" id="stat_2_2"><span data-qmd-base64="KioxKiogIApOID0gMzU3"><span class="gt_from_md"><strong>1</strong><br>
+N = 357</span></span><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>1</sup></span></th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1" scope="col" id="estimate_2"><span data-qmd-base64="KipTTUQqKg=="><span class="gt_from_md"><strong>SMD</strong></span></span><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>2</sup></span></th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1" scope="col" id="p.value_2"><span data-qmd-base64="KipwLXZhbHVlKio="><span class="gt_from_md"><strong>p-value</strong></span></span><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>4</sup></span></th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1" scope="col" id="stat_1_3"><span data-qmd-base64="KiowKiogIApOID0gMjE2"><span class="gt_from_md"><strong>0</strong><br>
+N = 216</span></span><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>1</sup></span></th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1" scope="col" id="stat_2_3"><span data-qmd-base64="KioxKiogIApOID0gMjE2"><span class="gt_from_md"><strong>1</strong><br>
+N = 216</span></span><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>1</sup></span></th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1" scope="col" id="estimate_3"><span data-qmd-base64="KipTTUQqKg=="><span class="gt_from_md"><strong>SMD</strong></span></span><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>2</sup></span></th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_center" rowspan="1" colspan="1" scope="col" id="p.value_3"><span data-qmd-base64="KipwLXZhbHVlKio="><span class="gt_from_md"><strong>p-value</strong></span></span><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>4</sup></span></th>
+    </tr>
+  </thead>
+  <tbody class="gt_table_body">
+    <tr><td headers="label" class="gt_row gt_left">age</td>
+<td headers="stat_1_1" class="gt_row gt_center">60 (9)</td>
+<td headers="stat_2_1" class="gt_row gt_center">64 (9)</td>
+<td headers="estimate_1" class="gt_row gt_center">0.462</td>
+<td headers="p.value_1" class="gt_row gt_center">&lt;0.001</td>
+<td headers="stat_1_2" class="gt_row gt_center">63 (8)</td>
+<td headers="stat_2_2" class="gt_row gt_center">63 (9)</td>
+<td headers="estimate_2" class="gt_row gt_center">0.027</td>
+<td headers="p.value_2" class="gt_row gt_center">0.779</td>
+<td headers="stat_1_3" class="gt_row gt_center">62 (9)</td>
+<td headers="stat_2_3" class="gt_row gt_center">62 (9)</td>
+<td headers="estimate_3" class="gt_row gt_center">0.000</td>
+<td headers="p.value_3" class="gt_row gt_center">0.705</td></tr>
+    <tr><td headers="label" class="gt_row gt_left">sex</td>
+<td headers="stat_1_1" class="gt_row gt_center"><br></td>
+<td headers="stat_2_1" class="gt_row gt_center"><br></td>
+<td headers="estimate_1" class="gt_row gt_center">0.167</td>
+<td headers="p.value_1" class="gt_row gt_center">0.009</td>
+<td headers="stat_1_2" class="gt_row gt_center"><br></td>
+<td headers="stat_2_2" class="gt_row gt_center"><br></td>
+<td headers="estimate_2" class="gt_row gt_center">0.011</td>
+<td headers="p.value_2" class="gt_row gt_center">0.881</td>
+<td headers="stat_1_3" class="gt_row gt_center"><br></td>
+<td headers="stat_2_3" class="gt_row gt_center"><br></td>
+<td headers="estimate_3" class="gt_row gt_center">0.000</td>
+<td headers="p.value_3" class="gt_row gt_center">&gt;0.999</td></tr>
+    <tr><td headers="label" class="gt_row gt_left">&nbsp;&nbsp;&nbsp;&nbsp;Female</td>
+<td headers="stat_1_1" class="gt_row gt_center">305 (52%)</td>
+<td headers="stat_2_1" class="gt_row gt_center">181 (44%)</td>
+<td headers="estimate_1" class="gt_row gt_center"><br></td>
+<td headers="p.value_1" class="gt_row gt_center"><br></td>
+<td headers="stat_1_2" class="gt_row gt_center">169 (47%)</td>
+<td headers="stat_2_2" class="gt_row gt_center">167 (47%)</td>
+<td headers="estimate_2" class="gt_row gt_center"><br></td>
+<td headers="p.value_2" class="gt_row gt_center"><br></td>
+<td headers="stat_1_3" class="gt_row gt_center">101 (47%)</td>
+<td headers="stat_2_3" class="gt_row gt_center">101 (47%)</td>
+<td headers="estimate_3" class="gt_row gt_center"><br></td>
+<td headers="p.value_3" class="gt_row gt_center"><br></td></tr>
+    <tr><td headers="label" class="gt_row gt_left">&nbsp;&nbsp;&nbsp;&nbsp;Male</td>
+<td headers="stat_1_1" class="gt_row gt_center">281 (48%)</td>
+<td headers="stat_2_1" class="gt_row gt_center">233 (56%)</td>
+<td headers="estimate_1" class="gt_row gt_center"><br></td>
+<td headers="p.value_1" class="gt_row gt_center"><br></td>
+<td headers="stat_1_2" class="gt_row gt_center">188 (53%)</td>
+<td headers="stat_2_2" class="gt_row gt_center">190 (53%)</td>
+<td headers="estimate_2" class="gt_row gt_center"><br></td>
+<td headers="p.value_2" class="gt_row gt_center"><br></td>
+<td headers="stat_1_3" class="gt_row gt_center">115 (53%)</td>
+<td headers="stat_2_3" class="gt_row gt_center">115 (53%)</td>
+<td headers="estimate_3" class="gt_row gt_center"><br></td>
+<td headers="p.value_3" class="gt_row gt_center"><br></td></tr>
+    <tr><td headers="label" class="gt_row gt_left">stage</td>
+<td headers="stat_1_1" class="gt_row gt_center"><br></td>
+<td headers="stat_2_1" class="gt_row gt_center"><br></td>
+<td headers="estimate_1" class="gt_row gt_center">0.453</td>
+<td headers="p.value_1" class="gt_row gt_center">&lt;0.001</td>
+<td headers="stat_1_2" class="gt_row gt_center"><br></td>
+<td headers="stat_2_2" class="gt_row gt_center"><br></td>
+<td headers="estimate_2" class="gt_row gt_center">0.088</td>
+<td headers="p.value_2" class="gt_row gt_center">0.518</td>
+<td headers="stat_1_3" class="gt_row gt_center"><br></td>
+<td headers="stat_2_3" class="gt_row gt_center"><br></td>
+<td headers="estimate_3" class="gt_row gt_center">0.000</td>
+<td headers="p.value_3" class="gt_row gt_center">&gt;0.999</td></tr>
+    <tr><td headers="label" class="gt_row gt_left">&nbsp;&nbsp;&nbsp;&nbsp;I</td>
+<td headers="stat_1_1" class="gt_row gt_center">267 (46%)</td>
+<td headers="stat_2_1" class="gt_row gt_center">113 (27%)</td>
+<td headers="estimate_1" class="gt_row gt_center"><br></td>
+<td headers="p.value_1" class="gt_row gt_center"><br></td>
+<td headers="stat_1_2" class="gt_row gt_center">115 (32%)</td>
+<td headers="stat_2_2" class="gt_row gt_center">105 (29%)</td>
+<td headers="estimate_2" class="gt_row gt_center"><br></td>
+<td headers="p.value_2" class="gt_row gt_center"><br></td>
+<td headers="stat_1_3" class="gt_row gt_center">74 (34%)</td>
+<td headers="stat_2_3" class="gt_row gt_center">74 (34%)</td>
+<td headers="estimate_3" class="gt_row gt_center"><br></td>
+<td headers="p.value_3" class="gt_row gt_center"><br></td></tr>
+    <tr><td headers="label" class="gt_row gt_left">&nbsp;&nbsp;&nbsp;&nbsp;II</td>
+<td headers="stat_1_1" class="gt_row gt_center">215 (37%)</td>
+<td headers="stat_2_1" class="gt_row gt_center">160 (39%)</td>
+<td headers="estimate_1" class="gt_row gt_center"><br></td>
+<td headers="p.value_1" class="gt_row gt_center"><br></td>
+<td headers="stat_1_2" class="gt_row gt_center">147 (41%)</td>
+<td headers="stat_2_2" class="gt_row gt_center">144 (40%)</td>
+<td headers="estimate_2" class="gt_row gt_center"><br></td>
+<td headers="p.value_2" class="gt_row gt_center"><br></td>
+<td headers="stat_1_3" class="gt_row gt_center">86 (40%)</td>
+<td headers="stat_2_3" class="gt_row gt_center">86 (40%)</td>
+<td headers="estimate_3" class="gt_row gt_center"><br></td>
+<td headers="p.value_3" class="gt_row gt_center"><br></td></tr>
+    <tr><td headers="label" class="gt_row gt_left">&nbsp;&nbsp;&nbsp;&nbsp;III</td>
+<td headers="stat_1_1" class="gt_row gt_center">104 (18%)</td>
+<td headers="stat_2_1" class="gt_row gt_center">141 (34%)</td>
+<td headers="estimate_1" class="gt_row gt_center"><br></td>
+<td headers="p.value_1" class="gt_row gt_center"><br></td>
+<td headers="stat_1_2" class="gt_row gt_center">95 (27%)</td>
+<td headers="stat_2_2" class="gt_row gt_center">108 (30%)</td>
+<td headers="estimate_2" class="gt_row gt_center"><br></td>
+<td headers="p.value_2" class="gt_row gt_center"><br></td>
+<td headers="stat_1_3" class="gt_row gt_center">56 (26%)</td>
+<td headers="stat_2_3" class="gt_row gt_center">56 (26%)</td>
+<td headers="estimate_3" class="gt_row gt_center"><br></td>
+<td headers="p.value_3" class="gt_row gt_center"><br></td></tr>
+    <tr><td headers="label" class="gt_row gt_left">bmi</td>
+<td headers="stat_1_1" class="gt_row gt_center">25.0 (3.9)</td>
+<td headers="stat_2_1" class="gt_row gt_center">24.6 (4.1)</td>
+<td headers="estimate_1" class="gt_row gt_center">0.100</td>
+<td headers="p.value_1" class="gt_row gt_center">0.112</td>
+<td headers="stat_1_2" class="gt_row gt_center">24.9 (3.8)</td>
+<td headers="stat_2_2" class="gt_row gt_center">24.8 (4.1)</td>
+<td headers="estimate_2" class="gt_row gt_center">0.020</td>
+<td headers="p.value_2" class="gt_row gt_center">0.860</td>
+<td headers="stat_1_3" class="gt_row gt_center">24.8 (3.8)</td>
+<td headers="stat_2_3" class="gt_row gt_center">24.8 (4.1)</td>
+<td headers="estimate_3" class="gt_row gt_center">0.000</td>
+<td headers="p.value_3" class="gt_row gt_center">0.953</td></tr>
+    <tr><td headers="label" class="gt_row gt_left">smoker</td>
+<td headers="stat_1_1" class="gt_row gt_center">160 (27%)</td>
+<td headers="stat_2_1" class="gt_row gt_center">140 (34%)</td>
+<td headers="estimate_1" class="gt_row gt_center">0.142</td>
+<td headers="p.value_1" class="gt_row gt_center">0.027</td>
+<td headers="stat_1_2" class="gt_row gt_center">107 (30%)</td>
+<td headers="stat_2_2" class="gt_row gt_center">112 (31%)</td>
+<td headers="estimate_2" class="gt_row gt_center">0.030</td>
+<td headers="p.value_2" class="gt_row gt_center">0.685</td>
+<td headers="stat_1_3" class="gt_row gt_center">66 (31%)</td>
+<td headers="stat_2_3" class="gt_row gt_center">66 (31%)</td>
+<td headers="estimate_3" class="gt_row gt_center">0.000</td>
+<td headers="p.value_3" class="gt_row gt_center">&gt;0.999</td></tr>
+  </tbody>
+  <tfoot class="gt_sourcenotes">
+    <tr>
+      <td class="gt_sourcenote" colspan="13"><span data-qmd-base64="QWJicmV2aWF0aW9uOiBDSSA9IENvbmZpZGVuY2UgSW50ZXJ2YWw="><span class="gt_from_md">Abbreviation: CI = Confidence Interval</span></span></td>
+    </tr>
+  </tfoot>
+  <tfoot class="gt_footnotes">
+    <tr>
+      <td class="gt_footnote" colspan="13"><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>1</sup></span> <span data-qmd-base64="TWVhbiAoU0QpOyBuICglKQ=="><span class="gt_from_md">Mean (SD); n (%)</span></span></td>
+    </tr>
+    <tr>
+      <td class="gt_footnote" colspan="13"><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>2</sup></span> <span data-qmd-base64="U3RhbmRhcmRpemVkIE1lYW4gRGlmZmVyZW5jZQ=="><span class="gt_from_md">Standardized Mean Difference</span></span></td>
+    </tr>
+    <tr>
+      <td class="gt_footnote" colspan="13"><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>3</sup></span> <span data-qmd-base64="V2lsY294b24gcmFuayBzdW0gdGVzdDsgUGVhcnNvbidzIENoaS1zcXVhcmVkIHRlc3Q="><span class="gt_from_md">Wilcoxon rank sum test; Pearson’s Chi-squared test</span></span></td>
+    </tr>
+    <tr>
+      <td class="gt_footnote" colspan="13"><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>4</sup></span> <span data-qmd-base64="RGVzaWduLWJhc2VkIEtydXNrYWxXYWxsaXMgdGVzdDsgUGVhcnNvbidzIFheMjogUmFvICYgU2NvdHQgYWRqdXN0bWVudA=="><span class="gt_from_md">Design-based KruskalWallis test; Pearson’s X^2: Rao &amp; Scott adjustment</span></span></td>
+    </tr>
+  </tfoot>
+</table>
+</div>
+</div>
+</div>
+<p>建表比算平衡慢得多：<code>cores</code>（默认 <code>NULL</code>）控制并行的进程数，Linux / macOS 用 fork， Windows 起 PSOCK 集群（要多花几秒）。连续变量的 P 值是秩检验，比较的是整个分布， 所以 SMD 很小时 P 也可能很小。</p>
+</section>
+<section id="sec-bal-args" class="level3">
+<h3 class="anchored" data-anchor-id="sec-bal-args">参数</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>参数</th>
+<th>默认</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>data</code>、<code>treat</code>、<code>adj_var</code></td>
+<td>—</td>
+<td>同上；<code>adj_var</code> 必填</td>
+</tr>
+<tr class="even">
+<td><code>methods</code></td>
+<td>7 个简写</td>
+<td>简写向量，或命名的方案列表（可混入未命名简写）</td>
+</tr>
+<tr class="odd">
+<td><code>cat_smd</code></td>
+<td><code>"overall"</code></td>
+<td>三水平以上因子的汇总方式</td>
+</tr>
+<tr class="even">
+<td><code>tbl</code></td>
+<td><code>FALSE</code></td>
+<td>是否生成 <code>$tbl</code>（需要 gtsummary + survey）</td>
+</tr>
+<tr class="odd">
+<td><code>cores</code></td>
+<td><code>NULL</code></td>
+<td>建表的并行进程数</td>
+</tr>
+<tr class="even">
+<td><code>var_names</code></td>
+<td><code>RegR::name_map_seer</code></td>
+<td>显示标签，与 SEER 字典合并、你的标签优先；<code>NULL</code> 保留列名</td>
+</tr>
+<tr class="odd">
+<td><code>love_args</code></td>
+<td><code>list()</code></td>
+<td><code>threshold</code>、<code>colors</code>、<code>shapes</code>、<code>size</code>、<code>line</code>、<code>var_order</code>、<code>base_size</code>、<code>ref_color</code>、<code>legend_position</code>、<code>legend_justification</code></td>
+</tr>
+<tr class="even">
+<td><code>save_plt</code></td>
+<td><code>list()</code></td>
+<td>经 <code>RegR::save_plt()</code> 存 PDF</td>
+</tr>
+<tr class="odd">
+<td><code>save_tbl</code></td>
+<td><code>list()</code></td>
+<td>经 <code>RegR::save_tb()</code> 存 Word；非空时即使 <code>tbl = FALSE</code> 也会建表</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="sec-ps-refs" class="level2">
+<h2 class="anchored" data-anchor-id="sec-ps-refs">参考文献</h2>
+<ul>
+<li>Li F, Morgan KL, Zaslavsky AM (2018). Balancing covariates via propensity score weighting. <em>Journal of the American Statistical Association</em> 113(521):390–400.</li>
+<li>Crump RK, Hotz VJ, Imbens GW, Mitnik OA (2009). Dealing with limited overlap in estimation of average treatment effects. <em>Biometrika</em> 96(1):187–199.</li>
+<li>Ho DE, Imai K, King G, Stuart EA (2011). MatchIt: nonparametric preprocessing for parametric causal inference. <em>Journal of Statistical Software</em> 42(8):1–28.</li>
+<li>Austin PC (2011). Optimal caliper widths for propensity-score matching when estimating differences in means and differences in proportions in observational studies. <em>Pharmaceutical Statistics</em> 10(2):150–161.</li>
+<li>Yang D, Dalton JE (2012). A unified approach to measuring the effect size between two groups using SAS. SAS Global Forum 2012, Paper 335-2012.</li>
+</ul>
+<p>完整说明见 <code>?get_PSW</code>、<code>?get_PSM</code>、<code>?get_bal</code>、<code>?plt_PSW</code>、<code>?plt_PSM</code>。</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "已复制");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "已复制");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/hui950319\.github\.io\/causalR\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../../notes/causalR/02-hte-select.html" class="pagination-link" aria-label="2. 效应修饰变量筛选（get_hte_select）">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">2. 效应修饰变量筛选（get_hte_select）</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/causalR/03-ps.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></div></div></footer></body></html>
