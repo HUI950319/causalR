@@ -601,8 +601,8 @@ plt_hte_dep <- function(x,
 #'   [get_hte()]. `"ratio"` and `"OR"` are drawn on a log axis; `"OR"` needs
 #'   an outcome probability, a binary outcome or \eqn{S(t)}.
 #'   Relative effects do not support forests with sample weights or clusters.
-#' @param conf_level Confidence level of the intervals. Default `0.95`,
-#'   whatever level `x` was computed with.
+#' @param conf_level Confidence level of the intervals, not printed on the
+#'   plot. Default `0.95`, whatever level `x` was computed with.
 #' @param effect `NULL` (default) or rows to replace, e.g. with an estimate
 #'   from a published study: a named list whose elements are named by a
 #'   variable of `sub_var`, holding strings named by its levels; by a level
@@ -680,7 +680,7 @@ plt_hte_dep <- function(x,
 #' the new estimate, on the log scale for a ratio, and `P` is recomputed.
 #' `"conf_<level>"` keeps the estimate, the standard error and `P`, and
 #' widens or narrows only that row's interval. Nothing on the plot marks such
-#' a row, whose level then differs from the one in the column header.
+#' a row.
 #'
 #' The "P for interaction" of a variable and its `cate_mean` keep the values
 #' from the forest: the Wald test cannot be redone from a replaced row.
@@ -998,7 +998,7 @@ plt_hte_sub <- function(x,
             if (show_pinter) "p_inter")
   text <- rbind(c("Subgroup",
                   if (show_n) sprintf("N (%s / %s)", a$treated, ref),
-                  sprintf("%s (%s%% CI)", lab, format(100 * conf_level)),
+                  lab,
                   if (show_pvalue) "P", if (show_pinter) "P for interaction"),
                 as.matrix(body[cols]))
   dimnames(text) <- NULL

@@ -39,8 +39,8 @@ otherwise add it with \code{get_hte(sub_var = )}.}
 an outcome probability, a binary outcome or \eqn{S(t)}.
 Relative effects do not support forests with sample weights or clusters.}
 
-\item{conf_level}{Confidence level of the intervals. Default \code{0.95},
-whatever level \code{x} was computed with.}
+\item{conf_level}{Confidence level of the intervals, not printed on the
+plot. Default \code{0.95}, whatever level \code{x} was computed with.}
 
 \item{effect}{\code{NULL} (default) or rows to replace, e.g. with an estimate
 from a published study: a named list whose elements are named by a
@@ -155,7 +155,7 @@ A bare estimate keeps the row's standard error: the interval is centred on
 the new estimate, on the log scale for a ratio, and \code{P} is recomputed.
 \code{"conf_<level>"} keeps the estimate, the standard error and \code{P}, and
 widens or narrows only that row's interval. Nothing on the plot marks such
-a row, whose level then differs from the one in the column header.
+a row.
 
 The "P for interaction" of a variable and its \code{cate_mean} keep the values
 from the forest: the Wald test cannot be redone from a replaced row.

@@ -454,7 +454,7 @@ test_that("plt_hte_sub recomputes the get_hte() subgroup estimates", {
   s90 <- attr(p90, "subgroup")
   expect_equal(s90$estimate, st$estimate)
   expect_equal(s90$conf.low, s90$estimate - stats::qnorm(0.95) * s90$std.error)
-  expect_identical(fp_headers(p90)[3], "Risk difference (90% CI)")
+  expect_identical(fp_headers(p90)[3], "Risk difference")
 })
 
 test_that("measure = 'ratio' averages the arm scores on a log axis", {
@@ -470,7 +470,7 @@ test_that("measure = 'ratio' averages the arm scores on a log axis", {
   ax <- fp_grobs(p, "xaxis")[[1L]]
   expect_equal(ax$at, log(as.numeric(ax$label)))
   expect_true("1" %in% ax$label)
-  expect_identical(fp_headers(p)[3], "Risk ratio (95% CI)")
+  expect_identical(fp_headers(p)[3], "Risk ratio")
 })
 
 test_that("overall, show_n, show_pvalue and show_pinter set the rows and columns", {
@@ -501,7 +501,7 @@ test_that("overall, show_n, show_pvalue and show_pinter set the rows and columns
                    c("x", "sub_var", "measure", "conf_level", "effect",
                      "overall", "show_n", "show_pvalue", "show_pinter"))
   no_n <- plt_hte_sub(res, sub_var = "stage", show_n = FALSE)
-  expect_identical(fp_headers(no_n), c("Subgroup", "Risk difference (95% CI)"))
+  expect_identical(fp_headers(no_n), c("Subgroup", "Risk difference"))
 
   both <- plt_hte_sub(res, sub_var = "stage", show_pvalue = TRUE,
                       show_pinter = TRUE)
@@ -676,7 +676,7 @@ test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
   expect_true(is.na(attr(p, "subgroup")$estimate[3]))
   expect_identical(fp_col(p, 3)[row], "\u2014")
   expect_length(fp_grobs(p, "polygon"), 3L)   # no diamond for III
-  expect_identical(fp_headers(p)[3], "St(5-year) difference (95% CI)")   # months
+  expect_identical(fp_headers(p)[3], "St(5-year) difference")   # months
   # effect fills the empty level in, diamond and all
   pf <- suppressWarnings(plt_hte_sub(res, sub_var = "stage",
                                      effect = list(stage = c(III = "-0.050 (-0.150, 0.050)"))))
@@ -689,7 +689,7 @@ test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
   expect_identical(
     fp_headers(suppressWarnings(plt_hte_sub(res, sub_var = "stage",
                                             measure = "ratio")))[3],
-    "Event risk ratio (95% CI)")
+    "Event risk ratio")
 
   # plt_hte_cate(): that level keeps its curve but gets no subgroup line
   expect_warning(pc <- plt_hte_cate(res, sub_var = "stage", type = "density"),

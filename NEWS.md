@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `plt_hte_sub()` heads the effect column with the effect alone, e.g.
+  `Risk difference` instead of `Risk difference (95% CI)`, so the plot no
+  longer states `conf_level`.
+
 * For a survival probability, `get_hte()` passes patients followed beyond
   `time` to grf as events just after it, as grf itself does for RMST. The
   estimand is unchanged, but with rare events grf's nuisance survival forest
