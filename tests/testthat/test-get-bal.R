@@ -77,6 +77,28 @@ test_that("a custom list takes several matching schemes side by side", {
                          res$data[["PSM 1:2, caliper 0.1"]]))
 })
 
+test_that("a list mixes named specifications with unnamed shorthands", {
+  d <- bal_data()
+  methods <- list(`PSM 1:2, caliper 0.1` = list(design = "matching",
+                                                ratio = 2, caliper = 0.1),
+                  "ATE", "ato")
+  res <- get_bal(d, treat = "z", adj_var = bal_adj, methods = methods)
+
+  expect_identical(levels(res$plt$data$Sample),
+                   c("Unadjusted", "PSM 1:2, caliper 0.1", "IPTW (ATE)",
+                     "Overlap weighting (ATO)"))
+  ref <- get_bal(d, treat = "z", adj_var = bal_adj, methods = "ATE")
+  expect_identical(res$data[["IPTW (ATE)"]], ref$data[["IPTW (ATE)"]])
+
+  run <- function(methods) get_bal(d, treat = "z", adj_var = bal_adj,
+                                   methods = methods)
+  expect_error(run(list(A = list(design = "weighting", estimand = "ATO"),
+                        "IPW")), "Unknown shorthand.*\"IPW\"")
+  expect_error(run(list(`IPTW (ATE)` = list(design = "weighting",
+                                            estimand = "ATE"), "ATE")),
+               "duplicated.*`IPTW \\(ATE\\)`")
+})
+
 test_that("every scheme is standardised by the unadjusted pooled SD", {
   d   <- bal_data()
   res <- get_bal(d, treat = "z", adj_var = bal_adj,

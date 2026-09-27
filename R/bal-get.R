@@ -65,12 +65,9 @@
 #' @keywords internal
 #' @noRd
 .bal_specs <- function(methods) {
-  if (is.character(methods)) {
-    if (!length(methods) || anyNA(methods))
-      stop("`methods` must be a non-empty character vector or a named list.",
-           call. = FALSE)
-    key <- toupper(methods)
-    bad <- methods[!key %in% names(.BAL_LABELS)]
+  shorthand <- function(x) {
+    key <- toupper(x)
+    bad <- x[!key %in% names(.BAL_LABELS)]
     if (length(bad))
       stop(sprintf("Unknown shorthand(s) %s in `methods`; use any of %s, or a named list of scheme specifications.",
                    paste0("\"", bad, "\"", collapse = ", "),
@@ -82,14 +79,30 @@
              ratio = 1, caliper = 0.2)
       else list(design = "weighting", method = "glm", estimand = k))
     names(specs) <- unname(.BAL_LABELS[key])
-  } else if (is.list(methods) && !is.data.frame(methods)) {
-    specs <- methods
-    nms   <- names(specs)
-    if (!length(specs) || is.null(nms) || anyNA(nms) || any(!nzchar(nms)))
-      stop("`methods` must be a character vector of shorthands or a fully named list; the names are the legend labels.",
+    specs
+  }
+  is_short <- function(x) is.character(x) && length(x) && !anyNA(x)
+
+  if (is.character(methods)) {
+    if (!is_short(methods))
+      stop("`methods` must be a non-empty character vector or a named list.",
            call. = FALSE)
+    specs <- shorthand(methods)
+  } else if (is.list(methods) && !is.data.frame(methods)) {
+    # a named element is a specification labelled by its name, an unnamed
+    # one a shorthand that brings its own label
+    nms <- names(methods)
+    if (is.null(nms)) nms <- rep("", length(methods))
+    nms[is.na(nms)] <- ""
+    short <- !nzchar(nms) & vapply(methods, is_short, NA)
+    if (!length(methods) || any(!nzchar(nms) & !short))
+      stop("`methods` must be a character vector of shorthands or a list whose elements are named lists of scheme specifications, the names being the legend labels, or unnamed shorthands.",
+           call. = FALSE)
+    specs <- unlist(lapply(seq_along(methods), function(i)
+      if (short[i]) shorthand(methods[[i]]) else methods[i]),
+      recursive = FALSE)
   } else {
-    stop("`methods` must be a character vector of shorthands or a fully named list; the names are the legend labels.",
+    stop("`methods` must be a character vector of shorthands or a list whose elements are named lists of scheme specifications, the names being the legend labels, or unnamed shorthands.",
          call. = FALSE)
   }
 
@@ -192,6 +205,13 @@
 #'                                  estimand = "ATE", stabilize = TRUE))
 #' ```
 #'
+#' An unnamed element of that list is a shorthand, expanded and labelled as
+#' above, so tuned schemes and defaults can share one call:
+#'
+#' ```
+#' list(`PSM 1:2` = list(design = "matching", ratio = 2), "ATE", "ATO")
+#' ```
+#'
 #' `ratio`, `caliper` and `replace` are fields of their own; other MatchIt
 #' arguments go in `match_args`. Each scheme names one matching `method` or
 #' one weighting `estimand`. `data`, `treat`, `adj_var` and `balance` are set
@@ -240,8 +260,9 @@
 #'   under its own name; a factor with more levels as set by `cat_smd`.
 #' @param methods Character vector of shorthands, any of `"PSM"`, `"ATE"`,
 #'   `"ATT"`, `"ATC"`, `"ATO"`, `"ATM"`, `"EW"` (all seven by default), or a
-#'   named list of scheme specifications; see *Specifying schemes*. At most
-#'   14 schemes.
+#'   list of scheme specifications named by their legend labels, which may
+#'   also hold unnamed shorthands; see *Specifying schemes*. At most 14
+#'   schemes.
 #' @param cat_smd How a factor or character covariate with three or more
 #'   levels is summarised. `"overall"` (default): one row under the variable's
 #'   name, the unsigned multivariate SMD of Yang & Dalton (2012); see

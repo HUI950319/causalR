@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* `get_bal(methods = )` accepts a list that mixes named scheme
+  specifications with unnamed shorthands, e.g.
+  ``list(`PSM 1:2` = list(design = "matching", ratio = 2), "ATE", "ATO")``;
+  each shorthand keeps its usual legend label.
+
 * `plt_hte_sub()` heads the effect column with the effect alone, e.g.
   `Risk difference` instead of `Risk difference (95% CI)`, so the plot no
   longer states `conf_level`.

@@ -31,8 +31,9 @@ under its own name; a factor with more levels as set by \code{cat_smd}.}
 
 \item{methods}{Character vector of shorthands, any of \code{"PSM"}, \code{"ATE"},
 \code{"ATT"}, \code{"ATC"}, \code{"ATO"}, \code{"ATM"}, \code{"EW"} (all seven by default), or a
-named list of scheme specifications; see \emph{Specifying schemes}. At most
-14 schemes.}
+list of scheme specifications named by their legend labels, which may
+also hold unnamed shorthands; see \emph{Specifying schemes}. At most 14
+schemes.}
 
 \item{cat_smd}{How a factor or character covariate with three or more
 levels is summarised. \code{"overall"} (default): one row under the variable's
@@ -167,6 +168,12 @@ mix. The name is the legend label; the element is a list with
                                 estimand = "ATT", ratio = 2, caliper = 0.1),
   `Stabilized IPTW (ATE)` = list(design = "weighting", method = "glm",
                                  estimand = "ATE", stabilize = TRUE))
+}\if{html}{\out{</div>}}
+
+An unnamed element of that list is a shorthand, expanded and labelled as
+above, so tuned schemes and defaults can share one call:
+
+\if{html}{\out{<div class="sourceCode">}}\preformatted{list(`PSM 1:2` = list(design = "matching", ratio = 2), "ATE", "ATO")
 }\if{html}{\out{</div>}}
 
 \code{ratio}, \code{caliper} and \code{replace} are fields of their own; other MatchIt
