@@ -195,6 +195,104 @@ test_that("a failing scheme is named in the error", {
     "`Bad PSM`.*not available")
 })
 
+# the red reference line fmt_ref() adds last, and the point layer's data
+bal_ref  <- function(p) {
+  v <- Filter(function(l) inherits(l$geom, "GeomVline"), p$layers)
+  v <- v[[length(v)]]
+  c(as.list(v$data), v$aes_params)     # xintercept lives in the layer data
+}
+bal_pts <- function(p) ggplot2::layer_data(
+  p, which(vapply(p$layers, function(l) inherits(l$geom, "GeomPoint"), TRUE)))
+
+test_that("love_args defaults keep the RegR-style plot", {
+  expect_identical(names(formals(get_bal)),
+                   c("data", "treat", "adj_var", "methods", "love_args",
+                     "save"))
+  p <- get_bal(bal_data(), "z", bal_adj, methods = c("PSM", "ATE"))$plt
+
+  expect_equal(unname(bal_ref(p)$xintercept), 0.1)
+  expect_identical(bal_ref(p)$colour, "red")
+  pts <- bal_pts(p)
+  expect_setequal(unique(pts$colour), UtilsR::pal_lancet[1:3])
+  expect_setequal(unique(pts$shape), c(17, 16, 15))
+  expect_true(all(pts$size == 3.5))
+  expect_true(any(vapply(p$layers, function(l) inherits(l$geom, "GeomPath"),
+                         TRUE)))
+  expect_identical(p$theme$text$size, 16)
+  expect_equal(p$theme$legend.position.inside, c(0.99, 0.02))
+  expect_equal(p$theme$legend.justification, c(1, 0))
+})
+
+test_that("love_args restyles points, lines, theme and legend", {
+  p <- get_bal(bal_data(), "z", bal_adj, methods = c("PSM", "ATE"),
+               love_args = list(threshold = 0.2, ref_color = "blue",
+                                colors = c("black", "grey50", "blue", "red"),
+                                shapes = c(1, 2, 5), size = 2, line = FALSE,
+                                base_size = 12, legend_position = "bottom"))$plt
+
+  expect_equal(unname(bal_ref(p)$xintercept), 0.2)
+  expect_identical(bal_ref(p)$colour, "blue")
+  pts <- bal_pts(p)
+  expect_setequal(unique(pts$colour), c("black", "grey50", "blue"))
+  expect_setequal(unique(pts$shape), c(1, 2, 5))
+  expect_true(all(pts$size == 2))
+  expect_false(any(vapply(p$layers, function(l) inherits(l$geom, "GeomPath"),
+                          TRUE)))
+  expect_identical(p$theme$text$size, 12)
+  expect_identical(p$theme$legend.position, "bottom")
+  # fmt_legend() centres an outside legend on its edge; the long scheme
+  # labels are wrapped into two columns rather than one clipped row
+  expect_equal(p$theme$legend.justification, c(0.5, 1))
+  expect_identical(p$guides$guides$colour$params$ncol, 2)
+  expect_identical(p$guides$guides$shape$params$ncol, 2)
+
+  # an explicit justification survives fmt_legend(), which would overwrite it
+  p <- get_bal(bal_data(), "z", bal_adj, methods = "ATO",
+               love_args = list(legend_justification = c(0, 0)))$plt
+  expect_equal(p$theme$legend.justification, c(0, 0))
+})
+
+test_that("love_args$var_names relabels the plot, not the table", {
+  d <- bal_data()
+  d$sex   <- factor(ifelse(d$x2 == 1, "M", "F"))
+  d$stage <- factor(rep_len(c("I", "II", "III"), nrow(d)))
+  adj <- c("x1", "sex", "stage")
+  res <- get_bal(d, "z", adj, methods = "ATO",
+                 love_args = list(var_names = c(x1 = "Age", sex = "Sex",
+                                                stage = "Stage")))
+
+  expect_setequal(levels(res$plt$data$var),
+                  c("Age", "Sex", "Stage_I", "Stage_II", "Stage_III"))
+  expect_setequal(unique(res$balance$variable),
+                  c("x1", "sex", "stage_I", "stage_II", "stage_III"))
+})
+
+test_that("love_args is validated before anything is fitted", {
+  d <- bal_data()
+  run <- function(love_args, methods = c("PSM", "ATE"))
+    get_bal(d, "z", bal_adj, methods = methods, love_args = love_args)
+
+  expect_error(get_bal(d, "z", bal_adj, methods = "ATE", threshold = 0.1),
+               "unused argument")
+  expect_error(run(list(foo = 1)), "`love_args` contains unknown field.*`foo`")
+  expect_error(run(list(threshold = "a")),
+               "`love_args\\$threshold` must be a single number")
+  expect_error(run(list(colors = c("red", "blue"))),
+               "`love_args\\$colors` needs at least 3")
+  expect_error(run(list(shapes = 1:2)), "`love_args\\$shapes` needs at least 3")
+  expect_error(run(list(size = -1)),
+               "`love_args\\$size` must be a single positive number")
+  expect_error(run(list(line = NA)), "`love_args\\$line` must be TRUE or FALSE")
+  expect_error(run(list(var_order = "bogus")),
+               "`love_args\\$var_order` must be")
+  expect_error(run(list(legend_position = c(1, 2, 3))),
+               "`love_args\\$legend_position` must be")
+  expect_error(run(list(var_names = c(foo = "Foo"))),
+               "`love_args\\$var_names`.*`foo`.*`adj_var`")
+  expect_error(run(list(var_names = "Age")),
+               "`love_args\\$var_names` must be a named character vector")
+})
+
 test_that("save writes a PDF only when it is a non-empty list", {
   skip_if_not_installed("RegR")
   d   <- bal_data()

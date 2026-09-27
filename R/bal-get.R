@@ -37,6 +37,15 @@
 # Fields get_bal() supplies to every scheme itself.
 .BAL_MANAGED <- c("data", "treat", "adj_var", "balance")
 
+# love_args defaults. NULL colours / shapes fall back to UtilsR::pal_lancet /
+# .BAL_SHAPES once the number of schemes is known; a NULL justification is
+# left to UtilsR::fmt_legend(), which derives it from the position.
+.BAL_LOVE_DEFAULTS <- list(threshold = 0.1, colors = NULL, shapes = NULL,
+                           size = 3.5, line = TRUE, var_order = "unadjusted",
+                           base_size = 16, ref_color = "red",
+                           legend_position = c(0.99, 0.02),
+                           legend_justification = NULL, var_names = NULL)
+
 
 # Turn `methods` into a named list of specs, each a named list with `design`
 # plus get_PSM() / get_PSW() arguments. Everything that can be checked
@@ -204,8 +213,41 @@
 #'   `"ATT"`, `"ATC"`, `"ATO"`, `"ATM"`, `"EW"` (all seven by default), or a
 #'   named list of scheme specifications; see *Specifying schemes*. At most
 #'   14 schemes.
-#' @param threshold Numeric, default `0.1`. Where the red reference line is
-#'   drawn.
+#' @param love_args Named list of love plot settings; `list()` (default)
+#'   keeps every default. Unknown or duplicated fields are an error.
+#'   \describe{
+#'     \item{`threshold`}{Single number, default `0.1`. Where the reference
+#'       line is drawn.}
+#'     \item{`colors`}{Character vector, or `NULL` (default) for
+#'       `UtilsR::pal_lancet`. The first colour is the unadjusted sample's,
+#'       then one per scheme; at least that many are required.}
+#'     \item{`shapes`}{Point shapes, numeric or character, in the same order;
+#'       `NULL` (default) for `17, 16, 15, 18, 8, ...`.}
+#'     \item{`size`}{Single positive number, default `3.5`. Point size.}
+#'     \item{`line`}{`TRUE` (default) or `FALSE`. Connect each scheme's
+#'       points.}
+#'     \item{`var_order`}{Row order: `"unadjusted"` (default, largest
+#'       unadjusted imbalance on top), `"alphabetical"`, a scheme label to
+#'       sort by that scheme, or `NULL` for the order of `adj_var`.}
+#'     \item{`base_size`}{Single positive number, default `16`, passed to
+#'       [UtilsR::theme_my()].}
+#'     \item{`ref_color`}{Single string, default `"red"`. Colour of the
+#'       reference line.}
+#'     \item{`legend_position`}{Two numbers in panel coordinates for a legend
+#'       inside the plot, default `c(0.99, 0.02)` (the corner the unadjusted
+#'       ordering leaves empty), or one string: `"right"`, `"bottom"`,
+#'       `"none"`, or [UtilsR::fmt_legend()]'s corners `"br"`, `"bl"`,
+#'       `"tr"`, `"tl"`. A `"top"` or `"bottom"` legend is laid out in two
+#'       columns.}
+#'     \item{`legend_justification`}{Two numbers or one string, or `NULL`
+#'       (default) to let [UtilsR::fmt_legend()] derive it from the
+#'       position: the nearest corner for an inside legend, `c(1, 0)` for the
+#'       default, and the centre of the edge for an outside one.}
+#'     \item{`var_names`}{Named character vector of display labels keyed by
+#'       `adj_var` names, for example `c(bmi = "Body mass index")`, or `NULL`
+#'       (default). A factor's label is applied to each of its levels. Only
+#'       the plot is relabelled; `$balance` keeps the column names.}
+#'   }
 #' @param save `NULL` or a list with `filename`, and optionally `width` and
 #'   `height`, passed to `RegR::save_plt()`. `NULL` and `list()` both mean no
 #'   file is written; the defaults come from the plot's own pinned size.
@@ -249,6 +291,13 @@
 #'                                    estimand = "ATO"))
 #' get_bal(d, treat = "z", adj_var = c("x1", "x2", "x3"),
 #'         methods = methods)$balance
+#'
+#' # Restyle: stricter threshold, legend below, readable covariate names
+#' get_bal(d, treat = "z", adj_var = c("x1", "x2", "x3"),
+#'         methods = c("PSM", "ATO"),
+#'         love_args = list(threshold = 0.05, legend_position = "bottom",
+#'                          var_names = c(x1 = "Age", x2 = "Male",
+#'                                        x3 = "Frailty")))$plt
 #' }
 #'
 #' @export
@@ -257,7 +306,7 @@ get_bal <- function(data,
                     adj_var,
                     methods   = c("PSM", "ATE", "ATT", "ATC", "ATO", "ATM",
                                   "EW"),
-                    threshold = 0.1,
+                    love_args = list(),
                     save      = list()) {
 
   if (!is.data.frame(data) || !nrow(data))
@@ -267,10 +316,48 @@ get_bal <- function(data,
   if (is.null(adj_var))
     stop("`adj_var` is required: it is what every scheme adjusts for and the plot reports.",
          call. = FALSE)
-  if (!is.numeric(threshold) || length(threshold) != 1L || is.na(threshold))
-    stop("`threshold` must be a single number.", call. = FALSE)
   specs <- .bal_specs(methods)
   labs  <- names(specs)
+  k     <- length(labs) + 1L          # the unadjusted sample, then each scheme
+
+  la  <- .merge_named_arg(love_args, .BAL_LOVE_DEFAULTS, "love_args")
+  bad <- function(field, msg)
+    stop(sprintf("`love_args$%s` %s", field, msg), call. = FALSE)
+  one_num <- function(x) is.numeric(x) && length(x) == 1L && !is.na(x)
+  place   <- function(x) (is.character(x) && length(x) == 1L && !is.na(x)) ||
+    (is.numeric(x) && length(x) == 2L && !anyNA(x))
+  if (!one_num(la$threshold)) bad("threshold", "must be a single number.")
+  for (f in c("size", "base_size"))
+    if (!one_num(la[[f]]) || la[[f]] <= 0)
+      bad(f, "must be a single positive number.")
+  if (!is.logical(la$line) || length(la$line) != 1L || is.na(la$line))
+    bad("line", "must be TRUE or FALSE.")
+  if (!is.character(la$ref_color) || length(la$ref_color) != 1L)
+    bad("ref_color", "must be a single colour string.")
+  if (is.null(la$colors)) la$colors <- UtilsR::pal_lancet
+  if (is.null(la$shapes)) la$shapes <- .BAL_SHAPES
+  for (f in c("colors", "shapes"))
+    if (length(la[[f]]) < k)
+      bad(f, sprintf("needs at least %d values, one for the unadjusted sample and one per scheme; got %d.",
+                     k, length(la[[f]])))
+  if (!is.null(la$var_order) &&
+      !(is.character(la$var_order) && length(la$var_order) == 1L &&
+        la$var_order %in% c("unadjusted", "alphabetical", labs)))
+    bad("var_order", "must be NULL, \"unadjusted\", \"alphabetical\" or one scheme label.")
+  if (!place(la$legend_position))
+    bad("legend_position", "must be one string such as \"right\" or \"none\", or two numbers.")
+  if (!is.null(la$legend_justification) && !place(la$legend_justification))
+    bad("legend_justification", "must be NULL, one string, or two numbers.")
+  vn <- la$var_names
+  if (!is.null(vn)) {
+    if (!is.character(vn) || is.null(names(vn)) || anyNA(vn) ||
+        any(!nzchar(names(vn))) || anyDuplicated(names(vn)))
+      bad("var_names", "must be a named character vector with unique names.")
+    miss <- setdiff(names(vn), adj_var)
+    if (length(miss))
+      bad("var_names", sprintf("names %s that are not in `adj_var`.",
+                               paste0("`", miss, "`", collapse = ", ")))
+  }
 
   # Incomplete rows go once, here: left to get_PSM() / get_PSW(), each scheme
   # could drop a different set and the columns would describe different
@@ -327,23 +414,35 @@ get_bal <- function(data,
     smd      = unlist(B[grep("^Diff\\.", names(B))], use.names = FALSE),
     stringsAsFactors = FALSE)
 
-  k <- length(labs) + 1L
+  # Plot labels: a two-level factor under its variable's label; any other
+  # var_names entry goes to cobalt, which labels each level of a factor.
+  lab_of <- function(v) if (v %in% names(vn)) vn[[v]] else v
+  pn <- c(vapply(map, lab_of, ""), vn[setdiff(names(vn), map)])
+
   p <- cobalt::love.plot(
-    bt, stats = "mean.diffs", abs = TRUE, var.order = "unadjusted",
-    line = TRUE, thresholds = c(m = threshold),
-    colors = UtilsR::pal_lancet[seq_len(k)], shapes = .BAL_SHAPES[seq_len(k)],
-    size = 3.5, drop.distance = TRUE, labels = FALSE,
+    bt, stats = "mean.diffs", abs = TRUE, var.order = la$var_order,
+    line = la$line, thresholds = c(m = la$threshold),
+    colors = la$colors[seq_len(k)], shapes = la$shapes[seq_len(k)],
+    size = la$size, drop.distance = TRUE, labels = FALSE,
     sample.names = c("Unadjusted", labs),
-    var.names = if (length(map)) map, title = NULL)
-  p <- p + UtilsR::theme_my(base_size = 16)
-  p <- UtilsR::fmt_ref(p, x = threshold, color = "red")
-  # RegR's framed inside legend, but anchored bottom-right: rows are sorted
-  # by unadjusted SMD, so that corner is the one the reference line leaves
-  # empty, and with many schemes RegR's c(0.8, 0.4) sits on top of it
+    var.names = if (length(pn)) pn, title = NULL)
+  p <- p + UtilsR::theme_my(base_size = la$base_size)
+  p <- UtilsR::fmt_ref(p, x = la$threshold, color = la$ref_color)
+  # RegR's framed inside legend, but in the bottom-right corner by default:
+  # rows are sorted by unadjusted SMD, so that corner is the one the
+  # reference line leaves empty, and with many schemes RegR's c(0.8, 0.4)
+  # covers it. fmt_legend() derives the justification from the position and
+  # overwrites one passed to it, so an explicit one is set afterwards. Scheme
+  # labels are long, so a legend above or below the panel takes two columns
+  # rather than one clipped row.
   p <- UtilsR::fmt_legend(
-    p, legend.position = c(0.99, 0.02), legend.justification = c(1, 0),
+    p, legend.position = la$legend_position,
+    ncol = if (identical(la$legend_position, "top") ||
+               identical(la$legend_position, "bottom")) 2,
     legend.background = ggplot2::element_rect(
       fill = "white", colour = "#D6D6D6", linewidth = 1))
+  if (!is.null(la$legend_justification))
+    p <- p + ggplot2::theme(legend.justification = la$legend_justification)
   p <- p + ggplot2::labs(x = "Absolute standardized mean difference",
                          y = "Covariates")
 

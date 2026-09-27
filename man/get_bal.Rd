@@ -9,7 +9,7 @@ get_bal(
   treat,
   adj_var,
   methods = c("PSM", "ATE", "ATT", "ATC", "ATO", "ATM", "EW"),
-  threshold = 0.1,
+  love_args = list(),
   save = list()
 )
 }
@@ -29,8 +29,41 @@ under its own name; a factor with more levels gets one row per level.}
 named list of scheme specifications; see \emph{Specifying schemes}. At most
 14 schemes.}
 
-\item{threshold}{Numeric, default \code{0.1}. Where the red reference line is
-drawn.}
+\item{love_args}{Named list of love plot settings; \code{list()} (default)
+keeps every default. Unknown or duplicated fields are an error.
+\describe{
+\item{\code{threshold}}{Single number, default \code{0.1}. Where the reference
+line is drawn.}
+\item{\code{colors}}{Character vector, or \code{NULL} (default) for
+\code{UtilsR::pal_lancet}. The first colour is the unadjusted sample's,
+then one per scheme; at least that many are required.}
+\item{\code{shapes}}{Point shapes, numeric or character, in the same order;
+\code{NULL} (default) for \verb{17, 16, 15, 18, 8, ...}.}
+\item{\code{size}}{Single positive number, default \code{3.5}. Point size.}
+\item{\code{line}}{\code{TRUE} (default) or \code{FALSE}. Connect each scheme's
+points.}
+\item{\code{var_order}}{Row order: \code{"unadjusted"} (default, largest
+unadjusted imbalance on top), \code{"alphabetical"}, a scheme label to
+sort by that scheme, or \code{NULL} for the order of \code{adj_var}.}
+\item{\code{base_size}}{Single positive number, default \code{16}, passed to
+\code{\link[UtilsR:theme_my]{UtilsR::theme_my()}}.}
+\item{\code{ref_color}}{Single string, default \code{"red"}. Colour of the
+reference line.}
+\item{\code{legend_position}}{Two numbers in panel coordinates for a legend
+inside the plot, default \code{c(0.99, 0.02)} (the corner the unadjusted
+ordering leaves empty), or one string: \code{"right"}, \code{"bottom"},
+\code{"none"}, or \code{\link[UtilsR:fmt_legend]{UtilsR::fmt_legend()}}'s corners \code{"br"}, \code{"bl"},
+\code{"tr"}, \code{"tl"}. A \code{"top"} or \code{"bottom"} legend is laid out in two
+columns.}
+\item{\code{legend_justification}}{Two numbers or one string, or \code{NULL}
+(default) to let \code{\link[UtilsR:fmt_legend]{UtilsR::fmt_legend()}} derive it from the
+position: the nearest corner for an inside legend, \code{c(1, 0)} for the
+default, and the centre of the edge for an outside one.}
+\item{\code{var_names}}{Named character vector of display labels keyed by
+\code{adj_var} names, for example \code{c(bmi = "Body mass index")}, or \code{NULL}
+(default). A factor's label is applied to each of its levels. Only
+the plot is relabelled; \verb{$balance} keeps the column names.}
+}}
 
 \item{save}{\code{NULL} or a list with \code{filename}, and optionally \code{width} and
 \code{height}, passed to \code{RegR::save_plt()}. \code{NULL} and \code{list()} both mean no
@@ -133,6 +166,13 @@ methods <- list(
                                    estimand = "ATO"))
 get_bal(d, treat = "z", adj_var = c("x1", "x2", "x3"),
         methods = methods)$balance
+
+# Restyle: stricter threshold, legend below, readable covariate names
+get_bal(d, treat = "z", adj_var = c("x1", "x2", "x3"),
+        methods = c("PSM", "ATO"),
+        love_args = list(threshold = 0.05, legend_position = "bottom",
+                         var_names = c(x1 = "Age", x2 = "Male",
+                                       x3 = "Frailty")))$plt
 }
 
 }
