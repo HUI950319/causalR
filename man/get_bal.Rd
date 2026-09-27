@@ -10,6 +10,7 @@ get_bal(
   adj_var,
   methods = c("PSM", "ATE", "ATT", "ATC", "ATO", "ATM", "EW"),
   cat_smd = c("overall", "level"),
+  tbl = FALSE,
   love_args = list(),
   save = list()
 )
@@ -36,6 +37,9 @@ name, the unsigned multivariate SMD of Yang & Dalton (2012); see
 \emph{Balance measure}. \code{"level"}: one signed row per level, named
 \verb{<variable>_<level>}, as cobalt and \code{\link[=plt_PSM]{plt_PSM()}} / \code{\link[=plt_PSW]{plt_PSW()}} report it.
 Two-level and numeric covariates are the same either way.}
+
+\item{tbl}{\code{FALSE} (default) or \code{TRUE} to also build \verb{$tbl}, which takes
+far longer than the balance itself. Needs gtsummary and survey.}
 
 \item{love_args}{Named list of love plot settings; \code{list()} (default)
 keeps every default. Unknown or duplicated fields are an error.
@@ -73,9 +77,13 @@ default, and the centre of the edge for an outside one.}
 the plot is relabelled; \verb{$balance} keeps the column names.}
 }}
 
-\item{save}{\code{NULL} or a list with \code{filename}, and optionally \code{width} and
-\code{height}, passed to \code{RegR::save_plt()}. \code{NULL} and \code{list()} both mean no
-file is written; the defaults come from the plot's own pinned size.}
+\item{save}{\code{NULL} or a named list. \code{NULL} and \code{list()} both mean no file
+is written. \code{filename}, and optionally \code{width} and \code{height}, save the plot
+through \code{RegR::save_plt()}, the size defaulting to the plot's own pinned
+size. \code{path} (the output directory), \code{title} (also the file name),
+\code{note}, \code{header_value}, \code{header_colwidths} and \code{line_spacing} save \verb{$tbl}
+through \code{RegR::save_tb()} as a Word file, and need \code{tbl = TRUE}. Plot and
+table fields may be given together; the return value is unchanged.}
 }
 \value{
 A list of
@@ -90,6 +98,19 @@ factor with three or more levels is unsigned.}
 column a scheme names, with one weight column per scheme named by
 its label. Unmatched and trimmed units have weight \code{0}, so every
 column describes the same rows.}
+\item{\code{tbl}}{Only with \code{tbl = TRUE}: a gtsummary \code{tbl_merge} with
+one spanner for the unadjusted sample and one per scheme, each
+holding both arms' mean (SD) or n (\%), an SMD and a p-value. A scheme
+is summarised through a survey design on its weight column
+(\code{tbl_svysummary()}), zero weights included. The SMD is gtsummary's
+own, \code{add_difference(test = ~ "smd")} through \code{smd::smd()}, shown as
+an absolute value: a factor's value equals \code{cat_smd = "overall"}
+whatever \code{cat_smd} is, and a continuous covariate's divides the
+variance by \eqn{n}, so it is slightly larger than the plot's. The
+p-values are \code{add_p()}'s defaults. For a continuous covariate that is
+a rank test, which compares whole distributions, so it can be small
+beside a small SMD; under a matching or trimming scheme it also
+ranks the zero-weight units, unlike the chi-squared test.}
 }
 }
 \description{
@@ -197,6 +218,12 @@ get_bal(d, treat = "z", adj_var = c("x1", "x2", "x3"),
         love_args = list(threshold = 0.05, legend_position = "bottom",
                          var_names = c(x1 = "Age", x2 = "Male",
                                        x3 = "Frailty")))$plt
+
+# Table 1 per scheme: both arms, SMD and p-value under one spanner each
+if (requireNamespace("gtsummary", quietly = TRUE) &&
+    requireNamespace("survey", quietly = TRUE))
+  get_bal(d, treat = "z", adj_var = c("x1", "x2", "x3"),
+          methods = c("PSM", "ATO"), tbl = TRUE)$tbl
 }
 
 }

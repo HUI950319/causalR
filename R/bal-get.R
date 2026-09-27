@@ -4,12 +4,14 @@
 #
 # Architecture (2 layers):
 #
-#   L1  get_bal(data, treat, adj_var, methods, cat_smd, love_args, save)
+#   L1  get_bal(data, treat, adj_var, methods, cat_smd, tbl, love_args, save)
 #         |
 #         +-- .bal_specs          shorthand or named list -> validated specs
 #         +-- get_PSM / get_PSW   one call per scheme, weight column only
 #         +-- cobalt::bal.tab / cobalt::love.plot   one shared denominator
+#         +-- gtsummary::tbl_merge   tbl = TRUE, one svysummary per scheme
 #         +-- .psw_save           pin the size, save through RegR::save_plt()
+#         +-- RegR::save_tb       the table's `save` fields (.BAL_TB_SAVE)
 #
 # Every scheme is divided by the unadjusted pooled SD of the complete cases
 # (cobalt's s.d.denom = "pooled"), as RegR::get_psm_iptw() does for its
@@ -47,6 +49,10 @@
                            base_size = 16, ref_color = "red",
                            legend_position = c(0.99, 0.02),
                            legend_justification = NULL, var_names = NULL)
+
+# `save` fields that go to RegR::save_tb(); the rest go to RegR::save_plt().
+.BAL_TB_SAVE <- c("path", "title", "note", "header_value", "header_colwidths",
+                  "line_spacing")
 
 
 # Turn `methods` into a named list of specs, each a named list with `design`
@@ -236,6 +242,8 @@
 #'   *Balance measure*. `"level"`: one signed row per level, named
 #'   `<variable>_<level>`, as cobalt and [plt_PSM()] / [plt_PSW()] report it.
 #'   Two-level and numeric covariates are the same either way.
+#' @param tbl `FALSE` (default) or `TRUE` to also build `$tbl`, which takes
+#'   far longer than the balance itself. Needs gtsummary and survey.
 #' @param love_args Named list of love plot settings; `list()` (default)
 #'   keeps every default. Unknown or duplicated fields are an error.
 #'   \describe{
@@ -271,9 +279,13 @@
 #'       (default). A factor's label is applied to each of its levels. Only
 #'       the plot is relabelled; `$balance` keeps the column names.}
 #'   }
-#' @param save `NULL` or a list with `filename`, and optionally `width` and
-#'   `height`, passed to `RegR::save_plt()`. `NULL` and `list()` both mean no
-#'   file is written; the defaults come from the plot's own pinned size.
+#' @param save `NULL` or a named list. `NULL` and `list()` both mean no file
+#'   is written. `filename`, and optionally `width` and `height`, save the plot
+#'   through `RegR::save_plt()`, the size defaulting to the plot's own pinned
+#'   size. `path` (the output directory), `title` (also the file name),
+#'   `note`, `header_value`, `header_colwidths` and `line_spacing` save `$tbl`
+#'   through `RegR::save_tb()` as a Word file, and need `tbl = TRUE`. Plot and
+#'   table fields may be given together; the return value is unchanged.
 #'
 #' @return A list of
 #'   \describe{
@@ -287,6 +299,19 @@
 #'       column a scheme names, with one weight column per scheme named by
 #'       its label. Unmatched and trimmed units have weight `0`, so every
 #'       column describes the same rows.}
+#'     \item{`tbl`}{Only with `tbl = TRUE`: a gtsummary `tbl_merge` with
+#'       one spanner for the unadjusted sample and one per scheme, each
+#'       holding both arms' mean (SD) or n (%), an SMD and a p-value. A scheme
+#'       is summarised through a survey design on its weight column
+#'       (`tbl_svysummary()`), zero weights included. The SMD is gtsummary's
+#'       own, `add_difference(test = ~ "smd")` through `smd::smd()`, shown as
+#'       an absolute value: a factor's value equals `cat_smd = "overall"`
+#'       whatever `cat_smd` is, and a continuous covariate's divides the
+#'       variance by \eqn{n}, so it is slightly larger than the plot's. The
+#'       p-values are `add_p()`'s defaults. For a continuous covariate that is
+#'       a rank test, which compares whole distributions, so it can be small
+#'       beside a small SMD; under a matching or trimming scheme it also
+#'       ranks the zero-weight units, unlike the chi-squared test.}
 #'   }
 #'
 #' @seealso [get_PSM()] and [get_PSW()] for one design at a time, with
@@ -326,6 +351,12 @@
 #'         love_args = list(threshold = 0.05, legend_position = "bottom",
 #'                          var_names = c(x1 = "Age", x2 = "Male",
 #'                                        x3 = "Frailty")))$plt
+#'
+#' # Table 1 per scheme: both arms, SMD and p-value under one spanner each
+#' if (requireNamespace("gtsummary", quietly = TRUE) &&
+#'     requireNamespace("survey", quietly = TRUE))
+#'   get_bal(d, treat = "z", adj_var = c("x1", "x2", "x3"),
+#'           methods = c("PSM", "ATO"), tbl = TRUE)$tbl
 #' }
 #'
 #' @export
@@ -335,12 +366,29 @@ get_bal <- function(data,
                     methods   = c("PSM", "ATE", "ATT", "ATC", "ATO", "ATM",
                                   "EW"),
                     cat_smd   = c("overall", "level"),
+                    tbl       = FALSE,
                     love_args = list(),
                     save      = list()) {
 
   if (!is.data.frame(data) || !nrow(data))
     stop("`data` must be a non-empty data frame.", call. = FALSE)
   cat_smd <- match.arg(cat_smd)
+  if (!is.logical(tbl) || length(tbl) != 1L || is.na(tbl))
+    stop("`tbl` must be TRUE or FALSE.", call. = FALSE)
+  if (tbl) for (pkg in c("gtsummary", "survey"))
+    if (!requireNamespace(pkg, quietly = TRUE))
+      stop(sprintf("Package '%s' is required for get_bal(tbl = TRUE).", pkg),
+           call. = FALSE)
+  # One `save` list serves both savers, split by field name.
+  if (!is.null(save) && !is.list(save))
+    stop("`save` must be `NULL` or a list.", call. = FALSE)
+  if (length(save) && (is.null(names(save)) || any(!nzchar(names(save)))))
+    stop("`save` must be a named list.", call. = FALSE)
+  tb_save <- save[intersect(names(save), .BAL_TB_SAVE)]
+  if (length(tb_save) && !tbl)
+    stop(sprintf("`save` field(s) %s write the table, which needs `tbl = TRUE`.",
+                 paste0("`", names(tb_save), "`", collapse = ", ")),
+         call. = FALSE)
   treat   <- .sens_check_col(treat, data, "treat", n = 1L)
   adj_var <- .sens_check_col(adj_var, data, "adj_var")
   if (is.null(adj_var))
@@ -512,7 +560,47 @@ get_bal <- function(data,
   p <- p + ggplot2::labs(x = "Absolute standardized mean difference",
                          y = "Covariates")
 
+  # tbl: gtsummary's own summaries, SMD and p-value per sample, merged. The
+  # zero weights of unmatched and trimmed units stay in each design, so the
+  # SMD's unweighted denominator is the same complete cases as the plot's.
+  tb <- NULL
+  if (tbl) {
+    dd  <- data[c(treat, adj_var)]
+    st  <- list(gtsummary::all_continuous() ~ "{mean} ({sd})")
+    one <- function(wt) {
+      t <- if (is.null(wt))
+        gtsummary::tbl_summary(dd, by = gtsummary::all_of(treat), statistic = st)
+      else
+        gtsummary::tbl_svysummary(
+          survey::svydesign(ids = ~1, weights = wt, data = dd),
+          by = gtsummary::all_of(treat), statistic = st)
+      t <- gtsummary::add_difference(t, test = gtsummary::everything() ~ "smd")
+      t <- gtsummary::add_p(t, pvalue_fun = gtsummary::label_style_pvalue(digits = 3))
+      t <- gtsummary::modify_column_hide(t, "conf.low")
+      t <- gtsummary::modify_header(t, estimate = "**SMD**")
+      gtsummary::modify_fmt_fun(t, estimate ~ function(x)
+        gtsummary::style_number(abs(x), digits = 3))
+    }
+    # survey reads weights summing below n as mis-scaled sampling weights;
+    # balancing weights (ATO, matching zeros) do that by design.
+    tb <- withCallingHandlers(
+      gtsummary::tbl_merge(c(list(one(NULL)), lapply(w, one)),
+                           tab_spanner = paste0("**", c("Unadjusted", labs), "**")),
+      warning = function(cnd)
+        if (grepl("Sample size greater than population size",
+                  conditionMessage(cnd), fixed = TRUE))
+          invokeRestart("muffleWarning"))
+  }
+
   data[labs] <- w
-  plt <- .psw_save(p, c(8, max(5, 1.5 + 0.45 * nrow(B))), save)
-  list(plt = plt, balance = bal, data = data)
+  plt <- .psw_save(p, c(8, max(5, 1.5 + 0.45 * nrow(B))),
+                   save[setdiff(names(save), .BAL_TB_SAVE)])
+  if (length(tb_save)) {
+    if (!requireNamespace("RegR", quietly = TRUE))
+      stop("Package 'RegR' is required to save the table.", call. = FALSE)
+    do.call(RegR::save_tb, c(list(data = gtsummary::as_flex_table(tb)), tb_save))
+  }
+  out <- list(plt = plt, balance = bal, data = data)
+  if (tbl) out$tbl <- tb
+  out
 }

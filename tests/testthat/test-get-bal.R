@@ -263,7 +263,7 @@ bal_pts <- function(p) ggplot2::layer_data(
 test_that("love_args defaults keep the RegR-style plot", {
   expect_identical(names(formals(get_bal)),
                    c("data", "treat", "adj_var", "methods", "cat_smd",
-                     "love_args", "save"))
+                     "tbl", "love_args", "save"))
   p <- get_bal(bal_data(), "z", bal_adj, methods = c("PSM", "ATE"))$plt
 
   expect_equal(unname(bal_ref(p)$xintercept), 0.1)
@@ -370,4 +370,61 @@ test_that("save writes a PDF only when it is a non-empty list", {
 
   expect_error(get_bal(d, "z", bal_adj, methods = "ATO", save = "nope.pdf"),
                "`save` must be `NULL` or a list")
+})
+
+skip_if_no_tbl <- function() {
+  for (p in c("gtsummary", "survey", "cardx", "smd")) skip_if_not_installed(p)
+}
+
+test_that("tbl = TRUE merges one gtsummary table per scheme; FALSE skips it", {
+  skip_if_no_tbl()
+  d   <- stage_data()
+  adj <- c("x1", "sex", "stage")
+  expect_null(get_bal(d, "z", adj, methods = "ATO")$tbl)
+
+  res  <- get_bal(d, "z", adj, methods = c("PSM", "ATE"), tbl = TRUE)
+  labs <- c("Unadjusted", "PS matching (nearest, ATT)", "IPTW (ATE)")
+  expect_s3_class(res$tbl, "tbl_merge")
+  expect_length(res$tbl$tbls, 3L)
+  expect_setequal(res$tbl$table_styling$spanning_header$spanning_header,
+                  paste0("**", labs, "**"))
+
+  for (i in seq_along(labs)) {
+    t <- res$tbl$tbls[[i]]
+    b <- t$table_body[t$table_body$row_type == "label", ]
+    # gtsummary's own SMD: a factor's Yang & Dalton value equals get_bal's;
+    # a continuous one has its variance over n rather than n - 1
+    expect_equal(abs(b$estimate[b$variable == "stage"]),
+                 bal_smd(res, labs[i], "stage"))
+    expect_equal(abs(b$estimate[b$variable == "x1"]),
+                 abs(bal_smd(res, labs[i], "x1")), tolerance = 0.01)
+    expect_false(anyNA(b$p.value))
+    h <- t$table_styling$header
+    expect_identical(h$label[h$column == "estimate"], "**SMD**")
+    expect_true(h$hide[h$column == "conf.low"])
+  }
+})
+
+test_that("save sends plot fields to save_plt() and table fields to save_tb()", {
+  skip_if_not_installed("RegR")
+  skip_if_not_installed("flextable")
+  skip_if_no_tbl()
+  d   <- bal_data()
+  dir <- withr::local_tempdir()
+
+  expect_error(get_bal(d, "z", bal_adj, methods = "ATO",
+                       save = list(path = dir, title = "bal_tbl")),
+               "`tbl = TRUE`")
+  expect_error(get_bal(d, "z", bal_adj, methods = "ATO", save = list("a.pdf")),
+               "named list")
+
+  res <- get_bal(d, "z", bal_adj, methods = "ATO", tbl = TRUE,
+                 save = list(path = dir, title = "bal_tbl"))
+  expect_s3_class(res$tbl, "tbl_merge")
+  expect_identical(list.files(dir), "bal_tbl.docx")
+
+  f <- file.path(dir, "bal.pdf")
+  get_bal(d, "z", bal_adj, methods = "ATO", tbl = TRUE,
+          save = list(filename = f, path = dir, title = "bal_tbl2"))
+  expect_setequal(list.files(dir), c("bal_tbl.docx", "bal_tbl2.docx", "bal.pdf"))
 })
