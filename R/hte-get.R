@@ -494,7 +494,12 @@
 #'   `clusters`) may be given for every row of `data` -- rows dropped for a
 #'   missing `cat_var` or outcome are dropped from them too -- or for the
 #'   rows analysed only. `clusters` and `sample.weights` are only supported
-#'   with `measure = "diff"`.
+#'   with `measure = "diff"`. Without `num.trees`, grf grows its default 2000
+#'   trees, or 200 when more than 10,000 rows are analysed, with a message:
+#'   at 100,000 survival rows that took 13 s instead of 83 s with the same
+#'   ATE, while the per-patient CATE is noisier. For a survival outcome with
+#'   many distinct times, a coarse `failure.times` grid (for example `0:120`
+#'   for months) is what bounds time and memory.
 #' @param verbose Logical. `TRUE` reports how many rows were dropped for a
 #'   missing `cat_var` or outcome. Default `FALSE`.
 #'
@@ -823,6 +828,15 @@ get_hte <- function(data,
                       names(grf_args)))
     if (!all(keep) && length(grf_args[[f]]) == length(keep))
       grf_args[[f]] <- grf_args[[f]][keep]
+  # grf grows 2000 trees by default. Above 10,000 rows a call that sets no
+  # num.trees grows 200: at 100,000 survival rows 13 s instead of 83 s, the
+  # same ATE, and a per-patient CATE correlated 0.95 with 2000 trees'.
+  if (is.null(grf_args[["num.trees"]]) && length(W) > 10000L) {
+    grf_args$num.trees <- 200L
+    cli::cli_inform(c("i" = paste(
+      "Growing 200 trees for {length(W)} rows, more than 10,000, instead of",
+      "grf's 2000; set {.code grf_args = list(num.trees = )} to change it.")))
+  }
   target <- NULL
   if (is_surv) {
     target <- match.arg(

@@ -36,8 +36,10 @@ the partial dependence of two covariates as a heat map.}
 \describe{
 \item{\code{"cate"}}{The out-of-bag CATE of every patient (grey), jittered
 for a categorical covariate and smoothed by loess (span
-\code{cate_smooth}) for a continuous one. Descriptive only: forest
-estimates are shrunk towards the overall mean.}
+\code{cate_smooth}) for a continuous one. Above 2000 patients only 2000,
+evenly spaced as \code{pdp_args$max_n} picks them, are drawn; the loess
+line and the y range still use every patient. Descriptive only:
+forest estimates are shrunk towards the overall mean.}
 \item{\code{"dr"}}{The doubly robust estimate with pointwise confidence
 intervals (red): the AIPW score mean per level, or a natural spline
 of the AIPW scores with HC3 errors, using the forest's observation

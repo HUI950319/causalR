@@ -167,6 +167,34 @@ test_that("cate_smooth sets the loess span of the cate line; 0 leaves it out", {
   expect_identical(nrow(layer_data_of(p0, "GeomPoint")), nrow(res$data))
 })
 
+test_that("the cate layer draws 2000 patients; its line and y range use all", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("sandwich")
+  set.seed(20260927)
+  n <- 2500L
+  d <- data.frame(age = round(stats::runif(n, 20, 85)),
+                  sex = factor(sample(c("F", "M"), n, replace = TRUE)))
+  d$z <- stats::rbinom(n, 1, 0.5)
+  d$y <- stats::rbinom(n, 1, stats::plogis(-1 + d$z * (0.2 + 0.6 * (d$sex == "M"))))
+  res <- get_hte(d, cat_var = "z", adj_var = c("age", "sex"), surv = "y",
+                 grf_args = list(num.trees = 50, seed = 1))
+  p <- plt_hte_dep(res, display = "cate")
+  for (q in panels_of(p))
+    expect_identical(nrow(layer_data_of(q, "GeomPoint")), 2000L)
+  expect_match(p$patches$annotation$caption, "2000 of the 2500 patients",
+               fixed = TRUE)
+
+  age <- plt_hte_dep(res, x_var = "age", display = "cate")
+  smooth <- Filter(function(l) inherits(l$geom, "GeomSmooth"), age$layers)[[1L]]
+  expect_identical(nrow(smooth$data), n)
+  # loess's approximate trace draws the same line without an n x n pass
+  expect_identical(smooth$stat_params$method.args$control$trace.hat,
+                   "approximate")
+  lim <- age$coordinates$limits$y
+  expect_lte(lim[1L], min(res$data$.cate))
+  expect_gte(lim[2L], max(res$data$.cate))
+})
+
 test_that("type = 'heat' tiles the two-way partial dependence", {
   res <- dep_res()
   p <- plt_hte_dep(res, x_var = c("sex", "stage"), type = "heat")

@@ -184,8 +184,10 @@
 #'   \describe{
 #'     \item{`"cate"`}{The out-of-bag CATE of every patient (grey), jittered
 #'       for a categorical covariate and smoothed by loess (span
-#'       `cate_smooth`) for a continuous one. Descriptive only: forest
-#'       estimates are shrunk towards the overall mean.}
+#'       `cate_smooth`) for a continuous one. Above 2000 patients only 2000,
+#'       evenly spaced as `pdp_args$max_n` picks them, are drawn; the loess
+#'       line and the y range still use every patient. Descriptive only:
+#'       forest estimates are shrunk towards the overall mean.}
 #'     \item{`"dr"`}{The doubly robust estimate with pointwise confidence
 #'       intervals (red): the AIPW score mean per level, or a natural spline
 #'       of the AIPW scores with HC3 errors, using the forest's observation
@@ -422,6 +424,8 @@ plt_hte_dep <- function(x,
                          else sprintf("= %.3f", p)
     # red is the dr layer's colour, so the loess line takes it only without one
     cate_line <- if ("dr" %in% display) "grey30" else "firebrick"
+    # the most cate points a panel draws; 100,000 took 13 s to render
+    max_pts <- 2000L
 
     panel <- function(v) {
       is_n  <- num[[v]]
@@ -442,16 +446,27 @@ plt_hte_dep <- function(x,
       if ("cate" %in% display) {
         pts <- data.frame(x = xval(d[[v]]), y = d$.cate, panel = label)
         pts <- pts[!is.na(pts$x), , drop = FALSE]
+        # Evenly spaced patients are drawn, as .hte_pdp() picks them; the
+        # loess line and the y range use every patient.
+        shown <- pts
+        if (nrow(pts) > max_pts)
+          shown <- pts[unique(round(seq(1, nrow(pts), length.out = max_pts))), ,
+                       drop = FALSE]
         q <- q + if (is_n) {
-          list(ggplot2::geom_point(data = pts, ggplot2::aes(x = x, y = y),
+          list(ggplot2::geom_point(data = shown, ggplot2::aes(x = x, y = y),
                                    colour = "grey55", alpha = 0.4, size = 0.8),
                if (cate_smooth > 0)
+                 # loess's exact trace, unused with se = FALSE, costs O(n^2):
+                 # 27 s per panel at 100,000 patients for the same line
                  ggplot2::geom_smooth(data = pts, ggplot2::aes(x = x, y = y),
                                       method = "loess", formula = y ~ x,
                                       span = cate_smooth, se = FALSE,
+                                      method.args = list(
+                                        control = stats::loess.control(
+                                          trace.hat = "approximate")),
                                       colour = cate_line, linewidth = 0.8))
         } else {
-          ggplot2::geom_point(data = pts, ggplot2::aes(x = x, y = y),
+          ggplot2::geom_point(data = shown, ggplot2::aes(x = x, y = y),
                               position = ggplot2::position_jitter(
                                 width = 0.15, height = 0, seed = 1),
                               colour = "grey55", alpha = 0.4, size = 0.8)
@@ -521,7 +536,12 @@ plt_hte_dep <- function(x,
                  built, rng)
 
     caption <- paste(c(
-      if ("cate" %in% display) "grey: out-of-bag CATE per patient",
+      if ("cate" %in% display) {
+        if (nrow(d) > max_pts)
+          sprintf("grey: out-of-bag CATE of %d of the %d patients", max_pts,
+                  nrow(d))
+        else "grey: out-of-bag CATE per patient"
+      },
       if ("cate" %in% display && !"dr" %in% display && cate_smooth > 0 &&
           any(num[vars])) "red: its loess",
       if ("dr" %in% display)

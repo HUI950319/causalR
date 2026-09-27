@@ -106,7 +106,12 @@ to \code{time}. Per-row fields (\code{W.hat}, \code{Y.hat}, \code{sample.weights
 \code{clusters}) may be given for every row of \code{data} -- rows dropped for a
 missing \code{cat_var} or outcome are dropped from them too -- or for the
 rows analysed only. \code{clusters} and \code{sample.weights} are only supported
-with \code{measure = "diff"}.}
+with \code{measure = "diff"}. Without \code{num.trees}, grf grows its default 2000
+trees, or 200 when more than 10,000 rows are analysed, with a message:
+at 100,000 survival rows that took 13 s instead of 83 s with the same
+ATE, while the per-patient CATE is noisier. For a survival outcome with
+many distinct times, a coarse \code{failure.times} grid (for example \code{0:120}
+for months) is what bounds time and memory.}
 
 \item{verbose}{Logical. \code{TRUE} reports how many rows were dropped for a
 missing \code{cat_var} or outcome. Default \code{FALSE}.}

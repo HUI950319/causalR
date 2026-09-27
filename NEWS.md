@@ -1,5 +1,17 @@
 # causalR (development version)
 
+* Large samples run faster. `get_hte()` grows 200 trees instead of grf's
+  2000 when more than 10,000 rows are analysed and `grf_args` sets no
+  `num.trees`, with a message: at 100,000 survival rows 13 s instead of
+  83 s, the ATE unchanged. Above 10,000 patients `plt_hte_rate()` learns and
+  evaluates the forest CATE on a random 10,000 of them (whole clusters) with
+  500 trees, with a message: 2 s instead of a minute at 100,000, at the
+  cost of power, as the test rests on about 5,000 held-out patients.
+  `plt_hte_dep()` draws at most 2000 evenly spaced patients in the `"cate"`
+  layer; its loess line, still fitted to every patient, skips loess's exact
+  O(n^2) trace, which `se = FALSE` never used, so the line is unchanged:
+  2 s instead of 122 s at 100,000 patients.
+
 * New `get_bal()` draws the covariate balance of several propensity score
   schemes on one love plot, styled like `RegR::get_ps()`. `methods` takes
   shorthands (`"PSM"`, `"ATE"`, `"ATT"`, `"ATC"`, `"ATO"`, `"ATM"`, `"EW"`)

@@ -30,7 +30,12 @@ it, so the patients are split at random: a forest refitted to a share
 rest evaluates that ranking. Both refits take the \code{grf_args} of
 \code{\link[=get_hte]{get_hte()}} with \code{seed}; for a survival outcome, each half needs
 patients of both arms followed past \code{time}. With clusters, whole
-clusters are split and each half needs at least two clusters.}
+clusters are split and each half needs at least two clusters. Above
+10,000 patients a random 10,000 of them (whole clusters, reaching at
+least 10,000) are split instead and both refits grow 500 trees, with
+a message. This trades power for time: the test rests on about 5,000
+held-out patients, where all of them would take about a minute at
+100,000.}
 \item{A numeric or logical column of \code{x$data}}{A pre-specified score,
 such as a biomarker or a published risk score, evaluated on every
 patient with the doubly robust scores of the stored forest. Patients
@@ -75,14 +80,15 @@ used when \code{type} includes \code{"gates"}.}
 \code{0.95}.}
 
 \item{train_frac}{Share of the patients the ranking forest is refitted to,
-strictly between 0 and 1. Default \code{0.5}. Only used when \code{priority}
-includes \code{"cate"}. With clusters this is the share of clusters, so the
-share of patients can differ when cluster sizes vary.}
+strictly between 0 and 1, of the 10,000 drawn above 10,000 patients.
+Default \code{0.5}. Only used when \code{priority} includes \code{"cate"}. With clusters
+this is the share of clusters, so the share of patients can differ when
+cluster sizes vary.}
 
-\item{seed}{Seed of the split, the refitted forests and grf's bootstrap
-standard errors, so a call can be repeated exactly; \code{NULL} (default)
-takes the seed of the forest in \code{x}. The random number stream of the
-session is restored afterwards.}
+\item{seed}{Seed of the draw above 10,000 patients, the split, the
+refitted forests and grf's bootstrap standard errors, so a call can be
+repeated exactly; \code{NULL} (default) takes the seed of the forest in \code{x}.
+The random number stream of the session is restored afterwards.}
 
 \item{title}{Plot title, or \code{NULL} (default).}
 
@@ -129,8 +135,9 @@ patients; the AUTOC and QINI use the whole ranking. They test whether the
 ranking targets the effect at all. Whether the gain is worth acting on is
 a clinical judgement on the size of the Qini curve.
 
-With \code{"cate"} the result depends on the split, and only the held-out
-patients inform the test; \code{seed} fixes the split.
+With \code{"cate"} the result depends on the split, and above 10,000 patients
+on the 10,000 drawn; only the held-out patients inform the test. \code{seed}
+fixes both.
 
 The GATES panel draws each group's doubly robust average treatment effect,
 \code{\link[grf:average_treatment_effect]{grf::average_treatment_effect()}} with \code{subset} as in \code{\link[=plt_hte_sub]{plt_hte_sub()}}, over

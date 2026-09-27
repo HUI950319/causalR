@@ -440,6 +440,23 @@ test_that("grf_args naming a field get_hte() sets points to the argument", {
                fixed = TRUE)
 })
 
+test_that("above 10,000 rows grf grows 200 trees unless grf_args sets num.trees", {
+  skip_if_not_installed("grf")
+  d <- hte_bin_data(n = 10001L)
+  expect_message(res <- get_hte(d, "z", adj_var = c("age", "x2"), surv = "y",
+                                grf_args = list(seed = 1)),
+                 "Growing 200 trees for 10001 rows")
+  expect_equal(res$fit[["_num_trees"]], 200)
+  expect_equal(attr(res, "analysis")$grf_args$num.trees, 200)
+  # a num.trees the caller sets wins; 10,000 rows keep grf's 2000
+  expect_message(res <- get_hte(d, "z", adj_var = c("age", "x2"), surv = "y",
+                                grf_args = list(num.trees = 100, seed = 1)), NA)
+  expect_equal(res$fit[["_num_trees"]], 100)
+  expect_message(res <- get_hte(d[-1L, ], "z", adj_var = c("age", "x2"),
+                                surv = "y", grf_args = list(seed = 1)), NA)
+  expect_equal(res$fit[["_num_trees"]], 2000)
+})
+
 test_that("a date covariate stops instead of becoming one column per date", {
   skip_if_not_installed("grf")
   d <- hte_bin_data(n = 200L)

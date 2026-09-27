@@ -38,7 +38,12 @@
 #'       rest evaluates that ranking. Both refits take the `grf_args` of
 #'       [get_hte()] with `seed`; for a survival outcome, each half needs
 #'       patients of both arms followed past `time`. With clusters, whole
-#'       clusters are split and each half needs at least two clusters.}
+#'       clusters are split and each half needs at least two clusters. Above
+#'       10,000 patients a random 10,000 of them (whole clusters, reaching at
+#'       least 10,000) are split instead and both refits grow 500 trees, with
+#'       a message. This trades power for time: the test rests on about 5,000
+#'       held-out patients, where all of them would take about a minute at
+#'       100,000.}
 #'     \item{A numeric or logical column of `x$data`}{A pre-specified score,
 #'       such as a biomarker or a published risk score, evaluated on every
 #'       patient with the doubly robust scores of the stored forest. Patients
@@ -78,13 +83,14 @@
 #' @param conf_level Confidence level of the bands and intervals. Default
 #'   `0.95`.
 #' @param train_frac Share of the patients the ranking forest is refitted to,
-#'   strictly between 0 and 1. Default `0.5`. Only used when `priority`
-#'   includes `"cate"`. With clusters this is the share of clusters, so the
-#'   share of patients can differ when cluster sizes vary.
-#' @param seed Seed of the split, the refitted forests and grf's bootstrap
-#'   standard errors, so a call can be repeated exactly; `NULL` (default)
-#'   takes the seed of the forest in `x`. The random number stream of the
-#'   session is restored afterwards.
+#'   strictly between 0 and 1, of the 10,000 drawn above 10,000 patients.
+#'   Default `0.5`. Only used when `priority` includes `"cate"`. With clusters
+#'   this is the share of clusters, so the share of patients can differ when
+#'   cluster sizes vary.
+#' @param seed Seed of the draw above 10,000 patients, the split, the
+#'   refitted forests and grf's bootstrap standard errors, so a call can be
+#'   repeated exactly; `NULL` (default) takes the seed of the forest in `x`.
+#'   The random number stream of the session is restored afterwards.
 #' @param title Plot title, or `NULL` (default).
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
@@ -101,8 +107,9 @@
 #' ranking targets the effect at all. Whether the gain is worth acting on is
 #' a clinical judgement on the size of the Qini curve.
 #'
-#' With `"cate"` the result depends on the split, and only the held-out
-#' patients inform the test; `seed` fixes the split.
+#' With `"cate"` the result depends on the split, and above 10,000 patients
+#' on the 10,000 drawn; only the held-out patients inform the test. `seed`
+#' fixes both.
 #'
 #' The GATES panel draws each group's doubly robust average treatment effect,
 #' [grf::average_treatment_effect()] with `subset` as in [plt_hte_sub()], over
@@ -286,17 +293,37 @@ plt_hte_rate <- function(x,
   X    <- fit$X.orig
   W    <- fit$W.orig
   if (learn) {
+    # Above 10,000 patients a random 10,000 -- whole clusters, reaching at
+    # least that many -- are split instead, and refitted with 500 trees: at
+    # 100,000 survival patients 2 s instead of about a minute, the test
+    # resting on 5,000 held-out patients.
+    pool <- seq_len(n)
+    big  <- n > 10000L
+    if (big) {
+      pool <- if (length(fit$clusters)) {
+        ids  <- unique(fit$clusters)
+        ids  <- ids[sample.int(length(ids))]
+        size <- tabulate(match(fit$clusters, ids), length(ids))
+        which(fit$clusters %in%
+                ids[seq_len(match(TRUE, cumsum(size) >= 10000L))])
+      } else {
+        sort(sample.int(n, 10000L))
+      }
+      cli::cli_inform(c("i" = paste(
+        "The forest CATE is learnt and evaluated on a random {length(pool)}",
+        "of the {n} patients, refitted with 500 trees.")))
+    }
     train <- if (length(fit$clusters)) {
-      ids <- unique(fit$clusters)
+      ids <- unique(fit$clusters[pool])
       k <- floor(train_frac * length(ids))
       if (k < 2L || length(ids) - k < 2L)
         stop("Each split needs at least two clusters; change `train_frac` or use more clusters.",
              call. = FALSE)
-      which(fit$clusters %in% ids[sample.int(length(ids), k)])
+      pool[fit$clusters[pool] %in% ids[sample.int(length(ids), k)]]
     } else {
-      sort(sample.int(n, floor(train_frac * n)))
+      pool[sort(sample.int(length(pool), floor(train_frac * length(pool))))]
     }
-    rows   <- setdiff(seq_len(n), train)
+    rows   <- setdiff(pool, train)
     halves <- list(training = train, evaluation = rows)
     for (h in names(halves)) {
       w <- W[halves[[h]]]
@@ -332,6 +359,7 @@ plt_hte_rate <- function(x,
               if (!is.null(fit$sample.weights))
                 list(sample.weights = fit$sample.weights),
               if (surv) list(target = a$target))
+    if (big) ga$num.trees <- 500L
     # grf keeps survival times cut at the horizon, so refit from `$data`
     Y <- if (surv) d[[a$outcome[1L]]] else fit$Y.orig
     D <- if (surv) as.integer(d[[a$outcome[2L]]])

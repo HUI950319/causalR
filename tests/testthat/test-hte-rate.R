@@ -183,6 +183,48 @@ test_that("the forest CATE is learnt on one split and evaluated on the other", {
                    rate_of(plt_hte_rate(res, seed = 1)))
 })
 
+test_that("above 10,000 patients the CATE is learnt on 10,000 of them with 500 trees", {
+  skip_if_not_installed("grf")
+  set.seed(4)
+  n <- 10050L
+  d <- data.frame(x1 = stats::rnorm(n), x2 = stats::rnorm(n))
+  d$z <- stats::rbinom(n, 1, 0.5)
+  d$y <- d$x2 + d$z * (1 + d$x1) + stats::rnorm(n)
+  res <- get_hte(d, "z", adj_var = c("x1", "x2"), surv = "y",
+                 grf_args = list(num.trees = 50, seed = 1))
+  res_cl <- get_hte(d, "z", adj_var = c("x1", "x2"), surv = "y",
+                    grf_args = list(num.trees = 50, seed = 1,
+                                    clusters = rep(1:1005, each = 10)))
+  seen <- list()
+  original <- grf::causal_forest
+  local_mocked_bindings(causal_forest = function(...) {
+    args <- list(...)
+    seen[[length(seen) + 1L]] <<- list(Y = args$Y, trees = args$num.trees,
+                                       clusters = args$clusters)
+    original(...)
+  }, .package = "grf")
+  expect_message(p <- plt_hte_rate(res, seed = 7),
+                 "random 10000 of the 10050 patients, refitted with 500 trees")
+  # the draw, then the split, from the one seed
+  set.seed(7)
+  pool  <- sort(sample.int(n, 10000L))
+  train <- pool[sort(sample.int(10000L, 5000L))]
+  expect_equal(seen[[1L]]$Y, res$fit$Y.orig[train])
+  expect_equal(seen[[2L]]$Y, res$fit$Y.orig[setdiff(pool, train)])
+  expect_identical(c(seen[[1L]]$trees, seen[[2L]]$trees), c(500L, 500L))
+  expect_identical(rate_of(p)$n, rep(5000L, 2L))
+  # a pre-specified rule refits nothing and keeps every patient
+  expect_identical(rate_of(plt_hte_rate(res, priority = "x1"))$n, rep(n, 2L))
+
+  # with clusters, whole clusters are drawn until 10,000 patients
+  seen <- list()
+  expect_message(plt_hte_rate(res_cl, seed = 7), "random 10000 of the 10050")
+  cl <- lapply(seen, `[[`, "clusters")
+  expect_length(intersect(cl[[1L]], cl[[2L]]), 0L)
+  expect_true(all(table(unlist(cl)) == 10L))
+  expect_length(unlist(cl), 10000L)
+})
+
 test_that("the global random number stream is left untouched", {
   res <- rate_surv()
   set.seed(99)
