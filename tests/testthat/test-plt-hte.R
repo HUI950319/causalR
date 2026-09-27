@@ -458,6 +458,13 @@ test_that("overall, show_n, show_pvalue and show_pinter set the rows and columns
   expect_identical(fp_col(p, 3)[2], sprintf("%.3f (%.3f, %.3f)", ov$estimate,
                                             ov$conf.low, ov$conf.high))
   expect_length(fp_grobs(p, "polygon"), 6L)   # a diamond for every estimate
+  # "All patients" is set like a variable name; the rest of its row is not
+  font <- function(lab) {
+    gp <- Filter(function(k) identical(k$label, lab), fp_grobs(p, "text"))[[1L]]$gp
+    c(gp$font, gp$cex)
+  }
+  expect_identical(font("All patients"), font("stage"))
+  expect_identical(font(fp_col(p, 3)[2]), font("   I"))
 
   no_all <- plt_hte_sub(res, sub_var = "stage", overall = FALSE)
   expect_false("All patients" %in% trimws(fp_col(no_all, 1)))

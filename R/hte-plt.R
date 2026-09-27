@@ -1006,6 +1006,16 @@ plt_hte_sub <- function(x,
     expr
   }
   n_text <- ncol(text)
+  # Sizes as cex of the 12 pt device font: 10.6 pt labels and ticks, 11.56
+  # pt bold rows, 11.8 pt axis title, 15.4 pt title. "All patients" is set
+  # like the variable names while its row keeps the look of an estimate:
+  # forestplot takes a label gpar per non-summary row and column, and derives
+  # every default font from the first, so the others are all given.
+  cex_lab  <- 0.8 + 1 / 12
+  cex_bold <- 0.88 + 1 / 12
+  lab_gp <- rep(list(rep(list(grid::gpar(cex = cex_lab)), n_text)), sum(!bold))
+  if (overall)
+    lab_gp[[1L]][[1L]] <- grid::gpar(cex = cex_bold, fontface = "bold")
   row_in <- 0.3   # row height in inches, pinned or assumed by the suggested size
   rules  <- list("1" = grid::gpar(lty = 1, lwd = 2), "2" = grid::gpar(lty = 2))
   rules[[as.character(nrow(text) + 1L)]] <-
@@ -1018,23 +1028,24 @@ plt_hte_sub <- function(x,
     fn.ci_norm = forestplot::fpDrawDiamondCI, boxsize = 0.3,
     col = forestplot::fpColors(box = "blue4", lines = "blue4",
                                zero = "black"),
-    txt_gp = forestplot::fpTxtGp(label = grid::gpar(cex = 0.8),
-                                 ticks = grid::gpar(cex = 0.8),
-                                 xlab  = grid::gpar(cex = 0.9),
-                                 title = grid::gpar(cex = 1.2)),
+    txt_gp = forestplot::fpTxtGp(label = lab_gp,
+                                 summary = grid::gpar(cex = cex_bold, fontface = "bold"),
+                                 ticks = grid::gpar(cex = cex_lab, fontface = "plain"),
+                                 xlab  = grid::gpar(cex = 0.9 + 1 / 12, fontface = "plain"),
+                                 title = grid::gpar(cex = 1.2 + 1 / 12, fontface = "bold")),
     lwd.zero = 1, lwd.ci = 1.5, lwd.xaxis = 2, ci.vertices = TRUE,
     ci.vertices.height = 0.2, colgap = grid::unit(6, "mm"),
     lineheight = if (isFALSE(fixed_size)) "auto" else grid::unit(row_in, "in")))
 
   if (isFALSE(fixed_size)) {
-    # Suggested size: the widest cell of every text column (bold rows at
-    # forestplot's summary size, 1.1 x the label cex), a graph column that
-    # takes a quarter of the width as in RegR::plt_eff2(), and about 0.3 in a
-    # row.
+    # Suggested size: the widest cell of every text column (bold rows and
+    # "All patients" at cex_bold), a graph column that takes a quarter of the
+    # width as in RegR::plt_eff2(), and about 0.3 in a row.
     text_in <- on_null(sum(vapply(seq_len(n_text), function(j)
       max(vapply(seq_len(nrow(text)), function(i) {
-        gp <- if (bold[i]) grid::gpar(cex = 0.88, fontface = "bold")
-              else grid::gpar(cex = 0.8)
+        gp <- if (bold[i] || (overall && i == 2L && j == 1L))
+                grid::gpar(cex = cex_bold, fontface = "bold")
+              else grid::gpar(cex = cex_lab)
         grid::convertWidth(grid::grobWidth(grid::textGrob(text[i, j], gp = gp)),
                            "in", valueOnly = TRUE)
       }, numeric(1L))), numeric(1L)))) + n_text * 6 / 25.4
