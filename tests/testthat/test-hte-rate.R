@@ -124,7 +124,8 @@ test_that("get_hte() keeps the grf arguments that plt_hte_rate() refits with", {
   expect_identical(ga$target, "survival.probability")
   expect_identical(names(formals(plt_hte_rate)),
                    c("x", "priority", "type", "smooth", "gates_args",
-                     "conf_level", "train_frac", "seed", "title", "save"))
+                     "conf_level", "train_frac", "max_n", "seed", "title",
+                     "save"))
 })
 
 test_that("a pre-specified rule is evaluated on every patient by grf's RATE", {
@@ -155,15 +156,21 @@ test_that("the forest CATE is learnt on one split and evaluated on the other", {
   r <- rate_of(p)
   expect_identical(r$rule, c("cate", "cate"))
 
-  # the same split and refits by hand, on the original follow-up times
+  # the same split and refits by hand
   n <- nrow(res$data)
   set.seed(7)
   train <- sort(sample.int(n, floor(0.5 * n)))
   ev    <- setdiff(seq_len(n), train)
   X     <- res$fit$X.orig
+  # patients past `time` reach grf as events just after it
+  y <- res$data$time
+  past <- y > 60
+  y[past] <- min(y[past])
+  e <- res$data$DSS
+  e[past] <- 1L
   refit <- function(rows)
-    grf::causal_survival_forest(X[rows, ], res$data$time[rows],
-                                res$fit$W.orig[rows], res$data$DSS[rows],
+    grf::causal_survival_forest(X[rows, ], y[rows],
+                                res$fit$W.orig[rows], e[rows],
                                 horizon = 60, target = "survival.probability",
                                 num.trees = 300, seed = 7)
   prio <- stats::predict(refit(train), X[ev, ])$predictions
@@ -215,6 +222,19 @@ test_that("above 10,000 patients the CATE is learnt on 10,000 of them with 500 t
   expect_identical(rate_of(p)$n, rep(5000L, 2L))
   # a pre-specified rule refits nothing and keeps every patient
   expect_identical(rate_of(plt_hte_rate(res, priority = "x1"))$n, rep(n, 2L))
+
+  # max_n moves the cap; Inf splits every patient with the forest's trees
+  seen <- list()
+  expect_message(plt_hte_rate(res, seed = 7, max_n = 2000),
+                 "random 2000 of the 10050 patients")
+  expect_identical(lengths(lapply(seen, `[[`, "Y")), c(1000L, 1000L))
+  seen <- list()
+  expect_message(p <- plt_hte_rate(res, seed = 7, max_n = Inf), NA)
+  expect_identical(lengths(lapply(seen, `[[`, "Y")), c(5025L, 5025L))
+  expect_equal(c(seen[[1L]]$trees, seen[[2L]]$trees), c(50, 50))
+  expect_error(plt_hte_rate(res, max_n = 0), "`max_n` must be")
+  expect_error(plt_hte_rate(res, priority = "x1", max_n = 5000),
+               "`max_n` only applies")
 
   # with clusters, whole clusters are drawn until 10,000 patients
   seen <- list()
@@ -347,23 +367,30 @@ test_that("GATES of the forest CATE are estimated on the held-out half", {
   res <- rate_surv()
   g <- gates_of(plt_hte_rate(res, seed = 7, type = "gates"))
   expect_identical(g$rule, rep("cate", 6L))
-  expect_identical(g$n, c(rep(80L, 5L), 160L))
 
-  # the split and refits of the RATE test, on the original follow-up times
+  # the split and refits of the RATE test
   n <- nrow(res$data)
   set.seed(7)
   train <- sort(sample.int(n, floor(0.5 * n)))
   ev    <- setdiff(seq_len(n), train)
   X     <- res$fit$X.orig
+  # patients past `time` reach grf as events just after it
+  y <- res$data$time
+  past <- y > 60
+  y[past] <- min(y[past])
+  e <- res$data$DSS
+  e[past] <- 1L
   refit <- function(rows)
-    grf::causal_survival_forest(X[rows, ], res$data$time[rows],
-                                res$fit$W.orig[rows], res$data$DSS[rows],
+    grf::causal_survival_forest(X[rows, ], y[rows],
+                                res$fit$W.orig[rows], e[rows],
                                 horizon = 60, target = "survival.probability",
                                 num.trees = 300, seed = 7)
   prio <- stats::predict(refit(train), X[ev, ])$predictions
   fit  <- refit(ev)
   grp  <- cut(-prio, stats::quantile(-prio, (0:5) / 5), include.lowest = TRUE,
               labels = FALSE)
+  # fifths of the 400 held-out patients; tied patients share a group
+  expect_identical(g$n, c(tabulate(grp, 5L), sum(grp %in% c(1L, 5L))))
   for (k in 1:5) {
     want <- grf::average_treatment_effect(fit, subset = which(grp == k))
     expect_equal(g$estimate[k], unname(want[["estimate"]]))

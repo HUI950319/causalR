@@ -265,6 +265,29 @@ test_that("survival: S(t) difference matches grf and ratio / OR use the event ri
                (f[1] / (1 - f[1])) / (f[2] / (1 - f[2])))
 })
 
+test_that("survival: patients past `time` reach grf as events just after it", {
+  res <- hte_surv()
+  d <- hte_surv_data()
+  past <- d$time > 60
+  y <- d$time
+  y[past] <- min(y[past])
+  e <- d$DSS
+  e[past] <- 1L
+  direct <- grf::causal_survival_forest(
+    res$fit$X.orig, y, res$fit$W.orig, e, horizon = 60,
+    target = "survival.probability", num.trees = 300, seed = 1)
+  expect_equal(res$data$.cate, as.numeric(direct$predictions))
+  # $data keeps the observed follow-up
+  expect_identical(res$data$time, d$time)
+  # grf cuts the follow-up at `time` itself for RMST
+  rm <- get_hte(d, cat_var = "z", adj_var = c("age", "x2", "sex"), surv = TRUE,
+                time = 60, grf_args = c(hte_args, target = "RMST"))
+  direct <- grf::causal_survival_forest(
+    rm$fit$X.orig, d$time, rm$fit$W.orig, d$DSS, horizon = 60,
+    target = "RMST", num.trees = 300, seed = 1)
+  expect_equal(rm$data$.cate, as.numeric(direct$predictions))
+})
+
 test_that("survival RMST is reached through grf_args$target; OR is skipped", {
   skip_if_not_installed("grf")
   expect_message(

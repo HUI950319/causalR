@@ -5,6 +5,8 @@
 # Architecture:
 #
 #   L1  get_hte()          validate, fit one grf forest, assemble the result
+#   L2  .hte_surv_yd()     survival times and events as grf gets them
+#                          (shared with plt_hte_rate())
 #   L2  .hte_arm_scores()  arm-specific AIPW scores backed out of the forest
 #   L2  .test_calibration()
 #                          grf's calibration test, for either forest
@@ -23,6 +25,29 @@
 .HTE_MEASURES  <- c("diff", "ratio", "OR")
 # Natural-spline df of the doubly robust curve for a continuous covariate.
 .HTE_SPLINE_DF <- 2L
+
+
+# ---- L2 survival input -----------------------------------------------------
+
+# For S(t) grf fits its nuisance survival and censoring forests to the whole
+# follow-up, though only times up to `time` enter the estimate. With rare
+# events its event forest then never splits: one leaf of every patient, 58 s
+# per prediction pass at 130,923 patients with 1,043 events. Patients
+# followed beyond `time` are passed as events just after it, as grf itself
+# does for RMST: every curve up to `time` keeps its estimator and the
+# estimand is unchanged, while the forests split on who survives past
+# `time` (there 236 s fell to 41 s, and a CATE correlated 0.82 across seeds
+# instead of 0.44).
+#' @keywords internal
+#' @noRd
+.hte_surv_yd <- function(Y, D, time, target) {
+  past <- Y > time
+  if (identical(target, "survival.probability") && any(past)) {
+    Y[past] <- min(Y[past])
+    D[past] <- 1
+  }
+  list(Y = Y, D = D)
+}
 
 
 # ---- L2 scores and estimates -----------------------------------------------
@@ -484,6 +509,11 @@
 #'   Both arms need patients still followed beyond `time` (up to it for
 #'   RMST): with none in an arm the call stops, because grf would return a
 #'   near-null effect without warning, and with fewer than 10 it warns.
+#'   For \eqn{S(t)} those patients reach grf as events just after `time`, as
+#'   grf itself does for RMST: the estimand is unchanged, but grf's nuisance
+#'   survival forest can split when events are rare (at 130,923 patients with
+#'   1,043 events, 41 s instead of 236 s, and a CATE more stable across
+#'   seeds). `$data` keeps the observed times.
 #' @param grf_args Named list forwarded to [grf::causal_forest()] or
 #'   [grf::causal_survival_forest()], for example `num.trees`, `seed`,
 #'   `tune.parameters` or a known propensity `W.hat` (as in a trial). `X`,
@@ -915,6 +945,11 @@ get_hte <- function(data,
       ifelse(is.na(x), NA_real_, 1))
   }
   X   <- .sens_model_matrix(xdat, covars, one_hot = TRUE)
+  if (is_surv) {
+    yd <- .hte_surv_yd(Y, D, time, target)
+    Y  <- yd$Y
+    D  <- yd$D
+  }
   fit <- do.call(fun, c(list(X = X, Y = Y, W = W),
                         if (is_surv) list(D = D, horizon = time),
                         grf_args))

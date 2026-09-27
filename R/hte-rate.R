@@ -39,11 +39,11 @@
 #'       [get_hte()] with `seed`; for a survival outcome, each half needs
 #'       patients of both arms followed past `time`. With clusters, whole
 #'       clusters are split and each half needs at least two clusters. Above
-#'       10,000 patients a random 10,000 of them (whole clusters, reaching at
-#'       least 10,000) are split instead and both refits grow 500 trees, with
-#'       a message. This trades power for time: the test rests on about 5,000
-#'       held-out patients, where all of them would take about a minute at
-#'       100,000.}
+#'       `max_n` patients a random `max_n` of them (whole clusters, reaching
+#'       at least `max_n`) are split instead and both refits grow 500 trees,
+#'       with a message. This trades power for time: at the default the test
+#'       rests on about 5,000 held-out patients, and with rare events on few
+#'       events.}
 #'     \item{A numeric or logical column of `x$data`}{A pre-specified score,
 #'       such as a biomarker or a published risk score, evaluated on every
 #'       patient with the doubly robust scores of the stored forest. Patients
@@ -83,11 +83,19 @@
 #' @param conf_level Confidence level of the bands and intervals. Default
 #'   `0.95`.
 #' @param train_frac Share of the patients the ranking forest is refitted to,
-#'   strictly between 0 and 1, of the 10,000 drawn above 10,000 patients.
+#'   strictly between 0 and 1, of the `max_n` drawn above `max_n` patients.
 #'   Default `0.5`. Only used when `priority` includes `"cate"`. With clusters
 #'   this is the share of clusters, so the share of patients can differ when
 #'   cluster sizes vary.
-#' @param seed Seed of the draw above 10,000 patients, the split, the
+#' @param max_n Positive whole number or `Inf`: the most patients split when
+#'   `priority` includes `"cate"`. Above it a random `max_n` of them are
+#'   drawn with `seed` and both refits grow 500 trees, instead of the
+#'   `grf_args` of [get_hte()]. Default `10000`: at 100,000 survival patients
+#'   2 s instead of about a minute. `Inf` splits every patient. A draw keeps
+#'   events in proportion -- 80 of 1,043 at 10,000 of 130,923 patients -- so
+#'   with rare events raise it or use `Inf`. Only used when `priority`
+#'   includes `"cate"`.
+#' @param seed Seed of the draw above `max_n` patients, the split, the
 #'   refitted forests and grf's bootstrap standard errors, so a call can be
 #'   repeated exactly; `NULL` (default) takes the seed of the forest in `x`.
 #'   The random number stream of the session is restored afterwards.
@@ -107,9 +115,9 @@
 #' ranking targets the effect at all. Whether the gain is worth acting on is
 #' a clinical judgement on the size of the Qini curve.
 #'
-#' With `"cate"` the result depends on the split, and above 10,000 patients
-#' on the 10,000 drawn; only the held-out patients inform the test. `seed`
-#' fixes both.
+#' With `"cate"` the result depends on the split, and above `max_n` patients
+#' on those drawn; only the held-out patients inform the test. `seed` fixes
+#' both.
 #'
 #' The GATES panel draws each group's doubly robust average treatment effect,
 #' [grf::average_treatment_effect()] with `subset` as in [plt_hte_sub()], over
@@ -186,6 +194,7 @@ plt_hte_rate <- function(x,
                          gates_args = list(n_groups = 5),
                          conf_level = 0.95,
                          train_frac = 0.5,
+                         max_n      = 10000,
                          seed       = NULL,
                          title      = NULL,
                          save       = list()) {
@@ -242,8 +251,14 @@ plt_hte_rate <- function(x,
         is.na(train_frac) || train_frac <= 0 || train_frac >= 1)
       stop("`train_frac` must be a single number strictly between 0 and 1.",
            call. = FALSE)
+    if (!is.numeric(max_n) || length(max_n) != 1L || is.na(max_n) ||
+        max_n < 1 || (is.finite(max_n) && max_n != floor(max_n)))
+      stop("`max_n` must be a positive whole number or Inf.", call. = FALSE)
   } else if (!missing(train_frac)) {
     stop("`train_frac` only applies when `priority` includes \"cate\"; a pre-specified rule is evaluated on every patient.",
+         call. = FALSE)
+  } else if (!missing(max_n)) {
+    stop("`max_n` only applies when `priority` includes \"cate\"; a pre-specified rule is evaluated on every patient.",
          call. = FALSE)
   }
   own <- intersect(cols, c(".cate", ".dr_score"))
@@ -293,21 +308,21 @@ plt_hte_rate <- function(x,
   X    <- fit$X.orig
   W    <- fit$W.orig
   if (learn) {
-    # Above 10,000 patients a random 10,000 -- whole clusters, reaching at
+    # Above max_n patients a random max_n -- whole clusters, reaching at
     # least that many -- are split instead, and refitted with 500 trees: at
-    # 100,000 survival patients 2 s instead of about a minute, the test
-    # resting on 5,000 held-out patients.
+    # 100,000 survival patients and the default 10,000, 2 s instead of about
+    # a minute, the test resting on 5,000 held-out patients.
     pool <- seq_len(n)
-    big  <- n > 10000L
+    big  <- n > max_n
     if (big) {
       pool <- if (length(fit$clusters)) {
         ids  <- unique(fit$clusters)
         ids  <- ids[sample.int(length(ids))]
         size <- tabulate(match(fit$clusters, ids), length(ids))
         which(fit$clusters %in%
-                ids[seq_len(match(TRUE, cumsum(size) >= 10000L))])
+                ids[seq_len(match(TRUE, cumsum(size) >= max_n))])
       } else {
-        sort(sample.int(n, 10000L))
+        sort(sample.int(n, max_n))
       }
       cli::cli_inform(c("i" = paste(
         "The forest CATE is learnt and evaluated on a random {length(pool)}",
@@ -363,6 +378,11 @@ plt_hte_rate <- function(x,
     # grf keeps survival times cut at the horizon, so refit from `$data`
     Y <- if (surv) d[[a$outcome[1L]]] else fit$Y.orig
     D <- if (surv) as.integer(d[[a$outcome[2L]]])
+    if (surv) {
+      yd <- .hte_surv_yd(Y, D, a$time, a$target)
+      Y  <- yd$Y
+      D  <- yd$D
+    }
     refit <- function(i) {
       args <- ga
       for (f in intersect(c("W.hat", "Y.hat", "sample.weights", "clusters"),

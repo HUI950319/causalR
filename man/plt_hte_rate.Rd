@@ -12,6 +12,7 @@ plt_hte_rate(
   gates_args = list(n_groups = 5),
   conf_level = 0.95,
   train_frac = 0.5,
+  max_n = 10000,
   seed = NULL,
   title = NULL,
   save = list()
@@ -31,11 +32,11 @@ rest evaluates that ranking. Both refits take the \code{grf_args} of
 \code{\link[=get_hte]{get_hte()}} with \code{seed}; for a survival outcome, each half needs
 patients of both arms followed past \code{time}. With clusters, whole
 clusters are split and each half needs at least two clusters. Above
-10,000 patients a random 10,000 of them (whole clusters, reaching at
-least 10,000) are split instead and both refits grow 500 trees, with
-a message. This trades power for time: the test rests on about 5,000
-held-out patients, where all of them would take about a minute at
-100,000.}
+\code{max_n} patients a random \code{max_n} of them (whole clusters, reaching
+at least \code{max_n}) are split instead and both refits grow 500 trees,
+with a message. This trades power for time: at the default the test
+rests on about 5,000 held-out patients, and with rare events on few
+events.}
 \item{A numeric or logical column of \code{x$data}}{A pre-specified score,
 such as a biomarker or a published risk score, evaluated on every
 patient with the doubly robust scores of the stored forest. Patients
@@ -80,12 +81,21 @@ used when \code{type} includes \code{"gates"}.}
 \code{0.95}.}
 
 \item{train_frac}{Share of the patients the ranking forest is refitted to,
-strictly between 0 and 1, of the 10,000 drawn above 10,000 patients.
+strictly between 0 and 1, of the \code{max_n} drawn above \code{max_n} patients.
 Default \code{0.5}. Only used when \code{priority} includes \code{"cate"}. With clusters
 this is the share of clusters, so the share of patients can differ when
 cluster sizes vary.}
 
-\item{seed}{Seed of the draw above 10,000 patients, the split, the
+\item{max_n}{Positive whole number or \code{Inf}: the most patients split when
+\code{priority} includes \code{"cate"}. Above it a random \code{max_n} of them are
+drawn with \code{seed} and both refits grow 500 trees, instead of the
+\code{grf_args} of \code{\link[=get_hte]{get_hte()}}. Default \code{10000}: at 100,000 survival patients
+2 s instead of about a minute. \code{Inf} splits every patient. A draw keeps
+events in proportion -- 80 of 1,043 at 10,000 of 130,923 patients -- so
+with rare events raise it or use \code{Inf}. Only used when \code{priority}
+includes \code{"cate"}.}
+
+\item{seed}{Seed of the draw above \code{max_n} patients, the split, the
 refitted forests and grf's bootstrap standard errors, so a call can be
 repeated exactly; \code{NULL} (default) takes the seed of the forest in \code{x}.
 The random number stream of the session is restored afterwards.}
@@ -135,9 +145,9 @@ patients; the AUTOC and QINI use the whole ranking. They test whether the
 ranking targets the effect at all. Whether the gain is worth acting on is
 a clinical judgement on the size of the Qini curve.
 
-With \code{"cate"} the result depends on the split, and above 10,000 patients
-on the 10,000 drawn; only the held-out patients inform the test. \code{seed}
-fixes both.
+With \code{"cate"} the result depends on the split, and above \code{max_n} patients
+on those drawn; only the held-out patients inform the test. \code{seed} fixes
+both.
 
 The GATES panel draws each group's doubly robust average treatment effect,
 \code{\link[grf:average_treatment_effect]{grf::average_treatment_effect()}} with \code{subset} as in \code{\link[=plt_hte_sub]{plt_hte_sub()}}, over

@@ -1,5 +1,18 @@
 # causalR (development version)
 
+* For a survival probability, `get_hte()` passes patients followed beyond
+  `time` to grf as events just after it, as grf itself does for RMST. The
+  estimand is unchanged, but with rare events grf's nuisance survival forest
+  could not split at all -- one leaf holding every patient -- which was slow
+  and ignored the covariates: at 130,923 patients with 1,043 events, 41 s
+  instead of 236 s, with a CATE correlated 0.82 across seeds instead of
+  0.44. In 200 simulated data sets each with 1.5% and 24% events, bias,
+  standard errors and 95% coverage did not change. Survival estimates
+  change numerically. `plt_hte_rate()` refits the same way, and its new
+  `max_n` (default `10000`, after `train_frac`) sets the most patients the
+  forest CATE is learnt and evaluated on; `Inf` uses every patient, which
+  rare events need.
+
 * Large samples run faster. `get_hte()` grows 200 trees instead of grf's
   2000 when more than 10,000 rows are analysed and `grf_args` sets no
   `num.trees`, with a message: at 100,000 survival rows 13 s instead of
