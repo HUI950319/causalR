@@ -1,0 +1,606 @@
+---
+title: "1. 异质性治疗效应：get_hte() 与 plt_hte_*()"
+subtitle: "causalR 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(causalR)
+f3 <- function(x) sprintf("%.3f", x)
+```
+
+`causalR` 里估计**异质性治疗效应**（heterogeneous treatment effect, HTE）的是一组
+五个函数：`get_hte()` 用 [grf](../grf/00-get-started.qmd) 拟合**一次**因果森林，
+把平均效应、亚组效应、逐人 CATE、双稳健得分和森林本身装进一个 `hte_res` 对象；
+四个 `plt_hte_*()` 只读这个对象，从四个角度回答同一个问题——
+**治疗效应在谁身上不一样**。
+
+```text
+data ──get_hte()──► hte_res ─┬─ plt_hte_dep()   效应随单个协变量怎么变
+                             ├─ plt_hte_sub()   事先划定的亚组各自效应多大
+                             ├─ plt_hte_cate()  森林把效应分到每个人身上是什么形状
+                             └─ plt_hte_rate()  按某个规则挑人，能否挑出获益更多的人
+```
+
+| 函数 | 画什么 | 有没有置信区间 | 是否重拟合森林 |
+|---|---|---|---|
+| `get_hte()` | 不画图；ATE、亚组效应、`p_het`、校准检验 | 有 | 拟合一次 |
+| `plt_hte_dep()` | 每个协变量一个面板：逐人 CATE、DR 曲线、部分依赖 | 只有红色 DR 层有 | 否 |
+| `plt_hte_sub()` | 亚组森林图 | 有 | 否 |
+| `plt_hte_cate()` | 逐人 CATE 的瀑布图 / 密度图 | 可选（grf 逐点区间） | 否 |
+| `plt_hte_rate()` | TOC / Qini 曲线、GATES 分组效应 | 有 | 排序规则含 `"cate"` 时重拟合两片 |
+
+全部图形函数都返回 ggplot（多面板时是 patchwork），都以 `save = list()` 作最后一个参数，
+非空时交给 `RegR::save_plt()` 写 PDF。
+
+## 安装与核对环境 {#sec-hte-env}
+
+```r
+remotes::install_github("HUI950319/causalR")
+# 森林与绘图依赖都在 Suggests 里，需要单独装
+install.packages(c("grf", "patchwork", "sandwich", "forestplot", "ggplotify"))
+```
+
+`grf` 是 `get_hte()` 的唯一后端；`sandwich` 给连续协变量的样条检验算 HC3 标准误；
+`forestplot` + `ggplotify` 画并包装亚组森林图；`patchwork` 拼多面板图。
+
+本页核对于 **2026 年 9 月 28 日**，代码块**由本站渲染时真实执行**，
+页面上的输出与图形就是本机结果：
+
+| 项目 | 值 |
+|---|---|
+| causalR | `r packageVersion("causalR")`（GitHub `main`，提交 `1411dbe`） |
+| grf | `r packageVersion("grf")` |
+| R | Windows `r paste(R.version$major, R.version$minor, sep = ".")` |
+
+## 示例数据：真值已知的生存数据 {#sec-hte-data}
+
+全页共用一份模拟队列。事件时间服从指数分布，治疗的对数风险比随 `marker` 和
+`sex` 变化；因为 DGP 写死，每个人的**真实 CATE** 可以直接算出来，
+后面每一步都能拿估计值和真值对照。
+
+```{r}
+#| label: data
+set.seed(20260928)
+n <- 3000
+d <- data.frame(
+  age    = round(runif(n, 30, 85)),                          # 混杂 + 预后
+  marker = round(rnorm(n), 2),                               # 效应修饰（连续）
+  sex    = factor(sample(c("F", "M"), n, replace = TRUE)),   # 效应修饰（二分类）
+  stage  = factor(sample(c("I", "II", "III"), n, replace = TRUE,
+                         prob = c(0.40, 0.35, 0.25))),       # 混杂 + 预后
+  noise  = round(rnorm(n), 2)                                # 纯噪声
+)
+# 治疗分配依赖年龄与分期：观察性数据，有混杂
+d$z <- rbinom(n, 1, plogis(-0.2 + 0.03 * (d$age - 60) + 0.5 * (d$stage == "III")))
+
+# 基线风险（每月）与治疗的对数风险比
+lam0 <- 0.006 * exp(0.03 * (d$age - 60) + 0.4 * (d$stage == "II") +
+                      0.9 * (d$stage == "III"))
+lhr  <- -0.1 - 0.5 * d$marker - 0.6 * (d$sex == "M")
+
+# 真实 CATE：60 个月生存概率之差 S1(60 | x) - S0(60 | x)
+d$tau_true <- exp(-lam0 * exp(lhr) * 60) - exp(-lam0 * 60)
+
+ev   <- rexp(n, lam0 * exp(lhr * d$z))
+cens <- pmin(rexp(n, 0.004), runif(n, 60, 150))              # 失访 + 行政删失
+d$time <- round(pmin(ev, cens), 1)
+d$DSS  <- as.integer(ev <= cens)
+
+c(event_rate = mean(d$DSS), true_ATE = mean(d$tau_true))
+```
+
+`get_hte()` 的生存结局固定读 `time`（随访时间）和 `DSS`（事件 0/1）两列，
+与 `RegR::get_eff()` 一致，所以模拟数据直接用这两个列名。
+
+真值里有一个值得先看清的地方：`stage` **没有**进入对数风险比，
+但在"生存概率之差"这个尺度上它仍然是效应修饰变量——
+分期越晚基线风险越高，同样的风险比换算成的绝对获益就越大：
+
+```{r}
+#| label: truth-by-group
+tapply(d$tau_true, d$sex, mean)
+tapply(d$tau_true, d$stage, mean)
+```
+
+效应修饰是**相对于效应尺度**而言的，这是后面读 `p_het` 时要记住的第一件事，
+详见[效应修饰的效应尺度](../sources/effect-modifier-effect-scale.qmd)。
+
+## get_hte()：拟合森林 {#sec-get-hte}
+
+```{r}
+#| label: get-hte
+res <- get_hte(
+  d, cat_var = "z",
+  adj_var  = c("age", "marker", "sex", "stage", "noise"),
+  sub_var  = c("sex", "stage"),
+  surv     = TRUE, time = 60,
+  measure  = c("diff", "ratio"),
+  grf_args = list(num.trees = 1000, seed = 1)
+)
+res
+```
+
+打印分四段：森林类型与倾向得分范围、`$stats`（总体效应）、`$subgroup`（亚组效应）、
+`$calibration`（校准检验），末尾几行注释提示各列的尺度。
+
+### 参数 {#sec-get-hte-args}
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `data` | — | 数据框 |
+| `cat_var` | — | 一个二分类暴露列：`0/1`、逻辑型，或两水平因子 / 字符（**第二个水平**是治疗组） |
+| `sub_var` | `NULL` | 分类亚组列。数值列超过 5 个不同取值会被拒绝，先切组；不在 `adj_var` 里的列会**自动加进森林协变量**并提示 |
+| `adj_var` | `NULL` | 森林条件化的协变量。缺失值保留给 grf（它能按缺失分裂）；日期列要先转成数值 |
+| `surv` | `TRUE` | `TRUE`：读 `time` + `DSS`，用 `causal_survival_forest()`；一个列名：二分类或连续结局，用 `causal_forest()`；`FALSE`（竞争风险）不支持 |
+| `method` | `"grf"` | 目前只有 grf 后端 |
+| `factor_encoding` | `"onehot"` | 分类协变量进森林的方式：`"onehot"` 每个水平一列；`"integer"` 按水平顺序编成 1…K，适合分期这类有序因子 |
+| `estimand` | `"ATE"` | 可多选 `"ATE"` / `"ATT"` / `"ATC"` / `"ATO"`；生存结局只支持 ATE |
+| `measure` | `"diff"` | 可多选 `"diff"` / `"ratio"` / `"OR"`；相对尺度只算 ATE |
+| `conf_level` | `0.95` | Wald 区间的置信水平 |
+| `time` | `120` | 生存结局的时间点 $t$（grf 的 `horizon`），它**定义了估计量**，换时间点要重跑 |
+| `grf_args` | `list()` | 原样传给 grf 的参数，如 `num.trees`、`seed`、`tune.parameters`、已知倾向 `W.hat`；生存结局的 `target` 默认 `"survival.probability"`，可改 `"RMST"` |
+| `verbose` | `FALSE` | `TRUE` 时报告因暴露或结局缺失删掉了多少行 |
+
+### 效应尺度 {#sec-get-hte-measure}
+
+每种尺度比较的都是两臂的**平均结局**：
+
+| 结局 | `"diff"` | `"ratio"` | `"OR"` |
+|---|---|---|---|
+| 连续 | 均值差 | 均值比（两臂均值须为正） | — |
+| 二分类 | 风险差 | 风险比 | 比值比 |
+| 生存，`target = "survival.probability"` | $S_1(t) - S_0(t)$ | 事件风险比 $\{1 - S_1(t)\}/\{1 - S_0(t)\}$ | $t$ 前发生事件的比值比 |
+| 生存，`target = "RMST"` | RMST 差 | RMST 比 | — |
+
+`"diff"` 就是 `grf::average_treatment_effect()` 本身；`"ratio"` / `"OR"` 由森林反推出的
+两臂 AIPW 得分构造，区间和 p 值在对数尺度上用影响函数（delta 法）做 Wald 检验。
+生存概率的相对尺度比较的是**事件风险** $1 - S(t)$，小于 1 表示治疗有利，
+读法与风险比相同；而 `"diff"` 仍是生存概率之差，大于 0 表示治疗有利。
+**风险比（HR）本身不提供**：因果森林估计的是平均结局的对比，HR 不是这种对比。
+
+`DSS = 0` 一律按删失处理，其它原因死亡也包括在内，所以这里的 $S(t)$ 是**净生存**
+（在其它死因与疾病死亡条件独立的假设下），不是 1 减累积发生率。
+
+### 返回对象 {#sec-get-hte-value}
+
+`hte_res` 是一个列表：
+
+| 元素 | 内容 |
+|---|---|
+| `$stats` | 每个估计量 × 尺度一行：`estimate`、`std.error`、`conf.low`、`conf.high`、`p.value`、`n`、`n_treat` |
+| `$subgroup` | 每个 `sub_var` 水平 × 估计量 × 尺度一行；`estimate` 是亚组内的双稳健效应，`cate_mean` 是森林 CATE 的组内均值（只作描述），`p_inter` 检验同一变量各水平效应相等 |
+| `$importance` | 每个协变量一行：`importance`（grf 分裂频率，按原变量加总）、`n_col`、`df`、`p_het` |
+| `$calibration` | grf 校准检验的两个系数 |
+| `$data` | 分析用的行，外加 `.cate`（袋外 CATE）与 `.dr_score`（AIPW 得分），两者都在 `"diff"` 尺度 |
+| `$fit` | grf 森林对象 |
+| `attr(, "analysis")` | 实际用到的协变量、治疗水平、倾向得分范围、森林种子与 `grf_args` 等元数据 |
+
+```{r}
+#| label: value
+res$stats
+head(res$data[, c("age", "marker", "sex", "z", "time", "DSS", ".cate", ".dr_score")])
+names(attr(res, "analysis"))
+```
+
+### 与真值对照 {#sec-get-hte-truth}
+
+总体效应的估计值是 `r f3(res$stats$estimate[1])`
+（95% CI `r f3(res$stats$conf.low[1])` 至 `r f3(res$stats$conf.high[1])`），
+真值 `r f3(mean(d$tau_true))`。逐人 CATE 与真值的相关系数是
+`r sprintf("%.2f", cor(res$data$.cate, res$data$tau_true))`。
+亚组逐行对照：
+
+```{r}
+#| label: subgroup-truth
+sub <- res$subgroup[res$subgroup$measure == "diff",
+                    c("sub_var", "level", "estimate", "conf.low", "conf.high",
+                      "cate_mean", "p_inter")]
+sub$truth <- c(tapply(res$data$tau_true, res$data$sex, mean),
+               tapply(res$data$tau_true, res$data$stage, mean))
+sub
+```
+
+这张表同时说明了三件事：
+
+- **亚组主估计用 `estimate`，不用 `cate_mean`。** 森林估计会被压向总体均值：
+  两性的 `cate_mean` 只差 `r f3(diff(sub$cate_mean[1:2]))`，
+  双稳健 `estimate` 差 `r f3(diff(sub$estimate[1:2]))`，真值差 `r f3(diff(sub$truth[1:2]))`。
+  所以 `cate_mean` 只给点值、不给区间。
+- **真修饰变量也可能不显著。** `sex` 是写进 DGP 的修饰变量，
+  但本例 `p_inter` = `r f3(sub$p_inter[1])`：3000 例、约 `r round(100 * mean(d$DSS))`%
+  事件率的生存数据里，二分类修饰变量的交互检验效能本来就有限。
+  "不显著"不等于"没有修饰"。
+- **尺度依赖的修饰也能被估出来。** `stage` 三个水平的双稳健估计沿着真值的方向递增。
+
+### 变量重要性与 `p_het` {#sec-get-hte-importance}
+
+```{r}
+#| label: importance
+res$importance
+```
+
+`importance` 是 grf 的**深度加权分裂频率**，不是检验：连续变量、取值多的变量、
+被 one-hot 拆成多列的因子天然得分更高。本例纯噪声 `noise` 的重要性排在第二，
+但它的 `p_het` 远不显著。要判断"这个变量是否修饰效应"，看的是 `p_het`：
+
+- 分类变量：各水平双稳健均值相等的 Wald 检验（`df` = 水平数 − 1），
+  对 ATE 差值与 `$subgroup` 的 `p_inter` 逐位相同；
+- 连续变量（超过 5 个不同取值）：AIPW 得分对自然样条 `ns(x, 2)` 回归、
+  HC3 标准误下样条项的联合 Wald 检验。
+
+`p_het` 是**逐变量、未校正**的单变量投影检验，只在 ATE 差值尺度上做。
+一次筛多个变量时要事先定好检验族并做多重校正，例如
+`p.adjust(res$importance$p_het, method = "BH")`；显著也不代表该变量独立于
+与它相关的其它协变量起作用。`res$importance` 的前两列正是 `MLR::plt_bar_per()`
+读的格式，可以直接画条形图。
+
+### 校准检验 {#sec-get-hte-calibration}
+
+```{r}
+#| label: calibration
+res$calibration
+```
+
+这是 `grf::test_calibration()` 的回归：`mean.forest.prediction` 系数为 1 表示平均 CATE
+估得准；`differential.forest.prediction` 系数为 1 表示 CATE 围绕均值的离散程度校准良好，
+显著大于 0 则是"效应确实在变"的整体检验（p 值单侧）。grf 只对 `causal_forest` 提供
+这个检验；`get_hte()` 对生存森林用同一回归，只把因变量换成生存森林保存的
+删失校正残差。
+
+`differential.forest.prediction` 为**负数**时读作"未检出异质性"，不要取绝对值：
+森林与回归用的是同一批患者，无异质性的数据里这个系数本来就常为负，
+取绝对值会让假阳性率远超名义水平。
+
+### 其它结局 {#sec-get-hte-other}
+
+`surv` 换成一个列名就是二分类或连续结局，改用 `causal_forest()`：
+
+```{r}
+#| label: binary
+d$resp <- rbinom(n, 1, plogis(-1 + 0.03 * (d$age - 60) +
+                                d$z * (0.2 + 0.8 * d$marker)))
+res_bin <- get_hte(d, cat_var = "z",
+                   adj_var = c("age", "marker", "sex", "stage", "noise"),
+                   surv = "resp", measure = c("diff", "ratio", "OR"),
+                   grf_args = list(num.trees = 1000, seed = 1))
+res_bin$stats
+```
+
+### 几道护栏 {#sec-get-hte-guards}
+
+`time` 超出随访时，grf 自己会**静默**给出接近 0 的效应。`get_hte()` 在任一臂没有人
+随访超过 `time` 时直接报错，少于 10 人时警告：
+
+```{r}
+#| label: guard-time
+#| error: true
+get_hte(d, cat_var = "z", adj_var = c("age", "marker", "sex", "stage", "noise"),
+        time = 160, grf_args = list(num.trees = 200, seed = 1))
+```
+
+其余几条行为写在帮助页里，这里只列要点：
+
+- **大样本自动减树。** 分析行数超过 1 万且 `grf_args` 没写 `num.trees` 时，
+  自动改用 200 棵树并提示：10 万例生存数据从 83 秒降到 13 秒，ATE 基本不变，
+  逐人 CATE 噪声更大。连续时间、取值极多的生存数据，限制内存的是
+  `grf_args$failure.times` 的粗网格（例如按月 `0:120`），不是树的数量。
+- **倾向得分恰为 0 或 1** 时 AIPW 得分无定义，调用停止（只要求 ATO 差值时除外）；落在 0.05 / 0.95 之外时合并成
+  一条警告，范围记在 `attr(res, "analysis")$ps_range`。
+- **缺失值**：只按暴露和结局删行；协变量缺失交给 grf。每个亚组行、`p_het` 与
+  `plt_hte_dep()` 的面板只用该变量有观测值的患者。
+- **相对尺度**（`"ratio"` / `"OR"`）不支持带 `sample.weights` 或 `clusters` 的森林。
+
+## plt_hte_dep()：效应随协变量怎么变 {#sec-dep}
+
+默认对每个协变量画一个面板，按 `$importance` 排序，图层是灰色的逐人 CATE 和
+红色的双稳健估计，面板标题带 `p_het`：
+
+```{r}
+#| label: dep-default
+#| fig-width: 10.8
+#| fig-height: 6.8
+#| column: page
+plt_hte_dep(res)
+```
+
+### 三种视图 {#sec-dep-layers}
+
+`display` 选择图层，三层回答的是不同的问题：
+
+| 图层 | 颜色 | 是什么 | 置信区间 |
+|---|---|---|---|
+| `"cate"` | 灰 | 每个人的袋外 CATE；连续变量加一条 loess 线（跨度 `cate_smooth`） | 无，只作描述 |
+| `"dr"` | 红 | 该协变量取某值的患者中的平均效应：分类变量是各水平 AIPW 均值，连续变量是 AIPW 得分的自然样条 | 有（逐点，HC3） |
+| `"pdp"` | 蓝 | 森林的部分依赖：只改这个协变量、其它协变量保持观测分布时森林学到的形状 | 无 |
+
+下面把三层叠在 `marker` 上，并额外加一条绿色的**真值曲线**（真实 CATE 对 `marker`
+的 loess 平滑，这一层是本页为了对照加的，不是函数输出）：
+
+```{r}
+#| label: dep-marker
+#| fig-width: 6
+#| fig-height: 4.6
+library(ggplot2)
+plt_hte_dep(res, x_var = "marker", display = c("cate", "dr", "pdp")) +
+  geom_smooth(aes(marker, tau_true), data = res$data, method = "loess",
+              formula = y ~ x, se = FALSE, colour = "#1b7837", linewidth = 0.8,
+              inherit.aes = FALSE)
+```
+
+几条线在数据密集的中段基本重合；两端数据稀少，就分开了：`marker` 很高时
+真值因为生存概率有上界而变平，默认 `spline_df = 2` 的红色样条接近直线、继续上扬，
+区间也随之变宽。当协变量彼此相关时，三层也可能分开：
+`"dr"` 平均的是"该值患者身上实际出现的其它协变量"，`"pdp"` 固定其它协变量的整体分布。
+
+### 双变量热图 {#sec-dep-heat}
+
+`type = "heat"` 需要恰好两个变量，画森林的二维部分依赖：
+
+```{r}
+#| label: dep-heat
+#| fig-width: 7
+#| fig-height: 5.5
+plt_hte_dep(res, x_var = c("marker", "sex"), type = "heat")
+```
+
+### 参数 {#sec-dep-args}
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `x` | — | `get_hte()` 返回的 `hte_res` |
+| `x_var` | `NULL` | `NULL` 为全部协变量（按重要性排序）；变量名向量；或 `"fct"` / `"num"` 只画分类 / 连续变量 |
+| `type` | `"dep"` | `"dep"` 每变量一面板；`"heat"` 双变量热图 |
+| `display` | `c("cate", "dr")` | 图层，可加 `"pdp"` |
+| `conf_level` | `0.95` | 红色层的置信水平 |
+| `ylim` | `NULL` | 统一的 y 范围，超出的区间被截断 |
+| `cate_smooth` | `0.6` | 灰色 loess 线的跨度，0.05–1；`0` 只画点不画线 |
+| `dr_args` | `list(spline_df = 2)` | 连续变量样条的自由度；取默认值时面板上的 `p_het` 与 `$importance` 相同 |
+| `pdp_args` | `list(grid_n = 21, max_n = 1000)` | 部分依赖的网格点数与参与平均的最多患者数（等距抽取，不依赖随机种子） |
+| `axis_arg` | `list(share_y = "all")` | `"all"` 所有面板共用 y 轴；`"none"` 各自定范围 |
+| `title`、`save` | `NULL`、`list()` | 标题；PDF 输出 |
+
+不设 `ylim` 时，y 轴只按点和估计值定范围、不按区间定，否则一个样本很少的水平
+就能把所有面板压扁。灰点每面板最多画 2000 个，loess 线和 y 范围仍用全部患者。
+
+## plt_hte_sub()：亚组森林图 {#sec-sub}
+
+从存下来的森林**重新计算**每个水平内的双稳健 ATE，不重拟合；
+与 `get_hte(sub_var = )` 的数值逐位相同。默认取森林里的全部分类协变量：
+
+```{r}
+#| label: sub-default
+#| fig-width: 6.5
+#| fig-height: 3.8
+plt_hte_sub(res)
+```
+
+亚组可以**事后**再定。下面用年龄切出一个 `age_65`，它不在森林协变量里，
+函数会提示：只有当它是协变量的函数（这里正是 `age` 的函数）或不是混杂时，
+亚组估计才成立；否则应当在 `get_hte(sub_var = )` 里加进森林。
+同时改用事件风险比，并打开两列 P 值：
+
+```{r}
+#| label: sub-posthoc
+#| fig-width: 8.3
+#| fig-height: 3.5
+res$data$age_65 <- factor(ifelse(res$data$age >= 65, "65+", "<65"),
+                          levels = c("<65", "65+"))
+p_sub <- plt_hte_sub(res, sub_var = c("sex", "age_65"), measure = "ratio",
+                     show_pvalue = TRUE, show_pinter = TRUE)
+p_sub
+```
+
+图上的数值挂在 `attr(p, "subgroup")`，格式同 `$subgroup`：
+
+```{r}
+#| label: sub-attr
+attr(p_sub, "subgroup")[, c("sub_var", "level", "estimate", "conf.low",
+                            "conf.high", "p.value", "p_inter")]
+```
+
+生存概率之差的列名写作 `St(<time / 12>-year)`，因为 `time` 按 RegR 的惯例以**月**计；
+`"ratio"` / `"OR"` 画在对数轴上。
+
+### 替换行 {#sec-sub-effect}
+
+`effect` 用来把某些行换成外部数值（例如已发表研究的估计），写法与
+`UtilsR::stat_ci_parse()` 能读的区间字符串一致：
+
+```{r}
+#| label: sub-effect
+#| fig-width: 6.5
+#| fig-height: 2.6
+plt_hte_sub(res, sub_var = "sex",
+            effect = list(sex = c(M = "0.15 (0.05, 0.25)"),
+                          "All patients" = "conf_0.9"))
+```
+
+| 写法 | 效果 |
+|---|---|
+| `"0.15 (0.05, 0.25)"` | 区间：估计值和区间照写，SE 与 P 由区间反推 |
+| `"0.05"` 或数值 `0.05` | 只换点估计，保留该行的 SE，重算区间与 P |
+| `"conf_0.9"` | 估计、SE、P 不变，只把该行区间改成 90% |
+
+图上**不标记**哪些行被替换过；`p_inter` 与 `cate_mean` 保留森林的原值，
+因为 Wald 检验无法从一行替换值重做。
+
+### 参数 {#sec-sub-args}
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `sub_var` | `NULL` | 分类列，按给定顺序画；`NULL` 取森林里的全部分类协变量（按 `adj_var` 顺序） |
+| `measure` | `"diff"` | `"diff"` / `"ratio"` / `"OR"` 三选一 |
+| `conf_level` | `0.95` | 区间水平，**不跟随** `get_hte()` 的设置 |
+| `effect` | `NULL` | 替换行，见上 |
+| `overall` | `TRUE` | 顶部加 "All patients" 行 |
+| `show_n` | `TRUE` | 显示各臂人数（治疗组在前） |
+| `show_pvalue` / `show_pinter` | `FALSE` | 每行 P 值 / 每个变量的交互 P 值 |
+| `label_column_list` | `NULL` | 标签列的显示名，如 `c(F = "Female", age_65 = "Age (years)")` |
+| `xlim`、`ticks_at` | `NULL` | 坐标范围（相对尺度须为正）与刻度 |
+| `fixed_size` | `TRUE` | 按文字需要钉死尺寸（行高 0.3 英寸）；一个数值钉死总宽度；`FALSE` 铺满设备或 patchwork 的格子 |
+| `title`、`save` | `NULL`、`list()` | 标题；PDF 输出，缺省宽高取 `attr(p, "plot_size")` |
+
+某一臂少于 2 人（生存结局还包括某一臂无人随访超过 `time`）的水平没有估计，
+画成短横线并给出警告。返回值是 forestplot 画面经 `ggplotify::as.ggplot()` 包装的
+ggplot，可以用 patchwork 拼图，但它是"表格的图片"：再加主题或标度不会改变它的样式。
+
+## plt_hte_cate()：逐人 CATE 的分布 {#sec-cate}
+
+仿 `StratifiedMedicine::plot_ple()`：瀑布图把患者按 CATE 排序、每人一根柱；
+密度图画各水平的 CATE 分布。黑色虚线是总体 ATE，彩色虚线是各亚组的
+双稳健 ATE（即 `plt_hte_sub()` 画的那些点）。
+
+```{r}
+#| label: cate-waterfall
+#| fig-width: 7
+#| fig-height: 4.5
+plt_hte_cate(res, sub_var = "sex", show_ci = TRUE)
+```
+
+```{r}
+#| label: cate-density
+#| fig-width: 7.8
+#| fig-height: 4.4
+plt_hte_cate(res, sub_var = c("sex", "stage"), type = "density")
+```
+
+柱和曲线都是森林的袋外估计，**只描述、不检验**：它们被压向总体均值，
+离散程度里又混着估计噪声。本例真实 CATE 的标准差是 `r f3(sd(d$tau_true))`，
+森林 CATE 的标准差是 `r f3(sd(res$data$.cate))`。
+要看亚组差异是否可靠，看 `plt_hte_sub()` 的区间和 `p_inter`。
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `sub_var` | `NULL` | `NULL` 为全体患者一个面板；分类列向量时每列一个面板、按水平着色 |
+| `type` | `"waterfall"` | `"waterfall"` 或 `"density"` |
+| `show_ci` | `FALSE` | 瀑布图叠加 grf 逐人 CATE 的逐点区间（需要 `ci.group.size` ≥ 2，即 grf 默认） |
+| `conf_level` | `0.95` | `show_ci` 的置信水平 |
+| `overall` | `TRUE` | 画总体 ATE 虚线 |
+| `title`、`save` | `NULL`、`list()` | 标题；PDF 输出 |
+
+## plt_hte_rate()：排序规则能否挑出获益者 {#sec-rate}
+
+前面几个函数问"效应随什么变"，`plt_hte_rate()` 问的是一个更接近决策的问题：
+**如果按某个规则给患者排优先级，排在前面的人获益是否真的更多？**
+它用 grf 的 rank-weighted average treatment effect（RATE）检验，并画两条曲线：
+
+- **TOC(q)**：排在前 q 比例的患者的平均效应减去全体平均效应，面积是 **AUTOC**，
+  加权偏重排序顶端，适合发现"少数人获益很大"；
+- **Qini(q)** = q × TOC(q)：治疗前 q 比例的人比随机治疗同样比例的人多得的获益，
+  面积是 **QINI**，各比例同等加权，适合发现"效应逐渐变化"。
+
+默认规则是森林 CATE。它是从结局里学出来的，拿学它的人来评估会高估，
+所以函数随机切一半患者重拟合森林来排序、用另一半重拟合的森林来评估：
+
+```{r}
+#| label: rate-default
+#| fig-width: 10.5
+#| fig-height: 4.6
+#| column: page
+p_rate <- plt_hte_rate(res)
+p_rate
+attr(p_rate, "rate")
+```
+
+规则也可以是一个事先给定的分数（生物标志物、已发表的风险评分）。
+它不是从结局学来的，直接用已存森林的双稳健得分在全部患者上评估，不切分。
+两个规则会一起画并检验差值；含 `"cate"` 时两者都在留出的一半上评估。
+`type = "gates"` 把排序切成 5 组，画每组内的双稳健效应（GATES）：
+
+```{r}
+#| label: rate-gates
+#| fig-width: 6
+#| fig-height: 5
+p_gates <- plt_hte_rate(res, priority = c("cate", "marker"), type = "gates")
+p_gates
+attr(p_gates, "gates")[, c("rule", "group", "n", "estimate", "conf.low",
+                           "conf.high", "cate_mean")]
+```
+
+一个有靶向能力的规则，GATES 从左到右应当递减；副标题检验最高组减最低组（"1 - 5" 行）。
+对 `"cate"` 规则，菱形是每组的平均森林 CATE：若菱形比点估计更集中，
+说明森林把效应压向了均值。
+
+### 读曲线 {#sec-rate-read}
+
+- 不比随机好的规则，两条曲线都贴着 0。曲线从 q = 5% 开始画，
+  更小的顶端只由极少数患者支撑；AUTOC 和 QINI 仍用全部排序计算。
+- RATE 检验的是"这个规则有没有靶向能力"。获益是否值得据此行动，
+  要看 Qini 曲线的**大小**，是临床判断。
+- 以 `"cate"` 为规则时，结果依赖随机切分；`seed` 固定它（默认沿用森林的种子），
+  函数结束后会恢复会话原有的随机数流。
+
+### 参数 {#sec-rate-args}
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `priority` | `"cate"` | 一到两个规则：`"cate"`，或 `x$data` 中的数值 / 逻辑列（值越大越优先；想让小值优先就加一列取负） |
+| `type` | `c("toc", "qini")` | 可加 `"gates"` |
+| `smooth` | `0` | `0` 不平滑；0.05–1 为显示用的 LOESS 跨度，约 0.1 轻微、0.3 较强。AUTOC、QINI 与 `attr(p, "rate")` 不变 |
+| `gates_args` | `list(n_groups = 5)` | GATES 的组数；并列值同组，所以逻辑型规则只有两组 |
+| `conf_level` | `0.95` | 带与区间的置信水平 |
+| `train_frac` | `0.5` | `"cate"` 规则中用来学排序的比例 |
+| `max_n` | `10000` | `"cate"` 规则最多切分的患者数；超过时随机抽 `max_n` 例、两片森林各 500 棵树。**稀有事件**时抽样会丢掉大部分事件，改用 `Inf` |
+| `seed` | `NULL` | 抽样、切分、重拟合与 bootstrap 标准误的种子；`NULL` 取森林的种子 |
+| `title`、`save` | `NULL`、`list()` | 标题；PDF 输出 |
+
+## 拼图与保存 {#sec-save}
+
+全部返回 ggplot，可以直接用 patchwork 组合。`plt_hte_sub()` 默认钉死尺寸，
+要按比例分配 patchwork 的格子时改用 `fixed_size = FALSE`：
+
+```r
+library(patchwork)
+plt_hte_sub(res, sub_var = "sex", fixed_size = FALSE) /
+  plt_hte_cate(res, sub_var = "sex", type = "density") +
+  plot_layout(heights = c(1, 2))
+```
+
+保存走统一的 `save` 参数（本页不执行，以免渲染时往站点目录写文件）：
+
+```r
+plt_hte_dep(res, save = list(filename = "hte_dep.pdf"))
+plt_hte_sub(res, save = list(filename = "hte_sub.pdf", width = 7))
+```
+
+只给文件名时，宽高取图自带的 `attr(p, "plot_size")`。`save` 需要装有 `RegR`。
+
+## 读结果的七条规矩 {#sec-rules}
+
+1. **亚组效应看 `estimate`（双稳健），不看 `cate_mean`。** 森林估计被压向总体均值，
+   `cate_mean` 只描述、不带区间。
+2. **`importance` 是分裂频率，不是检验。** 本例纯噪声排第二；判断修饰看 `p_het`。
+3. **`p_het` / `p_inter` 未经多重校正。** 多变量筛选先定检验族，再做 BH 之类的校正。
+4. **不显著 ≠ 没有修饰。** 本例写进 DGP 的 `sex` 没有达到显著；
+   生存结局下二分类修饰变量的检验效能有限。
+5. **效应修饰依赖尺度。** `stage` 不改变风险比，却在生存概率之差上是真修饰变量；
+   `"diff"` 与 `"ratio"` 的亚组结论可以不同。
+6. **生存结局的 `time` 定义估计量。** 两臂都要有人随访超过 `time`；
+   换时间点就重跑 `get_hte()`。
+7. **校准检验的 differential 系数为负，读作未检出异质性**，不要取绝对值。
+
+## 参考文献 {#sec-hte-refs}
+
+- Wager S, Athey S (2018). Estimation and inference of heterogeneous treatment
+  effects using random forests. *Journal of the American Statistical Association*
+  113(523):1228–1242.
+- Athey S, Tibshirani J, Wager S (2019). Generalized random forests.
+  *The Annals of Statistics* 47(2):1148–1178.
+- Cui Y, Kosorok MR, Sverdrup E, Wager S, Zhu R (2023). Estimating heterogeneous
+  treatment effects with right-censored data via causal survival forests.
+  *Journal of the Royal Statistical Society Series B* 85(2):179–211.
+- Yadlowsky S, Fleming S, Shah N, Brunskill E, Wager S (2025). Evaluating treatment
+  prioritization rules via rank-weighted average treatment effects.
+  *Journal of the American Statistical Association* 120(549).
+- Chernozhukov V, Demirer M, Duflo E, Fernández-Val I (2025). Fisher-Schultz lecture:
+  generic machine learning inference on heterogeneous treatment effects in randomized
+  experiments, with an application to immunization in India. *Econometrica*
+  93(4):1121–1164.
+
+各函数的完整说明见包内帮助页：`?get_hte`、`?plt_hte_dep`、`?plt_hte_sub`、
+`?plt_hte_cate`、`?plt_hte_rate`。grf 本身的用法见本站
+[grf 包官方教程中译](../grf/00-get-started.qmd)。
