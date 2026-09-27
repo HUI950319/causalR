@@ -1,5 +1,15 @@
 # causalR (development version)
 
+* New `get_bal()` draws the covariate balance of several propensity score
+  schemes on one love plot, styled like `RegR::get_ps()`. `methods` takes
+  shorthands (`"PSM"`, `"ATE"`, `"ATT"`, `"ATC"`, `"ATO"`, `"ATM"`, `"EW"`)
+  or a named list of up to 14 schemes, each `design = "matching"` or
+  `"weighting"` plus `get_PSM()` / `get_PSW()` arguments under their own
+  names. Every scheme is standardised by the unadjusted pooled SD
+  (`cobalt::bal.tab()`), so the numbers differ from `plt_PSM()` /
+  `plt_PSW()`. Returns `list(plt, balance, data)`; cobalt, already a
+  WeightIt dependency, joins Imports.
+
 * `get_hte_select()` with `sel_metric` now selects only a step whose training
   scores are nonconstant and which strictly beats a constant-effect baseline
   (0 for AUTOC/QINI/score SD/IQR; the best constant effect on the evaluation
