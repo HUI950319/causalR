@@ -21,8 +21,9 @@
   `list(plt, balance, data)`, plus `tbl`; cobalt, already a
   WeightIt dependency, joins Imports. Plot settings live in `love_args`
   (`threshold`, `colors`, `shapes`, `size`, `line`, `var_order`,
-  `base_size`, `ref_color`, `legend_position`, `legend_justification`,
-  `var_names`); `var_names` relabels the plot but not `$balance`.
+  `base_size`, `ref_color`, `legend_position`, `legend_justification`).
+  `var_names`, default `RegR::name_map_seer` with your labels merged in
+  first, relabels the plot and `$tbl` but not `$balance`.
 
 * `get_hte_select()` with `sel_metric` now selects only a step whose training
   scores are nonconstant and which strictly beats a constant-effect baseline

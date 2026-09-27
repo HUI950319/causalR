@@ -11,6 +11,7 @@ get_bal(
   methods = c("PSM", "ATE", "ATT", "ATC", "ATO", "ATM", "EW"),
   cat_smd = c("overall", "level"),
   tbl = FALSE,
+  var_names = RegR::name_map_seer,
   love_args = list(),
   save_plt = list(),
   save_tbl = list()
@@ -43,6 +44,14 @@ Two-level and numeric covariates are the same either way.}
 far longer than the balance itself. Needs gtsummary and survey. A
 non-empty \code{save_tbl} builds it too.}
 
+\item{var_names}{Display labels keyed by column name, a named list or
+character vector such as \code{c(bmi = "Body mass index")}, used by the plot
+and \verb{$tbl}. It is merged into \code{RegR::name_map_seer} (the default), your
+labels winning; names not in \code{adj_var} are ignored, and a covariate in
+neither keeps its column name. \code{NULL} keeps every column name. In the
+plot a factor's label is applied to each of its level rows; \verb{$balance}
+always keeps the column names. The default needs RegR.}
+
 \item{love_args}{Named list of love plot settings; \code{list()} (default)
 keeps every default. Unknown or duplicated fields are an error.
 \describe{
@@ -73,10 +82,6 @@ columns.}
 (default) to let \code{\link[UtilsR:fmt_legend]{UtilsR::fmt_legend()}} derive it from the
 position: the nearest corner for an inside legend, \code{c(1, 0)} for the
 default, and the centre of the edge for an outside one.}
-\item{\code{var_names}}{Named character vector of display labels keyed by
-\code{adj_var} names, for example \code{c(bmi = "Body mass index")}, or \code{NULL}
-(default). A factor's label is applied to each of its levels. Only
-the plot is relabelled; \verb{$balance} keeps the column names.}
 }}
 
 \item{save_plt}{\code{NULL} or a named list saving the love plot as a PDF
@@ -223,9 +228,8 @@ get_bal(d, treat = "z", adj_var = c("x1", "x2", "x3"),
 # Restyle: stricter threshold, legend below, readable covariate names
 get_bal(d, treat = "z", adj_var = c("x1", "x2", "x3"),
         methods = c("PSM", "ATO"),
-        love_args = list(threshold = 0.05, legend_position = "bottom",
-                         var_names = c(x1 = "Age", x2 = "Male",
-                                       x3 = "Frailty")))$plt
+        var_names = c(x1 = "Age", x2 = "Male", x3 = "Frailty"),
+        love_args = list(threshold = 0.05, legend_position = "bottom"))$plt
 
 # Table 1 per scheme: both arms, SMD and p-value under one spanner each
 if (requireNamespace("gtsummary", quietly = TRUE) &&

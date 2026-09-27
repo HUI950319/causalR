@@ -1,6 +1,7 @@
 # get_bal() builds on get_PSM() / get_PSW() for the weights and on cobalt
 # (a WeightIt dependency, so always installed) for the balance, so the core
-# paths never skip. optmatch ("full") and RegR (save) are Suggests.
+# paths never skip. optmatch ("full") and RegR (save, and the default
+# var_names = RegR::name_map_seer) are Suggests.
 
 bal_data <- function(n = 400L) {
   set.seed(20260927)
@@ -263,7 +264,7 @@ bal_pts <- function(p) ggplot2::layer_data(
 test_that("love_args defaults keep the RegR-style plot", {
   expect_identical(names(formals(get_bal)),
                    c("data", "treat", "adj_var", "methods", "cat_smd",
-                     "tbl", "love_args", "save_plt", "save_tbl"))
+                     "tbl", "var_names", "love_args", "save_plt", "save_tbl"))
   p <- get_bal(bal_data(), "z", bal_adj, methods = c("PSM", "ATE"))$plt
 
   expect_equal(unname(bal_ref(p)$xintercept), 0.1)
@@ -308,23 +309,39 @@ test_that("love_args restyles points, lines, theme and legend", {
   expect_equal(p$theme$legend.justification, c(0, 0))
 })
 
-test_that("love_args$var_names relabels the plot, not the table", {
+test_that("var_names relabels the plot, not $balance", {
   d <- bal_data()
   d$sex   <- factor(ifelse(d$x2 == 1, "M", "F"))
   d$stage <- factor(rep_len(c("I", "II", "III"), nrow(d)))
   adj <- c("x1", "sex", "stage")
   vn  <- c(x1 = "Age", sex = "Sex", stage = "Stage")
   res <- get_bal(d, "z", adj, methods = "ATO", cat_smd = "level",
-                 love_args = list(var_names = vn))
+                 var_names = vn)
 
   expect_setequal(levels(res$plt$data$var),
                   c("Age", "Sex", "Stage_I", "Stage_II", "Stage_III"))
   expect_setequal(unique(res$balance$variable),
                   c("x1", "sex", "stage_I", "stage_II", "stage_III"))
 
-  res <- get_bal(d, "z", adj, methods = "ATO", love_args = list(var_names = vn))
+  res <- get_bal(d, "z", adj, methods = "ATO", var_names = vn)
   expect_setequal(levels(res$plt$data$var), c("Age", "Sex", "Stage"))
   expect_setequal(unique(res$balance$variable), adj)
+})
+
+test_that("var_names merges into RegR::name_map_seer; NULL keeps the names", {
+  d <- bal_data()
+  names(d)[names(d) == "x1"] <- "Age"
+  adj <- c("Age", "x2", "x3")
+  lab <- function(...)
+    levels(get_bal(d, "z", adj, methods = "ATO", ...)$plt$data$var)
+
+  expect_setequal(lab(), c("Age (year)", "x2", "x3"))
+  expect_setequal(lab(var_names = c(x2 = "Male")), c("Age (year)", "Male", "x3"))
+  expect_setequal(lab(var_names = list(Age = "Age, y")), c("Age, y", "x2", "x3"))
+  expect_setequal(lab(var_names = NULL), adj)
+  expect_error(lab(var_names = "Age"), "`var_names` must be")
+  expect_error(lab(var_names = c(x2 = "A", x2 = "B")), "`var_names` must be")
+  expect_error(lab(var_names = list(x2 = 1)), "`var_names` must be")
 })
 
 test_that("love_args is validated before anything is fitted", {
@@ -347,10 +364,8 @@ test_that("love_args is validated before anything is fitted", {
                "`love_args\\$var_order` must be")
   expect_error(run(list(legend_position = c(1, 2, 3))),
                "`love_args\\$legend_position` must be")
-  expect_error(run(list(var_names = c(foo = "Foo"))),
-               "`love_args\\$var_names`.*`foo`.*`adj_var`")
-  expect_error(run(list(var_names = "Age")),
-               "`love_args\\$var_names` must be a named character vector")
+  expect_error(run(list(var_names = c(x1 = "Age"))),
+               "`love_args` contains unknown field.*`var_names`")
 })
 
 test_that("save_plt writes a PDF only when it is a non-empty list", {
@@ -384,7 +399,8 @@ test_that("tbl = TRUE merges one gtsummary table per scheme; FALSE skips it", {
   adj <- c("x1", "sex", "stage")
   expect_null(get_bal(d, "z", adj, methods = "ATO")$tbl)
 
-  res  <- get_bal(d, "z", adj, methods = c("PSM", "ATE"), tbl = TRUE)
+  res  <- get_bal(d, "z", adj, methods = c("PSM", "ATE"), tbl = TRUE,
+                  var_names = c(x1 = "Age"))
   labs <- c("Unadjusted", "PS matching (nearest, ATT)", "IPTW (ATE)")
   expect_s3_class(res$tbl, "tbl_merge")
   expect_length(res$tbl$tbls, 3L)
@@ -401,6 +417,7 @@ test_that("tbl = TRUE merges one gtsummary table per scheme; FALSE skips it", {
     expect_equal(abs(b$estimate[b$variable == "x1"]),
                  abs(bal_smd(res, labs[i], "x1")), tolerance = 0.01)
     expect_false(anyNA(b$p.value))
+    expect_identical(b$label[b$variable == "x1"], "Age")
     h <- t$table_styling$header
     expect_identical(h$label[h$column == "estimate"], "**SMD**")
     expect_true(h$hide[h$column == "conf.low"])

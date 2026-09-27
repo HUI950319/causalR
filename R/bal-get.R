@@ -49,7 +49,7 @@
                            size = 3.5, line = TRUE, var_order = "unadjusted",
                            base_size = 16, ref_color = "red",
                            legend_position = c(0.99, 0.02),
-                           legend_justification = NULL, var_names = NULL)
+                           legend_justification = NULL)
 
 # `save_tbl` fields, the arguments of RegR::save_tb() other than `data`.
 .BAL_TB_SAVE <- c("path", "title", "note", "header_value", "header_colwidths",
@@ -246,6 +246,13 @@
 #' @param tbl `FALSE` (default) or `TRUE` to also build `$tbl`, which takes
 #'   far longer than the balance itself. Needs gtsummary and survey. A
 #'   non-empty `save_tbl` builds it too.
+#' @param var_names Display labels keyed by column name, a named list or
+#'   character vector such as `c(bmi = "Body mass index")`, used by the plot
+#'   and `$tbl`. It is merged into `RegR::name_map_seer` (the default), your
+#'   labels winning; names not in `adj_var` are ignored, and a covariate in
+#'   neither keeps its column name. `NULL` keeps every column name. In the
+#'   plot a factor's label is applied to each of its level rows; `$balance`
+#'   always keeps the column names. The default needs RegR.
 #' @param love_args Named list of love plot settings; `list()` (default)
 #'   keeps every default. Unknown or duplicated fields are an error.
 #'   \describe{
@@ -276,10 +283,6 @@
 #'       (default) to let [UtilsR::fmt_legend()] derive it from the
 #'       position: the nearest corner for an inside legend, `c(1, 0)` for the
 #'       default, and the centre of the edge for an outside one.}
-#'     \item{`var_names`}{Named character vector of display labels keyed by
-#'       `adj_var` names, for example `c(bmi = "Body mass index")`, or `NULL`
-#'       (default). A factor's label is applied to each of its levels. Only
-#'       the plot is relabelled; `$balance` keeps the column names.}
 #'   }
 #' @param save_plt `NULL` or a named list saving the love plot as a PDF
 #'   through `RegR::save_plt()`: `filename`, and optionally `width` and
@@ -355,9 +358,8 @@
 #' # Restyle: stricter threshold, legend below, readable covariate names
 #' get_bal(d, treat = "z", adj_var = c("x1", "x2", "x3"),
 #'         methods = c("PSM", "ATO"),
-#'         love_args = list(threshold = 0.05, legend_position = "bottom",
-#'                          var_names = c(x1 = "Age", x2 = "Male",
-#'                                        x3 = "Frailty")))$plt
+#'         var_names = c(x1 = "Age", x2 = "Male", x3 = "Frailty"),
+#'         love_args = list(threshold = 0.05, legend_position = "bottom"))$plt
 #'
 #' # Table 1 per scheme: both arms, SMD and p-value under one spanner each
 #' if (requireNamespace("gtsummary", quietly = TRUE) &&
@@ -374,6 +376,7 @@ get_bal <- function(data,
                                   "EW"),
                     cat_smd   = c("overall", "level"),
                     tbl       = FALSE,
+                    var_names = RegR::name_map_seer,
                     love_args = list(),
                     save_plt  = list(),
                     save_tbl  = list()) {
@@ -428,15 +431,22 @@ get_bal <- function(data,
     bad("legend_position", "must be one string such as \"right\" or \"none\", or two numbers.")
   if (!is.null(la$legend_justification) && !place(la$legend_justification))
     bad("legend_justification", "must be NULL, one string, or two numbers.")
-  vn <- la$var_names
-  if (!is.null(vn)) {
-    if (!is.character(vn) || is.null(names(vn)) || anyNA(vn) ||
-        any(!nzchar(names(vn))) || anyDuplicated(names(vn)))
-      bad("var_names", "must be a named character vector with unique names.")
-    miss <- setdiff(names(vn), adj_var)
-    if (length(miss))
-      bad("var_names", sprintf("names %s that are not in `adj_var`.",
-                               paste0("`", miss, "`", collapse = ", ")))
+  # var_names: the caller's labels first, then RegR::name_map_seer, as
+  # RegR::get_tb_gtsummary() merges them; only adj_var entries are kept.
+  vn <- NULL
+  if (!is.null(var_names)) {
+    one_lab <- function(x) is.character(x) && length(x) == 1L && !is.na(x)
+    if (!(is.list(var_names) || is.character(var_names)) ||
+        (length(var_names) &&
+         (is.null(names(var_names)) || any(!nzchar(names(var_names))) ||
+          anyDuplicated(names(var_names)) ||
+          !all(vapply(var_names, one_lab, logical(1))))))
+      stop("`var_names` must be NULL or a named list or character vector of single labels with unique names.",
+           call. = FALSE)
+    vn <- c(as.list(var_names),
+            if (requireNamespace("RegR", quietly = TRUE)) RegR::name_map_seer)
+    vn <- unlist(vn[!duplicated(names(vn)) & names(vn) %in% adj_var])
+    if (!length(vn)) vn <- NULL
   }
 
   # Incomplete rows go once, here: left to get_PSM() / get_PSW(), each scheme
@@ -569,13 +579,15 @@ get_bal <- function(data,
   if (tbl) {
     dd  <- data[c(treat, adj_var)]
     st  <- list(gtsummary::all_continuous() ~ "{mean} ({sd})")
+    lb  <- if (!is.null(vn)) as.list(vn)
     one <- function(wt) {
       t <- if (is.null(wt))
-        gtsummary::tbl_summary(dd, by = gtsummary::all_of(treat), statistic = st)
+        gtsummary::tbl_summary(dd, by = gtsummary::all_of(treat), statistic = st,
+                               label = lb)
       else
         gtsummary::tbl_svysummary(
           survey::svydesign(ids = ~1, weights = wt, data = dd),
-          by = gtsummary::all_of(treat), statistic = st)
+          by = gtsummary::all_of(treat), statistic = st, label = lb)
       t <- gtsummary::add_difference(t, test = gtsummary::everything() ~ "smd")
       t <- gtsummary::add_p(t, pvalue_fun = gtsummary::label_style_pvalue(digits = 3))
       t <- gtsummary::modify_column_hide(t, "conf.low")
