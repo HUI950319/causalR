@@ -6,8 +6,12 @@
   or a named list of up to 14 schemes, each `design = "matching"` or
   `"weighting"` plus `get_PSM()` / `get_PSW()` arguments under their own
   names. Every scheme is standardised by the unadjusted pooled SD
-  (`cobalt::bal.tab()`), so the numbers differ from `plt_PSM()` /
-  `plt_PSW()`. Returns `list(plt, balance, data)`; cobalt, already a
+  (`cobalt::bal.tab()`), the same denominator halfmoon gives `plt_PSM()` /
+  `plt_PSW()` except for its variance over n rather than n - 1. `cat_smd`
+  sets how a factor with three or more levels is summarised: `"overall"`
+  (default) gives one unsigned Yang & Dalton (2012) row, the number
+  `gtsummary::add_difference()` reports; `"level"` one row per level, as
+  cobalt does. Returns `list(plt, balance, data)`; cobalt, already a
   WeightIt dependency, joins Imports. Plot settings live in `love_args`
   (`threshold`, `colors`, `shapes`, `size`, `line`, `var_order`,
   `base_size`, `ref_color`, `legend_position`, `legend_justification`,

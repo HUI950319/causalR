@@ -9,6 +9,7 @@ get_bal(
   treat,
   adj_var,
   methods = c("PSM", "ATE", "ATT", "ATC", "ATO", "ATM", "EW"),
+  cat_smd = c("overall", "level"),
   love_args = list(),
   save = list()
 )
@@ -22,12 +23,19 @@ whose second level is the treated one.}
 
 \item{adj_var}{Character vector of covariates every scheme adjusts for and
 the plot reports. A two-level factor or character covariate is shown
-under its own name; a factor with more levels gets one row per level.}
+under its own name; a factor with more levels as set by \code{cat_smd}.}
 
 \item{methods}{Character vector of shorthands, any of \code{"PSM"}, \code{"ATE"},
 \code{"ATT"}, \code{"ATC"}, \code{"ATO"}, \code{"ATM"}, \code{"EW"} (all seven by default), or a
 named list of scheme specifications; see \emph{Specifying schemes}. At most
 14 schemes.}
+
+\item{cat_smd}{How a factor or character covariate with three or more
+levels is summarised. \code{"overall"} (default): one row under the variable's
+name, the unsigned multivariate SMD of Yang & Dalton (2012); see
+\emph{Balance measure}. \code{"level"}: one signed row per level, named
+\verb{<variable>_<level>}, as cobalt and \code{\link[=plt_PSM]{plt_PSM()}} / \code{\link[=plt_PSW]{plt_PSW()}} report it.
+Two-level and numeric covariates are the same either way.}
 
 \item{love_args}{Named list of love plot settings; \code{list()} (default)
 keeps every default. Unknown or duplicated fields are an error.
@@ -76,7 +84,8 @@ A list of
 \code{attr(., "plot_size")}.}
 \item{\code{balance}}{A data frame with \code{variable}, \code{method} (the scheme
 label, or \code{"Unadjusted"}) and \code{smd}, the signed standardised mean
-difference, treated minus control.}
+difference, treated minus control; the \code{cat_smd = "overall"} row of a
+factor with three or more levels is unsigned.}
 \item{\code{data}}{The complete cases of \code{treat}, \code{adj_var} and any \code{ps}
 column a scheme names, with one weight column per scheme named by
 its label. Unmatched and trimmed units have weight \code{0}, so every
@@ -132,9 +141,24 @@ mean difference between arms divided by the \strong{unadjusted pooled} standard
 deviation, \eqn{\sqrt{(s_1^2 + s_0^2)/2}}, computed with
 \code{cobalt::bal.tab(s.d.denom = "pooled")}; binary covariates use
 \eqn{p(1-p)} in place of \eqn{s^2}. A common denominator keeps the schemes
-on one scale even though they target different populations, so these
-numbers differ from \code{\link[=plt_PSM]{plt_PSM()}} / \code{\link[=plt_PSW]{plt_PSW()}}, which standardise each
-weight by its own weighted standard deviation.
+on one scale even though they target different populations. \code{\link[=plt_PSM]{plt_PSM()}} /
+\code{\link[=plt_PSW]{plt_PSW()}} standardise by the same unweighted pooled standard deviation
+(through halfmoon and \code{smd::smd()}), so for continuous and binary
+covariates the two agree, except that halfmoon divides the variance by
+\eqn{n} rather than \eqn{n - 1} and that \code{\link[=get_PSW]{get_PSW()}} computes it on the
+rows left after trimming. They report each level of a factor, as
+\code{cat_smd = "level"} does here.
+
+A factor or character covariate with three or more levels is, under
+\code{cat_smd = "overall"}, summarised by the multivariate SMD of Yang & Dalton
+(2012), \eqn{\sqrt{D^\top S^{+} D}}: \eqn{D} is the vector of weighted
+level proportions, treated minus control, and \eqn{S} the mean of the two
+arms' unweighted multinomial covariance matrices
+\eqn{\mathrm{diag}(p) - p p^\top}, with \eqn{S^{+}} its pseudo-inverse. It
+has no sign, and it is never smaller than the largest absolute SMD of a
+single level, so a threshold applied to it is the stricter one. It is the
+number \code{gtsummary::add_difference(test = ~ "smd")} and
+\code{halfmoon::tidy_smd()} report for the variable.
 
 Two consequences are exact rather than approximate. Stabilising the ATE
 weight multiplies it by a constant within each arm, so its balance is
@@ -175,6 +199,10 @@ get_bal(d, treat = "z", adj_var = c("x1", "x2", "x3"),
                                        x3 = "Frailty")))$plt
 }
 
+}
+\references{
+Yang D, Dalton JE. A unified approach to measuring the effect size between
+two groups using SAS. SAS Global Forum 2012; Paper 335-2012.
 }
 \seealso{
 \code{\link[=get_PSM]{get_PSM()}} and \code{\link[=get_PSW]{get_PSW()}} for one design at a time, with

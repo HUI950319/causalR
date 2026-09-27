@@ -4,20 +4,22 @@
 #
 # Architecture (2 layers):
 #
-#   L1  get_bal(data, treat, adj_var, methods, threshold, save)
+#   L1  get_bal(data, treat, adj_var, methods, cat_smd, love_args, save)
 #         |
 #         +-- .bal_specs          shorthand or named list -> validated specs
 #         +-- get_PSM / get_PSW   one call per scheme, weight column only
 #         +-- cobalt::bal.tab / cobalt::love.plot   one shared denominator
 #         +-- .psw_save           pin the size, save through RegR::save_plt()
 #
-# get_PSM() and get_PSW() report balance through halfmoon, which standardises
-# every weight by its own weighted SD. Across schemes that target different
-# populations the denominator then moves with the scheme, and part of each
-# difference in SMD is a change of scale rather than of means. Here every
-# scheme is divided by the unadjusted pooled SD (cobalt's s.d.denom =
-# "pooled"), as RegR::get_psm_iptw() does for its three-series plot, so the
-# numbers deliberately differ from plt_PSM() / plt_PSW().
+# Every scheme is divided by the unadjusted pooled SD of the complete cases
+# (cobalt's s.d.denom = "pooled"), as RegR::get_psm_iptw() does for its
+# three-series plot, so that schemes targeting different populations stay on
+# one scale. get_PSM() and get_PSW() report balance through halfmoon, whose
+# smd::smd() also divides by the unweighted pooled SD, but with the variance
+# over n rather than n - 1 and, for get_PSW(), on the rows left after
+# trimming. A factor of three or more levels is one Yang & Dalton (2012) row
+# by default (cat_smd = "overall"), spliced into cobalt's table in place of
+# its level rows; halfmoon and cobalt give one row per level.
 # =============================================================================
 
 # Shorthand -> legend label. The weighting shorthands are get_PSW() estimands;
@@ -192,9 +194,24 @@
 #' deviation, \eqn{\sqrt{(s_1^2 + s_0^2)/2}}, computed with
 #' `cobalt::bal.tab(s.d.denom = "pooled")`; binary covariates use
 #' \eqn{p(1-p)} in place of \eqn{s^2}. A common denominator keeps the schemes
-#' on one scale even though they target different populations, so these
-#' numbers differ from [plt_PSM()] / [plt_PSW()], which standardise each
-#' weight by its own weighted standard deviation.
+#' on one scale even though they target different populations. [plt_PSM()] /
+#' [plt_PSW()] standardise by the same unweighted pooled standard deviation
+#' (through halfmoon and `smd::smd()`), so for continuous and binary
+#' covariates the two agree, except that halfmoon divides the variance by
+#' \eqn{n} rather than \eqn{n - 1} and that [get_PSW()] computes it on the
+#' rows left after trimming. They report each level of a factor, as
+#' `cat_smd = "level"` does here.
+#'
+#' A factor or character covariate with three or more levels is, under
+#' `cat_smd = "overall"`, summarised by the multivariate SMD of Yang & Dalton
+#' (2012), \eqn{\sqrt{D^\top S^{+} D}}: \eqn{D} is the vector of weighted
+#' level proportions, treated minus control, and \eqn{S} the mean of the two
+#' arms' unweighted multinomial covariance matrices
+#' \eqn{\mathrm{diag}(p) - p p^\top}, with \eqn{S^{+}} its pseudo-inverse. It
+#' has no sign, and it is never smaller than the largest absolute SMD of a
+#' single level, so a threshold applied to it is the stricter one. It is the
+#' number `gtsummary::add_difference(test = ~ "smd")` and
+#' `halfmoon::tidy_smd()` report for the variable.
 #'
 #' Two consequences are exact rather than approximate. Stabilising the ATE
 #' weight multiplies it by a constant within each arm, so its balance is
@@ -208,11 +225,17 @@
 #'   whose second level is the treated one.
 #' @param adj_var Character vector of covariates every scheme adjusts for and
 #'   the plot reports. A two-level factor or character covariate is shown
-#'   under its own name; a factor with more levels gets one row per level.
+#'   under its own name; a factor with more levels as set by `cat_smd`.
 #' @param methods Character vector of shorthands, any of `"PSM"`, `"ATE"`,
 #'   `"ATT"`, `"ATC"`, `"ATO"`, `"ATM"`, `"EW"` (all seven by default), or a
 #'   named list of scheme specifications; see *Specifying schemes*. At most
 #'   14 schemes.
+#' @param cat_smd How a factor or character covariate with three or more
+#'   levels is summarised. `"overall"` (default): one row under the variable's
+#'   name, the unsigned multivariate SMD of Yang & Dalton (2012); see
+#'   *Balance measure*. `"level"`: one signed row per level, named
+#'   `<variable>_<level>`, as cobalt and [plt_PSM()] / [plt_PSW()] report it.
+#'   Two-level and numeric covariates are the same either way.
 #' @param love_args Named list of love plot settings; `list()` (default)
 #'   keeps every default. Unknown or duplicated fields are an error.
 #'   \describe{
@@ -258,7 +281,8 @@
 #'       `attr(., "plot_size")`.}
 #'     \item{`balance`}{A data frame with `variable`, `method` (the scheme
 #'       label, or `"Unadjusted"`) and `smd`, the signed standardised mean
-#'       difference, treated minus control.}
+#'       difference, treated minus control; the `cat_smd = "overall"` row of a
+#'       factor with three or more levels is unsigned.}
 #'     \item{`data`}{The complete cases of `treat`, `adj_var` and any `ps`
 #'       column a scheme names, with one weight column per scheme named by
 #'       its label. Unmatched and trimmed units have weight `0`, so every
@@ -267,6 +291,10 @@
 #'
 #' @seealso [get_PSM()] and [get_PSW()] for one design at a time, with
 #'   effective sample sizes and weight diagnostics.
+#'
+#' @references
+#' Yang D, Dalton JE. A unified approach to measuring the effect size between
+#' two groups using SAS. SAS Global Forum 2012; Paper 335-2012.
 #'
 #' @examples
 #' set.seed(20260927)
@@ -306,11 +334,13 @@ get_bal <- function(data,
                     adj_var,
                     methods   = c("PSM", "ATE", "ATT", "ATC", "ATO", "ATM",
                                   "EW"),
+                    cat_smd   = c("overall", "level"),
                     love_args = list(),
                     save      = list()) {
 
   if (!is.data.frame(data) || !nrow(data))
     stop("`data` must be a non-empty data frame.", call. = FALSE)
+  cat_smd <- match.arg(cat_smd)
   treat   <- .sens_check_col(treat, data, "treat", n = 1L)
   adj_var <- .sens_check_col(adj_var, data, "adj_var")
   if (is.null(adj_var))
@@ -403,7 +433,38 @@ get_bal <- function(data,
     paste0(v, "_", levels(factor(data[[v]]))[2L]), ""))
   map <- map[names(map) %in% rownames(bt$Balance)]
 
-  B    <- bt$Balance
+  # cat_smd = "overall": one Yang & Dalton row replaces a factor's level rows,
+  # D weighted by each column's scheme, S from the unweighted arm proportions
+  # as every other row's denominator; the pseudo-inverse of S over all k
+  # levels equals the inverse over k - 1, whichever level is dropped.
+  B     <- bt$Balance
+  dcols <- grep("^Diff\\.", names(B))
+  multi <- if (cat_smd == "overall") adj_var[vapply(data[adj_var], function(v)
+    (is.factor(v) || is.character(v)) && length(unique(v)) > 2L, logical(1))]
+  for (v in multi) {
+    x    <- factor(data[[v]])
+    prop <- function(s, wt)
+      vapply(levels(x), function(l) sum(wt[s] * (x[s] == l)) / sum(wt[s]), 0)
+    covm <- function(s) {
+      q <- prop(s, rep(1, length(x)))
+      diag(q) - outer(q, q)
+    }
+    e  <- svd((covm(z == 1) + covm(z == 0)) / 2)
+    ok <- e$d > sqrt(.Machine$double.eps) * e$d[1L]
+    Si <- e$v[, ok, drop = FALSE] %*% (t(e$u[, ok, drop = FALSE]) / e$d[ok])
+    at  <- which(rownames(B) %in% paste0(v, "_", levels(x)))
+    row <- B[at[1L], , drop = FALSE]
+    row[dcols] <- vapply(c(list(rep(1, length(x))), w), function(wt) {
+      D <- prop(z == 1, wt) - prop(z == 0, wt)
+      sqrt(max(0, drop(D %*% Si %*% D)))
+    }, 0)
+    rownames(row) <- v
+    keep <- setdiff(seq_len(nrow(B)), at)
+    B <- rbind(B[keep[keep < at[1L]], , drop = FALSE], row,
+               B[keep[keep > at[1L]], , drop = FALSE])
+  }
+  bt$Balance <- B
+
   vars <- rownames(B)
   vars[vars %in% names(map)] <- unname(map[vars[vars %in% names(map)]])
   bal <- data.frame(
@@ -417,7 +478,12 @@ get_bal <- function(data,
   # Plot labels: a two-level factor under its variable's label; any other
   # var_names entry goes to cobalt, which labels each level of a factor.
   lab_of <- function(v) if (v %in% names(vn)) vn[[v]] else v
-  pn <- c(vapply(map, lab_of, ""), vn[setdiff(names(vn), map)])
+  # cobalt reads a factor's name in var.names as the label of its level rows,
+  # so a cat_smd = "overall" row is relabelled by renaming it instead.
+  own <- intersect(multi, names(vn))
+  if (length(own))
+    rownames(bt$Balance)[match(own, rownames(bt$Balance))] <- unname(vn[own])
+  pn <- c(vapply(map, lab_of, ""), vn[setdiff(names(vn), c(map, own))])
 
   p <- cobalt::love.plot(
     bt, stats = "mean.diffs", abs = TRUE, var.order = la$var_order,

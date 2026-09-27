@@ -136,6 +136,62 @@ test_that("literal names work and binary factors keep the variable name", {
   expect_true("sex" %in% levels(res$plt$data$var))
 })
 
+# Yang & Dalton (2012) SMD of one factor, written independently of get_bal():
+# weighted level proportions, treated minus control, over the mean of the two
+# arms' unweighted multinomial covariances, on k - 1 levels with solve()
+yd_smd <- function(x, z, w = rep(1, length(x))) {
+  x <- factor(x)
+  k <- levels(x)[-1L]
+  prop <- function(s, wt)
+    vapply(k, function(l) sum(wt[s] * (x[s] == l)) / sum(wt[s]), 0)
+  covm <- function(s) {
+    q <- prop(s, rep(1, length(x)))
+    diag(q) - outer(q, q)
+  }
+  D <- prop(z == 1, w) - prop(z == 0, w)
+  sqrt(drop(D %*% solve((covm(z == 1) + covm(z == 0)) / 2, D)))
+}
+
+stage_data <- function() {
+  d <- bal_data()
+  d$sex   <- factor(ifelse(d$x2 == 1, "M", "F"))
+  d$stage <- cut(d$x1, c(-Inf, -0.5, 0.5, Inf), labels = c("I", "II", "III"))
+  d
+}
+
+test_that("cat_smd = \"overall\" gives a factor one Yang & Dalton row", {
+  adj <- c("x1", "sex", "stage")
+  res <- get_bal(stage_data(), "z", adj, methods = "ATE")
+
+  expect_setequal(unique(res$balance$variable), adj)
+  expect_equal(bal_smd(res, "Unadjusted", "stage"),
+               yd_smd(res$data$stage, res$data$z))
+  expect_equal(bal_smd(res, "IPTW (ATE)", "stage"),
+               yd_smd(res$data$stage, res$data$z, res$data[["IPTW (ATE)"]]))
+  expect_true("stage" %in% levels(res$plt$data$var))
+})
+
+test_that("cat_smd = \"level\" keeps one row per level; two levels are unchanged", {
+  d   <- stage_data()
+  adj <- c("x1", "sex", "stage")
+  lev <- get_bal(d, "z", adj, methods = "ATE", cat_smd = "level")
+  ove <- get_bal(d, "z", adj, methods = "ATE")
+  lb  <- lev$balance
+  ob  <- ove$balance
+
+  expect_setequal(unique(lb$variable),
+                  c("x1", "sex", "stage_I", "stage_II", "stage_III"))
+  expect_identical(lb$smd[lb$variable %in% c("x1", "sex")],
+                   ob$smd[ob$variable %in% c("x1", "sex")])
+  # the multivariate SMD is never below the largest level-wise one
+  for (m in c("Unadjusted", "IPTW (ATE)"))
+    expect_gte(bal_smd(ove, m, "stage"),
+               max(abs(lb$smd[lb$method == m & startsWith(lb$variable, "stage_")])))
+
+  expect_error(get_bal(d, "z", adj, methods = "ATE", cat_smd = "total"),
+               "should be one of")
+})
+
 test_that("incomplete rows are dropped once, for every scheme", {
   d <- bal_data()
   d$x3[c(3, 7)] <- NA
@@ -206,8 +262,8 @@ bal_pts <- function(p) ggplot2::layer_data(
 
 test_that("love_args defaults keep the RegR-style plot", {
   expect_identical(names(formals(get_bal)),
-                   c("data", "treat", "adj_var", "methods", "love_args",
-                     "save"))
+                   c("data", "treat", "adj_var", "methods", "cat_smd",
+                     "love_args", "save"))
   p <- get_bal(bal_data(), "z", bal_adj, methods = c("PSM", "ATE"))$plt
 
   expect_equal(unname(bal_ref(p)$xintercept), 0.1)
@@ -257,14 +313,18 @@ test_that("love_args$var_names relabels the plot, not the table", {
   d$sex   <- factor(ifelse(d$x2 == 1, "M", "F"))
   d$stage <- factor(rep_len(c("I", "II", "III"), nrow(d)))
   adj <- c("x1", "sex", "stage")
-  res <- get_bal(d, "z", adj, methods = "ATO",
-                 love_args = list(var_names = c(x1 = "Age", sex = "Sex",
-                                                stage = "Stage")))
+  vn  <- c(x1 = "Age", sex = "Sex", stage = "Stage")
+  res <- get_bal(d, "z", adj, methods = "ATO", cat_smd = "level",
+                 love_args = list(var_names = vn))
 
   expect_setequal(levels(res$plt$data$var),
                   c("Age", "Sex", "Stage_I", "Stage_II", "Stage_III"))
   expect_setequal(unique(res$balance$variable),
                   c("x1", "sex", "stage_I", "stage_II", "stage_III"))
+
+  res <- get_bal(d, "z", adj, methods = "ATO", love_args = list(var_names = vn))
+  expect_setequal(levels(res$plt$data$var), c("Age", "Sex", "Stage"))
+  expect_setequal(unique(res$balance$variable), adj)
 })
 
 test_that("love_args is validated before anything is fitted", {
