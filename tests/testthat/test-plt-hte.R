@@ -581,6 +581,31 @@ test_that("effect replaces the estimate of the rows it names", {
                "sex = M")
 })
 
+test_that("label_column_list renames rows; the SEER dictionary names variables only", {
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  skip_if_not_installed("RegR")
+  res <- dep_res()
+  res$data$age_55 <- ifelse(res$data$age < 55, "Below 55", "55 and above")
+  p <- suppressMessages(plt_hte_sub(
+    res, sub_var = c("age_55", "sex"),
+    label_column_list = c(sex = "Sex", F = "Female", "All patients" = "Overall")))
+  # age_55 from the SEER dictionary; the level M is not its "M stage"
+  expect_identical(trimws(fp_col(p, 1)),
+                   c("Subgroup", "Overall", "Age category (year)", "55 and above",
+                     "Below 55", "Sex", "Female", "M"))
+  expect_identical(unique(attr(p, "subgroup")$sub_var), c("age_55", "sex"))
+  # a user key wins over the dictionary
+  q <- suppressMessages(plt_hte_sub(res, sub_var = "age_55", overall = FALSE,
+                                    label_column_list = list(age_55 = "Age")))
+  expect_identical(trimws(fp_col(q, 1))[2], "Age")
+
+  expect_identical(names(formals(plt_hte_sub))[9:11],
+                   c("show_pinter", "label_column_list", "xlim"))
+  expect_error(plt_hte_sub(res, label_column_list = "Sex"), "label_column_list")
+  expect_error(plt_hte_sub(res, label_column_list = list(sex = 1)), "label_column_list")
+})
+
 test_that("sub_var defaults to the categorical covariates and checks columns", {
   skip_if_not_installed("forestplot")
   skip_if_not_installed("ggplotify")

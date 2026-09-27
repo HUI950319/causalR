@@ -14,6 +14,7 @@ plt_hte_sub(
   show_n = TRUE,
   show_pvalue = FALSE,
   show_pinter = FALSE,
+  label_column_list = NULL,
   xlim = NULL,
   ticks_at = NULL,
   title = NULL,
@@ -72,6 +73,15 @@ every row. Default \code{FALSE}.}
 \item{show_pinter}{Logical. \code{TRUE} adds a "P for interaction" column: for
 every variable, the Wald test that its subgroup effects are equal (the
 \code{p_inter} of \code{\link[=get_hte]{get_hte()}}). Default \code{FALSE}.}
+
+\item{label_column_list}{\code{NULL} (default) or a named list or character
+vector giving display names for the label column, keyed by the text as
+drawn, e.g. \code{c(age_55 = "Age category (year)", F = "Female", "All patients" = "Overall")}. It applies to every row: variable names,
+levels and "All patients". Its keys take precedence over the SEER
+dictionary of \code{RegR::plt_eff2()}, which, when \pkg{RegR} is installed,
+renames variable rows only (its keys are variable names, so a level \code{M}
+stays \code{M}). Only the drawing changes: \code{sub_var}, \code{effect} and
+\code{attr(p, "subgroup")} keep the original names.}
 
 \item{xlim}{\code{NULL} (default) or two increasing numbers giving the axis
 range, positive for \code{"ratio"} and \code{"OR"}; intervals running past it end

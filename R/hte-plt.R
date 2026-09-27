@@ -608,6 +608,15 @@ plt_hte_dep <- function(x,
 #' @param show_pinter Logical. `TRUE` adds a "P for interaction" column: for
 #'   every variable, the Wald test that its subgroup effects are equal (the
 #'   `p_inter` of [get_hte()]). Default `FALSE`.
+#' @param label_column_list `NULL` (default) or a named list or character
+#'   vector giving display names for the label column, keyed by the text as
+#'   drawn, e.g. `c(age_55 = "Age category (year)", F = "Female",
+#'   "All patients" = "Overall")`. It applies to every row: variable names,
+#'   levels and "All patients". Its keys take precedence over the SEER
+#'   dictionary of `RegR::plt_eff2()`, which, when \pkg{RegR} is installed,
+#'   renames variable rows only (its keys are variable names, so a level `M`
+#'   stays `M`). Only the drawing changes: `sub_var`, `effect` and
+#'   `attr(p, "subgroup")` keep the original names.
 #' @param xlim `NULL` (default) or two increasing numbers giving the axis
 #'   range, positive for `"ratio"` and `"OR"`; intervals running past it end
 #'   in arrows.
@@ -713,6 +722,7 @@ plt_hte_sub <- function(x,
                         show_n      = TRUE,
                         show_pvalue = FALSE,
                         show_pinter = FALSE,
+                        label_column_list = NULL,
                         xlim        = NULL,
                         ticks_at    = NULL,
                         title       = NULL,
@@ -733,6 +743,14 @@ plt_hte_sub <- function(x,
         is.na(flags[[nm]]))
       stop(sprintf("`%s` must be TRUE or FALSE.", nm), call. = FALSE)
   log_x <- measure != "diff"
+  if (length(label_column_list) &&
+      (!(is.list(label_column_list) || is.character(label_column_list)) ||
+       is.null(names(label_column_list)) || !all(nzchar(names(label_column_list))) ||
+       anyDuplicated(names(label_column_list)) ||
+       !all(vapply(as.list(label_column_list), function(s)
+         is.character(s) && length(s) == 1L && !is.na(s), logical(1L)))))
+    stop("`label_column_list` must be `NULL` or a list or character vector of single strings with unique names, e.g. c(age_55 = \"Age category (year)\").",
+         call. = FALSE)
   if (!is.null(xlim) && (!is.numeric(xlim) || length(xlim) != 2L ||
                          anyNA(xlim) || xlim[1L] >= xlim[2L]))
     stop("`xlim` must be `NULL` or two increasing numbers.", call. = FALSE)
@@ -939,6 +957,20 @@ plt_hte_sub <- function(x,
                          fmt_p(r$p.value), "", r$estimate, r$conf.low,
                          r$conf.high, FALSE))
   }
+  # Display names: label_column_list on every row, over the SEER dictionary
+  # of RegR::plt_eff2() on the variable rows only, as its keys are variable
+  # names ("M" is M stage, not a level of sex)
+  raw  <- trimws(body$label)
+  disp <- raw
+  seer <- if (requireNamespace("RegR", quietly = TRUE)) RegR:::.eff_seer_dict()
+  maps <- list(seer = seer, user = as.list(label_column_list))
+  for (k in names(maps)) {
+    hit <- raw %in% names(maps[[k]]) & (k == "user" | body$bold)
+    disp[hit] <- unlist(maps[[k]][raw[hit]], use.names = FALSE)
+  }
+  flush <- body$bold
+  flush[1L] <- flush[1L] || overall   # the "All patients" row
+  body$label <- ifelse(flush, disp, paste0("   ", disp))
   cols <- c("label", if (show_n) "n", "est", if (show_pvalue) "p",
             if (show_pinter) "p_inter")
   text <- rbind(c("Subgroup",
