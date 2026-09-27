@@ -35,7 +35,15 @@
   (`threshold`, `colors`, `shapes`, `size`, `line`, `var_order`,
   `base_size`, `ref_color`, `legend_position`, `legend_justification`).
   `var_names`, default `RegR::name_map_seer` with your labels merged in
-  first, relabels the plot and `$tbl` but not `$balance`.
+  first, relabels the plot and `$tbl` but not `$balance`; two covariates
+  under one label are an error, as they would share a plot row, and so is
+  a scheme labelled `"Un"`, cobalt's name for the unadjusted column.
+  Weighting schemes that differ only in `estimand` are fitted in one
+  `get_PSW()` call, the default six in one instead of six. `cores`
+  (default `NULL`, automatic) builds the `$tbl` tables in parallel, forked
+  on Linux and WSL and on a PSOCK cluster on Windows: at 20,000 rows under
+  WSL `get_bal(tbl = TRUE)` takes 15 s instead of 49 s, the table
+  unchanged. `parallel` joins Imports.
 
 * `get_hte_select()` with `sel_metric` now selects only a step whose training
   scores are nonconstant and which strictly beats a constant-effect baseline

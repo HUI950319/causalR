@@ -107,6 +107,41 @@ test_that("overlap weights balance exactly and stabilizing changes nothing", {
   expect_equal(b$smd[b$method == "Stabilized IPTW"], b$smd[b$method == "IPTW"])
 })
 
+test_that("weighting schemes that differ only in estimand share one fit", {
+  d  <- bal_data()
+  tr <- list(method = "ps", lower = 0.1, upper = 0.9)
+  methods <- list(
+    A = list(design = "weighting", estimand = "ATE", trim_args = tr),
+    B = list(design = "weighting", estimand = "ATO", trim_args = tr),
+    C = list(design = "weighting", estimand = "ATE"),
+    D = list(design = "weighting", estimand = "att"))
+  # count get_PSW() calls; the mock keeps its formals, which .bal_specs() reads
+  cnt  <- new.env()
+  cnt$n <- 0L
+  orig <- get_PSW
+  mock <- orig
+  body(mock) <- bquote({ .cnt$n <- .cnt$n + 1L; .(body(orig)) })
+  environment(mock) <- list2env(list(.cnt = cnt), parent = environment(orig))
+  local_mocked_bindings(get_PSW = mock)
+  res <- get_bal(d, "z", bal_adj, methods = methods)
+  expect_identical(cnt$n, 2L)             # {A, B} and {C, D}
+
+  one <- function(est, ...) {
+    x <- orig(d, "z", bal_adj, estimand = est, balance = FALSE, ...)$data[[
+      paste0("w_", tolower(est))]]
+    x[is.na(x)] <- 0
+    x
+  }
+  expect_identical(res$data$A, one("ATE", trim_args = tr))
+  expect_identical(res$data$B, one("ATO", trim_args = tr))
+  expect_identical(res$data$C, one("ATE"))
+  expect_identical(res$data$D, one("ATT"))
+
+  cnt$n <- 0L
+  get_bal(d, "z", bal_adj)
+  expect_identical(cnt$n, 1L)             # the six shorthand weights
+})
+
 test_that("trimmed units take weight 0, not NA", {
   d <- bal_data()
   methods <- list(`Trimmed IPTW` = list(
@@ -234,6 +269,10 @@ test_that("method specifications are validated before anything is fitted", {
     rep(list(list(design = "weighting", estimand = "ATE")), 2), c("A", "A"))),
     "duplicated.*`A`")
   expect_error(run(c("PSM", "IPW")), "Unknown shorthand.*\"IPW\"")
+  # cobalt's unadjusted column is "Diff.Un", so a scheme cannot be called "Un"
+  expect_error(run(list(Un = list(design = "weighting", estimand = "ATE"),
+                        B  = list(design = "weighting", estimand = "ATO"))),
+               "`Un`.*reserved")
   expect_error(run(stats::setNames(
     rep(list(list(design = "weighting", estimand = "ATE")), 15),
     paste("m", 1:15))), "at most 14")
@@ -264,7 +303,8 @@ bal_pts <- function(p) ggplot2::layer_data(
 test_that("love_args defaults keep the RegR-style plot", {
   expect_identical(names(formals(get_bal)),
                    c("data", "treat", "adj_var", "methods", "cat_smd",
-                     "tbl", "var_names", "love_args", "save_plt", "save_tbl"))
+                     "tbl", "cores", "var_names", "love_args", "save_plt",
+                     "save_tbl"))
   p <- get_bal(bal_data(), "z", bal_adj, methods = c("PSM", "ATE"))$plt
 
   expect_equal(unname(bal_ref(p)$xintercept), 0.1)
@@ -342,6 +382,10 @@ test_that("var_names merges into RegR::name_map_seer; NULL keeps the names", {
   expect_error(lab(var_names = "Age"), "`var_names` must be")
   expect_error(lab(var_names = c(x2 = "A", x2 = "B")), "`var_names` must be")
   expect_error(lab(var_names = list(x2 = 1)), "`var_names` must be")
+  # two covariates under one label would share one plot row
+  expect_error(lab(var_names = c(x2 = "Age (year)")),
+               "same display label.*`Age`.*`x2`")
+  expect_error(lab(var_names = c(x2 = "x3")), "same display label.*`x2`.*`x3`")
 })
 
 test_that("love_args is validated before anything is fitted", {
@@ -422,6 +466,17 @@ test_that("tbl = TRUE merges one gtsummary table per scheme; FALSE skips it", {
     expect_identical(h$label[h$column == "estimate"], "**SMD**")
     expect_true(h$hide[h$column == "conf.low"])
   }
+})
+
+test_that("cores builds the scheme tables in parallel with the same result", {
+  skip_if_no_tbl()
+  d   <- stage_data()
+  adj <- c("x1", "sex", "stage")
+  run <- function(cores)
+    get_bal(d, "z", adj, methods = c("PSM", "ATE"), tbl = TRUE, cores = cores)
+  expect_identical(run(2)$tbl$table_body, run(1)$tbl$table_body)
+  expect_error(run(0), "`cores` must be NULL or a positive whole number")
+  expect_error(run(1.5), "`cores` must be NULL or a positive whole number")
 })
 
 test_that("save_tbl builds and writes the table; each save takes its own fields", {

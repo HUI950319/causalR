@@ -11,6 +11,7 @@ get_bal(
   methods = c("PSM", "ATE", "ATT", "ATC", "ATO", "ATM", "EW"),
   cat_smd = c("overall", "level"),
   tbl = FALSE,
+  cores = NULL,
   var_names = RegR::name_map_seer,
   love_args = list(),
   save_plt = list(),
@@ -43,6 +44,15 @@ Two-level and numeric covariates are the same either way.}
 \item{tbl}{\code{FALSE} (default) or \code{TRUE} to also build \verb{$tbl}, which takes
 far longer than the balance itself. Needs gtsummary and survey. A
 non-empty \code{save_tbl} builds it too.}
+
+\item{cores}{\code{NULL} (default) or a positive whole number: how many worker
+processes build \verb{$tbl}, whose tables, one for the unadjusted sample and
+one per scheme, are independent. \code{NULL} takes the number of tables, at
+most 8 and at most the logical cores less two; \code{1} builds them one after
+another. Workers are forked through \code{\link[parallel:mcdummies]{parallel::mclapply()}} on Linux and
+macOS (WSL included) and started as a PSOCK cluster on Windows, which
+costs a few seconds. The result does not depend on \code{cores}, and it is
+ignored when no table is built.}
 
 \item{var_names}{Display labels keyed by column name, a named list or
 character vector such as \code{c(bmi = "Body mass index")}, used by the plot

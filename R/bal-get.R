@@ -4,13 +4,15 @@
 #
 # Architecture (2 layers):
 #
-#   L1  get_bal(data, treat, adj_var, methods, cat_smd, tbl, love_args,
-#               save_plt, save_tbl)
+#   L1  get_bal(data, treat, adj_var, methods, cat_smd, tbl, cores, var_names,
+#               love_args, save_plt, save_tbl)
 #         |
 #         +-- .bal_specs          shorthand or named list -> validated specs
-#         +-- get_PSM / get_PSW   one call per scheme, weight column only
+#         +-- get_PSM / get_PSW   one call per matching scheme, one per group
+#         |                       of weighting schemes differing in estimand
 #         +-- cobalt::bal.tab / cobalt::love.plot   one shared denominator
-#         +-- gtsummary::tbl_merge   tbl = TRUE, one svysummary per scheme
+#         +-- gtsummary::tbl_merge   tbl = TRUE, one svysummary per scheme,
+#         |                          built on `cores` workers
 #         +-- .psw_save           pin the size, save through RegR::save_plt()
 #         +-- RegR::save_tb       save_tbl, whose fields are .BAL_TB_SAVE
 #
@@ -96,6 +98,9 @@
   if (length(dups))
     stop(sprintf("`methods` has duplicated label(s) %s; each label names one legend entry and one weight column, and \"Unadjusted\" is taken by the reference.",
                  paste0("`", dups, "`", collapse = ", ")), call. = FALSE)
+  if ("Un" %in% labs)
+    stop("`methods` label `Un` is reserved: cobalt calls the unadjusted column \"Diff.Un\", which a scheme of that name would overwrite. Relabel the scheme.",
+         call. = FALSE)
   if (length(specs) > length(.BAL_SHAPES) - 1L)
     stop(sprintf("`methods` can hold at most %d schemes, one colour each next to the unadjusted sample; got %d.",
                  length(.BAL_SHAPES) - 1L, length(specs)), call. = FALSE)
@@ -246,6 +251,14 @@
 #' @param tbl `FALSE` (default) or `TRUE` to also build `$tbl`, which takes
 #'   far longer than the balance itself. Needs gtsummary and survey. A
 #'   non-empty `save_tbl` builds it too.
+#' @param cores `NULL` (default) or a positive whole number: how many worker
+#'   processes build `$tbl`, whose tables, one for the unadjusted sample and
+#'   one per scheme, are independent. `NULL` takes the number of tables, at
+#'   most 8 and at most the logical cores less two; `1` builds them one after
+#'   another. Workers are forked through [parallel::mclapply()] on Linux and
+#'   macOS (WSL included) and started as a PSOCK cluster on Windows, which
+#'   costs a few seconds. The result does not depend on `cores`, and it is
+#'   ignored when no table is built.
 #' @param var_names Display labels keyed by column name, a named list or
 #'   character vector such as `c(bmi = "Body mass index")`, used by the plot
 #'   and `$tbl`. It is merged into `RegR::name_map_seer` (the default), your
@@ -376,6 +389,7 @@ get_bal <- function(data,
                                   "EW"),
                     cat_smd   = c("overall", "level"),
                     tbl       = FALSE,
+                    cores     = NULL,
                     var_names = RegR::name_map_seer,
                     love_args = list(),
                     save_plt  = list(),
@@ -386,6 +400,10 @@ get_bal <- function(data,
   cat_smd <- match.arg(cat_smd)
   if (!is.logical(tbl) || length(tbl) != 1L || is.na(tbl))
     stop("`tbl` must be TRUE or FALSE.", call. = FALSE)
+  if (!is.null(cores) &&
+      !(is.numeric(cores) && length(cores) == 1L && !is.na(cores) &&
+        cores >= 1 && cores == round(cores)))
+    stop("`cores` must be NULL or a positive whole number.", call. = FALSE)
   save_plt <- .merge_named_arg(save_plt, list(), "save_plt",
                                c("filename", "width", "height"))
   save_tbl <- .merge_named_arg(save_tbl, list(), "save_tbl", .BAL_TB_SAVE)
@@ -448,6 +466,19 @@ get_bal <- function(data,
     vn <- unlist(vn[!duplicated(names(vn)) & names(vn) %in% adj_var])
     if (!length(vn)) vn <- NULL
   }
+  # cobalt keys plot rows by label, so two covariates under one label would
+  # be drawn as a single row
+  disp <- adj_var
+  lbd  <- adj_var %in% names(vn)
+  disp[lbd] <- vn[adj_var[lbd]]
+  clash <- disp %in% disp[duplicated(disp)]
+  if (any(clash)) {
+    grp <- split(adj_var[clash], disp[clash])
+    stop(sprintf("`var_names` gives covariates the same display label, which would share one plot row: %s. Give them distinct labels in `var_names`.",
+                 paste(sprintf("%s -> \"%s\"", vapply(grp, function(v)
+                   paste0("`", v, "`", collapse = ", "), ""), names(grp)),
+                   collapse = "; ")), call. = FALSE)
+  }
 
   # Incomplete rows go once, here: left to get_PSM() / get_PSW(), each scheme
   # could drop a different set and the columns would describe different
@@ -460,23 +491,42 @@ get_bal <- function(data,
     stop(sprintf("Column(s) %s already exist in `data`; get_bal() writes one weight column per scheme label. Rename them, or relabel the scheme.",
                  paste0("`", hit, "`", collapse = ", ")), call. = FALSE)
 
-  w <- lapply(labs, function(nm) {
-    s  <- specs[[nm]]
-    fn <- if (s$design == "matching") get_PSM else get_PSW
-    r  <- tryCatch(
-      do.call(fn, c(list(data = data, treat = treat, adj_var = adj_var,
-                         balance = FALSE),
-                    s[names(s) != "design"])),
-      error = function(e)
-        stop(sprintf("Scheme `%s`: %s", nm, conditionMessage(e)),
-             call. = FALSE))
+  # Weighting schemes that differ only in `estimand` share one score, trimming
+  # and truncation, so each such group is one get_PSW() call, whose weights
+  # are those of separate calls; a matching scheme is fitted on its own.
+  fit <- function(nms, fn, args) tryCatch(
+    do.call(fn, c(list(data = data, treat = treat, adj_var = adj_var,
+                       balance = FALSE), args)),
+    error = function(e)
+      stop(sprintf("Scheme %s: %s", paste0("`", nms, "`", collapse = ", "),
+                   conditionMessage(e)), call. = FALSE))
+  key <- vapply(labs, function(nm) {
+    s <- specs[[nm]]
+    if (s$design == "matching") return(paste0("matching:", nm))
+    s <- s[setdiff(names(s), c("design", "estimand"))]
+    paste(deparse(s[order(names(s))]), collapse = "")
+  }, "")
+  w <- list()
+  for (g in unique(key)) {
+    nms <- labs[key == g]
+    s   <- specs[[nms[1L]]]
+    if (s$design == "matching") {
+      r  <- fit(nms, get_PSM, s[names(s) != "design"])
+      wc <- stats::setNames(attr(r, "analysis")$wcols, nms)
+    } else {
+      est <- toupper(vapply(specs[nms], `[[`, "", "estimand"))
+      r   <- fit(nms, get_PSW, c(s[setdiff(names(s), c("design", "estimand"))],
+                                 list(estimand = unique(est))))
+      wc  <- stats::setNames(paste0("w_", tolower(est)), nms)
+    }
     # NA marks a trimmed unit; like an unmatched one it is out of the sample
-    x <- r$data[[attr(r, "analysis")$wcols]]
-    x[is.na(x)] <- 0
-    x
-  })
-  names(w) <- labs
-  w <- as.data.frame(w, check.names = FALSE)
+    for (nm in nms) {
+      x <- r$data[[wc[[nm]]]]
+      x[is.na(x)] <- 0
+      w[[nm]] <- x
+    }
+  }
+  w <- as.data.frame(w[labs], check.names = FALSE)
 
   z  <- .psw_treat(data[[treat]], treat)$z
   bt <- cobalt::bal.tab(
@@ -577,10 +627,8 @@ get_bal <- function(data,
   # SMD's unweighted denominator is the same complete cases as the plot's.
   tb <- NULL
   if (tbl) {
-    dd  <- data[c(treat, adj_var)]
-    st  <- list(gtsummary::all_continuous() ~ "{mean} ({sd})")
-    lb  <- if (!is.null(vn)) as.list(vn)
     one <- function(wt) {
+      st <- list(gtsummary::all_continuous() ~ "{mean} ({sd})")
       t <- if (is.null(wt))
         gtsummary::tbl_summary(dd, by = gtsummary::all_of(treat), statistic = st,
                                label = lb)
@@ -595,15 +643,41 @@ get_bal <- function(data,
       gtsummary::modify_fmt_fun(t, estimate ~ function(x)
         gtsummary::style_number(abs(x), digits = 3))
     }
+    # Only what a table needs travels to a PSOCK worker, not this frame; the
+    # stats namespace is where gtsummary finds "{mean} ({sd})".
+    environment(one) <- list2env(
+      list(dd = data[c(treat, adj_var)], lb = if (!is.null(vn)) as.list(vn),
+           treat = treat), parent = asNamespace("stats"))
+    W  <- c(list(NULL), as.list(w))
+    dc <- parallel::detectCores()
+    nc <- if (is.null(cores)) min(length(W), 8L, max(1L, dc - 2L, na.rm = TRUE))
+          else min(as.integer(cores), length(W))
     # survey reads weights summing below n as mis-scaled sampling weights;
     # balancing weights (ATO, matching zeros) do that by design.
-    tb <- withCallingHandlers(
-      gtsummary::tbl_merge(c(list(one(NULL)), lapply(w, one)),
-                           tab_spanner = paste0("**", c("Unadjusted", labs), "**")),
-      warning = function(cnd)
-        if (grepl("Sample size greater than population size",
-                  conditionMessage(cnd), fixed = TRUE))
-          invokeRestart("muffleWarning"))
+    tabs <- withCallingHandlers({
+      if (nc < 2L) {
+        lapply(W, one)
+      } else if (.Platform$OS.type == "windows") {
+        cl <- parallel::makeCluster(nc)
+        tryCatch(parallel::parLapply(cl, W, one),
+                 finally = parallel::stopCluster(cl))
+      } else {
+        r   <- parallel::mclapply(W, one, mc.cores = nc)
+        bad <- vapply(r, function(x) is.null(x) || inherits(x, "try-error"),
+                      logical(1))
+        if (any(bad))
+          stop(sprintf("Building the table of %s failed: %s",
+                       c("Unadjusted", labs)[which(bad)[1L]],
+                       if (is.null(r[[which(bad)[1L]]])) "the worker exited"
+                       else conditionMessage(attr(r[[which(bad)[1L]]], "condition"))),
+               call. = FALSE)
+        r
+      }
+    }, warning = function(cnd)
+      if (grepl("Sample size greater than population size",
+                conditionMessage(cnd), fixed = TRUE))
+        invokeRestart("muffleWarning"))
+    tb <- gtsummary::tbl_merge(tabs, tab_spanner = paste0("**", c("Unadjusted", labs), "**"))
   }
 
   data[labs] <- w
