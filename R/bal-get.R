@@ -4,14 +4,15 @@
 #
 # Architecture (2 layers):
 #
-#   L1  get_bal(data, treat, adj_var, methods, cat_smd, tbl, love_args, save)
+#   L1  get_bal(data, treat, adj_var, methods, cat_smd, tbl, love_args,
+#               save_plt, save_tbl)
 #         |
 #         +-- .bal_specs          shorthand or named list -> validated specs
 #         +-- get_PSM / get_PSW   one call per scheme, weight column only
 #         +-- cobalt::bal.tab / cobalt::love.plot   one shared denominator
 #         +-- gtsummary::tbl_merge   tbl = TRUE, one svysummary per scheme
 #         +-- .psw_save           pin the size, save through RegR::save_plt()
-#         +-- RegR::save_tb       the table's `save` fields (.BAL_TB_SAVE)
+#         +-- RegR::save_tb       save_tbl, whose fields are .BAL_TB_SAVE
 #
 # Every scheme is divided by the unadjusted pooled SD of the complete cases
 # (cobalt's s.d.denom = "pooled"), as RegR::get_psm_iptw() does for its
@@ -50,7 +51,7 @@
                            legend_position = c(0.99, 0.02),
                            legend_justification = NULL, var_names = NULL)
 
-# `save` fields that go to RegR::save_tb(); the rest go to RegR::save_plt().
+# `save_tbl` fields, the arguments of RegR::save_tb() other than `data`.
 .BAL_TB_SAVE <- c("path", "title", "note", "header_value", "header_colwidths",
                   "line_spacing")
 
@@ -243,7 +244,8 @@
 #'   `<variable>_<level>`, as cobalt and [plt_PSM()] / [plt_PSW()] report it.
 #'   Two-level and numeric covariates are the same either way.
 #' @param tbl `FALSE` (default) or `TRUE` to also build `$tbl`, which takes
-#'   far longer than the balance itself. Needs gtsummary and survey.
+#'   far longer than the balance itself. Needs gtsummary and survey. A
+#'   non-empty `save_tbl` builds it too.
 #' @param love_args Named list of love plot settings; `list()` (default)
 #'   keeps every default. Unknown or duplicated fields are an error.
 #'   \describe{
@@ -279,13 +281,17 @@
 #'       (default). A factor's label is applied to each of its levels. Only
 #'       the plot is relabelled; `$balance` keeps the column names.}
 #'   }
-#' @param save `NULL` or a named list. `NULL` and `list()` both mean no file
-#'   is written. `filename`, and optionally `width` and `height`, save the plot
-#'   through `RegR::save_plt()`, the size defaulting to the plot's own pinned
-#'   size. `path` (the output directory), `title` (also the file name),
-#'   `note`, `header_value`, `header_colwidths` and `line_spacing` save `$tbl`
-#'   through `RegR::save_tb()` as a Word file, and need `tbl = TRUE`. Plot and
-#'   table fields may be given together; the return value is unchanged.
+#' @param save_plt `NULL` or a named list saving the love plot as a PDF
+#'   through `RegR::save_plt()`: `filename`, and optionally `width` and
+#'   `height`, which default to the plot's own pinned size. `NULL` and
+#'   `list()` both mean no file is written. Unknown or duplicated fields are
+#'   an error.
+#' @param save_tbl `NULL` or a named list saving `$tbl` as a Word file through
+#'   `RegR::save_tb()`: `path` (the output directory), `title` (also the file
+#'   name), `note`, `header_value`, `header_colwidths` and `line_spacing`.
+#'   `NULL` and `list()` both mean no file is written. A non-empty list builds
+#'   the table even when `tbl = FALSE`. Unknown or duplicated fields are an
+#'   error. Neither save changes the return value.
 #'
 #' @return A list of
 #'   \describe{
@@ -299,7 +305,8 @@
 #'       column a scheme names, with one weight column per scheme named by
 #'       its label. Unmatched and trimmed units have weight `0`, so every
 #'       column describes the same rows.}
-#'     \item{`tbl`}{Only with `tbl = TRUE`: a gtsummary `tbl_merge` with
+#'     \item{`tbl`}{Only with `tbl = TRUE` or a non-empty `save_tbl`: a
+#'       gtsummary `tbl_merge` with
 #'       one spanner for the unadjusted sample and one per scheme, each
 #'       holding both arms' mean (SD) or n (%), an SMD and a p-value. A scheme
 #'       is summarised through a survey design on its weight column
@@ -368,27 +375,22 @@ get_bal <- function(data,
                     cat_smd   = c("overall", "level"),
                     tbl       = FALSE,
                     love_args = list(),
-                    save      = list()) {
+                    save_plt  = list(),
+                    save_tbl  = list()) {
 
   if (!is.data.frame(data) || !nrow(data))
     stop("`data` must be a non-empty data frame.", call. = FALSE)
   cat_smd <- match.arg(cat_smd)
   if (!is.logical(tbl) || length(tbl) != 1L || is.na(tbl))
     stop("`tbl` must be TRUE or FALSE.", call. = FALSE)
+  save_plt <- .merge_named_arg(save_plt, list(), "save_plt",
+                               c("filename", "width", "height"))
+  save_tbl <- .merge_named_arg(save_tbl, list(), "save_tbl", .BAL_TB_SAVE)
+  tbl <- tbl || length(save_tbl) > 0L
   if (tbl) for (pkg in c("gtsummary", "survey"))
     if (!requireNamespace(pkg, quietly = TRUE))
-      stop(sprintf("Package '%s' is required for get_bal(tbl = TRUE).", pkg),
-           call. = FALSE)
-  # One `save` list serves both savers, split by field name.
-  if (!is.null(save) && !is.list(save))
-    stop("`save` must be `NULL` or a list.", call. = FALSE)
-  if (length(save) && (is.null(names(save)) || any(!nzchar(names(save)))))
-    stop("`save` must be a named list.", call. = FALSE)
-  tb_save <- save[intersect(names(save), .BAL_TB_SAVE)]
-  if (length(tb_save) && !tbl)
-    stop(sprintf("`save` field(s) %s write the table, which needs `tbl = TRUE`.",
-                 paste0("`", names(tb_save), "`", collapse = ", ")),
-         call. = FALSE)
+      stop(sprintf("Package '%s' is required for get_bal(tbl = TRUE) and `save_tbl`.",
+                   pkg), call. = FALSE)
   treat   <- .sens_check_col(treat, data, "treat", n = 1L)
   adj_var <- .sens_check_col(adj_var, data, "adj_var")
   if (is.null(adj_var))
@@ -593,12 +595,11 @@ get_bal <- function(data,
   }
 
   data[labs] <- w
-  plt <- .psw_save(p, c(8, max(5, 1.5 + 0.45 * nrow(B))),
-                   save[setdiff(names(save), .BAL_TB_SAVE)])
-  if (length(tb_save)) {
+  plt <- .psw_save(p, c(8, max(5, 1.5 + 0.45 * nrow(B))), save_plt)
+  if (length(save_tbl)) {
     if (!requireNamespace("RegR", quietly = TRUE))
-      stop("Package 'RegR' is required to save the table.", call. = FALSE)
-    do.call(RegR::save_tb, c(list(data = gtsummary::as_flex_table(tb)), tb_save))
+      stop("Package 'RegR' is required for a non-empty `save_tbl`.", call. = FALSE)
+    do.call(RegR::save_tb, c(list(data = gtsummary::as_flex_table(tb)), save_tbl))
   }
   out <- list(plt = plt, balance = bal, data = data)
   if (tbl) out$tbl <- tb

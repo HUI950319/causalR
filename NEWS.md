@@ -13,9 +13,11 @@
   `gtsummary::add_difference()` reports; `"level"` one row per level, as
   cobalt does. `tbl = TRUE` adds `$tbl`, a gtsummary `tbl_merge` with one
   spanner per sample (both arms, gtsummary's own SMD, p-value; schemes
-  through `tbl_svysummary()`); gtsummary and survey join Suggests. `save`
-  sends `filename` / `width` / `height` to `RegR::save_plt()` and `path` /
-  `title` / `note` / ... to `RegR::save_tb()`. Returns
+  through `tbl_svysummary()`); gtsummary and survey join Suggests. Two save
+  lists, in place of the usual `save`: `save_plt` (`filename`, `width`,
+  `height`) writes the plot through `RegR::save_plt()`, and `save_tbl`
+  (`path`, `title`, `note`, ...) writes the table through `RegR::save_tb()`,
+  building it even when `tbl = FALSE`. Returns
   `list(plt, balance, data)`, plus `tbl`; cobalt, already a
   WeightIt dependency, joins Imports. Plot settings live in `love_args`
   (`threshold`, `colors`, `shapes`, `size`, `line`, `var_order`,

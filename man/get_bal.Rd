@@ -12,7 +12,8 @@ get_bal(
   cat_smd = c("overall", "level"),
   tbl = FALSE,
   love_args = list(),
-  save = list()
+  save_plt = list(),
+  save_tbl = list()
 )
 }
 \arguments{
@@ -39,7 +40,8 @@ name, the unsigned multivariate SMD of Yang & Dalton (2012); see
 Two-level and numeric covariates are the same either way.}
 
 \item{tbl}{\code{FALSE} (default) or \code{TRUE} to also build \verb{$tbl}, which takes
-far longer than the balance itself. Needs gtsummary and survey.}
+far longer than the balance itself. Needs gtsummary and survey. A
+non-empty \code{save_tbl} builds it too.}
 
 \item{love_args}{Named list of love plot settings; \code{list()} (default)
 keeps every default. Unknown or duplicated fields are an error.
@@ -77,13 +79,18 @@ default, and the centre of the edge for an outside one.}
 the plot is relabelled; \verb{$balance} keeps the column names.}
 }}
 
-\item{save}{\code{NULL} or a named list. \code{NULL} and \code{list()} both mean no file
-is written. \code{filename}, and optionally \code{width} and \code{height}, save the plot
-through \code{RegR::save_plt()}, the size defaulting to the plot's own pinned
-size. \code{path} (the output directory), \code{title} (also the file name),
-\code{note}, \code{header_value}, \code{header_colwidths} and \code{line_spacing} save \verb{$tbl}
-through \code{RegR::save_tb()} as a Word file, and need \code{tbl = TRUE}. Plot and
-table fields may be given together; the return value is unchanged.}
+\item{save_plt}{\code{NULL} or a named list saving the love plot as a PDF
+through \code{RegR::save_plt()}: \code{filename}, and optionally \code{width} and
+\code{height}, which default to the plot's own pinned size. \code{NULL} and
+\code{list()} both mean no file is written. Unknown or duplicated fields are
+an error.}
+
+\item{save_tbl}{\code{NULL} or a named list saving \verb{$tbl} as a Word file through
+\code{RegR::save_tb()}: \code{path} (the output directory), \code{title} (also the file
+name), \code{note}, \code{header_value}, \code{header_colwidths} and \code{line_spacing}.
+\code{NULL} and \code{list()} both mean no file is written. A non-empty list builds
+the table even when \code{tbl = FALSE}. Unknown or duplicated fields are an
+error. Neither save changes the return value.}
 }
 \value{
 A list of
@@ -98,7 +105,8 @@ factor with three or more levels is unsigned.}
 column a scheme names, with one weight column per scheme named by
 its label. Unmatched and trimmed units have weight \code{0}, so every
 column describes the same rows.}
-\item{\code{tbl}}{Only with \code{tbl = TRUE}: a gtsummary \code{tbl_merge} with
+\item{\code{tbl}}{Only with \code{tbl = TRUE} or a non-empty \code{save_tbl}: a
+gtsummary \code{tbl_merge} with
 one spanner for the unadjusted sample and one per scheme, each
 holding both arms' mean (SD) or n (\%), an SMD and a p-value. A scheme
 is summarised through a survey design on its weight column

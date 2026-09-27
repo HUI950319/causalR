@@ -263,7 +263,7 @@ bal_pts <- function(p) ggplot2::layer_data(
 test_that("love_args defaults keep the RegR-style plot", {
   expect_identical(names(formals(get_bal)),
                    c("data", "treat", "adj_var", "methods", "cat_smd",
-                     "tbl", "love_args", "save"))
+                     "tbl", "love_args", "save_plt", "save_tbl"))
   p <- get_bal(bal_data(), "z", bal_adj, methods = c("PSM", "ATE"))$plt
 
   expect_equal(unname(bal_ref(p)$xintercept), 0.1)
@@ -353,23 +353,25 @@ test_that("love_args is validated before anything is fitted", {
                "`love_args\\$var_names` must be a named character vector")
 })
 
-test_that("save writes a PDF only when it is a non-empty list", {
+test_that("save_plt writes a PDF only when it is a non-empty list", {
   skip_if_not_installed("RegR")
   d   <- bal_data()
   dir <- withr::local_tempdir()
 
-  get_bal(d, "z", bal_adj, methods = "ATO", save = list())
-  get_bal(d, "z", bal_adj, methods = "ATO", save = NULL)
+  res <- get_bal(d, "z", bal_adj, methods = "ATO", save_plt = list(),
+                 save_tbl = list())
+  get_bal(d, "z", bal_adj, methods = "ATO", save_plt = NULL, save_tbl = NULL)
   expect_identical(list.files(dir), character(0))
+  expect_null(res$tbl)
 
   f   <- file.path(dir, "bal.pdf")
-  res <- get_bal(d, "z", bal_adj, methods = "ATO", save = list(filename = f))
+  res <- get_bal(d, "z", bal_adj, methods = "ATO", save_plt = list(filename = f))
   expect_s3_class(res$plt, "ggplot")
   expect_true(file.exists(f))
   expect_gt(file.size(f), 0)
 
-  expect_error(get_bal(d, "z", bal_adj, methods = "ATO", save = "nope.pdf"),
-               "`save` must be `NULL` or a list")
+  expect_error(get_bal(d, "z", bal_adj, methods = "ATO", save_plt = "nope.pdf"),
+               "`save_plt` must be `NULL` or a named list")
 })
 
 skip_if_no_tbl <- function() {
@@ -405,7 +407,7 @@ test_that("tbl = TRUE merges one gtsummary table per scheme; FALSE skips it", {
   }
 })
 
-test_that("save sends plot fields to save_plt() and table fields to save_tb()", {
+test_that("save_tbl builds and writes the table; each save takes its own fields", {
   skip_if_not_installed("RegR")
   skip_if_not_installed("flextable")
   skip_if_no_tbl()
@@ -413,18 +415,22 @@ test_that("save sends plot fields to save_plt() and table fields to save_tb()", 
   dir <- withr::local_tempdir()
 
   expect_error(get_bal(d, "z", bal_adj, methods = "ATO",
-                       save = list(path = dir, title = "bal_tbl")),
-               "`tbl = TRUE`")
-  expect_error(get_bal(d, "z", bal_adj, methods = "ATO", save = list("a.pdf")),
-               "named list")
+                       save_tbl = list(filename = "x.pdf")),
+               "`save_tbl` contains unknown field.*`filename`")
+  expect_error(get_bal(d, "z", bal_adj, methods = "ATO",
+                       save_plt = list(path = dir)),
+               "`save_plt` contains unknown field.*`path`")
+  expect_error(get_bal(d, "z", bal_adj, methods = "ATO", save_tbl = list("a")),
+               "`save_tbl` must be a fully named list")
 
-  res <- get_bal(d, "z", bal_adj, methods = "ATO", tbl = TRUE,
-                 save = list(path = dir, title = "bal_tbl"))
+  # tbl is left FALSE: a non-empty save_tbl builds the table itself
+  res <- get_bal(d, "z", bal_adj, methods = "ATO",
+                 save_tbl = list(path = dir, title = "bal_tbl"))
   expect_s3_class(res$tbl, "tbl_merge")
   expect_identical(list.files(dir), "bal_tbl.docx")
 
   f <- file.path(dir, "bal.pdf")
-  get_bal(d, "z", bal_adj, methods = "ATO", tbl = TRUE,
-          save = list(filename = f, path = dir, title = "bal_tbl2"))
+  get_bal(d, "z", bal_adj, methods = "ATO", save_plt = list(filename = f),
+          save_tbl = list(path = dir, title = "bal_tbl2"))
   expect_setequal(list.files(dir), c("bal_tbl.docx", "bal_tbl2.docx", "bal.pdf"))
 })
