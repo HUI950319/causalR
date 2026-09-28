@@ -354,7 +354,85 @@ ggparty(
   )
 ```
 
-### 8.5 `geom_node_plot()`：把 ggplot 小图放进树节点
+### 8.5 自定义变量与节点可视化
+
+`ggparty()` 的 `add_vars` 可以把自定义摘要值或节点内的逐观测变量加入绘图数据，供节点标签和 `geom_node_plot()` 使用：
+
+- 普通名称（如 `mean_temp`）的函数对每个节点返回一个值，适合在节点标签中显示均值、比例或其他摘要。
+- 名称以 `nodedata_` 开头时，函数返回一个单元素列表，列表中放该节点每条观测对应的向量。`geom_node_plot()` 中使用去掉前缀后的列名（本例为 `Temp_band`）。
+- 回调函数必须恰有 `data` 和 `node` 两个参数。`node` 是当前节点的 `party` 对象；`unclass(node)[["data"]]` 取该节点观测。自定义变量所需的原始列必须保留在树对象的数据中。
+
+下面从树对象保留的 `Temp` 派生“冷/暖”分组：不把 `Temp_band` 加入树模型，因此它只用于显示，不会改变分裂结果。内部节点显示平均温度，叶节点的小图按温度分组比较 `Ozone`：
+
+```{r}
+#| label: custom-node-variables
+#| message: false
+air_tree_custom <- suppressWarnings(
+  ggparty(
+    air_tree,
+    horizontal = TRUE,
+    terminal_space = 0.68,
+    add_vars = list(
+      mean_temp = function(data, node) {
+        node_data <- unclass(node)[["data"]]
+        mean(node_data[["Temp"]], na.rm = TRUE)
+      },
+      nodedata_Temp_band = function(data, node) {
+        node_data <- unclass(node)[["data"]]
+        list(
+          factor(
+            ifelse(node_data[["Temp"]] >= 75, "Warm", "Cool"),
+            levels = c("Cool", "Warm")
+          )
+        )
+      }
+    )
+  )
+)
+```
+
+在 ggparty 1.0.0.1 中，`nodedata_` 字段会由内部逻辑自动映射；`add_vars` 再注册同名列时会产生重复映射警告，但图仍可正常生成。因此示例只在创建 `ggparty` 对象时用 `suppressWarnings()` 隐藏这一已知提示，不影响后续绘图或其他警告。可参阅[`ggparty()` 源码](https://github.com/cran/ggparty/blob/master/R/ggparty.R)。
+
+```{r}
+#| label: fig-custom-node-variables
+#| fig-cap: "自定义节点摘要变量与逐观测变量：内部节点标注平均温度，叶节点展示冷、暖两组的臭氧浓度分布。"
+#| fig-alt: "横向条件推断树在内部节点显示切分变量和平均温度，在叶节点嵌入按冷暖温度分组的臭氧箱线图。"
+#| fig-width: 11
+#| fig-height: 6
+#| warning: false
+air_tree_custom +
+  geom_edge() +
+  geom_edge_label(fill = "white") +
+  geom_node_label(
+    line_list = list(
+      aes(label = splitvar),
+      aes(label = paste0("Mean Temp = ", round(mean_temp, 1)))
+    ),
+    line_gpar = list(
+      list(size = 3.5, col = "#28627A", fontface = "bold"),
+      list(size = 2.8, col = "#D55E00")
+    ),
+    ids = "inner",
+    label.fill = "white"
+  ) +
+  geom_node_plot(
+    ids = "terminal",
+    scales = "fixed",
+    shared_axis_labels = TRUE,
+    gglist = list(
+      aes(x = Temp_band, y = Ozone, fill = Temp_band),
+      geom_boxplot(alpha = 0.8, outlier.size = 0.7),
+      scale_fill_manual(values = c(Cool = "#8EC1DA", Warm = "#E7A45B")),
+      labs(x = "Temperature band", y = "Ozone"),
+      theme_bw(base_size = 8),
+      theme(legend.position = "none")
+    )
+  )
+```
+
+如果图中没有出现目标变量，可检查树公式是否把原始列（本例的 `Temp` 和 `Ozone`）保留在节点数据里。节点摘要用于文字标签；`nodedata_` 则把节点内的行级数据交给小图，两者的返回结构不同。
+
+### 8.6 `geom_node_plot()`：把 ggplot 小图放进树节点
 
 `geom_node_plot()` 会在选定的节点中分别建立小型 ggplot。`gglist` 是 ggplot 图层列表，可以放入 `aes()`、几何图层、比例尺或主题；图层可映射节点观测数据，也可映射模型树提供的 `fitted_values` 和 `residuals`。
 
@@ -370,7 +448,7 @@ ggparty(
 
 节点图属于可视化图层，不会重新训练各节点模型。坐标是否固定会直接影响比较结论：不同节点采用自由坐标轴时，图形占满小面板并不表示原始量级相近。
 
-### 8.6 `get_predictions()`：为节点模型准备预测曲线
+### 8.7 `get_predictions()`：为节点模型准备预测曲线
 
 ```r
 get_predictions(party_object, ids, newdata_fun, predict_arg = NULL)
