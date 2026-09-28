@@ -1,5 +1,20 @@
 # causalR (development version)
 
+* New `get_hte_unihtee()` screens candidate effect modifiers with the
+  treatment effect modifier variable importance parameter (TEM-VIP) of
+  Boileau et al. (2025), the estimand of the `unihtee` package, written
+  without depending on it: the least-squares slope of cross-fitted AIPW
+  pseudo-outcomes on each candidate alone, per SD for a continuous
+  candidate and as a level difference for a binary one, with HC3 intervals
+  and Benjamini-Hochberg `p.adj`. The scores come from the `get_hte()`
+  causal forest (`method = "grf"`, also for survival outcomes; a row equals
+  `grf::best_linear_projection()`) or from a logistic propensity model and
+  per-arm outcome GLMs with 5-fold cross-fitting (`method = "glm"`, no
+  forest). `measure = c("diff", "ratio", "OR")` projects the difference,
+  log ratio or log odds ratio. In simulations the glm route covered at
+  0.94-0.97 on all three scales and rejected 4.5% of null candidates at
+  p < 0.05. Returns `list(vip, data)`.
+
 * New `get_hte_icf()` finds subgroup rules such as `X1 = 1 & X3 = 0`
   without naming them in advance, after the iterative causal forest (iCF)
   of Wang et al. (2024), written from the paper since the iCF code carries

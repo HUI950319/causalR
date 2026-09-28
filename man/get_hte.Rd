@@ -253,7 +253,10 @@ or interactions, and a significant result does not establish that this
 covariate modifies the effect independently of correlated covariates.
 The reported p-values are unadjusted. When screening several covariates,
 pre-specify the testing family and consider a correction such as
-\code{p.adjust(res$importance$p_het, method = "BH")}.
+\code{p.adjust(res$importance$p_het, method = "BH")}. \code{\link[=get_hte_unihtee]{get_hte_unihtee()}}
+reports the linear version of this projection -- a signed slope per SD
+(the TEM-VIP of the \code{unihtee} package) with its interval and a BH-adjusted
+p-value, on the difference, ratio or OR scale.
 }
 
 \section{Calibration}{

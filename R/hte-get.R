@@ -605,7 +605,10 @@
 #' covariate modifies the effect independently of correlated covariates.
 #' The reported p-values are unadjusted. When screening several covariates,
 #' pre-specify the testing family and consider a correction such as
-#' `p.adjust(res$importance$p_het, method = "BH")`.
+#' `p.adjust(res$importance$p_het, method = "BH")`. [get_hte_unihtee()]
+#' reports the linear version of this projection -- a signed slope per SD
+#' (the TEM-VIP of the `unihtee` package) with its interval and a BH-adjusted
+#' p-value, on the difference, ratio or OR scale.
 #'
 #' @section Calibration:
 #' `$calibration` is the calibration test of [grf::test_calibration()]: the
