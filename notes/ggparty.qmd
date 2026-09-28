@@ -4,11 +4,27 @@ subtitle: "从 party 对象、树图图层到节点内小图的实用教程"
 lang: zh
 ---
 
-```r
-install.packages(c("ggparty", "partykit", "ggplot2"))
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+suppressPackageStartupMessages({
+  library(ggparty)
+  library(partykit)
+  library(ggplot2)
+})
 ```
 
 `ggparty` 把 `partykit` 树对象转换为 `ggplot` 图，之后可以像普通 `ggplot2` 图一样逐层添加分支、标签和节点内图形。它负责**可视化**，不负责拟合或修剪树：树的结构、切分和预测仍由 `partykit`、`rpart` 等建模工具决定。[CRAN 对包的介绍](https://CRAN.R-project.org/package=ggparty)将其定位为 `partykit` 树对象 `party` 的 `ggplot2` 可视化扩展。
+
+本页代码块由 Quarto / knitr 执行并生成图表。示例在 R `r getRversion()`、`ggparty` `r as.character(utils::packageVersion("ggparty"))`、`partykit` `r as.character(utils::packageVersion("partykit"))` 和 `ggplot2` `r as.character(utils::packageVersion("ggplot2"))` 下核对。
+
+安装示例所需包；`rpart` 用于最后的转换示例：
+
+```{r}
+#| eval: false
+install.packages(c("ggparty", "partykit", "ggplot2", "rpart"))
+```
 
 ## 1. 哪些对象可以画？
 
@@ -21,99 +37,84 @@ install.packages(c("ggparty", "partykit", "ggplot2"))
 | `rpart::rpart()` | `rpart` | 不可以直接传入 | 先用 `partykit::as.party()` 转换 |
 | `partykit::cforest()` | 森林集成对象 | 通常不可以直接传入 | 森林包含多棵树，不等于单个 `party` 树对象 |
 
-`partykit` 的 `ctree()` 构造的是 `party` 基础设施上的常量拟合树；`lmtree()` 等模型树也使用相同的树对象体系。[partykit 的 ctree 源码](https://github.com/cran/partykit/blob/master/R/ctree.R) · [模型树源码](https://github.com/cran/partykit/blob/master/R/lmtree.R) · [party 对象结构](https://github.com/cran/partykit/blob/master/R/party.R)。`cforest()` 则保存多棵树及森林信息，见 [partykit 的 cforest 源码](https://github.com/cran/partykit/blob/master/R/cforest.R)。
+`partykit` 的 `ctree()` 构造的是 `party` 基础设施上的常量拟合树；`lmtree()` 等模型树也使用相同的树对象体系。[`partykit` 的 `ctree` 源码](https://github.com/cran/partykit/blob/master/R/ctree.R) · [模型树源码](https://github.com/cran/partykit/blob/master/R/lmtree.R) · [party 对象结构](https://github.com/cran/partykit/blob/master/R/party.R)。`cforest()` 则保存多棵树及森林信息，见 [`partykit` 的 `cforest` 源码](https://github.com/cran/partykit/blob/master/R/cforest.R)。
 
 ## 2. 第一个例子：拟合并画一棵回归树
 
-下面使用 R 自带的 `airquality` 数据，以臭氧浓度 `Ozone` 为结局，其他变量作为候选切分变量。先完整案例删除缺失值，再用 `ctree()` 拟合树：
+使用 R 自带的 `airquality` 数据，以臭氧浓度 `Ozone` 为结局。先完整案例删除缺失值，再用 `ctree()` 拟合一棵最多三层的树。运行代码会打印树对象，图中同时显示切分变量、分支条件和叶节点样本量。
 
-```r
-library(partykit)
-library(ggparty)
-library(ggplot2)
-
+```{r}
+#| label: airquality-tree
+#| message: false
 airq <- na.omit(airquality)
-air_tree <- ctree(Ozone ~ ., data = airq)
+air_tree <- partykit::ctree(
+  Ozone ~ Solar.R + Wind + Temp,
+  data = airq,
+  control = partykit::ctree_control(
+    minsplit = 24,
+    minbucket = 8,
+    maxdepth = 3
+  )
+)
+air_tree
+```
 
-p_tree <- ggparty(air_tree) +
+```{r}
+#| label: fig-ctree-basic
+#| fig-cap: "由 `ctree()` 拟合的臭氧回归树。边标签给出切分条件；叶节点标签给出该节点的样本量。"
+#| fig-alt: "条件推断树按太阳辐射、风速或温度递归划分臭氧观测值，末端节点标注样本量。"
+#| fig-width: 9
+#| fig-height: 6
+#| warning: false
+ggparty(air_tree) +
   geom_edge() +
-  geom_edge_label() +
-  geom_node_splitvar(ids = "inner") +
+  geom_edge_label(fill = "white") +
+  geom_node_splitvar(ids = "inner", fill = "white") +
   geom_node_label(
     aes(label = paste0("n = ", nodesize)),
-    ids = "terminal"
-  )
-
-p_tree
+    ids = "terminal",
+    size = 3,
+    fill = "white"
+)
 ```
+
+在本页核对的 `ggparty` 1.0.0.1 与 `ggplot2` 4.0.3 组合下，`geom_edge_label()` 会报告忽略旧参数 `label.size` 的兼容性警告，但边标签仍能正常绘制。后面的图块隐藏了这条已知警告，以免干扰图表阅读。
 
 `ggparty(air_tree)` 返回一个可继续添加图层的 `ggplot` 对象。这个例子组合了四种信息：
 
-- `geom_edge()` 绘制父节点到子节点的连线。
-- `geom_edge_label()` 在连线上标出对应的分支条件。
+- `geom_edge()` 绘制父节点到子节点的连线；`geom_edge_label()` 在分支上标出切分条件。
 - `geom_node_splitvar()` 标出内部节点使用的切分变量。
-- `geom_node_label()` 给终末节点添加样本量。`nodesize` 是树图数据中的节点样本量字段。
+- `geom_node_label()` 自定义节点标签；`nodesize` 是图数据中的节点样本量字段。
 
-内部节点（发生切分的节点）和终末节点（叶节点）可用 `ids = "inner"`、`ids = "terminal"` 选择；`geom_node_label()` 也可以用来标注其他节点字段。若想快速显示节点自身的 `info`，可用 `geom_node_info()`。这些几何对象都是普通的 ggplot 图层，可以按需要增加颜色、字号或标签映射。
+内部节点（发生切分的节点）和终末节点（叶节点）可以分别用 `ids = "inner"`、`ids = "terminal"` 选择。`geom_node_info()` 则可快速显示树对象保存的节点信息。
 
 ## 3. 调整方向、布局和标签
 
-默认树是纵向布局。树较深或节点标签较长时，可以改成横向，并给叶节点里的附加图留出空间：
+树较深或叶节点需要放置小图时，可以改成横向，并用 `terminal_space` 为叶节点区域留出空间。下面沿用同一棵树，在每个叶节点中绘制臭氧浓度的密度曲线：
 
-```r
+```{r}
+#| label: fig-ctree-density
+#| fig-cap: "横向树图及各叶节点内的 Ozone 密度曲线。固定坐标范围便于比较节点间分布。"
+#| fig-alt: "横向条件推断树的每个叶节点中嵌入一条臭氧浓度密度曲线，使用相同的坐标范围。"
+#| fig-width: 11
+#| fig-height: 6
+#| warning: false
 ggparty(
   air_tree,
   horizontal = TRUE,
-  terminal_space = 0.60
+  terminal_space = 0.62
 ) +
   geom_edge() +
-  geom_edge_label() +
-  geom_node_splitvar(ids = "inner") +
-  geom_node_label(
-    aes(label = paste0("节点 ", id, "\nn = ", nodesize)),
-    ids = "terminal",
-    size = 3
-  )
-```
-
-- `horizontal = TRUE` 将树横向排列。
-- `terminal_space` 控制图中留给终末节点图形的区域比例；没有节点内小图时通常不必调整，有小图时可适当增大。
-- `layout` 可接收含 `id`、`x`、`y` 三列的数据框，手工指定特定节点坐标。`x` 和 `y` 使用 0 到 1 的相对坐标；应根据当前树的节点编号提供布局。
-- `add_vars` 可把节点中的额外信息加入树图数据，随后在标签图层里映射。它适合展示树图默认字段以外的节点信息。
-
-例如，模型节点信息里包含 `p.value` 时，可以把它取出并用于内部节点标签：
-
-```r
-ggparty(
-  air_tree,
-  add_vars = list(p.value = "$node$info$p.value")
-) +
-  geom_edge() +
-  geom_edge_label() +
-  geom_node_label(
-    aes(label = paste0("p = ", signif(p.value, 2))),
-    ids = "inner"
-  )
-```
-
-这里的节点字段路径取决于树对象保存的内容，并非所有建树方法都提供相同的 `info`。若 `add_vars` 使用函数，该函数必须有且只有两个参数 `data` 和 `node`，并返回单个值；要将每个节点的数据传给 `geom_node_plot()`，名称使用 `nodedata_` 前缀，并返回与节点数量相同长度的列表。[`ggparty()` 源码说明](https://github.com/cran/ggparty/blob/master/R/ggparty.R)
-
-## 4. 在叶节点里嵌入数据图
-
-`geom_node_plot()` 可以在节点位置嵌入小型 `ggplot2` 图。下面在每个终末节点画出该组臭氧浓度的密度曲线：
-
-```r
-ggparty(
-  air_tree,
-  horizontal = TRUE,
-  terminal_space = 0.60
-) +
-  geom_edge() +
-  geom_edge_label() +
-  geom_node_splitvar() +
+  geom_edge_label(fill = "white") +
+  geom_node_splitvar(ids = "inner", fill = "white") +
   geom_node_plot(
     gglist = list(
-      geom_density(aes(x = Ozone))
+      geom_density(
+        aes(x = Ozone),
+        fill = "#8EC1DA",
+        colour = "#28627A",
+        alpha = 0.7
+      )
     ),
     ids = "terminal",
     scales = "fixed",
@@ -121,88 +122,106 @@ ggparty(
   )
 ```
 
-`gglist` 是要加到节点小图上的图层列表。此例将树训练数据中每个叶节点对应的观测拆开，分别画密度曲线。常用设置包括：
+- `horizontal = TRUE` 将树横向排列；`terminal_space` 控制为终末节点小图保留的区域比例。
+- `geom_node_plot()` 的 `gglist` 是加到节点小图上的 `ggplot2` 图层列表。官方示例也用它在 `airquality` 树的叶节点中绘制密度曲线。[`geom_node_plot()` 帮助与示例](https://github.com/cran/ggparty/blob/master/R/geom_node_plot.R)
+- `scales` 可设为 `"fixed"`、`"free"`、`"free_x"` 或 `"free_y"`。固定范围适合比较组间位置和尺度；自由范围更适合查看各组形状，但不能直接比较坐标值。
 
-- `ids` 指定在哪些节点画小图；可用 `"terminal"`、`"inner"`、`"all"` 或节点编号。
-- `scales` 控制小图坐标轴范围：`"fixed"`、`"free"`、`"free_x"`、`"free_y"`。固定范围便于比较组间分布；自由范围更适合查看形状，但组间高度或横坐标范围不再能直接比较。
-- `shared_axis_labels = TRUE` 将重复的轴标题集中显示；`shared_legend = TRUE`（默认值）尝试共享图例。
-- `width`、`height` 和 `size` 可调整节点图的占用尺寸。
+`layout` 可接收含 `id`、`x`、`y` 三列的数据框，手工指定节点坐标；`x` 和 `y` 使用 0 到 1 的相对坐标。`add_vars` 可把树默认没有展示的节点信息加到图数据，再在标签图层中映射。函数形式的 `add_vars` 必须恰有 `data` 和 `node` 两个参数，并为每个节点返回一个值；若要把每个节点的数据传给 `geom_node_plot()`，名称需以 `nodedata_` 开头，并返回按节点排列的列表。[`ggparty()` 参数说明](https://github.com/cran/ggparty/blob/master/R/ggparty.R)
 
-这个例子改写自包内 `geom_node_plot()` 文档中的 `airquality` 示例。[函数帮助与示例源码](https://github.com/cran/ggparty/blob/master/R/geom_node_plot.R)
+## 4. 在叶节点里嵌入数据图
+
+上面的密度图已经展示了 `geom_node_plot()` 的基本用法。节点内图不是树模型本身的一部分，而是把各叶节点对应的观测分开后，再逐节点绘图。可以把 `ids` 设为 `"terminal"`、`"inner"`、`"all"` 或具体节点编号；用 `width`、`height` 和 `size` 调整小图占用空间。
+
+固定坐标范围适合比较各叶节点的分布位置和尺度；自由坐标范围适合查看形状，但图上不同面板的同一位置不代表相同数值。正式解释时，应在图注中说明所用尺度。
 
 ## 5. 模型树：展示每个叶节点的回归关系
 
-`ggparty` 也可画 `partykit` 的模型树。例如 `lmtree()` 在各节点拟合线性模型，`get_predictions()` 可以为指定节点生成预测数据，再通过 `geom_node_plot()` 把观测点和节点各自的回归线一起画出来。
+`ggparty` 也可以画 `partykit` 的模型树。下面用 R 自带的 `mtcars` 数据，让 `lmtree()` 在叶节点内拟合 `mpg ~ wt` 线性回归，并尝试按 `cyl` 和 `gear` 寻找参数变化。为了让这个小型演示数据稳定地产生分裂，示例把 `alpha` 设为 0.99；这只是为了展示节点图，不是推荐的推断阈值，实际分析应按研究设计设定控制参数。`get_predictions()` 为每个终末节点的回归模型生成预测值，再由 `geom_node_plot()` 把点和拟合线画在节点内。
 
-示例使用 `AER::Journals` 数据；`AER` 是可选示例包，若尚未安装，请先运行 `install.packages("AER")`。
-
-```r
-data("Journals", package = "AER")
-
-journals <- transform(
-  Journals,
-  age = 2000 - foundingyear,
-  chars = charpp * pages,
-  ln_subs = log(subs),
-  ln_ratio = log(price / citations)
+```{r}
+#| label: lmtree-predictions
+#| message: false
+car_tree <- partykit::lmtree(
+  mpg ~ wt | cyl + gear,
+  data = mtcars,
+  minsize = 8,
+  maxdepth = 2,
+  alpha = 0.99
 )
-
-journal_tree <- partykit::lmtree(
-  ln_subs ~ ln_ratio | price + citations + age + chars + society,
-  data = journals,
-  minsize = 10
-)
-
-pred_df <- get_predictions(
-  journal_tree,
+car_predictions <- get_predictions(
+  car_tree,
   ids = "terminal",
   newdata_fun = function(data) {
     data.frame(
-      ln_ratio = seq(
-        min(data$ln_ratio, na.rm = TRUE),
-        max(data$ln_ratio, na.rm = TRUE),
-        length.out = 100
+      wt = seq(
+        min(data[["wt"]]),
+        max(data[["wt"]]),
+        length.out = 80
       )
     )
   }
 )
+car_tree
+```
 
-ggparty(journal_tree, terminal_space = 0.8) +
+```{r}
+#| label: fig-lmtree-node-plots
+#| fig-cap: "模型树叶节点内的 `mpg` 与 `wt` 观测，以及对应节点线性模型的预测线。"
+#| fig-alt: "一棵按气缸数或挡位递归划分的模型树，每个叶节点显示汽车重量与油耗散点以及橙色回归线。"
+#| fig-width: 11
+#| fig-height: 6
+#| warning: false
+ggparty(car_tree, horizontal = TRUE, terminal_space = 0.72) +
   geom_edge() +
-  geom_edge_label() +
-  geom_node_splitvar() +
+  geom_edge_label(fill = "white") +
+  geom_node_splitvar(ids = "inner", fill = "white") +
   geom_node_plot(
     ids = "terminal",
+    scales = "fixed",
     gglist = list(
-      aes(x = ln_ratio, y = ln_subs),
-      geom_point(),
+      aes(x = wt, y = mpg),
+      geom_point(alpha = 0.65, colour = "#4D4D4D"),
       geom_line(
-        data = pred_df,
-        aes(x = ln_ratio, y = prediction),
-        colour = "blue"
+        data = car_predictions,
+        aes(x = wt, y = prediction),
+        colour = "#D55E00",
+        linewidth = 0.8
       )
     )
   )
 ```
 
-`get_predictions()` 的 `ids` 要与 `geom_node_plot()` 的 `ids` 相同，这样生成的预测数据才会放入对应节点。[模型树节点预测示例](https://github.com/cran/ggparty/blob/master/R/geom_node_plot.R)
+`get_predictions()` 的 `ids` 必须与 `geom_node_plot()` 的 `ids` 相同；否则预测行无法对应到要绘制的节点。该函数针对每个叶节点使用其保存的模型对象进行预测。[模型树节点预测示例](https://github.com/cran/ggparty/blob/master/R/geom_node_plot.R)
 
 ## 6. 可视化 rpart 树
 
-`rpart` 拟合结果本身不是 `party` 对象。用 `partykit::as.party()` 转换后，可用同一套图层：
+`rpart` 拟合结果本身不是 `party` 对象。先用 `partykit::as.party()` 转换，再添加同一套图层：
 
-```r
-rp <- rpart::rpart(Species ~ ., data = iris)
-rp_party <- partykit::as.party(rp)
-
-ggparty(rp_party) +
-  geom_edge() +
-  geom_edge_label() +
-  geom_node_splitvar(ids = "inner") +
-  geom_node_info(ids = "terminal")
+```{r}
+#| label: rpart-conversion
+species_rpart <- rpart::rpart(
+  Species ~ ., data = iris,
+  control = rpart::rpart.control(maxdepth = 3, cp = 0.01)
+)
+species_party <- partykit::as.party(species_rpart)
+species_party
 ```
 
-转换及支持范围可参考 [partykit 的 `as.party()` 文档与源码](https://github.com/cran/partykit/blob/master/R/as.party.R)。对其他树模型，也先检查其对象类别和转换方法；不要仅因对象能打印成一棵树，就假定 `ggparty()` 可以直接处理。
+```{r}
+#| label: fig-rpart-conversion
+#| fig-cap: "将 `rpart` 拟合结果转换为 `party` 对象后，用 `ggparty` 绘制。"
+#| fig-alt: "由鸢尾花数据拟合的分类树，按花瓣和萼片特征划分三个物种，叶节点显示类别信息。"
+#| fig-width: 9
+#| fig-height: 6
+#| warning: false
+ggparty(species_party) +
+  geom_edge() +
+  geom_edge_label(fill = "white") +
+  geom_node_splitvar(ids = "inner", fill = "white") +
+  geom_node_info(ids = "terminal", fill = "white")
+```
+
+转换及支持范围可参考 [`partykit::as.party()` 文档与源码](https://github.com/cran/partykit/blob/master/R/as.party.R)。对其他树模型，也应先检查其对象类别和转换方法；不要仅因对象能打印成树，就假定 `ggparty()` 可以直接处理。
 
 ## 7. 常见问题与实践建议
 
@@ -210,12 +229,12 @@ ggparty(rp_party) +
 |---|---|---|
 | 报错说对象不属于 `party` 类 | 输入是 `rpart` 等其他对象 | 查找对应的 `partykit::as.party()` 转换方法；不能转换时先提取单棵兼容树 |
 | 标签或节点图里出现意外的样本量 | 建树时的缺失值处理改变了实际参与拟合的数据 | 明确建树前如何处理缺失值；报告树所用样本，不要把原始数据总行数当作树样本数 |
-| 节点里的图显得很挤 | 树太深，或叶节点可用空间太少 | 用 `horizontal = TRUE`，增大 `terminal_space`，缩小节点图，或减少展示的变量 |
-| 各叶节点的分布看起来不能比较 | 用了自由坐标轴 | 若重点是比较位置或尺度，优先试 `scales = "fixed"`；若重点是看各组形状，可考虑自由坐标并在图注说明 |
+| 节点里的图显得很挤 | 树太深，或叶节点可用空间太少 | 用 `horizontal = TRUE`，增大 `terminal_space`，缩小节点图，或限制树深 |
+| 各叶节点的分布看起来不能比较 | 使用了自由坐标轴 | 若重点是比较位置或尺度，优先试 `scales = "fixed"`；若重点是看各组形状，可考虑自由坐标并在图注说明 |
 | 调用 `get_predictions()` 后节点图不显示曲线 | `ids` 不一致，或节点模型不支持相应的 `predict()` 调用 | 对齐两个函数的 `ids`，并检查模型对象、`newdata_fun` 返回的列及类型 |
 | 误把节点内图当成模型检验结果 | 图展示的是节点观测分布或拟合值，本身不提供新的推断 | 将切分选择、模型拟合、验证和不确定性分析与可视化分开说明 |
 
-较稳妥的工作顺序是：先确认输入对象继承自 `party`；再画出树结构并核对切分路径；然后逐层添加节点标签；最后加节点内图，检查训练样本、坐标尺度和图例是否符合你的比较目标。
+较稳妥的工作顺序是：先确认输入对象继承自 `party`；再画树结构并核对切分路径；然后逐层添加节点标签；最后加节点内图，检查训练样本、坐标尺度和图例是否符合比较目标。
 
 ## 8. 函数速查与参考资料
 
@@ -238,4 +257,4 @@ ggparty(rp_party) +
 - [ggparty 官方源码与 README](https://github.com/martin-borkovec/ggparty)
 - [partykit 官方文档](https://cran.r-project.org/web/packages/partykit/index.html)
 
-本页按 CRAN 页面核对至 **2026-09-28**：`ggparty` 当前版本为 **1.0.0.1**，发布于 2025-07-10。[CRAN 版本记录](https://CRAN.R-project.org/package=ggparty) 文中的代码块为静态示例，本站渲染时不会执行；不同 `partykit`、`ggplot2` 版本或树对象可能需要相应调整，使用前请在自己的 R 环境中运行并检查结果。
+本页按 CRAN 页面核对至 **2026-09-28**：`ggparty` 版本为 **1.0.0.1**，发布于 2025-07-10。[CRAN 版本记录](https://CRAN.R-project.org/package=ggparty) 本页的图表由对应的 R 代码块生成；复制单个代码块时，请先运行其前面的数据准备代码块。
