@@ -1,0 +1,210 @@
+---
+title: "iCF 包函数手册"
+subtitle: "迭代因果森林（iterative causal forest）的逐函数用法说明与本机实测"
+lang: zh
+---
+
+`iCF` 回答的问题是：**哪几个变量把人群切成了治疗效应不同的几块？**
+它不预先写出任何"治疗 × 协变量"交互项，而是在同一深度上反复种因果森林、
+每次取出最能代表异质性的一棵"最佳树"、对树的结构多数投票，
+再用交叉验证在 2–5 层的候选划分里挑一个，最后输出
+`X3>0 & X1>0` 这样**可以直接写进论文的亚组规则**，以及每个亚组的效应。
+
+它与本书其它几个包的分工：[grf](grf/01-grf-guide.qmd) 给**个体化 CATE**，
+[unihtee](unihtee.qmd) 给**逐变量的检验结果**，
+[model4you](model4you.qmd)、[StratifiedMedicine](stratifiedmedicine.qmd) 和 iCF 一样给**树与亚组**——
+区别在于 iCF 的每一步都建立在 grf 因果森林上，并且专为
+**大样本、以二分类变量为主的药物流行病学队列**设计（论文 p. 773）。
+
+本部分是该包的**函数用法手册**。iCF 只在 GitHub 上发布，没有 CRAN 版本，
+帮助页大多过时，README 只演示了三个主函数。本手册按源码逐个整理了全部 75 个函数，
+其中真正需要直接调用的只有十来个；每页给出参数说明、可运行的代码、
+返回对象的结构，以及**本机实际运行后发现的失效路径**。
+
+## 核对环境与证据边界
+
+本手册核对截止 **2026 年 9 月 28 日**，环境为：
+
+| 项目 | 值 |
+|---|---|
+| 包版本 | `iCF` 0.0.0.9000（GitHub `tianshengwang/iCF`，commit `8932f6a`，2026-09-10；**不在 CRAN**） |
+| 安装方式 | 最小修补后本地安装（删示例脚本、重写 `NAMESPACE`，源码不动），见[第 2 页](icf/02-setup.qmd) |
+| R | Windows R 4.4.3（24 线程） |
+| 关键依赖 | `grf` 2.6.1、`dplyr` 1.2.1、`plyr` 1.8.9、`ggplot2` 4.0.3、`glmnet` 5.0、`data.table` 1.18.2.1、`caret` 7.0.1 |
+| 示例数据 | 作者 README 的模拟设定（n = 5 000，种子 2024）；模拟理赔数据（n = 4 000，63 个高维变量） |
+
+证据分三级，正文中逐处标明：
+
+1. **文档**——作者 README 与两篇方法论文的原文（引用页码指 *Am J Epidemiol* 印刷版）；
+2. **源码**——本机安装包的函数体（`iCF:::` 可复核）；
+3. **实测**——在上述环境下实际运行的输出。
+
+本手册**不在本站渲染时执行代码**：所有代码块都是静态的，
+展示的输出是在上述环境中单独运行后粘贴回来的，图是同一次运行保存的 png。
+iCF 内部多处固定了种子（`set.seed(1234)`），同一份数据上重复运行结果相同。
+
+::: {.callout-important}
+## 六处必须先知道的实测结论
+
+1. **仓库原样装不上。** `R/` 目录里混进了一个示例脚本，`NAMESPACE` 也是旧的。
+   要做两处最小修补才能安装。见[第 2 页](icf/02-setup.qmd#sec-why-not)。
+2. **核心函数从全局环境读数据，而不是从参数读。** `X`、`Y`、`W`、`Y.hat`、`W.hat`、
+   `selected_cf.idx`、`leafsize` 等都必须在顶层定义；把流程包进函数、
+   或换数据时漏重设任何一个，结果都会静默沿用旧对象。
+   见[第 2 页](icf/02-setup.qmd#sec-globals)。
+3. **论文里"检验不显著就不分亚组"的那条路在代码里走不通。**
+   `P_threshold` 不过时 `iCFCV()` 必定报错；README 的 `P_threshold = 1` 又让它
+   在**完全没有异质性**的数据上照样切出亚组（实测按一个混杂变量切成两半）。
+   见[第 9 页](icf/09-pitfalls.qmd#sec-null-branch)。
+4. **交叉验证不是交叉验证。** 每折种树读的都是全局全样本；再加上固定种子，
+   各折的发现过程**逐位相同**，跨折稳定性恒为 1。
+   见[第 9 页](icf/09-pitfalls.qmd#sec-leak)。
+5. **亚组效应在发现亚组的同一份数据上估计，区间用模型标准误。**
+   换成稳健标准误宽 34%；要推断，得拆样本在另一半数据上估计。
+   见[第 5 页](icf/05-icfcv.qmd#sec-cate-ci)与[第 9 页](icf/09-pitfalls.qmd#sec-honest)。
+6. **变量筛选决定成败。** 全样本 5 000 人时 iCF 完美恢复真实的四个亚组；
+   减半到 2 500 人、"大于均值"规则多选进三个连续噪声变量后，
+   它切出 7 个亚组、只有 1 个是真的。只选中 1 个变量时则直接报错。
+   见[第 3 页](icf/03-cf-raw-key.qmd#sec-select)与[第 9 页](icf/09-pitfalls.qmd#sec-honest)。
+:::
+
+## 这个包在做什么
+
+| 步骤 | 函数 | 做什么 |
+|---|---|---|
+| 1 | `CF_RAW_key()` | $\hat Y$、$\hat W$ → 原始因果森林 → 同质性检验 P 值 → 变量重要性 → 入选变量 $X_S$ |
+| 2 | `MinLeafSizeTune()` | 为 D2–D5 各调一个最小叶大小，使最佳树恰好长到 2–5 层 |
+| 3 | `iCFCV()` | K 折：每个深度种 `iterationNo` 个森林、各取 R-loss 最小的最佳树 → 结构多数投票、切点取平均 → 亚组划分 $G_2$…$G_5$ → 转换结局模型在验证折上比误差 → 最小者即 $G_{iCF}$ → 每个亚组的 IPTW 效应 |
+
+: {tbl-colwidths="[8,22,70]"}
+
+第 1 页按论文把每一步讲清楚，并列出代码与论文的六处出入。
+
+## 函数地图
+
+75 个函数按角色归类如下，每行给出所在页面。
+
+### 主流程（日常只需要这几个）
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `CF_RAW_key()` | 原始森林、同质性检验、变量筛选 | [第 3 页](icf/03-cf-raw-key.qmd) |
+| `find_level_over2()` | 找出 3–8 个水平的分类变量 | [第 4 页](icf/04-leafsize.qmd#sec-level-over2) |
+| `MinLeafSizeTune()` | 叶大小调参 | [第 4 页](icf/04-leafsize.qmd) |
+| `iCFCV()` | 交叉验证 iCF，输出最终亚组与效应 | [第 5 页](icf/05-icfcv.qmd) |
+| `CATE_SG()` | 对任意亚组规则估计粗 / IPTW / SMR 效应 | [第 5 页](icf/05-icfcv.qmd#sec-cate-sg) |
+
+: {tbl-colwidths="[52,33,15]"}
+
+### 高维（hdiCF）
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `PS_trim()` | 倾向评分修剪（共同取值范围 / 非对称分位数） | [第 8 页](icf/08-hdicf.qmd#sec-ps-trim) |
+| `FIX_LOW_FREQ()` | 合并高维有序变量的稀疏级别 | [第 8 页](icf/08-hdicf.qmd) |
+| `GG_Xs()` | 入选高维变量的重要性图 | [第 8 页](icf/08-hdicf.qmd) |
+
+: {tbl-colwidths="[52,33,15]"}
+
+### 可视化
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `GG_VI()`、`PlotVI()` | 变量重要性 | [第 3 页](icf/03-cf-raw-key.qmd#sec-viz) |
+| `GG_PS()` | 两组倾向评分（或任意数值）的密度 | [第 3 页](icf/03-cf-raw-key.qmd#sec-viz) |
+| `GG_DepthDistribution()` | 四个深度分布拼图 | [第 4 页](icf/04-leafsize.qmd#sec-depth-dist) |
+| `GG_CV_stab_vote()` | 各折 × 各深度的投票稳定性 | [第 7 页](icf/07-plots.qmd) |
+| `GG_CV_Dx_PS()`、`GG_CV_Dx_iptw()`、`GG_CV_Dx_Ystar()`、`GG_CV_Dx_YstarNo0()`、`GG_Y_star()` | 各折诊断图 | [第 7 页](icf/07-plots.qmd) |
+
+: {tbl-colwidths="[52,33,15]"}
+
+### 内部引擎
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `CF()`、`iCF()`、`oneCF()` | 种森林 / 同一深度反复种森林 | [第 6 页](icf/06-internals.qmd#sec-cf) |
+| `find_best_tree()`、`get_r_loss()`、`r_loss()`、`find_leaf()`、`estimate_params()` | R-loss 与最佳树 | [第 6 页](icf/06-internals.qmd#sec-besttree) |
+| `GET_TREE_DF()`、`GET_TREE_L()`、`PRE_MAJORITY_TREE()`、`PRE_MAJORITY_TREE_R()` | 树的表格化 | [第 6 页](icf/06-internals.qmd) |
+| `MAJORITY_VOTE()`、`TREE2SUBGROUP()`、`PRE_MAJORITY_SUBGROUP()`、`PARENT_NODES()` | 投票与树转规则 | [第 6 页](icf/06-internals.qmd) |
+| `SUBGROUP_PIPELINE()`、`DATA4grpmodel()`、`SGMODEL_DATA()`、`CF_GROUP_DECISION()` | 单折流水线与转换结局模型 | [第 6 页](icf/06-internals.qmd#sec-pipeline) |
+| `CV_SG_MAJORITY()`、`CVBIAS_D_MAJORITY()`、`CVBIAS_MAIN()`、`PICK_m2345()`、`PICK_CV()` | 跨折汇总与深度选择 | [第 6 页](icf/06-internals.qmd) |
+| `DltY_DATA()`、`SUBSETTING()`、`GET_SUBGROUP_ID()`、`ANA_SUBGROUP()`、`prop.func()`、`regression_forest_4PS()` | 效应估计的下层 | [第 6 页](icf/06-internals.qmd) |
+
+: {tbl-colwidths="[52,33,15]"}
+
+### 模拟研究与遗留
+
+`GEN_SIM_DATA_HTE()`、`TRUTH()`、`DISCOVERYRATE()`、`MSE_DltY()` 等二十余个函数
+服务于论文的模拟研究；`LEAFSIZE_tune()`、`GRID_LEAFSIZE()` 是坏掉的旧调参函数。
+清单见[第 6 页](icf/06-internals.qmd#sec-legacy)。
+
+第一页[算法](icf/01-algorithm.qmd)先把方法讲清楚，
+第二页[安装与全局变量](icf/02-setup.qmd)决定你能不能跑起来，
+最后一页[实测清单与工作流](icf/09-pitfalls.qmd)汇总全部陷阱并给出一套拆样本的流程。
+
+## 最小可运行例子
+
+安装与加载见[第 2 页](icf/02-setup.qmd)，模拟数据 `Train` 的生成代码见
+[第 3 页](icf/03-cf-raw-key.qmd#sec-sim)。之后三步：
+
+```r
+# 第 1 步：原始森林（结果必须手动赋给全局对象）
+vars_forest <- colnames(Train)[-(1:2)]
+X <- Train[, vars_forest]; Y <- Train$Y; W <- Train$W
+k <- quiet(CF_RAW_key(Train, min.split.var = 1, variable_type = "non-hd", hdPctTop = 0.90))
+Y.hat <- k$Y.hat; W.hat <- k$W.hat; HTE_P_cf.raw <- k$HTE_P_cf.raw
+varimp_cf <- k$varimp_cf; selected_cf.idx <- k$selected_cf.idx
+vars_catover2 <- find_level_over2(X)
+
+# 第 2 步：叶大小（此处直接用 README 的值；应先用 MinLeafSizeTune() 核对）
+leafsize <- list(D5 = 85, D4 = 65, D3 = 45, D2 = 25)
+
+# 第 3 步
+res <- quiet(iCFCV(dat = Train, K = 5, treeNo = 200, iterationNo = 10, min.split.var = 4,
+                   split_val_round_posi = 0, P_threshold = 1, variable_type = "non-HD",
+                   hdPctTop = 0.95, HTE_P_cf.raw = HTE_P_cf.raw))
+res$selectedSG_ori$majority$subgroup
+#> [1] "X3<=0 & X1<=0" "X3<=0 & X1>0"  "X3>0 & X1<=0"  "X3>0 & X1>0"
+```
+
+5 000 人、10 个协变量，本机 98 秒。真实 CATE 为
+$-0.4 + 0.3X_1 + 0.4X_3 + 0.4X_1X_3$，iCF 恰好恢复了这四个格子：
+
+| 亚组 | n | iCF 的 IPTW 效应 | 真实值 |
+|---|---|---|---|
+| `X3<=0 & X1<=0` | 1 221 | −0.31 (−0.45, −0.17) | −0.4 |
+| `X3<=0 & X1>0` | 1 281 | −0.08 (−0.21, 0.04) | −0.1 |
+| `X3>0 & X1<=0` | 1 267 | −0.04 (−0.17, 0.09) | 0.0 |
+| `X3>0 & X1>0` | 1 231 | 0.78 (0.64, 0.91) | 0.7 |
+
+这是 iCF 表现最好的形态：两个二分类修饰变量、一个强三阶交互、样本充足、
+变量筛选恰好只选中这两个变量。同一份数据减半后会发生什么，见[第 9 页](icf/09-pitfalls.qmd#sec-honest)。
+
+## 官方资料
+
+| 资源 | 位置 |
+|---|---|
+| 源码仓库 | <https://github.com/tianshengwang/iCF>（无许可证，默认保留所有权利） |
+| hdiCF 仓库 | <https://github.com/tianshengwang/hdiCF>（SAS 特征生成 + iCF 源码拷贝） |
+| 方法论文 | Wang T, Keil AP, Kim S, Wyss R, Htoo PT, Funk MJ, Buse JB, Kosorok MR, Stürmer T. Iterative Causal Forest: A Novel Algorithm for Subgroup Identification. ***Am J Epidemiol*** 2024;193(5):764–776. [doi:10.1093/aje/kwad219](https://doi.org/10.1093/aje/kwad219) |
+| hdiCF 论文 | Wang T, Pate V, Wyss R, Buse JB, Kosorok MR, Stürmer T. High-dimensional Iterative Causal Forest (hdiCF) for Subgroup Identification Using Health Care Claims Data. ***Am J Epidemiol*** 2025;194(7):2085–2097. [doi:10.1093/aje/kwae322](https://doi.org/10.1093/aje/kwae322) |
+| 高维编码比较 | Wang T, Pate V, Wyss R, Buse JB, Kosorok MR, Stürmer T. A novel high dimensional approach to assess heterogeneous treatment effect in claims data. ***Am J Epidemiol*** 2025;194(10):2915–2927. [doi:10.1093/aje/kwaf127](https://doi.org/10.1093/aje/kwaf127) |
+| 最佳树代码来源 | GitHub gist *msegar*（`best_tree_MSegar.R`） |
+
+作者 README 列出的应用研究（前三篇经 PubMed 核对）：
+
+- GLP-1 受体激动剂与哮喘急性加重：*Ann Am Thorac Soc* 2024;21(11):1496–1506，[doi:10.1513/AnnalsATS.202309-836OC](https://doi.org/10.1513/AnnalsATS.202309-836OC)
+- 同一问题的 hdiCF 应用：*Pharmacoepidemiol Drug Saf* 2025;34(8):e70192，[doi:10.1002/pds.70192](https://doi.org/10.1002/pds.70192)
+- 他汀与痴呆（UK Biobank，目标试验模拟）：*Alzheimers Dement* 2026;22(2):e71178，[doi:10.1002/alz.71178](https://doi.org/10.1002/alz.71178)
+- 术前 β 受体阻滞剂与 CABG 术后 30 天死亡：*Ann Med* 2026;58(1):2719256，[doi:10.1080/07853890.2026.2719256](https://doi.org/10.1080/07853890.2026.2719256)（未经 PubMed 核对）
+
+## 与本书其它页面的关系
+
+- [grf 手册](grf/01-grf-guide.qmd)——iCF 的每一个森林都是 `grf::causal_forest()`；
+  `test_calibration()`、变量重要性、诚实估计的含义都在那里；
+- [model4you](model4you.qmd)、[StratifiedMedicine](stratifiedmedicine.qmd)——
+  另外两种输出树与亚组的方法，可以在同一份数据上对照；
+- [unihtee](unihtee.qmd)——逐变量的效应修饰检验，适合放在 iCF 之前做筛选，
+  缓解"变量筛选决定成败"的问题；
+- causalR 包里的 `get_hte_icf()` 按论文重写了这套算法：拆样本、
+  交叉验证里包含"不分亚组"的选项、效应改用双稳健估计，针对的正是本手册第 9 页的几处问题。

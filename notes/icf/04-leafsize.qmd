@@ -1,0 +1,168 @@
+---
+title: "4. MinLeafSizeTune()：叶大小调参"
+subtitle: "第 2 步：让 D2–D5 森林的最佳树真的长到 2–5 层；find_level_over2() 与两个坏掉的旧调参函数"
+lang: zh
+---
+
+grf 没有"最大深度"参数。iCF 通过**最小叶大小**间接控制树的深度：
+叶子越大，树越早停止分裂。这一步要为 D2、D3、D4、D5 各找一个
+`denominator`，使 `min.node.size = round(N / denominator)` 下种出的森林，
+其最佳树**多数**恰好是目标深度。
+
+## 签名
+
+```r
+MinLeafSizeTune(dat, denominator, treeNo, iterationNo, split_val_round_posi, depth, color)
+```
+
+| 参数 | 含义 |
+|---|---|
+| `dat` | **只用于图注**里的样本量和变量数；森林本身读全局 `X`/`Y`/`W`/`Y.hat`/`W.hat`/`selected_cf.idx` |
+| `denominator` | 最小叶大小 = `round(nrow(Train) / denominator)`，`Train` 是**全局**对象 |
+| `treeNo` | 每个森林的树数 |
+| `iterationNo` | 重复种森林的次数，也就是参与统计的最佳树棵数 |
+| `split_val_round_posi` | 切点取整位数（这里只影响中间结果，不影响深度统计） |
+| `depth` | `"D2"`…`"D5"`，**只是标签**：用于图注和 `split_frequencies(max.depth = )`，并不限制树深 |
+| `color` | 直方图填充色 |
+
+返回三项：
+
+| 元素 | 内容 |
+|---|---|
+| `denominator` | 原样返回，方便拼 `leafsize` |
+| `depth_mean` | `iterationNo` 棵最佳树深度的均值，**四舍五入取整** |
+| `depth_gg` | 深度分布直方图（ggplot） |
+
+深度的数法见[第 1 页](01-algorithm.qmd#sec-depth)：每条亚组定义里 `&` 的个数加 2，
+取整棵树的最大值。
+
+## 运行
+
+先登记多水平分类变量、设定切点取整位数（后面 `iCFCV()` 也要用）：
+
+```r
+split_val_round_posi <- 0
+vars_catover2 <- find_level_over2(X)
+vars_catover2
+#> [1] NA
+```
+
+然后按 README 的初值逐个深度试：
+
+```r
+D2_MLS <- quiet(MinLeafSizeTune(Train, denominator = 25, treeNo = 200, iterationNo = 20,
+                                split_val_round_posi = 0, "D2", "steelblue1"))
+D3_MLS <- quiet(MinLeafSizeTune(Train, denominator = 45, treeNo = 200, iterationNo = 20,
+                                split_val_round_posi = 0, "D3", "steelblue1"))
+D4_MLS <- quiet(MinLeafSizeTune(Train, denominator = 65, treeNo = 200, iterationNo = 20,
+                                split_val_round_posi = 0, "D4", "steelblue1"))
+D5_MLS <- quiet(MinLeafSizeTune(Train, denominator = 85, treeNo = 200, iterationNo = 20,
+                                split_val_round_posi = 0, "D5", "steelblue1"))
+sapply(list(D2 = D2_MLS, D3 = D3_MLS, D4 = D4_MLS, D5 = D5_MLS), `[[`, "depth_mean")
+#> D2 D3 D4 D5
+#>  2  3  3  3
+```
+
+| 目标 | `denominator` | 最小叶大小（N = 5 000） | 20 棵最佳树的深度分布 | 耗时 |
+|---|---|---|---|---|
+| D2 | 25 | 200 | 2 层 × 20 | 4.1 s |
+| D3 | 45 | 111 | 3 层 × 20 | 5.2 s |
+| D4 | 65 | 77 | 3 层 × 20 | 5.4 s |
+| D5 | 85 | 59 | 3 层 × 20 | 5.8 s |
+
+![四个深度的最佳树深度分布（由各自 `depth_gg` 的数据重绘为分面图）。D4、D5 的叶子已经更小，最佳树仍只有 3 层。](images/mls_grid.png){fig-align="center" width="85%"}
+
+D4、D5 长不到目标深度，这正是 README 在同一模拟数据上遇到的情形：
+数据里真正的异质性只有 X1 × X3 一个三阶交互，
+而本例全局 `selected_cf.idx` 只含 X1、X3 两个二分类变量——
+两个二分类变量最多切出 4 格，也就是 3 层，叶子再小也切不出第 4 层。
+README 的原话是：**当调小叶大小不再改变最佳树深度时，就可以进入第 3 步。**
+
+```r
+leafsize <- list(D5 = D5_MLS$denominator, D4 = D4_MLS$denominator,
+                 D3 = D3_MLS$denominator, D2 = D2_MLS$denominator)
+```
+
+`leafsize` 必须是**全局**对象、名字必须叫 `leafsize`，
+`iCFCV()` 不接收它作参数，而是从全局环境取。
+
+::: {.callout-note}
+## D4 与 D5 长不深的后果
+
+`iCFCV()` 照样会种 D4、D5 森林，它们给出的亚组和 D3 甚至完全相同。
+本例[第 5 页](05-icfcv.qmd)里 D4 与 D5 的交叉验证误差都是 7.30547，
+`PICK_CV()` 用 `which.min()` 在并列时取第一个，于是报告 `W:G4x`。
+这不影响最终亚组，但"选中深度"这一栏不能直接解读为"数据支持四阶交互"。
+:::
+
+## 调参策略
+
+- 目标深度的 `depth_mean` **偏小**：加大 `denominator`（叶子变小）；
+- **偏大**：减小 `denominator`；
+- 报错 `Can't select columns that don't exist. ✖ Column 'parent_sign' doesn't exist.`：
+  叶子太大，最佳树连根节点都没分裂，**加大** `denominator`。本机用
+  `denominator = 5`（最小叶大小 1 000）实测复现了这条报错。
+- README 调参时用 `iterationNo = 100`，比正式运行（10）大得多，
+  因为这里要看的是深度的**分布**。
+- 最小叶大小按**全样本** `nrow(Train)` 计算，而 `iCFCV()` 每折的训练集只有 $(K-1)/K$。
+  这点在本包里无关紧要——每折实际也是在全样本上种树（[第 9 页](09-pitfalls.qmd#sec-leak)）。
+
+## `find_level_over2()` {#sec-level-over2}
+
+```r
+find_level_over2(X_dat)
+```
+
+返回**不同取值个数在 3 到 8 之间**的列名；一个都没有时返回 `NA`。
+这些变量在转换结局模型里被当作因子（`contr.sum` 对比）。
+取值超过 8 个的变量一律视为连续。
+
+```r
+Xd <- X
+set.seed(1)
+Xd$Xcat4 <- sample(0:3, nrow(Xd), TRUE)   # 4 个水平
+Xd$Xcat9 <- sample(1:9, nrow(Xd), TRUE)   # 9 个水平
+find_level_over2(Xd)
+#> [1] "Xcat4"
+```
+
+::: {.callout-note}
+函数内部会顺手做一次 `var_catover2 <<- ...`——注意是 **`var`** 不是 `vars`。
+这个全局对象没有任何函数读取；真正被读取的 `vars_catover2` 必须由你自己赋值。
+:::
+
+## `GG_DepthDistribution()` 写出的是空白图 {#sec-depth-dist}
+
+```r
+GG_DepthDistribution(D2_distribtion, D3_distribtion, D4_distribtion, D5_distribtion, Name)
+```
+
+它把四张 `depth_gg` 用 `cowplot::plot_grid()` 拼成 2 × 2，并声称把图存成
+`<Name>_<ncol(X)>_.tiff`。源码是先 `tiff()` 打开设备、再构造拼图对象、
+再 `dev.off()`——**中间没有 `print()`**，于是 tiff 里什么也没画。
+本机实测：
+
+```r
+g_depth <- GG_DepthDistribution(D2_MLS$depth_gg, D3_MLS$depth_gg, D4_MLS$depth_gg, D5_MLS$depth_gg, "Depth")
+#> 写出 Depth_10_.tiff：2250 × 3750 像素，25 312 712 字节
+#> magick 读回后不同颜色数：1（整张白图）
+```
+
+返回值本身是正常的拼图对象，可以 `print(g_depth)` 查看。
+更省事的做法是直接调用 cowplot：
+
+```r
+cowplot::plot_grid(D2_MLS$depth_gg, D3_MLS$depth_gg, D4_MLS$depth_gg, D5_MLS$depth_gg,
+                   labels = c("D2", "D3", "D4", "D5"), ncol = 2)
+```
+
+## 两个坏掉的旧调参函数 {#sec-old-tuners}
+
+包里还有一对自动调参函数，**都不能用**：
+
+| 函数 | 设计意图 | 为什么不能用 |
+|---|---|---|
+| `LEAFSIZE_tune(Ntrain, initial_D2, treeNo, iterationNo, tune_unit)` | 从 D2 的初值出发，按 1 : 2 : 3 : 4 的倍数给出 D2–D5 初值，再逐个网格搜索 | 第一行就调用 `iCF_basic()`，而这个函数在仓库里**不存在**；后面对 `iCF()` 的调用又多传了 `Ntrain` 一个参数（安装时的 NOTE 就是它） |
+| `GRID_LEAFSIZE(depth, treeNo, iterationNo, initial, iCF_D_BT_exp_SG_D_mean, tune_unit)` | 单个深度的网格搜索 | 同样调用不存在的 `iCF_basic()` |
+
+它们是早期版本的遗留，README 已改用手动的 `MinLeafSizeTune()`。

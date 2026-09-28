@@ -16435,5 +16435,856 @@
       "policytree 包函数手册",
       "<span class='chapter-number'>230</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
     ]
+  },
+  {
+    "objectID": "notes/icf.html",
+    "href": "notes/icf.html",
+    "title": "iCF 包函数手册",
+    "section": "",
+    "text": "核对环境与证据边界\niCF 回答的问题是：哪几个变量把人群切成了治疗效应不同的几块？ 它不预先写出任何”治疗 × 协变量”交互项，而是在同一深度上反复种因果森林、 每次取出最能代表异质性的一棵”最佳树”、对树的结构多数投票， 再用交叉验证在 2–5 层的候选划分里挑一个，最后输出 X3&gt;0 & X1&gt;0 这样可以直接写进论文的亚组规则，以及每个亚组的效应。\n它与本书其它几个包的分工：grf 给个体化 CATE， unihtee 给逐变量的检验结果， model4you、StratifiedMedicine 和 iCF 一样给树与亚组—— 区别在于 iCF 的每一步都建立在 grf 因果森林上，并且专为 大样本、以二分类变量为主的药物流行病学队列设计（论文 p. 773）。\n本部分是该包的函数用法手册。iCF 只在 GitHub 上发布，没有 CRAN 版本， 帮助页大多过时，README 只演示了三个主函数。本手册按源码逐个整理了全部 75 个函数， 其中真正需要直接调用的只有十来个；每页给出参数说明、可运行的代码、 返回对象的结构，以及本机实际运行后发现的失效路径。\n本手册核对截止 2026 年 9 月 28 日，环境为：\n证据分三级，正文中逐处标明：\n本手册不在本站渲染时执行代码：所有代码块都是静态的， 展示的输出是在上述环境中单独运行后粘贴回来的，图是同一次运行保存的 png。 iCF 内部多处固定了种子（set.seed(1234)），同一份数据上重复运行结果相同。",
+    "crumbs": [
+      "iCF 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/icf.html#核对环境与证据边界",
+    "href": "notes/icf.html#核对环境与证据边界",
+    "title": "iCF 包函数手册",
+    "section": "",
+    "text": "项目\n值\n\n\n\n\n包版本\niCF 0.0.0.9000（GitHub tianshengwang/iCF，commit 8932f6a，2026-09-10；不在 CRAN）\n\n\n安装方式\n最小修补后本地安装（删示例脚本、重写 NAMESPACE，源码不动），见第 2 页\n\n\nR\nWindows R 4.4.3（24 线程）\n\n\n关键依赖\ngrf 2.6.1、dplyr 1.2.1、plyr 1.8.9、ggplot2 4.0.3、glmnet 5.0、data.table 1.18.2.1、caret 7.0.1\n\n\n示例数据\n作者 README 的模拟设定（n = 5 000，种子 2024）；模拟理赔数据（n = 4 000，63 个高维变量）\n\n\n\n\n\n文档——作者 README 与两篇方法论文的原文（引用页码指 Am J Epidemiol 印刷版）；\n源码——本机安装包的函数体（iCF::: 可复核）；\n实测——在上述环境下实际运行的输出。\n\n\n\n\n\n\n\n\n重要六处必须先知道的实测结论\n\n\n\n\n仓库原样装不上。 R/ 目录里混进了一个示例脚本，NAMESPACE 也是旧的。 要做两处最小修补才能安装。见第 2 页。\n核心函数从全局环境读数据，而不是从参数读。 X、Y、W、Y.hat、W.hat、 selected_cf.idx、leafsize 等都必须在顶层定义；把流程包进函数、 或换数据时漏重设任何一个，结果都会静默沿用旧对象。 见第 2 页。\n论文里”检验不显著就不分亚组”的那条路在代码里走不通。 P_threshold 不过时 iCFCV() 必定报错；README 的 P_threshold = 1 又让它 在完全没有异质性的数据上照样切出亚组（实测按一个混杂变量切成两半）。 见第 9 页。\n交叉验证不是交叉验证。 每折种树读的都是全局全样本；再加上固定种子， 各折的发现过程逐位相同，跨折稳定性恒为 1。 见第 9 页。\n亚组效应在发现亚组的同一份数据上估计，区间用模型标准误。 换成稳健标准误宽 34%；要推断，得拆样本在另一半数据上估计。 见第 5 页与第 9 页。\n变量筛选决定成败。 全样本 5 000 人时 iCF 完美恢复真实的四个亚组； 减半到 2 500 人、“大于均值”规则多选进三个连续噪声变量后， 它切出 7 个亚组、只有 1 个是真的。只选中 1 个变量时则直接报错。 见第 3 页与第 9 页。",
+    "crumbs": [
+      "iCF 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/icf.html#这个包在做什么",
+    "href": "notes/icf.html#这个包在做什么",
+    "title": "iCF 包函数手册",
+    "section": "这个包在做什么",
+    "text": "这个包在做什么\n\n\n\n\n\n\n\n\n步骤\n函数\n做什么\n\n\n\n\n1\nCF_RAW_key()\n\\(\\hat Y\\)、\\(\\hat W\\) → 原始因果森林 → 同质性检验 P 值 → 变量重要性 → 入选变量 \\(X_S\\)\n\n\n2\nMinLeafSizeTune()\n为 D2–D5 各调一个最小叶大小，使最佳树恰好长到 2–5 层\n\n\n3\niCFCV()\nK 折：每个深度种 iterationNo 个森林、各取 R-loss 最小的最佳树 → 结构多数投票、切点取平均 → 亚组划分 \\(G_2\\)…\\(G_5\\) → 转换结局模型在验证折上比误差 → 最小者即 \\(G_{iCF}\\) → 每个亚组的 IPTW 效应\n\n\n\n第 1 页按论文把每一步讲清楚，并列出代码与论文的六处出入。",
+    "crumbs": [
+      "iCF 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/icf.html#函数地图",
+    "href": "notes/icf.html#函数地图",
+    "title": "iCF 包函数手册",
+    "section": "函数地图",
+    "text": "函数地图\n75 个函数按角色归类如下，每行给出所在页面。\n\n主流程（日常只需要这几个）\n\n\n\n\n\n\n\n\n函数\n作用\n页面\n\n\n\n\nCF_RAW_key()\n原始森林、同质性检验、变量筛选\n第 3 页\n\n\nfind_level_over2()\n找出 3–8 个水平的分类变量\n第 4 页\n\n\nMinLeafSizeTune()\n叶大小调参\n第 4 页\n\n\niCFCV()\n交叉验证 iCF，输出最终亚组与效应\n第 5 页\n\n\nCATE_SG()\n对任意亚组规则估计粗 / IPTW / SMR 效应\n第 5 页\n\n\n\n\n\n高维（hdiCF）\n\n\n\n\n\n\n\n\n函数\n作用\n页面\n\n\n\n\nPS_trim()\n倾向评分修剪（共同取值范围 / 非对称分位数）\n第 8 页\n\n\nFIX_LOW_FREQ()\n合并高维有序变量的稀疏级别\n第 8 页\n\n\nGG_Xs()\n入选高维变量的重要性图\n第 8 页\n\n\n\n\n\n可视化\n\n\n\n\n\n\n\n\n函数\n作用\n页面\n\n\n\n\nGG_VI()、PlotVI()\n变量重要性\n第 3 页\n\n\nGG_PS()\n两组倾向评分（或任意数值）的密度\n第 3 页\n\n\nGG_DepthDistribution()\n四个深度分布拼图\n第 4 页\n\n\nGG_CV_stab_vote()\n各折 × 各深度的投票稳定性\n第 7 页\n\n\nGG_CV_Dx_PS()、GG_CV_Dx_iptw()、GG_CV_Dx_Ystar()、GG_CV_Dx_YstarNo0()、GG_Y_star()\n各折诊断图\n第 7 页\n\n\n\n\n\n内部引擎\n\n\n\n\n\n\n\n\n函数\n作用\n页面\n\n\n\n\nCF()、iCF()、oneCF()\n种森林 / 同一深度反复种森林\n第 6 页\n\n\nfind_best_tree()、get_r_loss()、r_loss()、find_leaf()、estimate_params()\nR-loss 与最佳树\n第 6 页\n\n\nGET_TREE_DF()、GET_TREE_L()、PRE_MAJORITY_TREE()、PRE_MAJORITY_TREE_R()\n树的表格化\n第 6 页\n\n\nMAJORITY_VOTE()、TREE2SUBGROUP()、PRE_MAJORITY_SUBGROUP()、PARENT_NODES()\n投票与树转规则\n第 6 页\n\n\nSUBGROUP_PIPELINE()、DATA4grpmodel()、SGMODEL_DATA()、CF_GROUP_DECISION()\n单折流水线与转换结局模型\n第 6 页\n\n\nCV_SG_MAJORITY()、CVBIAS_D_MAJORITY()、CVBIAS_MAIN()、PICK_m2345()、PICK_CV()\n跨折汇总与深度选择\n第 6 页\n\n\nDltY_DATA()、SUBSETTING()、GET_SUBGROUP_ID()、ANA_SUBGROUP()、prop.func()、regression_forest_4PS()\n效应估计的下层\n第 6 页\n\n\n\n\n\n模拟研究与遗留\nGEN_SIM_DATA_HTE()、TRUTH()、DISCOVERYRATE()、MSE_DltY() 等二十余个函数 服务于论文的模拟研究；LEAFSIZE_tune()、GRID_LEAFSIZE() 是坏掉的旧调参函数。 清单见第 6 页。\n第一页算法先把方法讲清楚， 第二页安装与全局变量决定你能不能跑起来， 最后一页实测清单与工作流汇总全部陷阱并给出一套拆样本的流程。",
+    "crumbs": [
+      "iCF 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/icf.html#最小可运行例子",
+    "href": "notes/icf.html#最小可运行例子",
+    "title": "iCF 包函数手册",
+    "section": "最小可运行例子",
+    "text": "最小可运行例子\n安装与加载见第 2 页，模拟数据 Train 的生成代码见 第 3 页。之后三步：\n# 第 1 步：原始森林（结果必须手动赋给全局对象）\nvars_forest &lt;- colnames(Train)[-(1:2)]\nX &lt;- Train[, vars_forest]; Y &lt;- Train$Y; W &lt;- Train$W\nk &lt;- quiet(CF_RAW_key(Train, min.split.var = 1, variable_type = \"non-hd\", hdPctTop = 0.90))\nY.hat &lt;- k$Y.hat; W.hat &lt;- k$W.hat; HTE_P_cf.raw &lt;- k$HTE_P_cf.raw\nvarimp_cf &lt;- k$varimp_cf; selected_cf.idx &lt;- k$selected_cf.idx\nvars_catover2 &lt;- find_level_over2(X)\n\n# 第 2 步：叶大小（此处直接用 README 的值；应先用 MinLeafSizeTune() 核对）\nleafsize &lt;- list(D5 = 85, D4 = 65, D3 = 45, D2 = 25)\n\n# 第 3 步\nres &lt;- quiet(iCFCV(dat = Train, K = 5, treeNo = 200, iterationNo = 10, min.split.var = 4,\n                   split_val_round_posi = 0, P_threshold = 1, variable_type = \"non-HD\",\n                   hdPctTop = 0.95, HTE_P_cf.raw = HTE_P_cf.raw))\nres$selectedSG_ori$majority$subgroup\n#&gt; [1] \"X3&lt;=0 & X1&lt;=0\" \"X3&lt;=0 & X1&gt;0\"  \"X3&gt;0 & X1&lt;=0\"  \"X3&gt;0 & X1&gt;0\"\n5 000 人、10 个协变量，本机 98 秒。真实 CATE 为 \\(-0.4 + 0.3X_1 + 0.4X_3 + 0.4X_1X_3\\)，iCF 恰好恢复了这四个格子：\n\n\n\n亚组\nn\niCF 的 IPTW 效应\n真实值\n\n\n\n\nX3&lt;=0 & X1&lt;=0\n1 221\n−0.31 (−0.45, −0.17)\n−0.4\n\n\nX3&lt;=0 & X1&gt;0\n1 281\n−0.08 (−0.21, 0.04)\n−0.1\n\n\nX3&gt;0 & X1&lt;=0\n1 267\n−0.04 (−0.17, 0.09)\n0.0\n\n\nX3&gt;0 & X1&gt;0\n1 231\n0.78 (0.64, 0.91)\n0.7\n\n\n\n这是 iCF 表现最好的形态：两个二分类修饰变量、一个强三阶交互、样本充足、 变量筛选恰好只选中这两个变量。同一份数据减半后会发生什么，见第 9 页。",
+    "crumbs": [
+      "iCF 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/icf.html#官方资料",
+    "href": "notes/icf.html#官方资料",
+    "title": "iCF 包函数手册",
+    "section": "官方资料",
+    "text": "官方资料\n\n\n\n资源\n位置\n\n\n\n\n源码仓库\nhttps://github.com/tianshengwang/iCF（无许可证，默认保留所有权利）\n\n\nhdiCF 仓库\nhttps://github.com/tianshengwang/hdiCF（SAS 特征生成 + iCF 源码拷贝）\n\n\n方法论文\nWang T, Keil AP, Kim S, Wyss R, Htoo PT, Funk MJ, Buse JB, Kosorok MR, Stürmer T. Iterative Causal Forest: A Novel Algorithm for Subgroup Identification. Am J Epidemiol 2024;193(5):764–776. doi:10.1093/aje/kwad219\n\n\nhdiCF 论文\nWang T, Pate V, Wyss R, Buse JB, Kosorok MR, Stürmer T. High-dimensional Iterative Causal Forest (hdiCF) for Subgroup Identification Using Health Care Claims Data. Am J Epidemiol 2025;194(7):2085–2097. doi:10.1093/aje/kwae322\n\n\n高维编码比较\nWang T, Pate V, Wyss R, Buse JB, Kosorok MR, Stürmer T. A novel high dimensional approach to assess heterogeneous treatment effect in claims data. Am J Epidemiol 2025;194(10):2915–2927. doi:10.1093/aje/kwaf127\n\n\n最佳树代码来源\nGitHub gist msegar（best_tree_MSegar.R）\n\n\n\n作者 README 列出的应用研究（前三篇经 PubMed 核对）：\n\nGLP-1 受体激动剂与哮喘急性加重：Ann Am Thorac Soc 2024;21(11):1496–1506，doi:10.1513/AnnalsATS.202309-836OC\n同一问题的 hdiCF 应用：Pharmacoepidemiol Drug Saf 2025;34(8):e70192，doi:10.1002/pds.70192\n他汀与痴呆（UK Biobank，目标试验模拟）：Alzheimers Dement 2026;22(2):e71178，doi:10.1002/alz.71178\n术前 β 受体阻滞剂与 CABG 术后 30 天死亡：Ann Med 2026;58(1):2719256，doi:10.1080/07853890.2026.2719256（未经 PubMed 核对）",
+    "crumbs": [
+      "iCF 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/icf.html#与本书其它页面的关系",
+    "href": "notes/icf.html#与本书其它页面的关系",
+    "title": "iCF 包函数手册",
+    "section": "与本书其它页面的关系",
+    "text": "与本书其它页面的关系\n\ngrf 手册——iCF 的每一个森林都是 grf::causal_forest()； test_calibration()、变量重要性、诚实估计的含义都在那里；\nmodel4you、StratifiedMedicine—— 另外两种输出树与亚组的方法，可以在同一份数据上对照；\nunihtee——逐变量的效应修饰检验，适合放在 iCF 之前做筛选， 缓解”变量筛选决定成败”的问题；\ncausalR 包里的 get_hte_icf() 按论文重写了这套算法：拆样本、 交叉验证里包含”不分亚组”的选项、效应改用双稳健估计，针对的正是本手册第 9 页的几处问题。",
+    "crumbs": [
+      "iCF 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/icf/01-algorithm.html",
+    "href": "notes/icf/01-algorithm.html",
+    "title": "1. 算法：从因果森林到亚组规则",
+    "section": "",
+    "text": "为什么要”迭代”\niCF 解决的是亚组识别（subgroup identification）问题： 不预先写出任何”治疗 × 协变量”交互项，直接从数据里找出 X3 &gt; 0 & X1 &gt; 0 这样少数几个变量定义的、互不重叠的亚组， 再报告每个亚组的条件平均治疗效应（CATE）。 它不输出个体化 CATE（那是 grf::causal_forest() 的事）， 也不输出逐变量的检验结果（那是 unihtee 的事）。\n本页先按论文把算法讲清楚，再逐条标出代码实际做的事与论文描述不同的地方。 引用页码均指 Wang 等（2024）Am J Epidemiol 193(5):764–776。\n因果森林本身就是一堆树，但单棵树有两个毛病（论文 p. 765）：\niCF 的对策是：限制树的深度（通过最小叶大小间接控制）， 在同一深度上反复种森林，每次只取”最能代表异质性”的那一棵树， 最后对树的结构做多数投票。出现次数最多的结构被认为最可能反映真实异质性。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>231</span>  <span class='chapter-title'>1. 算法：从因果森林到亚组规则</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/01-algorithm.html#为什么要迭代",
+    "href": "notes/icf/01-algorithm.html#为什么要迭代",
+    "title": "1. 算法：从因果森林到亚组规则",
+    "section": "",
+    "text": "不稳定：换一个随机种子，最佳分裂就可能换一个变量；\n切得太碎：深树会把人群切成许多只差一点点的小格子，没有临床解释力。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>231</span>  <span class='chapter-title'>1. 算法：从因果森林到亚组规则</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/01-algorithm.html#五步流程",
+    "href": "notes/icf/01-algorithm.html#五步流程",
+    "title": "1. 算法：从因果森林到亚组规则",
+    "section": "五步流程",
+    "text": "五步流程\n论文 Figure 1（p. 766）把算法画成 A、B 两块。 下面按执行顺序展开，末列给出对应函数：\n\n\n\n\n\n\n\n\n步骤\n做什么\n对应函数\n\n\n\n\n① 原始森林\n\\(\\hat Y\\)、\\(\\hat W\\) → 因果森林 → 同质性检验 P 值 → 变量重要性 → 入选变量 \\(X_S\\)；P &gt; α 时只报告总体效应\nCF_RAW_key()\n\n\n② 分折\n切成 f 折（论文 f = 10，README 用 5）\niCFCV() 内 caret::createFolds()\n\n\n③ 训练折内，D = 2…5 各一遍\n以最小叶大小 \\(n_{\\min,D}\\) 种 K 个森林 → 各取 R-loss 最小的最佳树 → 忽略切点对结构多数投票 → 切点取平均得合成树 → 亚组划分 \\(G_D\\) → 拟合 \\(Y^* \\sim\\) 主效应 \\(+ W + G_D + W{:}G_D\\)\nSUBGROUP_PIPELINE()：iCF()、CF()、find_best_tree()、MAJORITY_VOTE()、TREE2SUBGROUP()、CF_GROUP_DECISION()\n\n\n④ 验证折\n预测 \\(Y^*\\)，得到 \\(G_2\\)…\\(G_5\\) 各自的误差\niCFCV() 内 predict()、caret::postResample()\n\n\n⑤ 跨折选择\n每个深度跨折多数投票、误差取平均；误差最小的深度胜出 → \\(G_{iCF}\\)\nCV_SG_MAJORITY()、CVBIAS_D_MAJORITY()、PICK_CV()\n\n\n效应\n每个亚组的粗效应、IPTW、SMR 效应\nCATE_SG()\n\n\n\n\n① 原始森林、同质性检验与变量筛选\n先用 grf::regression_forest() 分别估计 \\(\\hat Y = \\mathbb E[Y\\mid X]\\) 与 倾向评分 \\(\\hat W = \\Pr(W = 1\\mid X)\\)，再把它们代入因果森林（论文 p. 765， 代码 CF_RAW_key()）。之后做两件事：\n\n同质性检验：grf::test_calibration() 输出里 differential forest prediction 那一行的单侧 P 值。 它检验的是”森林预测出的 CATE 差异是否与数据一致”， 显著说明存在可被森林捕捉的异质性。论文取 \\(\\alpha = 0.1\\)（p. 768）。\n变量筛选：grf::variable_importance()（按各层分裂次数加权） 大于均值的变量进入 \\(X_S\\)。后续所有森林只在 \\(X_S\\) 上分裂。\n\n\n\n\n\n\n\n注记检验不显著不等于没有异质性\n\n\n\n论文自己在讨论部分写道（p. 774）：同质性检验缺乏证据不代表没有异质性， 此时可以放宽 \\(\\alpha\\)（如 0.2）或干脆跳过检验。 作者 README 的全部示例都用 P_threshold = 1，就是跳过检验。 这个选择在代码里有一个后果——永远不会选”无亚组”， 见下文出入表第 2 条。\n\n\n\n\n② 深度与最小叶大小\n论文里树的深度是最长路径的长度（p. 764–765）， 深度为 \\(d\\) 的树最多能表达 \\(d\\) 阶交互，即 \\(d-1\\) 个协变量与 \\(W\\) 的交互（p. 765）：\n\n\n\n深度\n分裂层数\n最多几个亚组\n能表达的交互\n\n\n\n\nD2\n1\n2\n\\(W{:}X_a\\)\n\n\nD3\n2\n4\n\\(W{:}X_a{:}X_b\\)\n\n\nD4\n3\n8\n四阶\n\n\nD5\n4\n16\n五阶\n\n\n\ngrf 没有”最大深度”参数，iCF 用最小叶大小间接控制深度： min.node.size = round(N / denominator)，denominator 越大、叶子越小、树越深。 每个深度的 denominator 要单独调，目标是让该深度森林的最佳树多数恰好长到那个深度。 这一步就是 MinLeafSizeTune()，见第 4 页。\n\n\n\n\n\n\n提示代码怎么数深度\n\n\n\nMinLeafSizeTune() 把每条亚组定义里 & 的个数加 2 当作深度： X3 &gt; 0 深度 2，X3 &gt; 0 & X1 &gt; 0 深度 3。取一棵树所有亚组里的最大值。 这与论文”最长路径”的定义一致（根节点和叶节点都算一层）。\n\n\n\n\n③ 最佳树与多数投票\n最佳树（论文 p. 765，代码 find_best_tree()，改编自 GitHub gist msegar）： 对森林里每一棵树，自下而上计算 R-loss， 取总 R-loss 最小的那棵。单个节点的 R-loss 是\n\\[\nL(\\text{node}) \\;=\\; \\frac{n^2}{(n-1)^2}\\sum_{i \\in \\text{node}}\n\\Bigl[\\,Y_i - \\hat m(X_i) - \\bigl(W_i - \\hat e(X_i)\\bigr)\\,\\bar\\tau_{\\text{node}}\\Bigr]^2 ,\n\\]\n其中 \\(\\hat m\\)、\\(\\hat e\\) 是森林里存的 \\(\\hat Y\\)、\\(\\hat W\\)， \\(\\bar\\tau_{\\text{node}}\\) 是该节点内样本的森林 OOB CATE 预测的平均， \\(n\\) 是节点样本量。若父节点的 R-loss 小于两个子节点之和，就把父节点当作叶子 （cost = 0 时的剪枝规则）。这正是 R-learner 损失（Nie & Wager）在树上的版本。\n多数投票（论文 p. 765，代码 MAJORITY_VOTE()）： 同一深度重复种 iterationNo 个森林，得到同样多棵最佳树。 先忽略切点，只比较”哪个节点用哪个变量分裂”的结构； 出现次数最多的结构胜出。然后把所有胜出结构的树在每个节点上的切点取平均， 得到一棵合成树（synthetic tree），它的叶子就是该深度的亚组决策 \\(G_D\\)。\n胜出结构出现的比例叫稳定性（stability）。 例如 10 次里有 7 次是同一结构，稳定性 = 0.7。\n\n\n④ 转换结局模型\n要在验证折上比较 \\(G_2, \\dots, G_5\\) 哪个好，需要一个”真值”可比。 iCF 用 IPTW 转换结局（论文 p. 767）：\n\\[\nY_i^* \\;=\\; \\frac{W_i\\,Y_i}{\\hat e(X_i)} \\;-\\; \\frac{(1-W_i)\\,Y_i}{1-\\hat e(X_i)},\n\\qquad\n\\mathbb E[\\,Y^* \\mid X = x\\,] = \\tau(x).\n\\]\n对每个 \\(G_D\\) 拟合同一种线性模型（论文 p. 767，代码 DATA4grpmodel()）：\n\\[\nY_i^* = \\beta_0 + \\sum_j \\beta_j X_{ij} + \\alpha W_i + \\gamma_D G_{D,i} + \\delta_D\\, W_i \\cdot G_{D,i} ,\n\\]\n\\(G_D\\) 按因子进入，用 sum-to-zero 对比。四个模型的主效应部分相同， 差别只来自 \\(G_D\\) 与 \\(W{:}G_D\\) 两项。在验证折上算 RMSE， 取平方后跨折平均，就是每个深度的交叉验证误差。\n\n\n⑤ 跨折选择与效应估计\n每一折都会给出自己的 \\(G_2, \\dots, G_5\\)。对每个深度， 跨折再做一次多数投票（CV_SG_MAJORITY()）；若 \\(K\\) 折结果两两不同， 取折内稳定性最高的那一折。误差只在”与多数结果相同的那些折”上平均 （CVBIAS_D_MAJORITY()）。误差最小的深度胜出，其多数结果就是最终的 \\(G_{iCF}\\)（PICK_CV()）。\niCFCV() 同时给出第二种选择：误差先除以跨折稳定性再比较 （inverse CV stability weight，结果以 _icvsw 结尾），偏向更稳定的深度。\n最后 CATE_SG() 在每个亚组内分别估计三种效应：\n\n\n\n\n\n\n\n\n输出列\n含义\n做法\n\n\n\n\nCATE_crude\n粗差值\nglm(Y ~ W)\n\n\nCATE_iptw\n亚组内 ATE\n亚组内用交叉验证 LASSO logistic 重估倾向评分，稳定化 IPTW 加权的 glm(Y ~ W)\n\n\nCATE_smr\n亚组内 ATT\n同上，SMR 权重（治疗组 1，对照组 \\(\\hat e/(1-\\hat e)\\)）\n\n\n\n论文实证部分用的也是稳定化 IPTW（p. 770），区间来自 confint() （模型标准误，见第 5 页）。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>231</span>  <span class='chapter-title'>1. 算法：从因果森林到亚组规则</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/01-algorithm.html#sec-diff",
+    "href": "notes/icf/01-algorithm.html#sec-diff",
+    "title": "1. 算法：从因果森林到亚组规则",
+    "section": "代码与论文的出入",
+    "text": "代码与论文的出入\n下面六条都能在源码里逐行找到（证据列”源码”），其中 4 条已在本机实测复现。\n\n\n\n#\n论文\n代码实际行为\n影响\n证据\n\n\n\n\n1\nP &gt; α 时”没有强亚组”，只报告总体效应（Figure 1A）\niCFCV() 的这条分支在 return() 时引用未定义对象，必定报错\n按论文用 P_threshold = 0.1，在无异质性数据上拿不到任何结果\n源码 + 实测\n\n\n2\n检验显著后仍可能判定”没有值得报告的亚组”\nPICK_CV() 只在 \\(G_2\\)–\\(G_5\\) 里取最小误差，主效应模型从不进入候选；而 P 值不过门槛时又走进第 1 条的报错分支\n“不分亚组”在代码里没有出口；无异质性数据上用 P_threshold = 1 仍会输出亚组\n源码 + 实测\n\n\n3\n每折在训练集上种森林\n实际种树的 CF() 从全局环境读 X/Y/W，所有折都用全样本\n验证折参与了亚组发现，CV 误差与深度选择偏乐观；各折的发现过程甚至逐位相同\n源码 + 实测\n\n\n4\n模拟研究里 CATE 在 20% 测试集上估计（p. 768）\niCFCV() 的 CATE_SG() 用传入的全部数据\n发现亚组与估计效应用同一批人，区间偏窄\n源码 + 实测\n\n\n5\n从”剪枝后的 iCF”得到亚组（Figure 1B 标题）\nfind_best_tree() 算出的剪枝信息只用于比较 R-loss，转成亚组的是未剪枝的 grf 树\n亚组数由最小叶大小决定，不由 R-loss 剪枝决定\n源码 + 实测\n\n\n6\n连续变量建议先分类（p. 773）\n连续变量的切点按 split_val_round_posi 位小数取整，默认示例取 0\n切点 0.5 会被取整成 0 或 1\n源码 + 实测\n\n\n\n这些出入不影响算法思想本身，但决定了”照 README 跑一遍”得到的结果该怎么读。 第 9 页给出一套绕开它们的工作流。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>231</span>  <span class='chapter-title'>1. 算法：从因果森林到亚组规则</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/01-algorithm.html#调参量",
+    "href": "notes/icf/01-algorithm.html#调参量",
+    "title": "1. 算法：从因果森林到亚组规则",
+    "section": "调参量",
+    "text": "调参量\n论文称 iCF 的调参量来自三个部件（p. 768）：随机森林、因果森林和最佳树， 其中只需调三个：\n\n\n\n\n\n\n\n\n\n\n调参量\n代码参数\n论文模拟\n论文实证（Medicare）\nREADME 模拟示例\n\n\n\n\n每个森林的树数\ntreeNo\n200\n2 000\n200\n\n\n每个深度重复种森林的次数\niterationNo\n50\n1 000\n10（调叶大小时 100）\n\n\n最小叶大小\nleafsize（N / denominator）\n按深度调\n按深度调\nD2–D5：25 / 45 / 65 / 85\n\n\n交叉验证折数\nK\n10\n10\n5\n\n\n\n论文报告实证分析耗时约 3 小时，是 oneCF 的 5 倍、交互树的 30 倍（p. 772）。 本机 5 000 例、10 个协变量、treeNo = 200、iterationNo = 10 的一次 iCFCV() 耗时见第 5 页。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>231</span>  <span class='chapter-title'>1. 算法：从因果森林到亚组规则</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/01-algorithm.html#论文结论与适用范围",
+    "href": "notes/icf/01-algorithm.html#论文结论与适用范围",
+    "title": "1. 算法：从因果森林到亚组规则",
+    "section": "论文结论与适用范围",
+    "text": "论文结论与适用范围\n\n12 个模拟场景（2 到 5 阶交互、连续/有序/二分类修饰变量，n = 5 000 / 10 000 / 20 000）里， iCF 在多数场景的交互识别、亚组识别和”找出效应最大亚组”上优于 oneCF、 LASSO、FindIt、ROWSi；交互树（IT）在二阶交互和连续 \\(X_2\\) 场景上更好（p. 772）。\n作者推荐场景：大样本、变量以二分类为主的药物流行病学队列（p. 773）。\n作者列出的局限（p. 774）：依赖无未测混杂；连续变量的切点可能没有临床意义； 小样本不适用；只在风险差尺度上评估，生存数据需要另行扩展；计算量大。\n\n生存结局能否接入、iCF 与其它亚组方法在本机数据上的对照，见第 9 页。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>231</span>  <span class='chapter-title'>1. 算法：从因果森林到亚组规则</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/02-setup.html",
+    "href": "notes/icf/02-setup.html",
+    "title": "2. 安装、全局变量与数据格式",
+    "section": "",
+    "text": "为什么不能直接 install_github()\n这一页决定你能不能把 iCF 跑起来。三件事必须先知道： 仓库原样装不上；核心函数从全局环境读数据而不是从参数读； 几个函数会往工作目录写文件。\nCRAN、Bioconductor、r-universe 上都没有 iCF，只能从 GitHub 获取。 作者 README 列了三种安装方式，第二、三种自己标注了 currently being worked on。 本机实测（commit 8932f6a，2026-09-10）原样安装失败，原因有二：\n仓库根目录的 iCF_0.0.0.9000.tar.gz 是更早的快照，没有 iCF_HD.R（即没有 FIX_LOW_FREQ()），不建议用。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>232</span>  <span class='chapter-title'>2. 安装、全局变量与数据格式</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/02-setup.html#sec-why-not",
+    "href": "notes/icf/02-setup.html#sec-why-not",
+    "title": "2. 安装、全局变量与数据格式",
+    "section": "",
+    "text": "R/iCF_README.R 是示例脚本却放在 R/ 目录。 它的顶层有 rm(list = ls())、devtools::install_github()、 source(\"/local/iCF/...\")、load(\"HHF_SGLTvGLP_iCFCV.RData\") 等语句， 安装时会被当作包代码执行。\nNAMESPACE 是旧版。 它导出了 17 个已不存在的函数（加载时报 object ... not found），又漏掉了 iCFCV、FIX_LOW_FREQ、PS_trim、 GG_VI 等 29 个现用函数。NAMESPACE 里也没有任何 import。\n\n\n\n\n\n\n\n\n警告许可证\n\n\n\niCF 仓库的 DESCRIPTION 里 License: 一栏仍是 usethis 模板的占位文字， 仓库也没有 LICENSE 文件，法律上默认”保留所有权利”。 本手册只引用函数签名和为说明问题所必需的几行源码； 若要把 iCF 的代码并入自己的包或再分发，需要先取得作者许可。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>232</span>  <span class='chapter-title'>2. 安装、全局变量与数据格式</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/02-setup.html#最小修补安装",
+    "href": "notes/icf/02-setup.html#最小修补安装",
+    "title": "2. 安装、全局变量与数据格式",
+    "section": "最小修补安装",
+    "text": "最小修补安装\n只改两处，其余源码一行不动：删掉示例脚本，NAMESPACE 改成导出全部函数。\n# 先在终端克隆到任意项目外目录：\n#   git clone --depth 1 https://github.com/tianshengwang/iCF.git D:/tools/iCF\nsrc   &lt;- \"D:/tools/iCF\"\nstage &lt;- file.path(tempdir(), \"iCF\")\ndir.create(stage)\nfile.copy(file.path(src, c(\"DESCRIPTION\", \"R\", \"man\")), stage, recursive = TRUE)\nfile.remove(file.path(stage, \"R\", \"iCF_README.R\"))                       # 去掉示例脚本\nwriteLines('exportPattern(\"^[[:alpha:]]+\")', file.path(stage, \"NAMESPACE\"))  # 导出全部\ninstall.packages(stage, repos = NULL, type = \"source\")\n安装时会有一条 NOTE：LEAFSIZE_tune() 调用 iCF() 时多传了一个参数。 这不影响主流程（README 用的是 MinLeafSizeTune()），但意味着 LEAFSIZE_tune() 一调用就报错，见第 4 页。\n\n\n\n\n\n\n注记另一条路：source()\n\n\n\nREADME 的第一种方式是把 R/ 下的文件逐个 source() 到全局环境。 效果与上面相同（函数都在全局或包命名空间里查找全局变量）， 只是要注意 README 的 source() 清单漏了 iCF_HD.R， 用到 hdiCF 的 FIX_LOW_FREQ() 时要自己补上。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>232</span>  <span class='chapter-title'>2. 安装、全局变量与数据格式</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/02-setup.html#加载",
+    "href": "notes/icf/02-setup.html#加载",
+    "title": "2. 安装、全局变量与数据格式",
+    "section": "加载",
+    "text": "加载\nNAMESPACE 没有任何 import，源码里大量函数不带包前缀地调用 dplyr、ggplot2、glmnet、cowplot、data.table 等包， 所以 library(iCF) 之前必须把依赖挂到搜索路径上：\npkgs &lt;- c(\"MASS\", \"grf\", \"tidyverse\", \"rlang\", \"rlist\", \"plyr\", \"caret\", \"caTools\",\n          \"randomForest\", \"ggridges\", \"data.table\", \"broom\", \"rstatix\", \"knitr\",\n          \"DiagrammeR\", \"glmnet\", \"cowplot\")\ninvisible(lapply(pkgs, library, character.only = TRUE))\ntheme_set(theme_ridges())\nlibrary(iCF)\nlength(getNamespaceExports(\"iCF\"))\n#&gt; [1] 75\n顺序照搬 README（plyr 在 tidyverse 之后）。清单里有两处与 README 不同：\n\n加了 glmnet 和 cowplot：README 漏写了。前者被 prop.func() 调用（cv.glmnet()），不挂会在最后估计亚组效应时报 could not find function \"cv.glmnet\"；后者被所有 GG_CV_*() 拼图函数调用。\n去掉了 listdtr、DMwR、cobalt、optmatch、ggpubr： README 列了，但代码里没有用到。DMwR 已从 CRAN 下架，装不上也无妨。\n\n\n\n\n\n\n\n重要plyr 在 dplyr 之后会屏蔽 summarise()\n\n\n\n按 README 的顺序，plyr::summarise()、plyr::mutate() 等会盖住 dplyr 的同名函数。 主流程不受影响（iCF 在关键处写了 dplyr:: 前缀），但 hdiCF 的 PS_trim() 会因此报错，调用前必须 detach(\"package:plyr\")，见第 8 页。\n\n\n\n让输出安静下来\nfind_best_tree() 在检查每一棵树时都会 cat(\"tree:\", t)， 一次 iCFCV() 能打印上千行。下面这个包装只吞掉打印，返回值不变：\nquiet &lt;- function(x) { invisible(utils::capture.output(x)); x }\n本手册后面的代码都用它包住 iCF 的调用。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>232</span>  <span class='chapter-title'>2. 安装、全局变量与数据格式</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/02-setup.html#sec-globals",
+    "href": "notes/icf/02-setup.html#sec-globals",
+    "title": "2. 安装、全局变量与数据格式",
+    "section": "全局变量契约",
+    "text": "全局变量契约\n这是使用 iCF 最重要的一条规则：核心函数通过全局环境读取数据， 而不是通过参数。R 的词法作用域使包里的函数在找不到局部变量时， 沿”包命名空间 → imports → base → 全局环境”一路找下去； iCF 的函数正是这样取到你在顶层定义的 X、Y、W。\n下表是按源码逐个函数整理的”读谁”：\n\n\n\n\n\n\n\n\n全局对象\n由谁读取\n用途\n\n\n\n\nvars_forest\nCF_RAW_key()、regression_forest_4PS()\n协变量列名\n\n\nTrain\nCF()、MinLeafSizeTune()（经 iCF()）\n只用 nrow(Train) 算最小叶大小\n\n\nX、Y、W\nCF()、iCF()、MAJORITY_VOTE()、DATA4grpmodel()、ANA_SUBGROUP()\n种森林、判断变量水平数、拼公式\n\n\nY.hat、W.hat\nCF()\n森林的 \\(\\hat Y\\)、\\(\\hat W\\)\n\n\nselected_cf.idx\nCF()、iCF()\n森林只在这些列上分裂\n\n\nleafsize\niCFCV()（传给 SUBGROUP_PIPELINE()）\nD2–D5 的 denominator\n\n\nvars_catover2\nSGMODEL_DATA()\n哪些协变量在转换结局模型里当因子\n\n\nHTE_P_cf.raw\nPICK_CV()\n报告列 grp_pick\n\n\nvarimp_cf\nPlotVI()、GG_Xs()\n画图\n\n\ndxgroup、atcgroup\nFIX_LOW_FREQ()\n识别高维代码列的前缀\n\n\n\n反过来，iCFCV() 运行时会用 &lt;&lt;- 往全局环境写一批对象 （本机一次运行新增的全部名字见第 5 页）， 其中包括 formula_basic、formula_g2 等后续函数要读的公式。\n\n\n\n\n\n\n警告两条由此而来的使用纪律\n\n\n\n\n所有代码都在顶层运行。 如果你把流程包进自定义函数， 函数里的 X &lt;- ... 只是局部变量，iCF 读到的仍是全局的旧 X。 这就是作者 README 满屏 &lt;&lt;- 的原因。\n换数据集时把上表的对象全部重设。 漏掉任何一个，iCF 都会静默沿用旧数据。 例如只重设了 X 而没重设 Train，最小叶大小就按旧样本量算。\n\n\n\n参数与全局变量同名但不同值时，全局变量赢。最典型的是 iCFCV(min.split.var = ...)：每折确实按它重新筛选变量， 但种树时用的是全局的 selected_cf.idx，见第 5 页。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>232</span>  <span class='chapter-title'>2. 安装、全局变量与数据格式</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/02-setup.html#数据格式",
+    "href": "notes/icf/02-setup.html#数据格式",
+    "title": "2. 安装、全局变量与数据格式",
+    "section": "数据格式",
+    "text": "数据格式\n\n\n\n\n\n\n\n要求\n说明\n\n\n\n\n列顺序与列名\n第 1 列结局，列名必须是 Y；第 2 列治疗，列名必须是 W；其余为协变量\n\n\n治疗\n0/1 数值\n\n\n结局\n连续或 0/1；二分类时一切效应都在风险差尺度上\n\n\n缺失值\n不允许，否则报 `G4` must be size 11886 or 1, not 11888 这类长度不匹配错误（README 原文）\n\n\n分类协变量\n用数值编码；3–8 个水平的变量由 find_level_over2() 登记到 vars_catover2，在转换结局模型里按因子处理\n\n\n连续协变量\n亚组定义里的切点按 split_val_round_posi 位小数取整\n\n\n样本量\n论文模拟 5 000–20 000；作者明确说小样本不适用（p. 774）\n\n\n\nREADME 给了一个找缺失列的小函数，照抄即可：\nvars_with_missing &lt;- names(Train)[sapply(Train, anyNA)]\n生存结局 iCF 本身不支持，论文把它列为局限（p. 774）； README 的实证例子把”两年内是否住院”当作二分类 \\(Y\\)，删失者按未发生处理。 更稳妥的接法见第 9 页。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>232</span>  <span class='chapter-title'>2. 安装、全局变量与数据格式</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/02-setup.html#sec-side",
+    "href": "notes/icf/02-setup.html#sec-side",
+    "title": "2. 安装、全局变量与数据格式",
+    "section": "随机性与副作用",
+    "text": "随机性与副作用\n\n\n\n行为\n所在函数\n后果\n\n\n\n\nset.seed(1234)\nCF_RAW_key() 开头、iCFCV() 分折前\n调用后全局随机数流被重置；同一份数据上反复运行结果相同\n\n\n每个森林的 seed = runif(1, 0, .Machine$integer.max)\nCF()\n森林种子取自 R 的随机数流，因此整条流程可复现\n\n\n基础绘图 plot(varimp_cf)\nCF_RAW_key()\n非交互会话（Rscript、knitr）里会在工作目录生成 Rplots.pdf\n\n\npng() 写文件\nGG_PS()\n写 &lt;filename&gt;.png；iCFCV() 每折调用 4 次\n\n\ntiff() 写文件\nGG_DepthDistribution()\n写一张 15 × 25 英寸的 tiff，且内容是空白的，见第 4 页\n\n\ncat(\"tree: ...\")\nfind_best_tree()\n大量打印，用 quiet() 屏蔽\n\n\n\n建议把工作目录设到临时目录再运行：\nold &lt;- setwd(tempdir())\n# ……运行 iCF……\nsetwd(old)",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>232</span>  <span class='chapter-title'>2. 安装、全局变量与数据格式</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/05-icfcv.html",
+    "href": "notes/icf/05-icfcv.html",
+    "title": "5. iCFCV()：交叉验证与最终亚组",
+    "section": "",
+    "text": "签名\niCFCV() 是 iCF 的主函数，把第 1 页的 ②–⑤ 步一次跑完， 输出最终亚组划分 \\(G_{iCF}\\) 和每个亚组的效应。 运行前，全局环境里必须已有第 2 页列出的全部对象， 包括第 4 页得到的 leafsize。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>235</span>  <span class='chapter-title'>5. iCFCV()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/05-icfcv.html#签名",
+    "href": "notes/icf/05-icfcv.html#签名",
+    "title": "5. iCFCV()：交叉验证与最终亚组",
+    "section": "",
+    "text": "iCFCV(dat, K, treeNo, iterationNo, min.split.var, split_val_round_posi,\n      P_threshold = 0.5, variable_type, hdPctTop, HTE_P_cf.raw)\n\n\n\n参数\n含义\n实际作用\n\n\n\n\ndat\n完整数据，Y、W 在前\n分折、每折的 \\(\\hat W\\)、转换结局模型、最后的 CATE_SG() 都用它；种树不用它（读全局 X）\n\n\nK\n交叉验证折数\n分折用 caret::createFolds(dat[, 1], k = K)，按结局分层，种子固定为 1234。画图函数只支持 5 或 10\n\n\ntreeNo\n每个森林的树数\n必须 ≥ 20，否则 find_best_tree() 报错（第 6 页）\n\n\niterationNo\n每个深度重复种森林的次数\n= 1 时改走 oneCF()：只种一个森林、取一棵最佳树\n\n\nmin.split.var\n同 CF_RAW_key()\n对种树没有影响，见下文\n\n\nsplit_val_round_posi\n切点取整位数\n连续变量取 0 会严重失真，见第 9 页\n\n\nP_threshold\n同质性检验门槛\nround(HTE_P_cf.raw, 1) &lt;= P_threshold 才做亚组识别；否则报错，见下文\n\n\nvariable_type、hdPctTop\n同 CF_RAW_key()\n同 min.split.var，只影响每折的变量筛选结果，而种树不用它\n\n\nHTE_P_cf.raw\n第 1 步的 P 值\n与 P_threshold 比较",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>235</span>  <span class='chapter-title'>5. iCFCV()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/05-icfcv.html#运行",
+    "href": "notes/icf/05-icfcv.html#运行",
+    "title": "5. iCFCV()：交叉验证与最终亚组",
+    "section": "运行",
+    "text": "运行\nREADME 的模拟示例设置，在本机 5 000 例数据上：\nres &lt;- quiet(iCFCV(dat = Train, K = 5, treeNo = 200, iterationNo = 10, min.split.var = 4,\n                   split_val_round_posi = 0, P_threshold = 1, variable_type = \"non-HD\",\n                   hdPctTop = 0.95, HTE_P_cf.raw = HTE_P_cf.raw))\nres$time_iCFCV\n#&gt; Time difference of 98.26795 secs\n运行期间会打印十几行 Waiting for profiling to be done...——来自 CATE_SG() 里 confint() 对 glm 的剖面似然计算，quiet() 挡不住（它们是 message），无害。 另有一条 dplyr 弃用警告（across(where(is.numeric), round, split_val_round_posi) 的旧写法），也不影响结果。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>235</span>  <span class='chapter-title'>5. iCFCV()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/05-icfcv.html#结果怎么读",
+    "href": "notes/icf/05-icfcv.html#结果怎么读",
+    "title": "5. iCFCV()：交叉验证与最终亚组",
+    "section": "结果怎么读",
+    "text": "结果怎么读\n\n最终亚组\nres$selectedSG_ori\n#&gt; $majority\n#&gt; # A tibble: 4 × 2\n#&gt; # Rowwise:\n#&gt;   subgroupID subgroup\n#&gt;        &lt;int&gt; &lt;chr&gt;\n#&gt; 1          1 X3&lt;=0 & X1&lt;=0\n#&gt; 2          2 X3&lt;=0 & X1&gt;0\n#&gt; 3          3 X3&gt;0 & X1&lt;=0\n#&gt; 4          4 X3&gt;0 & X1&gt;0\nsubgroup 列是合法的 R 表达式，可以直接 eval(parse(text = ...), data) 取子集。 它正确恢复了模拟设定里 X1 × X3 的四个格子。\nres$selectedSG_stability_ori\n#&gt; |grp_pick |stability_vote_mean4CV |stability_CV |mse_g2_Model |mse_g3_Model |mse_g4_Model |mse_g5_Model |\n#&gt; |:--------|:----------------------|:------------|:------------|:------------|:------------|:------------|\n#&gt; |W:G4x    |0.6                    |1            |7.38584      |7.38503      |7.30547      |7.30547      |\n这是一段 knitr::kable() 文本，不是数据框。各列：\n\n\n\n列\n含义\n\n\n\n\ngrp_pick\n选中的深度，W:G4x 即 D4。只是报告，真正的选择在 PICK_CV() 里按 which.min(mse_g2…g5) 做\n\n\nstability_vote_mean4CV\n选中深度在各折折内投票稳定性的均值（10 棵最佳树里胜出结构占几成）\n\n\nstability_CV\n选中深度的跨折稳定性（几折给出同一亚组）。本包里恒为 1，原因见第 9 页\n\n\nmse_g2_Model … mse_g5_Model\n各深度转换结局模型的交叉验证 MSE\n\n\n\nD4 与 D5 的 MSE 相同（两者给出同一组亚组，见下），并列时取第一个。 四个 MSE 都在 7.3–7.4 之间、差别很小：转换结局 \\(Y^*\\) 的方差本来就大， 这些数字只适合相互比较，不能解读为”预测误差”。\nres$selectedSG_icvsw 与 res$selectedSG_stability_icvsw 是 “误差除以跨折稳定性”后的选择。跨折稳定性恒为 1，所以它与上面永远相同。\n\n\n各深度的候选亚组\nres$vote_D2_subgroup.CVmajority$majority   # X1&lt;=0 | X1&gt;0\nres$vote_D3_subgroup.CVmajority$majority   # X1&lt;=0 | X3&lt;=0 & X1&gt;0 | X3&gt;0 & X1&gt;0\nres$vote_D4_subgroup.CVmajority$majority   # 四格\nres$vote_D5_subgroup.CVmajority$majority   # 四格（与 D4 相同）\n\n\n\n深度\n候选亚组 \\(G_D\\)\n折内稳定性\n\n\n\n\nD2\nX1&lt;=0；X1&gt;0\n0.6\n\n\nD3\nX1&lt;=0；X3&lt;=0 & X1&gt;0；X3&gt;0 & X1&gt;0\n0.4\n\n\nD4\nX1 × X3 四格\n0.6\n\n\nD5\nX1 × X3 四格\n0.9\n\n\n\nres$stability_D2345_vote\n#&gt;   stability_D2_vote stability_D3_vote stability_D4_vote stability_D5_vote\n#&gt; 1               0.6               0.4               0.6               0.9\nres$stability_D2345_CV\n#&gt;   stability_D2_CV stability_D3_CV stability_D4_CV stability_D5_CV\n#&gt; 1               1               1               1               1\n折内稳定性 0.4 的意思是：D3 的 10 棵最佳树里，胜出的那种结构只出现了 4 次。 稳定性低说明这个深度下森林在”先切哪个变量”上摇摆，第 7 页有对应的图。\n\n\n亚组效应\nCATE_t2_ori 的结构容易误读：\nnrow(res$CATE_t2_ori)\n#&gt; [1] 5000\nhead(as.data.frame(res$CATE_t2_ori), 3)\n#&gt;   SubgroupID    Definition W         Y n         CATE_crude          CATE_iptw           CATE_smr Wt\n#&gt; 1          1 X3&lt;=0 & X1&lt;=0 0 -7.090993 1 -0.18(-0.32,-0.04) -0.31(-0.45,-0.17) -0.32(-0.46,-0.19) NA\n#&gt; 2          1 X3&lt;=0 & X1&lt;=0 0 -7.004682 1 -0.18(-0.32,-0.04) -0.31(-0.45,-0.17) -0.32(-0.46,-0.19) NA\n#&gt; 3          1 X3&lt;=0 & X1&lt;=0 0 -6.878400 1 -0.18(-0.32,-0.04) -0.31(-0.45,-0.17) -0.32(-0.46,-0.19) NA\nCATE_SG() 内部按 SubgroupID, Definition, W, Y 四列分组汇总， 连续结局下每个人自成一组，于是表有 5 000 行、n 列全是 1—— n 不是亚组样本量。二分类结局下则是每个亚组 4 行（W × Y 的四格计数）。 正确的取法是去重，样本量自己算：\ncate &lt;- res$CATE_t2_ori %&gt;% ungroup() %&gt;%\n  dplyr::distinct(SubgroupID, Definition, CATE_crude, CATE_iptw, CATE_smr)\ncate$n &lt;- sapply(cate$Definition, function(s) sum(eval(parse(text = s), Train)))\ncate\n\n\n\n\n\n\n\n\n\n\n\n亚组\nn\nCATE_crude\nCATE_iptw\nCATE_smr\n真实值\n\n\n\n\nX3&lt;=0 & X1&lt;=0\n1 221\n−0.18 (−0.32, −0.04)\n−0.31 (−0.45, −0.17)\n−0.32 (−0.46, −0.19)\n−0.4\n\n\nX3&lt;=0 & X1&gt;0\n1 281\n0.14 (0.02, 0.27)\n−0.08 (−0.21, 0.04)\n−0.09 (−0.22, 0.04)\n−0.1\n\n\nX3&gt;0 & X1&lt;=0\n1 267\n0.09 (−0.04, 0.21)\n−0.04 (−0.17, 0.09)\n−0.01 (−0.14, 0.12)\n0.0\n\n\nX3&gt;0 & X1&gt;0\n1 231\n0.95 (0.81, 1.08)\n0.78 (0.64, 0.91)\n0.79 (0.66, 0.92)\n0.7\n\n\n\nres$ATE_table %&gt;% ungroup() %&gt;% dplyr::distinct(Definition, CATE_crude, CATE_iptw, CATE_smr)\n#&gt;           Definition      CATE_crude       CATE_iptw       CATE_smr\n#&gt; 1 Overall Population 0.31(0.24,0.38) 0.08(0.01,0.14) 0.17(0.1,0.24)\n粗效应被混杂推高了 0.2 以上，IPTW 校正后与真实值（总体 0.049）接近。 效应是字符串，要画图得自己拆：\nparse_ci &lt;- function(s) {\n  v &lt;- as.numeric(regmatches(s, gregexpr(\"-?[0-9.]+\", s))[[1]])\n  data.frame(est = v[1], lo = v[2], hi = v[3])\n}\nest &lt;- cbind(cate[, c(\"SubgroupID\", \"Definition\")], do.call(rbind, lapply(cate$CATE_iptw, parse_ci)))\n\n\n\niCF 给出的四个亚组 IPTW 效应（蓝）与真实值（红叉）。注意这些区间是在发现亚组的同一份数据上算的。\n\n\n\n\n区间是模型标准误\nCATE_iptw 的区间来自 confint(glm(Y ~ W, weights = iptw_s))， 即把 IPTW 权重当作精度权重的剖面似然区间。它既没有用稳健（sandwich）方差， 也没有计入倾向评分本身的估计误差。在 X3&gt;0 & X1&gt;0 亚组里复算一次：\n\n\n\n\n\n\n\n\n\n做法\n点估计\n95% 区间\n宽度\n\n\n\n\niCF 的 confint()\n0.775\n(0.641, 0.910)\n0.270\n\n\n同一模型换 sandwich::vcovHC(type = \"HC0\")\n0.775\n(0.595, 0.956)\n0.361\n\n\n\n稳健区间宽了 34%。再加上”同一批人既用来发现亚组又用来估计效应”（第 9 页）， iCFCV() 输出的区间只适合做描述，不宜直接用于推断。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>235</span>  <span class='chapter-title'>5. iCFCV()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/05-icfcv.html#sec-cate-sg",
+    "href": "notes/icf/05-icfcv.html#sec-cate-sg",
+    "title": "5. iCFCV()：交叉验证与最终亚组",
+    "section": "CATE_SG()：给任意亚组估计效应",
+    "text": "CATE_SG()：给任意亚组估计效应\nCATE_SG(dat, SGdecision)\nSGdecision 是一个含 subgroup 列的数据框（与 $majority 同构）， 也可以传字符串 \"NA\" 表示总体。所以它也能用来估计事先指定的亚组：\nsg_user &lt;- data.frame(subgroupID = 1:2, subgroup = c(\"X3 &lt;= 0\", \"X3 &gt; 0\"))\nCATE_SG(Train, sg_user) %&gt;% ungroup() %&gt;%\n  dplyr::distinct(SubgroupID, Definition, CATE_crude, CATE_iptw, CATE_smr)\n#&gt;   SubgroupID Definition       CATE_crude         CATE_iptw           CATE_smr\n#&gt; 1          1    X3 &lt;= 0 0.06(-0.04,0.15) -0.19(-0.29,-0.1) -0.18(-0.27,-0.08)\n#&gt; 2          2     X3 &gt; 0  0.62(0.52,0.72)   0.35(0.25,0.45)    0.44(0.34,0.54)\n\nCATE_SG(Train, \"NA\") %&gt;% ungroup() %&gt;% dplyr::distinct(Definition, CATE_iptw)\n#&gt;   Definition       CATE_iptw\n#&gt; 1     W &lt;100 0.07(0.01,0.14)\n传 \"NA\" 时 Definition 是一个恒真的占位条件 W &lt;100； iCFCV() 在生成 ATE_table 时才把它改写成 Overall Population。 两次总体 IPTW 估计（0.07 与 0.08）不同，是因为 LASSO 倾向评分模型的 交叉验证分折有随机性，CATE_SG() 内部没有固定种子。\n每个亚组内部，CATE_SG() 用 cv.glmnet(family = \"binomial\") 在该亚组的全部协变量上 重估倾向评分（定义亚组的变量在组内是常数，LASSO 会自动丢掉）， 再分别做粗效应、稳定化 IPTW、SMR 加权的 glm(Y ~ W, family = gaussian)， 点估计和区间均四舍五入到两位小数。某亚组结局全为 0 或全为 1 时， glm 的剖面似然会报 profiling has found a better solution，该组效应不可靠。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>235</span>  <span class='chapter-title'>5. iCFCV()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/05-icfcv.html#返回值全表",
+    "href": "notes/icf/05-icfcv.html#返回值全表",
+    "title": "5. iCFCV()：交叉验证与最终亚组",
+    "section": "返回值全表",
+    "text": "返回值全表\n27 个元素（variable_type = \"hd\" 时返回的元素完全相同）：\n\n\n\n\n\n\n\n元素\n内容\n\n\n\n\nselectedSG_ori\n最终亚组，$majority 是 tibble\n\n\nselectedSG_stability_ori\n选中深度、稳定性和四个 CV MSE（kable 文本）\n\n\nCATE_t2_ori\n各亚组效应，结构见上\n\n\nselectedSG_icvsw、selectedSG_stability_icvsw、CATE_t2_icvsw\n按”MSE / 跨折稳定性”选的版本\n\n\nATE_table\n总体效应\n\n\nvote_D2_subgroup.CVmajority … D5\n每个深度跨折多数投票的亚组\n\n\nstability_D2345_vote\n每个深度折内稳定性的均值（1 行 4 列数据框）\n\n\nstability_D2345_CV\n每个深度的跨折稳定性\n\n\nstability_vote_across_CV\nK × 4 的逐折稳定性（元素是列表，画图用）\n\n\nvote_D2_SG.L … D5\n每折投票结果（kable 文本，K 张表首尾相接）\n\n\nPS_distribution、IPTW_distribution、Y_star_distribution、Y_star_No0_distribution\n每折训练集的诊断图（长度为 K 的 ggplot 列表）\n\n\nPS_distribution_test 等四个 _test\n每折验证集的同类图\n\n\ntime_iCFCV\n运行时间（difftime）",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>235</span>  <span class='chapter-title'>5. iCFCV()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/05-icfcv.html#sec-min-split-var",
+    "href": "notes/icf/05-icfcv.html#sec-min-split-var",
+    "title": "5. iCFCV()：交叉验证与最终亚组",
+    "section": "min.split.var 对种树没有影响",
+    "text": "min.split.var 对种树没有影响\nREADME 在第 1 步用 min.split.var = 1，在 iCFCV() 里用 4。 看起来后者会让每折的森林在更多变量上分裂。实际不会： iCFCV() 在每折调用 CF_RAW_key(Train_cf, min.split.var, ...) 重新筛选， 把结果作为参数传给 SUBGROUP_PIPELINE()， 但真正种树的 CF() 读的是全局 selected_cf.idx。本机用 trace() 记录：\n# 全局 selected_cf.idx 为 X1、X3；iCFCV(min.split.var = 4, K = 3)\n#&gt; 每折传给 SUBGROUP_PIPELINE() 的变量数：5 5 5\n#&gt; CF() 内 length(selected_cf.idx)：2（45 次调用全部如此）\nvariable_type 与 hdPctTop 同理。要改变森林用的变量， 改的是第 1 步的 CF_RAW_key() 参数和由此得到的全局 selected_cf.idx。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>235</span>  <span class='chapter-title'>5. iCFCV()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/05-icfcv.html#sec-pthreshold",
+    "href": "notes/icf/05-icfcv.html#sec-pthreshold",
+    "title": "5. iCFCV()：交叉验证与最终亚组",
+    "section": "P_threshold 与”无异质性”分支",
+    "text": "P_threshold 与”无异质性”分支\n源码的判断是 round(HTE_P_cf.raw, 1) &lt;= P_threshold：\n\nP 值先四舍五入到一位小数，P = 0.14 会被当作 0.1、P = 0.15 被当作 0.2；\n条件成立才做亚组识别。README 设 P_threshold = 1，于是永远成立；\n条件不成立时进入 else 分支，本应只返回总体效应， 但 return() 引用了只在 if 分支里定义的 vote_D2_subgroup.L.majority， 必定报错。无异质性数据上的实测见第 9 页。\n\n所以在当前代码下，P_threshold 实际上只有两种用法： 设成 1（总是做亚组识别），或者自己先看 HTE_P_cf.raw 再决定要不要调用 iCFCV()。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>235</span>  <span class='chapter-title'>5. iCFCV()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/05-icfcv.html#sec-side-effects",
+    "href": "notes/icf/05-icfcv.html#sec-side-effects",
+    "title": "5. iCFCV()：交叉验证与最终亚组",
+    "section": "副作用",
+    "text": "副作用\n一次 iCFCV() 在工作目录写出 4 个 png（每折覆盖一次）： PS_trainCV.png、iptw_trainCV.png、PS_testCV.png、iptw_testCV.png。\n并往全局环境写入 39 个对象（本机运行前后 ls() 之差）：\nformula_basic formula_g2 formula_g3 formula_g4 formula_g5\niCF_D2_BT iCF_D3_BT iCF_D4_BT iCF_D5_BT intTRUE truth.list\nstability_D2_CV  stability_D3_CV  stability_D4_CV  stability_D5_CV\nstability_D2_T_r stability_D3_T_r stability_D4_T_r stability_D5_T_r\nstability_D2_vote stability_D3_vote stability_D4_vote stability_D5_vote\ntree_depth_true tree_true tree_true_N1 tree_true_N1_r tree_true_N123 tree_true_N123_r\ntree_true_r tree_true_subgroup tree_true_subgroup_0 tree_true_subgroup_key\ntruth_description truth_INT\nvote_D2_subgroup.L vote_D3_subgroup.L vote_D4_subgroup.L vote_D5_subgroup.L\ntree_true*、truth* 来自 TRUTH(\"Unknown\")，是模拟研究用的”真树”占位， 真实数据上都是字符串 \"Unknown\"。其余对象会被 PICK_CV()、 CF_GROUP_DECISION() 等后续函数读取——不要在两次 iCFCV() 之间手动改动它们。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>235</span>  <span class='chapter-title'>5. iCFCV()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/05-icfcv.html#耗时",
+    "href": "notes/icf/05-icfcv.html#耗时",
+    "title": "5. iCFCV()：交叉验证与最终亚组",
+    "section": "耗时",
+    "text": "耗时\n本机（24 线程）5 000 例、10 个协变量、K = 5、treeNo = 200、iterationNo = 10： 98 秒。CF() 被调用 250 次 = 5 折 × 5 次 iCF() × 10 个森林—— 每折 D2 被种了两遍：源码先在 tryCatch() 里试跑一次 D2 检查是否报错， 成功后把结果丢掉再正式跑一次（第 6 页）。 论文实证用 treeNo = 2000、iterationNo = 1000，报告约 3 小时。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>235</span>  <span class='chapter-title'>5. iCFCV()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/06-internals.html",
+    "href": "notes/icf/06-internals.html",
+    "title": "6. 内部引擎：最佳树、投票与亚组模型",
+    "section": "",
+    "text": "种树：CF()\niCFCV() 之下有四十多个函数。日常使用不必直接调用它们， 但读懂其中十来个，才能解释 iCFCV() 的输出、定位报错， 或者把某一步单独拿出来用。本页按数据流的顺序介绍， 示例延续第 3–5 页的全局对象（selected_cf.idx 为 X1、X3）。\n对 grf::causal_forest() 的一层包装，所有数据都取自全局：\n几处值得注意：",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>236</span>  <span class='chapter-title'>6. 内部引擎</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/06-internals.html#sec-cf",
+    "href": "notes/icf/06-internals.html#sec-cf",
+    "title": "6. 内部引擎：最佳树、投票与亚组模型",
+    "section": "",
+    "text": "CF(depth, treeNo, tunepara)\n\ngrf::causal_forest(X[, selected_cf.idx], Y, W, Y.hat, W.hat,\n                   num.trees = treeNo,\n                   min.node.size = round(nrow(Train) / depth, 0),\n                   mtry = min(ceiling(sqrt(ncol(X)) + 20), ncol(X)),\n                   sample.fraction = 0.5, honesty = TRUE, honesty.fraction = 0.5,\n                   honesty.prune.leaves = TRUE, alpha = 0.05, imbalance.penalty = 0,\n                   stabilize.splits = TRUE, ci.group.size = 2,\n                   tune.parameters = tunepara,\n                   seed = runif(1, 0, .Machine$integer.max), ...)   # 摘录\n\n\n参数名叫 depth，传进来的其实是 denominator；\nmtry 按全体 X 的列数 \\(p\\) 算，等于 \\(\\min(\\lceil\\sqrt p + 20\\rceil, p)\\)。 入选变量不超过这个数时（常见情形，如本例 \\(p = 10\\) 时 mtry = 10、入选 2 个）， 每次分裂都考察全部入选变量，不做特征抽样；\nX[, selected_cf.idx] 没有写 drop = FALSE。只选中 1 个变量时， 取出来的是向量而不是数据框，grf 报 Currently the only supported data input types are: 'matrix', 'data.frame'。 这不是边角情况：数据里只有一个强修饰变量时，“大于均值”规则常常只选出它。 本机在”只有连续 X2 修饰效应”的模拟上，CF_RAW_key(min.split.var = 1) 恰好只选出 X2， 随后 iCF() 就以这条报错退出。min.split.var 至少设 2。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>236</span>  <span class='chapter-title'>6. 内部引擎</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/06-internals.html#sec-besttree",
+    "href": "notes/icf/06-internals.html#sec-besttree",
+    "title": "6. 内部引擎：最佳树、投票与亚组模型",
+    "section": "从森林取最佳树：find_best_tree()",
+    "text": "从森林取最佳树：find_best_tree()\nfind_best_tree(forest, type = c(\"regression\", \"causal\"), cost = 0)\n对森林里的每一棵树调用 get_r_loss()，取总 R-loss 最小者。 R-loss 的定义见第 1 页。返回：\n\n\n\n\n\n\n\n元素\n内容\n\n\n\n\nbest_tree\n最佳树在森林中的编号，配合 grf::get_tree(forest, best_tree) 使用\n\n\nbest_r_loss\n其 R-loss\n\n\nbest_prune_info\n每个节点是否被当作叶子（剪枝结果）及样本下标\n\n\n\nset.seed(3)\ncf_demo &lt;- grf::causal_forest(X[, selected_cf.idx, drop = FALSE], Y, W, Y.hat = Y.hat, W.hat = W.hat,\n                              num.trees = 200, min.node.size = round(nrow(Train) / 45))\nbt &lt;- quiet(find_best_tree(cf_demo, \"causal\"))\nbt$best_tree;  bt$best_r_loss\n#&gt; [1] 180\n#&gt; [1] 1197.6\n200 棵树耗时 0.1 秒。两个细节：\n\n函数每检查 floor(num.trees / 20) 棵树打印一次进度。树少于 20 棵时这个数是 0， t %% 0 得到 NaN，于是报 missing value where TRUE/FALSE needed（本机用 10 棵树的森林复现）。 所以 treeNo 必须 ≥ 20。\n进度用 cat() 打印，这就是需要 quiet() 的原因。\n\n\n剪枝信息没有被用来定义亚组\nbest_prune_info 标出了”按 R-loss 应合并”的节点，但 iCF() 随后把 grf::get_tree() 返回的原始树交给 GET_TREE_DF()，剪枝信息被丢弃。 这会不会改变亚组？在 5 个变量（X1–X4、X10）上用不同最小叶大小各种 8 个森林， 比较最佳树的 grf 叶数与”按 R-loss 剪枝后”的叶数：\n\n\n\n\n\n\n\n\n\ndenominator\n最小叶大小\ngrf 叶数（均值）\nR-loss 剪枝后叶数（均值）\n\n\n\n\n25\n200\n2.0\n2.0\n\n\n45\n111\n4.0\n2.9\n\n\n85\n59\n6.6\n3.1\n\n\n150\n33\n10.6\n3.1\n\n\n300\n17\n19.3\n3.0\n\n\n\n40 棵最佳树里有 31 棵，剪枝本应合并掉一部分叶子。 也就是说，iCF 输出的亚组数由最小叶大小决定，不是由 R-loss 剪枝决定； R-loss 只用来在森林里挑出哪一棵树。\n\n\n相关的底层函数\n\n\n\n\n\n\n\n\n函数\n作用\n是否被主流程使用\n\n\n\n\nr_loss(Y, samples, W.orig, W.hat, M.hat, Tau.hat)\n单个节点的 R-loss\n是\n\n\nget_r_loss(Y, tree, index, cost, prune_info, ...)\n递归计算子树 R-loss 并标记剪枝\n是\n\n\nfind_leaf(x, tree, prune_info)\n按剪枝后的树找样本所在叶子\n否\n\n\nestimate_params(X, Y, tree, prune_info)\n用 OOB 样本估计剪枝后各叶的均值与标准差\n否\n\n\n\n这四个函数与 find_best_tree() 一起，来自 GitHub gist msegar，同样没有声明许可证。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>236</span>  <span class='chapter-title'>6. 内部引擎</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/06-internals.html#树转成表get_tree_dfget_tree_l",
+    "href": "notes/icf/06-internals.html#树转成表get_tree_dfget_tree_l",
+    "title": "6. 内部引擎：最佳树、投票与亚组模型",
+    "section": "树转成表：GET_TREE_DF()、GET_TREE_L()",
+    "text": "树转成表：GET_TREE_DF()、GET_TREE_L()\nGET_TREE_DF(No_nodes, treetype, split_val_round_posi)\n把 grf::get_tree() 的嵌套列表展开成每个节点一行的数据框， 切点在这里就按 split_val_round_posi 取整：\ntr &lt;- grf::get_tree(cf_demo, bt$best_tree)\nGET_TREE_DF(length(tr$nodes), tr, 0)\n#&gt;      node is_leaf left_child right_child split_variable split_value samples avg_Y avg_W\n#&gt; 1 node-01   FALSE         02          03             X3           0      NA    NA    NA\n#&gt; 2 node-02    TRUE         NA          NA             NA          NA     629 -3.66  0.46\n#&gt; 3 node-03   FALSE         04          05             X1           0      NA    NA    NA\n#&gt; 4 node-04    TRUE         NA          NA             NA          NA     325 -4.31   0.5\n#&gt; 5 node-05    TRUE         NA          NA             NA          NA     296 -3.23  0.68\n节点编号补零成两位（node-01），叶子的 samples 是 grf 诚实估计半样本里的人数， avg_Y、avg_W 是叶内 grf 统计量。除 node 外几乎所有列都是字符型。\nGET_TREE_L(iCF_D, listindex) 从 iCF() 的结果里按位置取出一类对象： 1 = 每次迭代的最佳树数据框，2 = grf 原始树对象，3 = 分裂频数表。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>236</span>  <span class='chapter-title'>6. 内部引擎</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/06-internals.html#同一深度反复种森林icf-与-onecf",
+    "href": "notes/icf/06-internals.html#同一深度反复种森林icf-与-onecf",
+    "title": "6. 内部引擎：最佳树、投票与亚组模型",
+    "section": "同一深度反复种森林：iCF() 与 oneCF()",
+    "text": "同一深度反复种森林：iCF() 与 oneCF()\niCF(depth, treeNo, tunepara = \"none\", iterationNo, tree_depth, split_val_round_posi)\noneCF(depth, treeNo, tunepara = \"none\", tree_depth, split_val_round_posi)\niCF() 循环 iterationNo 次：CF() 种森林 → test_calibration() 记 P 值 → split_frequencies() 记分裂频数 → find_best_tree() 取最佳树 → plot() 一次（结果丢弃）→ GET_TREE_DF()。返回长度为 iterationNo 的列表， 每个元素含 besttreelist、besttreelist_L、splitfreqlist。 oneCF() 是 iterationNo = 1 的版本，另外返回森林本身和它的全部树。\nset.seed(5)\nit3 &lt;- quiet(iCF(45, 200, tunepara = \"none\", iterationNo = 10, tree_depth = \"D3\", split_val_round_posi = 0))\nBT &lt;- GET_TREE_L(it3, 1)      # 10 棵最佳树\nSF &lt;- GET_TREE_L(it3, 3)      # 10 张分裂频数表\nSF[[1]]\n#&gt;    X1  X3 k\n#&gt; 1  87 113 1\n#&gt; 2 107  87 1\n#&gt; 3   0   0 1\n分裂频数表的第 \\(d\\) 行是整片森林在第 \\(d\\) 层用各变量分裂的次数， 与最佳树无关；投票时只作附带信息。10 次耗时 1.5 秒。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>236</span>  <span class='chapter-title'>6. 内部引擎</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/06-internals.html#多数投票majority_vote",
+    "href": "notes/icf/06-internals.html#多数投票majority_vote",
+    "title": "6. 内部引擎：最佳树、投票与亚组模型",
+    "section": "多数投票：MAJORITY_VOTE()",
+    "text": "多数投票：MAJORITY_VOTE()\nMAJORITY_VOTE(list0, list1, list2, list3, truth, truth_N1, truth_N123, split_val_round_posi)\n\n\n\n\n\n\n\n参数\n传什么\n\n\n\n\nlist0\n原始最佳树列表（GET_TREE_L(x, 1)）\n\n\nlist1、list2\n用于比较的”结构”。SUBGROUP_PIPELINE() 传 PRE_MAJORITY_TREE_R(list0)：只保留 node、is_leaf、left_child、right_child、split_variable 五列\n\n\nlist3\n分裂频数表列表\n\n\ntruth、truth_N1、truth_N123\n模拟研究的真树；真实数据传 TRUTH(\"Unknown\") 设出的全局 tree_true_r、tree_true_N1_r、tree_true_N123_r\n\n\nsplit_val_round_posi\n合成树切点的取整位数\n\n\n\nTRUTH(\"Unknown\")\nvt &lt;- quiet(MAJORITY_VOTE(BT, PRE_MAJORITY_TREE_R(BT), PRE_MAJORITY_TREE_R(BT), SF,\n                          tree_true_r, tree_true_N1_r, tree_true_N123_r, 0))\nvt$n_occurence;  vt$stability\n#&gt; [1] 3 2 2 2 1\n#&gt; [1] 0.3\nvt$majority.syn\n#&gt;      node is_leaf left_child right_child split_variable split_value samples avg_Y avg_W k     HTE_P_cf\n#&gt; 1 node-01   FALSE         02          03             X3           0      NA    NA    NA 1 3.645632e-34\n#&gt; 2 node-02    TRUE         NA          NA             NA          NA     618 -3.56  0.45 1 3.645632e-34\n#&gt; 3 node-03   FALSE         04          05             X1           0      NA    NA    NA 1 3.645632e-34\n#&gt; 4 node-04    TRUE         NA          NA             NA          NA     330 -4.22  0.53 1 3.645632e-34\n#&gt; 5 node-05    TRUE         NA          NA             NA          NA     302 -3.23  0.65 1 3.645632e-34\n“结构”比较的是节点位置，不只是变量顺序。本例 10 棵最佳树按”依次用了哪些变量”数， X3 → X1 出现 5 次；但其中只有 3 次是”先按 X3 切、再在 X3 &gt; 0 一侧按 X1 切”， 另 2 次是在 X3 ≤ 0 一侧切 X1，属于不同结构。于是胜出结构只占 3/10，稳定性 0.3。\n返回列表里常用的元素：\n\n\n\n\n\n\n\n元素\n内容\n\n\n\n\nmajority\n胜出结构（五列）\n\n\nmajority.syn\n合成树：胜出结构 + 各节点切点均值 + 叶子样本量等的均值\n\n\nstability\n胜出结构出现次数 / 总次数\n\n\nn_occurence\n每种不同结构的出现次数\n\n\nsplit_value_mean、split_value_sd、split_value_quantile\n胜出结构各分裂节点切点的均值、标准差、分位数\n\n\nsplit_value_plot\n切点分布的山脊图（ggridges）\n\n\naccuracy*、majority_EQ_true*\n与真树比较，模拟研究用；真实数据上无意义\n\n\n\n合成切点的取整规则：先在 GET_TREE_DF() 里逐棵树取整，再对均值取整； 如果分裂变量在全局 X 里的取值少于 8 个，一律取整到整数，不管 split_val_round_posi。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>236</span>  <span class='chapter-title'>6. 内部引擎</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/06-internals.html#树转亚组tree2subgroup",
+    "href": "notes/icf/06-internals.html#树转亚组tree2subgroup",
+    "title": "6. 内部引擎：最佳树、投票与亚组模型",
+    "section": "树转亚组：TREE2SUBGROUP()",
+    "text": "树转亚组：TREE2SUBGROUP()\nTREE2SUBGROUP(tree)\n从每个叶子向上追溯父节点（PRE_MAJORITY_SUBGROUP() 调用 20 层 PARENT_NODES()）， 把路径上的条件用 & 连起来，按变量名降序排列条件，再按字符串排序编号：\nTREE2SUBGROUP(vt$majority.syn)$majority\n#&gt; # A tibble: 3 × 2\n#&gt;   subgroupID subgroup\n#&gt;        &lt;int&gt; &lt;chr&gt;\n#&gt; 1          1 X3&lt;=0\n#&gt; 2          2 X3&gt;0 & X1&lt;=0\n#&gt; 3          3 X3&gt;0 & X1&gt;0\n条件排序的结果是字母倒序（X3 在 X1 前），与树里的分裂先后无关。 同一变量出现两次时也不合并，例如第 9 页里的 X2&gt;0 & X2&gt;-1。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>236</span>  <span class='chapter-title'>6. 内部引擎</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/06-internals.html#sec-pipeline",
+    "href": "notes/icf/06-internals.html#sec-pipeline",
+    "title": "6. 内部引擎：最佳树、投票与亚组模型",
+    "section": "单折流水线：SUBGROUP_PIPELINE()",
+    "text": "单折流水线：SUBGROUP_PIPELINE()\nSUBGROUP_PIPELINE(X, Y, W, Y.hat, W.hat, W.hat_test, selected_cf.idx, leafsize, treeNo,\n                  iterationNo, Ntrain, Train_ID, Test_ID, variable_type, HTE_P_cf.raw,\n                  P_threshold, split_val_round_posi)\niCFCV() 每折调用一次。流程：\n\n依次 iCF() D5、D4、D3；D2 先放进 tryCatch() 试跑一次， 成功就把结果丢掉再正式跑一次（失败则令 D2 = D3 并给警告 The minimum leaf size is too small for Depth 2 causal forest）。 trace() 实测每折 D2 被调用 2 次，两次结果不同，用的是第二次；\n最佳树写入全局 iCF_D5_BT … iCF_D2_BT；\n每个深度 PRE_MAJORITY_TREE_R() + MAJORITY_VOTE() + TREE2SUBGROUP()，得到 \\(G_5, \\dots, G_2\\)；\nDATA4grpmodel() 给训练折、验证折的每个人贴上 G2–G5 标签， 并把 formula_basic、formula_g2 … formula_g5 写入全局；\nCF_GROUP_DECISION() 在训练折上拟合五个转换结局模型。\n\n参数表里的 X、Y、W、Y.hat、W.hat、selected_cf.idx 是本折的， 但第 1 步种树的 CF() 看不到它们——见第 9 页。\n\n转换结局模型：DATA4grpmodel()、SGMODEL_DATA()、CF_GROUP_DECISION()\n\n\n\n\n\n\n\n函数\n作用\n\n\n\n\nDATA4grpmodel(V_D5, V_D4, V_D3, V_D2, dat)\n用 GET_SUBGROUP_ID() 给 dat 每行贴 G2–G5；生成公式 Y ~ W + G_D + W:G_D + X1 + ... + Xp（协变量列名取自全局 X）\n\n\nSGMODEL_DATA(dat, outcome_type_at, W.hat)\n计算 \\(Y^* = WY/\\hat e - (1-W)Y/(1-\\hat e)\\)，\"transform\" 时用 \\(Y^*\\) 替换 Y；G2–G5 与 vars_catover2 转因子，配 contr.sum\n\n\nCF_GROUP_DECISION(HTE_P_cf.raw, dat, method_CF, outcome_type_at, P_threshold, W.hat)\n结局取值 ≥ 8 个用 lm()，恰好 2 个用 glm(binomial)，3–7 个时模型对象未定义而报错；P 值不过门槛时返回五个 \"NA\"\n\n\n\n在 iCFCV() 里 outcome_type_at 恒为 \"transform\"，\\(Y^*\\) 总是连续的，走 lm()。\n\n\n跨折汇总与选择\n\n\n\n\n\n\n\n函数\n作用\n\n\n\n\nCV_SG_MAJORITY(vote_D_subgroup.L, stability_D_T_r, K)\n某深度跨折多数投票；K 折两两不同时取折内稳定性最高的一折\n\n\nCVBIAS_D_MAJORITY(vote_D_subgroup.L, stability_D_T_r, K, metric)\n只在”与多数结果相同的折”上平均 \\(\\text{RMSE}^2\\)\n\n\nCVBIAS_MAIN(metric)\n主效应模型（不分亚组）的 CV MSE\n\n\nPICK_m2345(HTE_P_value, m, g2, g3, g4, g5, P_threshold)\n生成报告列 grp_pick；只有 P 值不过门槛时才把主效应模型 m 放进比较\n\n\nPICK_CV(...)\n真正的选择：which.min(c(g2, g3, g4, g5))，再用 eval(parse()) 从全局取 vote_D&lt;k&gt;_subgroup.L 等对象\n\n\n\nPICK_CV() 从全局取的是 HTE_P_cf.raw，而不是它自己的形参 HTE_P_value。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>236</span>  <span class='chapter-title'>6. 内部引擎</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/06-internals.html#效应估计cate_sg-及其下层",
+    "href": "notes/icf/06-internals.html#效应估计cate_sg-及其下层",
+    "title": "6. 内部引擎：最佳树、投票与亚组模型",
+    "section": "效应估计：CATE_SG() 及其下层",
+    "text": "效应估计：CATE_SG() 及其下层\n\n\n\n函数\n作用\n\n\n\n\nCATE_SG(dat, SGdecision)\n对外接口，见第 5 页\n\n\nDltY_DATA(decision, dataset, label)\n对每个亚组调用 ANA_SUBGROUP() 并拼回原数据\n\n\nSUBSETTING(decision, dataset)\n用 rlang::parse_expr() 把条件字符串变成 filter()；decision 不是数据框时用恒真条件 W &lt;100\n\n\nGET_SUBGROUP_ID(decision, dataset)\n给每行贴上 SubgroupID 与 Definition，按 ID 排序\n\n\nANA_SUBGROUP(subgroup)\n组内 prop.func() 估倾向评分，算三种权重，三个 glm(Y ~ W)，再做 t 检验或卡方检验（按全局 Y 的取值个数判断结局类型）\n\n\nprop.func(x, trt)\ncv.glmnet(family = \"binomial\")，取 lambda.min 的预测概率\n\n\nEXTRACT_SUB_ANA(...)\n整理多个亚组的分析结果，模拟研究用",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>236</span>  <span class='chapter-title'>6. 内部引擎</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/06-internals.html#sec-legacy",
+    "href": "notes/icf/06-internals.html#sec-legacy",
+    "title": "6. 内部引擎：最佳树、投票与亚组模型",
+    "section": "模拟研究与遗留函数",
+    "text": "模拟研究与遗留函数\n以下函数服务于论文的模拟研究或早期版本，真实数据分析用不到：\n\n\n\n类别\n函数\n\n\n\n\n生成数据与真值\nGEN_SIM_DATA_HTE()（32 个参数，复现论文 12 个场景）、inv.logit()、TRUTH()\n\n\n评价\nTREE_PERFORMANCE()、DISCOVERYRATE()、MSE_DltY()、CATE_MAX_SG()、N_SUBGROUP()、DETECT_STRING()\n\n\n其它方法的格式转换\nCONVERT_tree_IT2CF()、CONVERT_tree_stima2CF()、OTHERTREE_DECI()、SPLITVAR_SIGN_SPLITVAL_LofDf_VT()、SPLITVAR_SIGN_SPLITVAL_LofDf_CT()、VT2CF_format()、SG_CONDITION_2_INT()、SG2INT()\n\n\n投票辅助\nMAJORITY_COUNT()、STANDARD_CHECK()、MAJORITY_PICK_LEAF()、SG_PROBABILITY()、GET_ORI_TREE_L()、HTE_P_extract()\n\n\n坏掉的旧调参\nLEAFSIZE_tune()、GRID_LEAFSIZE()（见第 4 页）\n\n\n\n\n\n\n\n\n\n注记帮助页也是旧的\n\n\n\n仓库 man/ 下有 65 个 Rd 文件，与现行代码对不上：其中 17 个描述的函数已经不存在 （如 DATA4grplasso、cv.grplasso、DELTA_Y_DATA、FINALDECI），而 75 个现行函数里有 27 个没有帮助页， 包括 iCF()、oneCF()、find_level_over2()、FIX_LOW_FREQ()、PS_trim() 和全部 GG_*()。 以源码和本手册为准。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>236</span>  <span class='chapter-title'>6. 内部引擎</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/08-hdicf.html",
+    "href": "notes/icf/08-hdicf.html",
+    "title": "8. hdiCF：高维理赔数据",
+    "section": "",
+    "text": "hdiCF 不是一个 R 包\niCF 要求事先定义好协变量。hdiCF（high-dimensional iCF）把 高维倾向评分（hdPS）的特征识别思路搬过来：从诊断、操作、处方代码里 自动生成候选变量，再交给 iCF 找亚组。据 PubMed 收录的方法论文 （Wang 等，Am J Epidemiol 2025;194(7):2085–2097， doi:10.1093/aje/kwae322，2024-09-05 在线发表）， 算法分三步：\n同组的后续论文比较了这种”每个代码一个四级有序变量”与标准 hdPS “每个代码三个二分类变量”的做法（Am J Epidemiol 2025;194(10):2915–2927， doi:10.1093/aje/kwaf127）。\n作者另有仓库 tianshengwang/hdiCF（同样没有许可证文件）， 其中第 1 步是 SAS 程序，R 部分是 iCF 源码的一份拷贝加 README 里的几段脚本。 R 端真正用到的 hdiCF 专属函数都已在 iCF 包里：\nhdiCF README 里另有两个内联定义的整理函数 PREPARE_HD()、XYW()， 只是把数据拆成 X、Y、W 并赋给全局，本页直接写出等价的几行。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>238</span>  <span class='chapter-title'>8. hdiCF 高维理赔数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/08-hdicf.html#hdicf-不是一个-r-包",
+    "href": "notes/icf/08-hdicf.html#hdicf-不是一个-r-包",
+    "title": "8. hdiCF：高维理赔数据",
+    "section": "",
+    "text": "函数\n作用\n\n\n\n\nPS_trim(dat, W_hat, trimmethod, trimPct)\n按倾向评分修剪样本\n\n\nFIX_LOW_FREQ(dat, Lcutoff)\n合并高维变量里样本太少的级别\n\n\nGG_Xs(pcttop)\n只画入选的高维变量\n\n\nCF_RAW_key(..., variable_type = \"hd\", hdPctTop)\n按重要性分位数取前一部分变量",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>238</span>  <span class='chapter-title'>8. hdiCF 高维理赔数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/08-hdicf.html#模拟一份理赔式数据",
+    "href": "notes/icf/08-hdicf.html#模拟一份理赔式数据",
+    "title": "8. hdiCF：高维理赔数据",
+    "section": "模拟一份理赔式数据",
+    "text": "模拟一份理赔式数据\nSAS 那一步无法在这里演示，下面直接构造第 1 步的产物： 5 个维度各 12 个代码、每个代码编为 0–3 级，加上年龄段、性别、种族，共 63 个协变量，n = 4 000。 真实效应修饰：门诊心衰诊断 dx3_outpt_I50 出现过的人，治疗使结局风险下降 15 个百分点； 用过袢利尿剂 atc3_outpt_C03 的人再降 10 个百分点。其余代码只作混杂或噪声。\nset.seed(7)\nn &lt;- 4000\ncodes &lt;- list(dx3_inpt   = c(\"I50\", \"I25\", \"I48\", \"N18\", \"J44\", \"E11\", \"I10\", \"I63\", \"K92\", \"R07\", \"Z95\", \"I21\"),\n              dx3_outpt  = c(\"I50\", \"I25\", \"I48\", \"N18\", \"J44\", \"E11\", \"I10\", \"E78\", \"M17\", \"G47\", \"F32\", \"H35\"),\n              cpt5_inpt  = c(\"93306\", \"71046\", \"36556\", \"92928\", \"33249\", \"43239\", \"47562\", \"27447\", \"99291\", \"93458\", \"31500\", \"36620\"),\n              cpt5_outpt = c(\"85610\", \"93000\", \"80053\", \"83036\", \"80061\", \"93306\", \"71046\", \"99213\", \"99214\", \"36415\", \"82947\", \"84443\"),\n              atc3_outpt = c(\"C03\", \"C07\", \"C09\", \"C10\", \"B01\", \"A10\", \"N02\", \"R03\", \"N06\", \"M01\", \"C08\", \"H03\"))\nhd &lt;- list()\nfor (d in names(codes)) for (cd in codes[[d]]) {\n  p  &lt;- if (cd %in% c(\"I50\", \"C03\") && d %in% c(\"dx3_outpt\", \"atc3_outpt\")) 0.35 else runif(1, 0.05, 0.40)\n  pr &lt;- if (runif(1) &lt; 0.2) c(0.6, 0.39, 0.01) else c(0.4, 0.4, 0.2)   # 部分代码\"频繁\"级很稀少\n  hd[[paste0(d, \"_\", cd)]] &lt;- ifelse(runif(n) &lt; p, sample(1:3, n, TRUE, prob = pr), 0)\n}\nhd &lt;- as.data.frame(hd)\nage &lt;- sample(1:5, n, TRUE); sex &lt;- rbinom(n, 1, 0.5); race &lt;- sample(1:3, n, TRUE, prob = c(.8, .12, .08))\nhf  &lt;- hd$dx3_outpt_I50 &gt;= 1; diur &lt;- hd$atc3_outpt_C03 &gt; 0\n\nW  &lt;- rbinom(n, 1, plogis(-0.2 + 0.6 * hf + 0.5 * diur - 0.3 * sex + 0.2 * (hd$dx3_outpt_E11 &gt; 0)))\npY &lt;- plogis(-1.2 + 0.8 * hf + 0.5 * diur + 0.15 * age + 0.3 * (hd$dx3_inpt_N18 &gt; 0))\npY &lt;- pmin(pmax(pY - W * (0.15 * hf + 0.10 * diur), 0.001), 0.999)\nY  &lt;- rbinom(n, 1, pY)\n\nTrain_ID &lt;- data.frame(BENE_ID = seq_len(n),\n                       IndexDate = as.Date(\"2017-01-01\") + sample(0:700, n, TRUE),\n                       Y, W, age, sex, race, hd)\ndim(Train_ID)\n#&gt; [1] 4000   67\n结局均值 0.39，治疗组比例 0.52。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>238</span>  <span class='chapter-title'>8. hdiCF 高维理赔数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/08-hdicf.html#sec-ps-trim",
+    "href": "notes/icf/08-hdicf.html#sec-ps-trim",
+    "title": "8. hdiCF：高维理赔数据",
+    "section": "第 2 步：倾向评分与修剪",
+    "text": "第 2 步：倾向评分与修剪\n先用全部 63 个变量跑一次原始森林，只为拿到 \\(\\hat W\\)：\ndxgroup &lt;- 3; atcgroup &lt;- 3          # FIX_LOW_FREQ() 靠这两个全局变量识别高维列\nTrain &lt;- Train_ID %&gt;% dplyr::select(-BENE_ID, -IndexDate)\nvars_forest &lt;- setdiff(colnames(Train), c(\"Y\", \"W\"))\nX &lt;- Train[, vars_forest]; Y &lt;- Train$Y; W &lt;- Train$W\ncf_hd &lt;- quiet(CF_RAW_key(Train, 1, \"hd\", hdPctTop = 0.90))\nW.hat &lt;- cf_hd$W.hat\nPS_trim(dat, W_hat, trimmethod, trimPct)\n\n\n\n\n\n\n\n参数\n含义\n\n\n\n\ndat\n第 1 列是 ID、第 2 列是名为 IndexDate 的日期列，且含 W。函数按列名取 IndexDate，返回前却按位置删掉第 1、2 列，所以两者都得在原位\n\n\nW_hat\n与 dat 按行对应的倾向评分\n\n\ntrimmethod\n\"commonrange\"：保留 \\(\\hat e \\in [\\min(\\hat e\\mid W{=}1),\\ \\max(\\hat e\\mid W{=}0)]\\)；\"asymmetrical\"：保留 \\([\\,P_{k}(\\hat e\\mid W{=}1),\\ P_{100-k}(\\hat e\\mid W{=}0)\\,]\\)\n\n\ntrimPct\n仅 \"asymmetrical\" 用，\\(k\\) 只能取 0、0.1、1、5、10、15、20 之一（源码里预算好的分位数）\n\n\n\n返回 list(修剪后的数据, 保留下来的 ID 与日期)，前者已去掉第 1、2 列。\n\n\n\n\n\n\n重要调用前必须 detach(\"package:plyr\")\n\n\n\n按 README 的加载顺序，plyr 挂在 dplyr 之后，PS_trim() 里的 group_by(W) %&gt;% summarise(...) 会被 plyr::summarise() 接管、丢掉分组； 随后 filter(W == 1) 在汇总表里找不到列 W，转而读到全局变量 W（长度 4 000）， 报错：\nℹ In argument: `W == 1`.\nCaused by error:\n! `..1` must be of size 1, not size 4000.\n作者的 hdiCF README 也是先 detach(\"package:plyr\") 再调用。\n\n\ndetach(\"package:plyr\")\ntrim  &lt;- PS_trim(Train_ID, W.hat, \"commonrange\", NA)\nTrain &lt;- trim[[1]]\nnrow(Train)\n#&gt; [1] 3996\nnrow(PS_trim(Train_ID, W.hat, \"asymmetrical\", 1)[[1]])\n#&gt; [1] 3873\n共同取值范围修剪去掉 4 人，1% 非对称修剪去掉 127 人。本例倾向评分只在 0.39–0.68 之间， 两组重叠很好：\n\n\n\n修剪前（左，n = 4 000）与修剪后（右，n = 3 996）的倾向评分。两张图就是 GG_PS() 写到工作目录的 png 原件。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>238</span>  <span class='chapter-title'>8. hdiCF 高维理赔数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/08-hdicf.html#合并稀疏级别fix_low_freq",
+    "href": "notes/icf/08-hdicf.html#合并稀疏级别fix_low_freq",
+    "title": "8. hdiCF：高维理赔数据",
+    "section": "合并稀疏级别：FIX_LOW_FREQ()",
+    "text": "合并稀疏级别：FIX_LOW_FREQ()\nFIX_LOW_FREQ(dat, Lcutoff)\n只处理列名以 dx&lt;dxgroup&gt;、cpt5、atc&lt;atcgroup&gt; 开头的变量（dxgroup、atcgroup 是全局对象）。某一级观测数少于 Lcutoff 时向下合并： 第 3 级不足 → 3 并入 2；第 2 级不足 → 2、3 都并入 1；第 1 级不足 → 1 并入 0。 目的是避免交叉验证时某一折缺少某个级别。\nX &lt;- Train[, vars_forest]\nX_fixed &lt;- FIX_LOW_FREQ(X, Lcutoff = 20)\n60 个高维列里有 13 个被改动，全部是第 3 级不足 20 人、并入第 2 级，例如：\n\n\n\n变量\n合并前\n合并后\n\n\n\n\ndx3_inpt_E11\n0:3763 1:132 2:98 3:3\n0:3763 1:132 2:101\n\n\ndx3_inpt_K92\n0:3036 1:600 2:350 3:10\n0:3036 1:600 2:360\n\n\ncpt5_inpt_31500\n0:3752 1:139 2:101 3:4\n0:3752 1:139 2:105\n\n\natc3_outpt_A10\n0:2432 1:928 2:625 3:11\n0:2432 1:928 2:636\n\n\n\n两个源码细节：各级频数在函数开头一次算好，合并后不再更新； 所有级别都稀疏时变量会变成常数列，函数不会删除它。\n\n合并之后要重建 Train\nX     &lt;- X_fixed\nTrain &lt;- data.frame(Y = Train$Y, W = Train$W, X)\n\n\n\n\n\n\n警告hdiCF README 在这一步有 bug\n\n\n\nREADME 写的是 Train &lt;&lt;- Train[, c(\"Y\", \"W\", colnames(X))]。 这只是按列名从旧 Train 里取列，合并结果只进了全局 X，没进 Train （本机核对：两者 identical() 为 FALSE）。之后森林读全局 X（已合并）， 而 iCFCV(dat = Train) 的转换结局模型用 Train（未合并）， 验证折里一旦出现训练折没有的稀疏级别，predict() 就报 factor ... has new levels 3。是否触发取决于稀疏级别落在哪一折： 本机 2026-09-26 的一次运行触发过；本次用 treeNo = 50、iterationNo = 2 重跑没有触发。无论触发与否，这样得到的 Train 都不是想要的数据。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>238</span>  <span class='chapter-title'>8. hdiCF 高维理赔数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/08-hdicf.html#第-3-步按重要性取前-10运行-icf",
+    "href": "notes/icf/08-hdicf.html#第-3-步按重要性取前-10运行-icf",
+    "title": "8. hdiCF：高维理赔数据",
+    "section": "第 3 步：按重要性取前 10%，运行 iCF",
+    "text": "第 3 步：按重要性取前 10%，运行 iCF\n在修剪、合并后的数据上重跑原始森林，这次要用它的 \\(\\hat Y\\)、\\(\\hat W\\) 和重要性：\nY &lt;- Train$Y; W &lt;- Train$W\ncf_hd &lt;- quiet(CF_RAW_key(Train, 1, \"hd\", hdPctTop = 0.90))\nY.hat &lt;- cf_hd$Y.hat; W.hat &lt;- cf_hd$W.hat\nHTE_P_cf.raw    &lt;- cf_hd$HTE_P_cf.raw\nvarimp_cf       &lt;- cf_hd$varimp_cf        # GG_Xs() 读全局 varimp_cf 与 X\nselected_cf.idx &lt;- cf_hd$selected_cf.idx\nHTE_P_cf.raw\n#&gt; [1] 4.47e-05\ncolnames(X)[selected_cf.idx]\n#&gt; [1] \"dx3_inpt_I48\"     \"dx3_inpt_I63\"     \"dx3_outpt_I50\"    \"dx3_outpt_I48\"    \"cpt5_inpt_47562\"\n#&gt; [6] \"cpt5_outpt_84443\" \"atc3_outpt_C03\"\n63 个变量里取重要性高于第 90 百分位的 7 个。两个真实修饰变量都在里面， 但 dx3_inpt_I63（重要性排第 2）等 5 个是噪声。\nGG_Xs(0.90)\n\n\n\nGG_Xs(0.90)：入选的 7 个变量。GG_Xs() 没有数据参数，读全局 varimp_cf 与 X。\n\n\n全部 63 个变量的重要性可以用 GG_VI(varimp_cf, \"63 HD variables\", colnames(X)) 画， 图很高（本机按 8 × 11 英寸输出），这里只给链接：完整重要性图。\nvars_catover2 &lt;- find_level_over2(X)       # 62 个：0–3 级的代码、5 级的年龄、3 级的种族\nleafsize &lt;- list(D5 = 85, D4 = 65, D3 = 45, D2 = 25)   # 演示起见沿用第 4 页的值，未重新调参\nres_hd &lt;- quiet(iCFCV(dat = Train, K = 5, treeNo = 100, iterationNo = 5, min.split.var = 4,\n                      split_val_round_posi = 0, P_threshold = 1, variable_type = \"hd\",\n                      hdPctTop = 0.90, HTE_P_cf.raw = HTE_P_cf.raw))\nres_hd$selectedSG_ori$majority\n#&gt;   subgroupID subgroup\n#&gt; 1          1 dx3_outpt_I50&lt;=0 & atc3_outpt_C03&gt;0\n#&gt; 2          2 dx3_outpt_I50&lt;=0 & dx3_inpt_I48&lt;=0 & atc3_outpt_C03&lt;=0\n#&gt; 3          3 dx3_outpt_I50&lt;=0 & dx3_inpt_I48&gt;0 & atc3_outpt_C03&lt;=0\n#&gt; 4          4 dx3_outpt_I50&gt;0 & dx3_inpt_I63&lt;=0\n#&gt; 5          5 dx3_outpt_I50&gt;0 & dx3_inpt_I63&gt;0\nres_hd$selectedSG_stability_ori\n#&gt; |grp_pick |stability_vote_mean4CV |stability_CV |mse_g2_Model |mse_g3_Model |mse_g4_Model |mse_g5_Model |\n#&gt; |W:G5x    |0.2                    |1            |1.00586      |1.00408      |0.99193      |0.98765      |\n本机耗时 76 秒。选中 D5，折内稳定性只有 0.2。与真实效应（风险差）对照：\n\n\n\n\n\n\n\n\n\n亚组\nn\nCATE_iptw\n真实效应\n\n\n\n\ndx3_outpt_I50&gt;0 & dx3_inpt_I63&gt;0\n539\n−0.27 (−0.36, −0.19)\n−0.182\n\n\ndx3_outpt_I50&gt;0 & dx3_inpt_I63&lt;=0\n871\n−0.14 (−0.21, −0.08)\n−0.187\n\n\ndx3_outpt_I50&lt;=0 & atc3_outpt_C03&gt;0\n867\n−0.14 (−0.21, −0.08)\n−0.100\n\n\ndx3_outpt_I50&lt;=0 & dx3_inpt_I48&gt;0 & atc3_outpt_C03&lt;=0\n695\n−0.03 (−0.10, 0.05)\n0\n\n\ndx3_outpt_I50&lt;=0 & dx3_inpt_I48&lt;=0 & atc3_outpt_C03&lt;=0\n1 024\n0.01 (−0.05, 0.07)\n0\n\n\n总体\n3 996\n−0.09 (−0.12, −0.06)\n—\n\n\n\n两个真实修饰变量都被找到，而且层级顺序正确（先按心衰切，心衰阴性者再按利尿剂切）。 但也多了两处噪声切分：dx3_inpt_I63 把心衰患者切成真实效应几乎相同 （−0.182 与 −0.187）的两组，估计值却分别是 −0.27 与 −0.14； dx3_inpt_I48 在”两者皆无”的人里又切了一刀，两边真实效应都是 0。 二分类结局、n = 4 000 时，这类噪声切分很常见； 而第 9 页说明的交叉验证缺陷让它更难被察觉。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>238</span>  <span class='chapter-title'>8. hdiCF 高维理赔数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/08-hdicf.html#与作者-readme-设置的差别",
+    "href": "notes/icf/08-hdicf.html#与作者-readme-设置的差别",
+    "title": "8. hdiCF：高维理赔数据",
+    "section": "与作者 README 设置的差别",
+    "text": "与作者 README 设置的差别\n\n\n\n设置\n本页\nhdiCF README\n\n\n\n\nhdPctTop\n0.90\n0.95\n\n\ntreeNo / iterationNo\n100 / 5\n1 000 / 100\n\n\n叶大小\n沿用 25/45/65/85，未调\n用 MinLeafSizeTune() 调\n\n\n修剪\n\"commonrange\"\n\"commonrange\"\n\n\nLcutoff、dxgroup、atcgroup\n20、3、3\n20、3、3\n\n\n\n真实分析应按 README 的量级设置，并先调叶大小。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>238</span>  <span class='chapter-title'>8. hdiCF 高维理赔数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/03-cf-raw-key.html",
+    "href": "notes/icf/03-cf-raw-key.html",
+    "title": "3. CF_RAW_key()：原始森林与变量筛选",
+    "section": "",
+    "text": "签名\nCF_RAW_key() 是整个流程的第一步，对应论文 Figure 1A 的”Grow a raw CF to test heterogeneity”。它产出后续每一步都要用的五样东西： \\(\\hat Y\\)、\\(\\hat W\\)、同质性检验 P 值、变量重要性，以及筛选出的变量下标。 本页所有输出都来自 README 模拟数据（n = 5 000，种子 2024，见本页末尾）。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>233</span>  <span class='chapter-title'>3. CF_RAW_key()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/03-cf-raw-key.html#签名",
+    "href": "notes/icf/03-cf-raw-key.html#签名",
+    "title": "3. CF_RAW_key()：原始森林与变量筛选",
+    "section": "",
+    "text": "CF_RAW_key(Train_cf, min.split.var, variable_type, hdPctTop)\n\n\n\n参数\n含义\n\n\n\n\nTrain_cf\n数据框，需含 Y、W 两列；协变量列取自全局 vars_forest，而不是”除 Y、W 外的所有列”\n\n\nmin.split.var\n非高维模式下至少要选出的变量数，见下文\n\n\nvariable_type\n\"hd\"：按 hdPctTop 取重要性最高的一批；\"hdshrink\"：全选；其他任意字符串（README 用 \"non-hd\"）：按均值/分位数规则\n\n\nhdPctTop\n仅 \"hd\" 时生效。&lt; 1 表示取重要性高于该分位数的变量（0.95 = 前 5%）；&gt; 1 表示取前 k 个；恰好等于 1 会报错（见下文）",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>233</span>  <span class='chapter-title'>3. CF_RAW_key()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/03-cf-raw-key.html#函数内部做了什么",
+    "href": "notes/icf/03-cf-raw-key.html#函数内部做了什么",
+    "title": "3. CF_RAW_key()：原始森林与变量筛选",
+    "section": "函数内部做了什么",
+    "text": "函数内部做了什么\n按源码顺序：\n\nset.seed(1234)——重置全局随机数种子；\ngrf::regression_forest(X, W) 与 grf::regression_forest(X, Y)，取 OOB 预测作为 \\(\\hat W\\)、\\(\\hat Y\\)；\ngrf::causal_forest(X, Y, W, Y.hat, W.hat)，全部用 grf 默认参数；\n在这片森林上跑一次 find_best_tree() 并 plot() 最佳树（结果被丢弃，只浪费时间）；\ngrf::test_calibration(cf.raw)[8] 取 P 值；\ngrf::variable_importance(cf.raw)，并用基础绘图 plot(varimp_cf) 画散点—— 非交互会话里会在工作目录生成 Rplots.pdf（本机 Rscript 实测确实生成）；\n按规则筛选变量，返回列表。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>233</span>  <span class='chapter-title'>3. CF_RAW_key()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/03-cf-raw-key.html#运行",
+    "href": "notes/icf/03-cf-raw-key.html#运行",
+    "title": "3. CF_RAW_key()：原始森林与变量筛选",
+    "section": "运行",
+    "text": "运行\nvars_forest &lt;- colnames(Train %&gt;% dplyr::select(-c(\"Y\", \"W\")))\nX &lt;- Train[, vars_forest]\nY &lt;- as.vector(as.numeric(Train[, \"Y\"]))\nW &lt;- as.vector(as.numeric(Train[, \"W\"]))\n\ncf_raw_key.tr   &lt;- quiet(CF_RAW_key(Train, min.split.var = 1, variable_type = \"non-hd\", hdPctTop = 0.90))\nY.hat           &lt;- cf_raw_key.tr$Y.hat\nW.hat           &lt;- cf_raw_key.tr$W.hat\nHTE_P_cf.raw    &lt;- cf_raw_key.tr$HTE_P_cf.raw\nvarimp_cf       &lt;- cf_raw_key.tr$varimp_cf\nselected_cf.idx &lt;- cf_raw_key.tr$selected_cf.idx\n\nstr(cf_raw_key.tr, max.level = 1)\n#&gt; List of 9\n#&gt;  $ X              :'data.frame': 5000 obs. of  10 variables:\n#&gt;  $ Y              : num [1:5000] -4.42 -3.56 -2.86 -3.45 -2.97 ...\n#&gt;  $ W              : num [1:5000] 1 1 0 0 0 1 0 0 1 1 ...\n#&gt;  $ Y.hat          : num [1:5000] -4.37 -3.78 -2.45 -3.11 -3.94 ...\n#&gt;  $ W.hat          : num [1:5000] 0.465 0.541 0.403 0.28 0.495 ...\n#&gt;  $ HTE_P_cf.raw   : num 9.47e-31\n#&gt;  $ varimp_cf      : num [1:10, 1] 0.35294 0.05699 0.40922 0.06022 0.00607 ...\n#&gt;  $ selected_cf.idx: int [1:2] 1 3\n#&gt;  $ time_rawCF     : 'difftime' num 14.0197849273682\n5 000 例、10 个协变量，本机耗时 14 秒。返回的 X、Y、W 不会自动写回全局， 上面五行赋值必须自己做——iCFCV() 之后读的是全局对象。\n\n同质性检验 P 值从哪来\ntest_calibration() 返回一个 2 × 4 的矩阵，按列展开后第 8 个元素是 differential forest prediction 那一行的 Pr(&gt;t)：\nBest linear fit using forest predictions (on held-out data)\nas well as the mean forest prediction as regressors, along\nwith one-sided heteroskedasticity-robust (HC3) SEs:\n\n                               Estimate Std. Error t value  Pr(&gt;t)\nmean.forest.prediction         0.935065   0.554442  1.6865 0.04588 *\ndifferential.forest.prediction 0.946437   0.081525 11.6092 &lt; 2e-16 ***\n这是单侧检验（系数大于 0），系数接近 1 说明森林预测出的异质性幅度校准良好。 本例 \\(P = 9.5\\times 10^{-31}\\)，强烈提示存在异质性。 （上面这张表是另用种子 1 重拟合的同设定森林打印的，CF_RAW_key() 内部那片森林的 P 值就是 str() 里的 9.47e-31。）",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>233</span>  <span class='chapter-title'>3. CF_RAW_key()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/03-cf-raw-key.html#sec-select",
+    "href": "notes/icf/03-cf-raw-key.html#sec-select",
+    "title": "3. CF_RAW_key()：原始森林与变量筛选",
+    "section": "变量筛选规则",
+    "text": "变量筛选规则\n先看重要性本身：\nround(setNames(as.numeric(varimp_cf), colnames(X)), 4)\n#&gt;     X1     X2     X3     X4     X5     X6     X7     X8     X9    X10\n#&gt; 0.3529 0.0570 0.4092 0.0602 0.0061 0.0021 0.0502 0.0068 0.0019 0.0535\ngrf 的变量重要性是”各层分裂次数的加权比例”，总和恒为 1， 所以”大于均值”等价于”大于 \\(1/p\\)“——本例就是大于 0.1。 非高维模式下的规则是一串逐级放宽的阈值：\n\n重要性 &gt; 均值的变量数 ≥ min.split.var，就用它们；\n否则放宽到 &gt; 第 75 百分位；\n再不够放宽到 &gt; 中位数；\n再不够放宽到 &gt; 第 25 百分位；\n还不够就全选。\n\n同一片森林上换不同设置的实测结果：\n\n\n\n\n\n\n\n\n\n\nmin.split.var\nvariable_type\nhdPctTop\n选出的变量\n走到哪一级\n\n\n\n\n1\n\"non-hd\"\n—\nX1, X3\n均值\n\n\n4\n\"non-hd\"\n—\nX1, X2, X3, X4, X10\n中位数（第 75 百分位只选出 3 个）\n\n\n6\n\"non-hd\"\n—\nX1, X2, X3, X4, X7, X8, X10\n第 25 百分位\n\n\n1\n\"hd\"\n0.7\nX1, X3, X4\n第 70 百分位\n\n\n1\n\"hd\"\n3\nX1, X3, X4\n前 3 个\n\n\n1\n\"hdshrink\"\n—\n全部 10 个\n—\n\n\n1\n\"hd\"\n1\n报错 object 'selected_cf.idx_hd' not found\n源码只处理了 &lt; 1 和 &gt; 1\n\n\n\n真实效应修饰变量是 X1 和 X3，“均值”规则恰好只选中它们。 README 在第 1 步用 min.split.var = 1，在 iCFCV() 里用 4—— 后者看似会让森林在 5 个变量上分裂，实际上不会，原因见 第 5 页。\n\n\n\n\n\n\n提示预后变量为什么排不进来\n\n\n\nX2、X4、X8、X9、X10 都直接影响结局（X8 的主效应系数 0.71，绝对值仅次于 X3 的 −0.73）， 但重要性都很低。这是因为 \\(\\hat Y\\) 已经把预后部分吸收掉了， 因果森林只在效应有差异的方向上分裂。这是因果森林的重要性 与普通预测模型重要性的根本区别，也是 iCF 用它来筛选修饰变量的理由。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>233</span>  <span class='chapter-title'>3. CF_RAW_key()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/03-cf-raw-key.html#sec-viz",
+    "href": "notes/icf/03-cf-raw-key.html#sec-viz",
+    "title": "3. CF_RAW_key()：原始森林与变量筛选",
+    "section": "可视化",
+    "text": "可视化\n\nGG_VI()：条形图\nGG_VI(varimp_cf, title, var_label)\nvarimp_cf 是重要性向量，var_label 是等长的变量名。返回 ggplot 对象。\nGG_VI(varimp_cf, \"Variable importance (raw causal forest)\", colnames(X))\n\n\n\nGG_VI() 的输出：X3、X1 远高于其余变量。\n\n\n\n\nPlotVI()：带标签的散点\nPlotVI(varimp_CF, title, var_label)\n\n\n\n\n\n\n警告PlotVI() 忽略第一个参数\n\n\n\n形参名是 varimp_CF（大写 CF），函数体里用的却是 varimp_cf（小写）， 于是读到的是全局的 varimp_cf。实测传入一个全是 1 的向量， 画出来的纵坐标仍与全局 varimp_cf 逐个相等。 画别的森林的重要性时，先把它赋给全局 varimp_cf，或者直接用 GG_VI()。\n\n\n\n\n\nPlotVI() 的输出。横轴是按字母序排列的变量名（不是”Index”），标签与点重叠。\n\n\n\n\nGG_PS()：倾向评分分布\nGG_PS(dat, PS, title, filename)\n按 dat$W 分组画 PS 的密度，图注给出两组的最小值、四分位数、均值和最大值。 副作用：同时把图写成工作目录下的 &lt;filename&gt;.png。 PS 可以是任何按行对应的数值，iCFCV() 也用它画 IPTW 权重的分布。\nGG_PS(Train, W.hat, \"Propensity score (W.hat)\", \"PS_raw\")   # 同时写出 PS_raw.png\n\n\n\nGG_PS() 的输出。两组重叠良好，最极端的倾向评分在 0.14 与 0.93 附近。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>233</span>  <span class='chapter-title'>3. CF_RAW_key()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/03-cf-raw-key.html#相关函数regression_forest_4ps",
+    "href": "notes/icf/03-cf-raw-key.html#相关函数regression_forest_4ps",
+    "title": "3. CF_RAW_key()：原始森林与变量筛选",
+    "section": "相关函数：regression_forest_4PS()",
+    "text": "相关函数：regression_forest_4PS()\nregression_forest_4PS(dat)\n只做 grf::regression_forest(dat[, vars_forest], dat[, 2]) 并返回 OOB 预测。 它读全局 vars_forest，且按位置取第 2 列当治疗。 iCFCV() 用它在每个验证折内部重新估计倾向评分， 供验证折的转换结局 \\(Y^*\\) 使用。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>233</span>  <span class='chapter-title'>3. CF_RAW_key()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/03-cf-raw-key.html#sec-sim",
+    "href": "notes/icf/03-cf-raw-key.html#sec-sim",
+    "title": "3. CF_RAW_key()：原始森林与变量筛选",
+    "section": "模拟数据",
+    "text": "模拟数据\n本手册第 3–7 页用的都是作者 README 的模拟设定（改编自 Setoguchi 等）： 10 个协变量，X1–X4 为混杂，X5–X7 只影响治疗（X7 为工具变量）， X8–X10 只影响结局；X1、X3、X5、X6、X8、X9 为二分类。 治疗效应含 W:X1、W:X3 与三阶交互 W:X1:X3，于是真实 CATE 只取决于 X1、X3：\n\\[\n\\tau(X) = -0.4 + 0.3X_1 + 0.4X_3 + 0.4X_1X_3 .\n\\]\nREADME 用 n = 10 000，本手册取 n = 5 000 以控制运行时间：\nset.seed(2024)\nnstudy &lt;- 5000\nb0 &lt;- 0; b1 &lt;- 0.8; b2 &lt;- -0.25; b3 &lt;- 0.6; b4 &lt;- -0.4; b5 &lt;- -0.8; b6 &lt;- -0.5; b7 &lt;- 0.7\na0 &lt;- -3.85; a1 &lt;- 0.3; a2 &lt;- -0.36; a3 &lt;- -0.73; a4 &lt;- -0.2\na5 &lt;- 0.71; a6 &lt;- -0.19; a7 &lt;- 0.26; g1 &lt;- -0.4\nF.sample.cor &lt;- function(X, rho) (rho * (X - mean(X))) / sqrt(var(X)) +\n  sqrt(1 - rho^2) * rnorm(length(X))\n\nX2 &lt;- rnorm(nstudy); X4 &lt;- rnorm(nstudy); X7 &lt;- rnorm(nstudy); X10 &lt;- rnorm(nstudy)\nX1 &lt;- rnorm(nstudy); X1 &lt;- ifelse(X1 &gt; mean(X1), 1, 0)\nX3 &lt;- rnorm(nstudy); X3 &lt;- ifelse(X3 &gt; mean(X3), 1, 0)\nX5 &lt;- F.sample.cor(X1, 0.2); X5 &lt;- ifelse(X5 &gt; mean(X5), 1, 0)\nX6 &lt;- F.sample.cor(X2, 0.9); X6 &lt;- ifelse(X6 &gt; mean(X6), 1, 0)\nX8 &lt;- F.sample.cor(X3, 0.2); X8 &lt;- ifelse(X8 &gt; mean(X8), 1, 0)\nX9 &lt;- F.sample.cor(X4, 0.9); X9 &lt;- ifelse(X9 &gt; mean(X9), 1, 0)\n\nPS &lt;- (1 + exp(-(b0 + b1*X1 + b2*X2 + b3*X3 + b4*X4 + b5*X5 + b6*X6 + b7*X7)))^-1\nW  &lt;- rbinom(nstudy, 1, PS)\nY  &lt;- a0 + a1*X1 + a2*X2 + a3*X3 + a4*X4 + a5*X8 + a6*X9 + a7*X10 + g1*W + rnorm(nstudy) +\n      0.4*W*X3 + 0.3*W*X1 + 0.4*W*X1*X3 + 0.2*X1*X3\n\nTrain &lt;- as.data.frame(cbind(Y, W, X1, X2, X3, X4, X5, X6, X7, X8, X9, X10))\nhead(round(Train, 2))\n#&gt;       Y W X1    X2 X3    X4 X5 X6    X7 X8 X9   X10\n#&gt; 1 -4.42 1  1  0.98  1  0.69  0  1  0.00  0  1 -0.77\n#&gt; 2 -3.56 1  1  0.47  1  0.04  0  0 -0.36  0  1  0.83\n#&gt; 3 -2.86 0  1 -0.11  1 -1.27  1  0 -1.93  1  0  0.79\n#&gt; 4 -3.45 0  1 -0.21  0  0.36  1  1 -1.18  1  1 -0.81\n#&gt; 5 -2.97 0  0  1.16  1  0.34  0  1  0.39  1  1  0.83\n#&gt; 6 -3.95 1  1  1.29  0  0.47  1  1  0.23  0  1  1.00\n四个真实亚组：\n\n\n\n亚组\n样本量\n真实 CATE\n\n\n\n\nX1 = 0 & X3 = 0\n1 221\n−0.4\n\n\nX1 = 1 & X3 = 0\n1 281\n−0.1\n\n\nX1 = 0 & X3 = 1\n1 267\n0.0\n\n\nX1 = 1 & X3 = 1\n1 231\n0.7\n\n\n\n样本内真实 ATE 为 0.049。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>233</span>  <span class='chapter-title'>3. CF_RAW_key()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/04-leafsize.html",
+    "href": "notes/icf/04-leafsize.html",
+    "title": "4. MinLeafSizeTune()：叶大小调参",
+    "section": "",
+    "text": "签名\ngrf 没有”最大深度”参数。iCF 通过最小叶大小间接控制树的深度： 叶子越大，树越早停止分裂。这一步要为 D2、D3、D4、D5 各找一个 denominator，使 min.node.size = round(N / denominator) 下种出的森林， 其最佳树多数恰好是目标深度。\n返回三项：\n深度的数法见第 1 页：每条亚组定义里 & 的个数加 2， 取整棵树的最大值。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>234</span>  <span class='chapter-title'>4. MinLeafSizeTune()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/04-leafsize.html#签名",
+    "href": "notes/icf/04-leafsize.html#签名",
+    "title": "4. MinLeafSizeTune()：叶大小调参",
+    "section": "",
+    "text": "MinLeafSizeTune(dat, denominator, treeNo, iterationNo, split_val_round_posi, depth, color)\n\n\n\n\n\n\n\n参数\n含义\n\n\n\n\ndat\n只用于图注里的样本量和变量数；森林本身读全局 X/Y/W/Y.hat/W.hat/selected_cf.idx\n\n\ndenominator\n最小叶大小 = round(nrow(Train) / denominator)，Train 是全局对象\n\n\ntreeNo\n每个森林的树数\n\n\niterationNo\n重复种森林的次数，也就是参与统计的最佳树棵数\n\n\nsplit_val_round_posi\n切点取整位数（这里只影响中间结果，不影响深度统计）\n\n\ndepth\n\"D2\"…\"D5\"，只是标签：用于图注和 split_frequencies(max.depth = )，并不限制树深\n\n\ncolor\n直方图填充色\n\n\n\n\n\n\n\n元素\n内容\n\n\n\n\ndenominator\n原样返回，方便拼 leafsize\n\n\ndepth_mean\niterationNo 棵最佳树深度的均值，四舍五入取整\n\n\ndepth_gg\n深度分布直方图（ggplot）",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>234</span>  <span class='chapter-title'>4. MinLeafSizeTune()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/04-leafsize.html#运行",
+    "href": "notes/icf/04-leafsize.html#运行",
+    "title": "4. MinLeafSizeTune()：叶大小调参",
+    "section": "运行",
+    "text": "运行\n先登记多水平分类变量、设定切点取整位数（后面 iCFCV() 也要用）：\nsplit_val_round_posi &lt;- 0\nvars_catover2 &lt;- find_level_over2(X)\nvars_catover2\n#&gt; [1] NA\n然后按 README 的初值逐个深度试：\nD2_MLS &lt;- quiet(MinLeafSizeTune(Train, denominator = 25, treeNo = 200, iterationNo = 20,\n                                split_val_round_posi = 0, \"D2\", \"steelblue1\"))\nD3_MLS &lt;- quiet(MinLeafSizeTune(Train, denominator = 45, treeNo = 200, iterationNo = 20,\n                                split_val_round_posi = 0, \"D3\", \"steelblue1\"))\nD4_MLS &lt;- quiet(MinLeafSizeTune(Train, denominator = 65, treeNo = 200, iterationNo = 20,\n                                split_val_round_posi = 0, \"D4\", \"steelblue1\"))\nD5_MLS &lt;- quiet(MinLeafSizeTune(Train, denominator = 85, treeNo = 200, iterationNo = 20,\n                                split_val_round_posi = 0, \"D5\", \"steelblue1\"))\nsapply(list(D2 = D2_MLS, D3 = D3_MLS, D4 = D4_MLS, D5 = D5_MLS), `[[`, \"depth_mean\")\n#&gt; D2 D3 D4 D5\n#&gt;  2  3  3  3\n\n\n\n\n\n\n\n\n\n\n目标\ndenominator\n最小叶大小（N = 5 000）\n20 棵最佳树的深度分布\n耗时\n\n\n\n\nD2\n25\n200\n2 层 × 20\n4.1 s\n\n\nD3\n45\n111\n3 层 × 20\n5.2 s\n\n\nD4\n65\n77\n3 层 × 20\n5.4 s\n\n\nD5\n85\n59\n3 层 × 20\n5.8 s\n\n\n\n\n\n\n四个深度的最佳树深度分布（由各自 depth_gg 的数据重绘为分面图）。D4、D5 的叶子已经更小，最佳树仍只有 3 层。\n\n\nD4、D5 长不到目标深度，这正是 README 在同一模拟数据上遇到的情形： 数据里真正的异质性只有 X1 × X3 一个三阶交互， 而本例全局 selected_cf.idx 只含 X1、X3 两个二分类变量—— 两个二分类变量最多切出 4 格，也就是 3 层，叶子再小也切不出第 4 层。 README 的原话是：当调小叶大小不再改变最佳树深度时，就可以进入第 3 步。\nleafsize &lt;- list(D5 = D5_MLS$denominator, D4 = D4_MLS$denominator,\n                 D3 = D3_MLS$denominator, D2 = D2_MLS$denominator)\nleafsize 必须是全局对象、名字必须叫 leafsize， iCFCV() 不接收它作参数，而是从全局环境取。\n\n\n\n\n\n\n注记D4 与 D5 长不深的后果\n\n\n\niCFCV() 照样会种 D4、D5 森林，它们给出的亚组和 D3 甚至完全相同。 本例第 5 页里 D4 与 D5 的交叉验证误差都是 7.30547， PICK_CV() 用 which.min() 在并列时取第一个，于是报告 W:G4x。 这不影响最终亚组，但”选中深度”这一栏不能直接解读为”数据支持四阶交互”。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>234</span>  <span class='chapter-title'>4. MinLeafSizeTune()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/04-leafsize.html#调参策略",
+    "href": "notes/icf/04-leafsize.html#调参策略",
+    "title": "4. MinLeafSizeTune()：叶大小调参",
+    "section": "调参策略",
+    "text": "调参策略\n\n目标深度的 depth_mean 偏小：加大 denominator（叶子变小）；\n偏大：减小 denominator；\n报错 Can't select columns that don't exist. ✖ Column 'parent_sign' doesn't exist.： 叶子太大，最佳树连根节点都没分裂，加大 denominator。本机用 denominator = 5（最小叶大小 1 000）实测复现了这条报错。\nREADME 调参时用 iterationNo = 100，比正式运行（10）大得多， 因为这里要看的是深度的分布。\n最小叶大小按全样本 nrow(Train) 计算，而 iCFCV() 每折的训练集只有 \\((K-1)/K\\)。 这点在本包里无关紧要——每折实际也是在全样本上种树（第 9 页）。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>234</span>  <span class='chapter-title'>4. MinLeafSizeTune()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/04-leafsize.html#sec-level-over2",
+    "href": "notes/icf/04-leafsize.html#sec-level-over2",
+    "title": "4. MinLeafSizeTune()：叶大小调参",
+    "section": "find_level_over2()",
+    "text": "find_level_over2()\nfind_level_over2(X_dat)\n返回不同取值个数在 3 到 8 之间的列名；一个都没有时返回 NA。 这些变量在转换结局模型里被当作因子（contr.sum 对比）。 取值超过 8 个的变量一律视为连续。\nXd &lt;- X\nset.seed(1)\nXd$Xcat4 &lt;- sample(0:3, nrow(Xd), TRUE)   # 4 个水平\nXd$Xcat9 &lt;- sample(1:9, nrow(Xd), TRUE)   # 9 个水平\nfind_level_over2(Xd)\n#&gt; [1] \"Xcat4\"\n\n\n\n\n\n\n注记\n\n\n\n函数内部会顺手做一次 var_catover2 &lt;&lt;- ...——注意是 var 不是 vars。 这个全局对象没有任何函数读取；真正被读取的 vars_catover2 必须由你自己赋值。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>234</span>  <span class='chapter-title'>4. MinLeafSizeTune()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/04-leafsize.html#sec-depth-dist",
+    "href": "notes/icf/04-leafsize.html#sec-depth-dist",
+    "title": "4. MinLeafSizeTune()：叶大小调参",
+    "section": "GG_DepthDistribution() 写出的是空白图",
+    "text": "GG_DepthDistribution() 写出的是空白图\nGG_DepthDistribution(D2_distribtion, D3_distribtion, D4_distribtion, D5_distribtion, Name)\n它把四张 depth_gg 用 cowplot::plot_grid() 拼成 2 × 2，并声称把图存成 &lt;Name&gt;_&lt;ncol(X)&gt;_.tiff。源码是先 tiff() 打开设备、再构造拼图对象、 再 dev.off()——中间没有 print()，于是 tiff 里什么也没画。 本机实测：\ng_depth &lt;- GG_DepthDistribution(D2_MLS$depth_gg, D3_MLS$depth_gg, D4_MLS$depth_gg, D5_MLS$depth_gg, \"Depth\")\n#&gt; 写出 Depth_10_.tiff：2250 × 3750 像素，25 312 712 字节\n#&gt; magick 读回后不同颜色数：1（整张白图）\n返回值本身是正常的拼图对象，可以 print(g_depth) 查看。 更省事的做法是直接调用 cowplot：\ncowplot::plot_grid(D2_MLS$depth_gg, D3_MLS$depth_gg, D4_MLS$depth_gg, D5_MLS$depth_gg,\n                   labels = c(\"D2\", \"D3\", \"D4\", \"D5\"), ncol = 2)",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>234</span>  <span class='chapter-title'>4. MinLeafSizeTune()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/04-leafsize.html#sec-old-tuners",
+    "href": "notes/icf/04-leafsize.html#sec-old-tuners",
+    "title": "4. MinLeafSizeTune()：叶大小调参",
+    "section": "两个坏掉的旧调参函数",
+    "text": "两个坏掉的旧调参函数\n包里还有一对自动调参函数，都不能用：\n\n\n\n\n\n\n\n\n函数\n设计意图\n为什么不能用\n\n\n\n\nLEAFSIZE_tune(Ntrain, initial_D2, treeNo, iterationNo, tune_unit)\n从 D2 的初值出发，按 1 : 2 : 3 : 4 的倍数给出 D2–D5 初值，再逐个网格搜索\n第一行就调用 iCF_basic()，而这个函数在仓库里不存在；后面对 iCF() 的调用又多传了 Ntrain 一个参数（安装时的 NOTE 就是它）\n\n\nGRID_LEAFSIZE(depth, treeNo, iterationNo, initial, iCF_D_BT_exp_SG_D_mean, tune_unit)\n单个深度的网格搜索\n同样调用不存在的 iCF_basic()\n\n\n\n它们是早期版本的遗留，README 已改用手动的 MinLeafSizeTune()。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>234</span>  <span class='chapter-title'>4. MinLeafSizeTune()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/07-plots.html",
+    "href": "notes/icf/07-plots.html",
+    "title": "7. 可视化与诊断",
+    "section": "",
+    "text": "函数一览\niCF 的绘图函数分两类：单步结果图（变量重要性、倾向评分、深度分布，已在 第 3、4 页介绍），以及 iCFCV() 之后的交叉验证诊断图。本页讲后者， 并补一张包里没有、但最该画的图——亚组效应森林图。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>237</span>  <span class='chapter-title'>7. 可视化与诊断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/07-plots.html#函数一览",
+    "href": "notes/icf/07-plots.html#函数一览",
+    "title": "7. 可视化与诊断",
+    "section": "",
+    "text": "函数\n输入\n画什么\n页面\n\n\n\n\nGG_VI(varimp_cf, title, var_label)\n重要性向量\n条形图\n第 3 页\n\n\nPlotVI(varimp_CF, title, var_label)\n（忽略第一个参数）\n散点 + 标签\n第 3 页\n\n\nGG_PS(dat, PS, title, filename)\n任意按行对应的数值\n两组密度，同时写 png\n第 3 页\n\n\nMinLeafSizeTune()$depth_gg\n—\n最佳树深度分布\n第 4 页\n\n\nGG_DepthDistribution(...)\n四张 depth_gg\n2 × 2 拼图，写出空白 tiff\n第 4 页\n\n\nGG_Xs(pcttop)\n读全局 varimp_cf、X\n只画入选的高维变量\n第 8 页\n\n\nGG_CV_stab_vote(iCFoutput)\niCFCV() 结果\n各折 × 各深度的投票稳定性\n本页\n\n\nGG_CV_Dx_PS(result, K)\niCFCV() 结果\n各折训练/验证集倾向评分\n本页\n\n\nGG_CV_Dx_iptw(result, K)\n同上\n各折 IPTW 权重\n本页\n\n\nGG_CV_Dx_Ystar(result, K)、GG_CV_Dx_YstarNo0(result, K)\n同上\n各折转换结局（后者去掉 0）\n本页\n\n\nGG_Y_star(dat, Y_star, No0)\n转换结局向量\n按治疗组分面的直方图\n本页\n\n\nMAJORITY_VOTE()$split_value_plot\n—\n胜出结构的切点分布（山脊图）\n第 6 页",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>237</span>  <span class='chapter-title'>7. 可视化与诊断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/07-plots.html#投票稳定性gg_cv_stab_vote",
+    "href": "notes/icf/07-plots.html#投票稳定性gg_cv_stab_vote",
+    "title": "7. 可视化与诊断",
+    "section": "投票稳定性：GG_CV_stab_vote()",
+    "text": "投票稳定性：GG_CV_stab_vote()\nGG_CV_stab_vote(res)\n读 res$stability_vote_across_CV（K × 4），每个点是某折某深度的折内稳定性， 点越大越稳定：\n\n\n\nGG_CV_stab_vote() 的输出。每一行在 5 折之间完全相同。\n\n\n两点要知道：\n\n横轴标签在源码里写死为 CV fold 1 … CV fold 5，轴标题写死为 Cluster； K 不是 5 时标签错位。\n本例每一行在 5 折之间一模一样（D2 都是 0.6、D3 都是 0.4……）。 这不是巧合：各折实际上在同一份全样本上、用同一串随机种子重复了同一次发现， 见第 9 页。所以这张图在当前代码下 只能读出”各深度的折内稳定性”，看不出跨折变化。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>237</span>  <span class='chapter-title'>7. 可视化与诊断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/07-plots.html#各折诊断gg_cv_dx_",
+    "href": "notes/icf/07-plots.html#各折诊断gg_cv_dx_",
+    "title": "7. 可视化与诊断",
+    "section": "各折诊断：GG_CV_Dx_*()",
+    "text": "各折诊断：GG_CV_Dx_*()\nGG_CV_Dx_PS(res, 5)\nGG_CV_Dx_iptw(res, 5)\nGG_CV_Dx_Ystar(res, 5)\nGG_CV_Dx_YstarNo0(res, 5)\n四个函数版式相同：K = 5 时拼成 2 行 × 5 列，第 1 行是 5 个训练折， 第 2 行是 5 个验证折；K = 10 时拼成 4 行 × 5 列。 其它 K 不支持——源码只写了这两个分支，K = 3 时报 object 'Dx_fig' not found（本机实测）。\n\n\n\nGG_CV_Dx_PS(res, 5)。上排训练折（n = 4 000），下排验证折（n = 1 000）。\n\n\n验证折的倾向评分来自 regression_forest_4PS() 在该验证折内部重新拟合的回归森林， 所以下排每张图只基于 1 000 人。这组图主要用来查两件事： 两组倾向评分是否重叠、有没有接近 0 或 1 的极端值——后者会让 IPTW 权重和转换结局爆掉。\nGG_CV_Dx_Ystar() 与 GG_CV_Dx_YstarNo0() 在常规宽度下基本不可读： 每个小图还要再按治疗组分面，转换结局的长尾把横轴压扁，图注文字互相重叠。 需要时直接取返回值里的单折图：\ncowplot::plot_grid(res$IPTW_distribution[[1]], res$Y_star_distribution[[1]], ncol = 2)\n\n\n\n第 1 折训练集的 IPTW 权重（左）与转换结局 \\(Y^*\\)（右）。\n\n\n右图说明了为什么第 5 页的交叉验证 MSE 在 7 以上： 本例结局约在 −8 到 0 之间，除以倾向评分后，治疗组的 \\(Y^*\\) 最小到 −34.9， 对照组的长尾延伸到 40 附近。\\(Y^*\\) 的条件期望等于 CATE，但单个值的方差很大， MSE 的绝对大小没有解释意义，只能在 G2–G5 之间横向比较。\n返回值里对应的逐折图列表：\n\n\n\n\n\n\n\n\n列表\n训练折\n验证折\n\n\n\n\n倾向评分\nPS_distribution\nPS_distribution_test\n\n\nIPTW 权重\nIPTW_distribution\nIPTW_distribution_test\n\n\n转换结局\nY_star_distribution\nY_star_distribution_test\n\n\n非零转换结局\nY_star_No0_distribution\nY_star_No0_distribution_test\n\n\n\n“非零”版本是给二分类结局准备的：\\(Y = 0\\) 时 \\(Y^* = 0\\)，大量的 0 会把直方图压扁。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>237</span>  <span class='chapter-title'>7. 可视化与诊断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/07-plots.html#包里没有但最该画的图亚组效应",
+    "href": "notes/icf/07-plots.html#包里没有但最该画的图亚组效应",
+    "title": "7. 可视化与诊断",
+    "section": "包里没有、但最该画的图：亚组效应",
+    "text": "包里没有、但最该画的图：亚组效应\niCFCV() 的效应是字符串（如 -0.31(-0.45,-0.17)），包里没有画它的函数。 拆成数值后自己画（代码见第 5 页）：\n\n\n\n四个亚组的 IPTW 效应与真实值。\n\n\n真实数据没有”真实值”那一列。更重要的是区间来源：上图的区间是在发现亚组的 同一份数据上、用模型标准误算的，偏窄。第 9 页 给出拆样本后的同类图，两者放在一起看最能说明问题。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>237</span>  <span class='chapter-title'>7. 可视化与诊断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/07-plots.html#看一棵最佳树",
+    "href": "notes/icf/07-plots.html#看一棵最佳树",
+    "title": "7. 可视化与诊断",
+    "section": "看一棵最佳树",
+    "text": "看一棵最佳树\ngrf 自带树的绘图（依赖 DiagrammeR，在 RStudio Viewer 里显示）：\nbt &lt;- quiet(find_best_tree(cf_demo, \"causal\"))\nplot(grf::get_tree(cf_demo, bt$best_tree))\niCF 在 CF_RAW_key() 和每次 iCF() 迭代里都执行这一句，但把结果丢弃了。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>237</span>  <span class='chapter-title'>7. 可视化与诊断</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/09-pitfalls.html",
+    "href": "notes/icf/09-pitfalls.html",
+    "title": "9. 实测清单与推荐工作流",
+    "section": "",
+    "text": "陷阱总表\n本页先把前八页的问题收成一张表，再展开五个决定”结果能不能信”的实验， 最后给一套在当前代码下可以照抄的工作流。\n证据列：源码＝本机安装的 iCF（commit 8932f6a）函数体； 实测＝Windows R 4.4.3、grf 2.6.1 下实际运行；README＝作者仓库说明原文。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>239</span>  <span class='chapter-title'>9. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/09-pitfalls.html#陷阱总表",
+    "href": "notes/icf/09-pitfalls.html#陷阱总表",
+    "title": "9. 实测清单与推荐工作流",
+    "section": "",
+    "text": "#\n现象\n后果\n怎么办\n证据\n\n\n\n\n1\ninstall_github() 装不上\nR/iCF_README.R 被执行、旧 NAMESPACE 报错\n最小修补安装\n实测\n\n\n2\nREADME 漏写 glmnet、cowplot\n算亚组效应时报 could not find function \"cv.glmnet\"\n加载时补上\n源码 + 实测\n\n\n3\n核心函数从全局环境读数据\n包进函数或换数据后静默用旧数据\n顶层运行；换数据重设全部全局对象\n源码\n\n\n4\nplyr 屏蔽 summarise()\nPS_trim() 报 ..1 must be of size 1\n先 detach(\"package:plyr\")\n实测\n\n\n5\nCF_RAW_key() 内 set.seed(1234)、基础绘图\n重置随机数流；非交互会话写 Rplots.pdf\n工作目录设到临时目录\n源码 + 实测\n\n\n6\nvariable_type = \"hd\" 且 hdPctTop = 1\n报 object 'selected_cf.idx_hd' not found\n用 &lt; 1 的分位数或 &gt; 1 的个数\n实测\n\n\n7\n只选中 1 个变量时 CF() 取列退化成向量\ngrf 报 only supported data input types are matrix, data.frame\nmin.split.var ≥ 2\n源码 + 实测\n\n\n8\ntreeNo &lt; 20\nfind_best_tree() 报 missing value where TRUE/FALSE needed\ntreeNo ≥ 20\n实测\n\n\n9\niCFCV() 的 min.split.var、variable_type、hdPctTop\n对种树不起作用\n在第 1 步设好全局 selected_cf.idx\n实测\n\n\n10\nP 值不过 P_threshold\niCFCV() 报 object 'vote_D2_subgroup.L.majority' not found\n自己先看 P 值再决定是否调用\n实测\n\n\n11\nP_threshold = 1 且无真实异质性\n仍输出亚组（纯噪声切分）\n看 P 值、看稳定性、拆样本验证\n实测\n\n\n12\nP 值先四舍五入到一位小数\n0.14 当作 0.1\n知道即可\n源码\n\n\n13\n每折种树都读全局全样本\n验证折参与亚组发现\n拆样本\n实测\n\n\n14\n各折发现过程逐位相同\n跨折稳定性恒为 1、_icvsw 与 _ori 恒相同\n不把跨折稳定性当证据\n实测\n\n\n15\n每折 D2 森林种两遍\n多耗约 1/5 时间\n无\n实测\n\n\n16\nR-loss 剪枝结果被丢弃\n亚组数由叶大小决定\n认真调叶大小\n实测\n\n\n17\n连续变量 + split_val_round_posi = 0\n切点 0.5 变成 0\n事先分类，或取 1–2 位小数\n实测\n\n\n18\n亚组效应在同一份数据上估计、用模型标准误\n区间偏窄（稳健区间宽 34%）\n另一半数据上用 AIPW 估计\n实测\n\n\n19\nCATE_t2_ori 每人一行、n 列全是 1\n误把 n 当亚组样本量\ndistinct() 后自己数\n实测\n\n\n20\nPlotVI() 忽略第一个参数\n画的是全局 varimp_cf\n用 GG_VI()\n实测\n\n\n21\nGG_DepthDistribution() 的 tiff 是空白的\n25 MB 白图\n直接 cowplot::plot_grid()\n实测\n\n\n22\nGG_CV_Dx_*() 只支持 K = 5 或 10\n其它 K 报 object 'Dx_fig' not found\n取返回值里的单折图\n实测\n\n\n23\nLEAFSIZE_tune()、GRID_LEAFSIZE()\n调用不存在的 iCF_basic()\n用 MinLeafSizeTune()\n源码\n\n\n24\nhdiCF README 合并稀疏级别后没重建 Train\n可能报 factor ... has new levels\ndata.frame(Y, W, X) 重建\n源码 + 实测\n\n\n25\n结局只有 3–7 个不同取值\nCF_GROUP_DECISION() 模型对象未定义\n结局用 0/1 或连续\n源码\n\n\n26\nman/ 下的帮助页过时\n17 个 Rd 描述已不存在的函数\n以源码为准\n源码",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>239</span>  <span class='chapter-title'>9. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/09-pitfalls.html#sec-null-branch",
+    "href": "notes/icf/09-pitfalls.html#sec-null-branch",
+    "title": "9. 实测清单与推荐工作流",
+    "section": "实验 1：无异质性数据",
+    "text": "实验 1：无异质性数据\n用 README 的设定，但去掉全部交互项（真实效应恒为 −0.4），n = 3 000，种子 99。 下面的 sim_readme() 只是把第 3 页的生成代码包成函数， hte = FALSE 时去掉含 W 的交互项与 0.2*X1*X3：\nNull &lt;- sim_readme(3000, seed = 99, hte = FALSE)   # 与第 3 页相同的生成代码，去掉 W 的交互项\n# ……设全局对象，CF_RAW_key(Null, 1, \"non-hd\", 0.9)……\nHTE_P_cf.raw\n#&gt; [1] 0.554\ncolnames(X)[selected_cf.idx]\n#&gt; [1] \"X2\"  \"X4\"  \"X7\"  \"X10\"\n同质性检验 P = 0.554，正确地没有发现异质性。按论文的 \\(\\alpha = 0.1\\) 调用：\niCFCV(Null, K = 5, treeNo = 100, iterationNo = 5, min.split.var = 4, split_val_round_posi = 0,\n      P_threshold = 0.1, variable_type = \"non-HD\", hdPctTop = 0.95, HTE_P_cf.raw = HTE_P_cf.raw)\n#&gt; Error: object 'vote_D2_subgroup.L.majority' not found\nelse 分支只定义了 vote_D2_subgroup.CVmajority，return() 却引用 vote_D2_subgroup.L.majority。任何 round(P, 1) &gt; P_threshold 的调用都会这样结束， 论文 Figure 1A 里”No strong subgroups”那条路在代码里走不通。\n改用 README 的 P_threshold = 1：\nres0 &lt;- quiet(iCFCV(Null, 5, 100, 5, 4, 0, P_threshold = 1, \"non-HD\", 0.95, HTE_P_cf.raw))\nres0$selectedSG_ori$majority\n#&gt;   subgroupID subgroup\n#&gt; 1          1 X2&lt;=0\n#&gt; 2          2 X2&gt;0\nres0$selectedSG_stability_ori\n#&gt; |grp_pick |stability_vote_mean4CV |stability_CV |mse_g2_Model |mse_g3_Model |mse_g4_Model |mse_g5_Model |\n#&gt; |W:G2x    |0.4                    |1            |7.97885      |8.37875      |8.11091      |8.00072      |\n\n\n\n亚组\nn\nCATE_iptw\n真实值\n\n\n\n\nX2&lt;=0\n1 538\n−0.38 (−0.49, −0.26)\n−0.4\n\n\nX2&gt;0\n1 462\n−0.44 (−0.57, −0.31)\n−0.4\n\n\n\n它仍然给出一个亚组划分——按一个纯预后变量（X2 是混杂）切成两半， 耗时 51 秒。两组效应都接近 −0.4、区间高度重叠，读者能看出”其实没差别”； 但输出本身不会告诉你”不必分亚组”：PICK_CV() 只在 G2–G5 之间选， 主效应模型从不进入候选。P 值与折内稳定性（此处 0.4）是仅有的两个警示信号。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>239</span>  <span class='chapter-title'>9. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/09-pitfalls.html#sec-leak",
+    "href": "notes/icf/09-pitfalls.html#sec-leak",
+    "title": "9. 实测清单与推荐工作流",
+    "section": "实验 2：每折都在全样本上种树",
+    "text": "实验 2：每折都在全样本上种树\niCFCV() 每折对训练集调用 CF_RAW_key(Train_cf, ...)，看起来是在训练集上重来一遍。 但真正种树的 CF() 不接收数据参数，按词法作用域读全局的 X、Y、W、 Y.hat、W.hat、selected_cf.idx。用 trace() 记录第 5 页那次主运行：\ncf_rows &lt;- integer(0); rawkey_rows &lt;- integer(0)\ntrace(\"CF\", quote(cf_rows &lt;&lt;- c(cf_rows, nrow(X))), print = FALSE, where = asNamespace(\"iCF\"))\ntrace(\"CF_RAW_key\", quote(rawkey_rows &lt;&lt;- c(rawkey_rows, nrow(Train_cf))), print = FALSE,\n      where = asNamespace(\"iCF\"))\nres &lt;- quiet(iCFCV(dat = Train, K = 5, treeNo = 200, iterationNo = 10, ...))\ntable(rawkey_rows)\n#&gt; 4000\n#&gt;    5\ntable(cf_rows)\n#&gt; 5000\n#&gt;  250\nCF_RAW_key() 确实拿到了 4 000 行的训练折，但 250 次种树看到的全是 5 000 行的全样本。 验证折既参与了发现亚组，又被用来评估这些亚组，交叉验证误差与深度选择都偏乐观。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>239</span>  <span class='chapter-title'>9. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/09-pitfalls.html#sec-identical-folds",
+    "href": "notes/icf/09-pitfalls.html#sec-identical-folds",
+    "title": "9. 实测清单与推荐工作流",
+    "section": "实验 3：各折的发现过程逐位相同",
+    "text": "实验 3：各折的发现过程逐位相同\n实验 2 还有一个更直接的后果。每折开头 CF_RAW_key() 执行 set.seed(1234)， 之后消耗随机数的步骤在各折完全一样，于是进入 SUBGROUP_PIPELINE() 时 随机数状态相同；而种树的数据又都是全局全样本——每折种出的森林完全相同。 用 trace(exit = ) 截获每次 iCF() 的返回值，在 3 折的小设置下逐一比对：\nicf_out &lt;- list()\ntrace(\"iCF\", exit = quote(icf_out[[length(icf_out) + 1]] &lt;&lt;- returnValue()), print = FALSE,\n      where = asNamespace(\"iCF\"))\nr3 &lt;- quiet(iCFCV(Train, K = 3, treeNo = 50, iterationNo = 3, min.split.var = 4, ...))\nbt &lt;- function(o) lapply(o, function(it) it[[1]])        # 每次迭代的最佳树数据框\nidentical(bt(icf_out[[1]]), bt(icf_out[[6]]))            # D5：第 1 折 vs 第 2 折\n\n\n\n深度\n第 1 折 = 第 2 折\n第 1 折 = 第 3 折\n\n\n\n\nD5\nTRUE\nTRUE\n\n\nD4\nTRUE\nTRUE\n\n\nD3\nTRUE\nTRUE\n\n\nD2\nTRUE\nTRUE\n\n\n\n所有深度、所有迭代的最佳树逐位相同。于是：\n\n各折给出的 \\(G_2, \\dots, G_5\\) 必然一致，跨折稳定性恒为 1（第 5 页主运行、 实验 1、第 8 页 hdiCF 的 stability_CV 全是 1）；\n“误差除以跨折稳定性”的 _icvsw 选择与原始选择恒相同；\nK 折交叉验证退化成”一次在全样本上发现亚组，再在 K 个验证折上分别打分”。 打分的验证折本身参与了发现，所以更深、更碎的划分容易得到更低的误差。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>239</span>  <span class='chapter-title'>9. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/09-pitfalls.html#sec-round",
+    "href": "notes/icf/09-pitfalls.html#sec-round",
+    "title": "9. 实测清单与推荐工作流",
+    "section": "实验 4：连续修饰变量与切点取整",
+    "text": "实验 4：连续修饰变量与切点取整\n生成只含一个连续修饰变量的数据：X2 &gt; 0.5 的人治疗效应多 0.8（论文场景 3 的简化版）， n = 5 000，种子 42。先是陷阱 7：min.split.var = 1 时 只有 X2 入选，iCF() 直接报错。改用 min.split.var = 3（入选 X2、X4、X7）， 对 D2 种 10 个森林，只改变 split_val_round_posi：\n\n\n\n\n\n\n\n\n\nsplit_val_round_posi\n10 棵最佳树的根节点切点\n合成切点\n输出亚组\n\n\n\n\n0\n全部为 0\n0\nX2&lt;=0、X2&gt;0\n\n\n1\n0.2–0.4\n0.3\nX2&lt;=0.3、X2&gt;0.3\n\n\n2\n0.21–0.43\n0.28\nX2&lt;=0.28、X2&gt;0.28\n\n\n\n变量找对了，但切点有两层误差：因果森林本身把切点放在 0.2–0.4（真值 0.5）， 这与取整无关；取整到整数后又被推到 0，于是约 19% 的人（\\(0 &lt; X_2 \\le 0.5\\)）被分错组。 论文的建议是事先把连续变量分类（p. 773）；如果保留连续变量，至少取 1 位小数。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>239</span>  <span class='chapter-title'>9. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/09-pitfalls.html#sec-honest",
+    "href": "notes/icf/09-pitfalls.html#sec-honest",
+    "title": "9. 实测清单与推荐工作流",
+    "section": "实验 5：拆样本，诚实地估计亚组效应",
+    "text": "实验 5：拆样本，诚实地估计亚组效应\n把第 3–5 页那份数据（下面记作 Full，n = 5 000）随机分成两半：发现集 A 跑完整个 iCF 得到规则， 估计集 B 只用来估计每条规则的效应。\nset.seed(2025)\nidx &lt;- sample(nrow(Full), nrow(Full) / 2)\nA &lt;- Full[idx, ]; B &lt;- Full[-idx, ]\n\n# 发现：A 上走完第 3–5 页的全部步骤（全局对象都按 A 重设）\n# ……CF_RAW_key(A, 1, \"non-hd\", 0.9)……\ncolnames(X)[selected_cf.idx]\n#&gt; [1] \"X1\"  \"X2\"  \"X3\"  \"X4\"  \"X10\"\nresA &lt;- quiet(iCFCV(A, K = 5, treeNo = 200, iterationNo = 10, min.split.var = 4,\n                    split_val_round_posi = 0, P_threshold = 1, variable_type = \"non-HD\",\n                    hdPctTop = 0.95, HTE_P_cf.raw = HTE_P_cf.raw))\nrules &lt;- resA$selectedSG_ori$majority$subgroup\n\n# 估计：B 上用 grf 的 AIPW，每条规则一个子集\ncfB &lt;- grf::causal_forest(as.matrix(B[, -(1:2)]), B$Y, B$W, seed = 1)\nest_B &lt;- t(sapply(rules, function(r) grf::average_treatment_effect(cfB, subset = eval(parse(text = r), B))))\n发现集 A 只有 2 500 人，“大于均值”规则选进了 5 个变量（全样本时只选 X1、X3）， 其中 X2、X4、X10 是连续的混杂或预后变量。iCF 于是选了 D5，切出 7 个亚组， 折内稳定性只有 0.1（耗时 66 秒）：\n\n\n\n\n\n\n\n\n\n规则（A 上发现）\nA 内 IPTW（iCF 默认）\nB 上 AIPW\n真实值\n\n\n\n\nX3&gt;0 & X2&gt;-1 & X1&gt;0\n0.76 (0.55, 0.98)\n0.79 (0.62, 0.97)\n0.70\n\n\nX2&lt;=-1\n−0.08 (−0.34, 0.17)\n0.02 (−0.19, 0.23)\n0.05–0.07\n\n\nX3&gt;0 & X2&gt;-1 & X10&lt;=0 & X1&lt;=0\n0.17 (−0.08, 0.42)\n−0.23 (−0.50, 0.05)\n0\n\n\nX3&gt;0 & X2&gt;-1 & X10&gt;0 & X1&lt;=0\n−0.02 (−0.28, 0.24)\n−0.05 (−0.36, 0.25)\n0\n\n\nX4&lt;=0 & X3&lt;=0 & X2&gt;-1 & X2&lt;=0\n−0.24 (−0.55, 0.06)\n−0.06 (−0.33, 0.22)\n−0.25\n\n\nX4&lt;=0 & X3&lt;=0 & X2&gt;0 & X2&gt;-1\n−0.10 (−0.35, 0.15)\n−0.35 (−0.57, −0.13)\n−0.24\n\n\nX4&gt;0 & X3&lt;=0 & X2&gt;-1\n0.02 (−0.21, 0.24)\n−0.24 (−0.42, −0.06)\n−0.24\n\n\n\n\n\n\n同一组规则的两种效应估计。× 为该组真实平均效应（两半样本各一个，几乎重合）。\n\n\n三点观察：\n\n只有一条规则是真的。 X3&gt;0 & X2&gt;-1 & X1&gt;0 对应真实的高效应组（0.7）， 两种估计都抓住了它。其余 6 条是 X2、X4、X10 上的噪声切分： 这 6 组的真实效应只集中在 0 与 −0.25 附近两档。 全样本 5 000 人时 iCF 完美恢复四格（第 5 页），样本减半、筛进连续噪声变量后就不行了。 变量筛选这一步决定成败。\nB 上的区间 7 个全部覆盖真值；A 内的 iCF 默认区间覆盖了 6 个。 这一次两者差别不大，但 A 内的估计与发现用的是同一批人，没有理论保证。\n规则 X4&lt;=0 & X3&lt;=0 & X2&gt;0 & X2&gt;-1 里同一变量出现两次， 这是 TREE2SUBGROUP() 不合并同变量条件的结果，读的时候要自己化简（即 X2&gt;0）。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>239</span>  <span class='chapter-title'>9. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/09-pitfalls.html#sec-survival",
+    "href": "notes/icf/09-pitfalls.html#sec-survival",
+    "title": "9. 实测清单与推荐工作流",
+    "section": "生存结局",
+    "text": "生存结局\niCF 源码里没有任何删失处理：森林是 causal_forest()， 效应模型是高斯 glm，论文把生存数据列为局限（p. 774）。 README 的实证例子把”两年内是否住院”当二分类 \\(Y\\)，删失者当作未发生。\n一个可行的接法是伪观测：把”截至 \\(t^*\\) 仍存活”的 Kaplan–Meier 伪值当作连续结局喂给 iCF， 只用它来发现规则；效应在留出集上用 grf::causal_survival_forest() 估计。\nps &lt;- pseudo::pseudosurv(time = dat$time, event = dat$status, tmax = 2)\ndat$Y &lt;- ps$pseudo[, 1]          # 伪值的均值恰等于 KM 估计的 S(2)\n本机 2026-09-27 做过一轮模拟（README 协变量，n = 4 000，Weibull 比例风险， log HR 由 X1、X3 修饰，目标 \\(S_1(2) - S_0(2)\\)，\\(t^*\\) 前删失约 30%，5 个种子； 脚本未随本站发布）。指标是”发现的划分能解释真实效应方差的比例” \\(R^2\\)：\n\n\n\n情形\n做法\n\\(R^2\\)\nATE 偏差\n\n\n\n\n无删失（对照）\n真实二分类结局\n0.87\n0.008\n\n\n独立删失\n伪观测\n0.68\n0.003\n\n\n独立删失\n删失当作未发生\n0.62\n−0.004\n\n\n删失依赖治疗与 X2\n伪观测\n0.45\n0.017\n\n\n删失依赖治疗与 X2\n删失当作未发生\n0.43\n0.056\n\n\n\n独立删失下伪观测可用；删失依赖协变量时，所有做法的发现能力都明显下降， 边际 KM 伪值也会有偏，需要 IPCW 伪观测。40 次运行里另有 5 次在 CATE_SG() → prop.func() 处报 subscript out of bounds，与结局构造无关。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>239</span>  <span class='chapter-title'>9. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/09-pitfalls.html#推荐工作流",
+    "href": "notes/icf/09-pitfalls.html#推荐工作流",
+    "title": "9. 实测清单与推荐工作流",
+    "section": "推荐工作流",
+    "text": "推荐工作流\n在不改 iCF 源码的前提下，下面这套流程绕开了上表中影响结论的几处问题：\n## 0. 准备 ---------------------------------------------------------------\nold &lt;- setwd(tempdir())                         # 吸收 png / tiff / Rplots.pdf\npkgs &lt;- c(\"MASS\", \"grf\", \"tidyverse\", \"rlang\", \"rlist\", \"plyr\", \"caret\", \"caTools\",\n          \"randomForest\", \"ggridges\", \"data.table\", \"broom\", \"rstatix\", \"knitr\",\n          \"DiagrammeR\", \"glmnet\", \"cowplot\")\ninvisible(lapply(pkgs, library, character.only = TRUE))\nlibrary(iCF)\nquiet &lt;- function(x) { invisible(utils::capture.output(x)); x }\n\n## 1. 拆样本：A 发现，B 估计 ------------------------------------------------\nset.seed(2025)\nidx &lt;- sample(nrow(dat), nrow(dat) / 2)\nA &lt;- dat[idx, ]; B &lt;- dat[-idx, ]; rownames(A) &lt;- NULL\n\n## 2. 在 A 上设全部全局对象（顶层运行，不要包进函数） ----------------------\nTrain &lt;- A\nvars_forest &lt;- colnames(A)[-(1:2)]\nX &lt;- A[, vars_forest]; Y &lt;- A$Y; W &lt;- A$W\nk &lt;- quiet(CF_RAW_key(A, min.split.var = 2, variable_type = \"non-hd\", hdPctTop = 0.9))\nY.hat &lt;- k$Y.hat; W.hat &lt;- k$W.hat; HTE_P_cf.raw &lt;- k$HTE_P_cf.raw\nvarimp_cf &lt;- k$varimp_cf; selected_cf.idx &lt;- k$selected_cf.idx\ncolnames(X)[selected_cf.idx]                    # 检查入选变量：它决定成败\nHTE_P_cf.raw                                    # 自己判断，不靠 P_threshold\nvars_catover2 &lt;- find_level_over2(X)\n\n## 3. 调叶大小（第 4 页），然后运行 --------------------------------------------\nleafsize &lt;- list(D5 = 85, D4 = 65, D3 = 45, D2 = 25)   # 用 MinLeafSizeTune() 核对后再定\nresA &lt;- quiet(iCFCV(dat = A, K = 5, treeNo = 1000, iterationNo = 100, min.split.var = 2,\n                    split_val_round_posi = 1, P_threshold = 1, variable_type = \"non-hd\",\n                    hdPctTop = 0.9, HTE_P_cf.raw = HTE_P_cf.raw))\nrules &lt;- resA$selectedSG_ori$majority$subgroup\nresA$selectedSG_stability_ori                   # 只看 stability_vote_mean4CV，不看 stability_CV\n\n## 4. 在 B 上估计每条规则的效应 ----------------------------------------------\ncfB &lt;- grf::causal_forest(as.matrix(B[, -(1:2)]), B$Y, B$W)\nest &lt;- t(sapply(rules, function(r)\n  grf::average_treatment_effect(cfB, subset = eval(parse(text = r), B))))\ncbind(n = sapply(rules, function(r) sum(eval(parse(text = r), B))), est)\n\nsetwd(old)\n报告时写出：入选变量、各深度候选亚组与折内稳定性、最终规则、 B 上的效应与区间、以及 A 上的同质性检验 P 值。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>239</span>  <span class='chapter-title'>9. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/icf/09-pitfalls.html#与其它方法的关系",
+    "href": "notes/icf/09-pitfalls.html#与其它方法的关系",
+    "title": "9. 实测清单与推荐工作流",
+    "section": "与其它方法的关系",
+    "text": "与其它方法的关系\n\ngrf 手册：iCF 的每一个森林都是 grf::causal_forest()， 最佳树、变量重要性、test_calibration() 的含义都在那里；\nmodel4you、StratifiedMedicine： 另外两种”输出一棵树”的亚组方法，前者在参数模型上做 MOB，后者是 PRISM 流水线；\nunihtee：不切亚组、只给逐变量检验，适合作为 iCF 之前的变量筛选；\n本机另做过 iCF 与 causalDT（蒸馏树）的对照（2026-09-26，各 5 个种子）： 在 iCF 自家 README 的全二分类设定上 iCF 10/10 恢复真四格，causalDT 常多切或少切； 换成 causalDT 论文的连续协变量设定（n = 500）后，split_val_round_posi = 1 时 iCF 在 30 次里崩溃 8 次 （均为陷阱 7），沿用 README 的取整设置则崩溃 15 次（另含 prop.func() 下标越界）； 成功时变量全对、没有假阳性，但平均切出 6 片叶子。脚本未随本站发布。",
+    "crumbs": [
+      "iCF 包函数手册",
+      "<span class='chapter-number'>239</span>  <span class='chapter-title'>9. 实测清单与工作流</span>"
+    ]
   }
 ]

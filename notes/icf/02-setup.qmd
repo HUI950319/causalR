@@ -1,0 +1,189 @@
+---
+title: "2. 安装、全局变量与数据格式"
+subtitle: "仓库原样装不上的两个原因、最小修补安装、全局变量契约和副作用清单"
+lang: zh
+---
+
+这一页决定你能不能把 iCF 跑起来。三件事必须先知道：
+仓库**原样装不上**；核心函数**从全局环境读数据**而不是从参数读；
+几个函数会**往工作目录写文件**。
+
+## 为什么不能直接 `install_github()` {#sec-why-not}
+
+CRAN、Bioconductor、r-universe 上都没有 iCF，只能从 GitHub 获取。
+作者 README 列了三种安装方式，第二、三种自己标注了 *currently being worked on*。
+本机实测（commit `8932f6a`，2026-09-10）原样安装失败，原因有二：
+
+1. **`R/iCF_README.R` 是示例脚本却放在 `R/` 目录。**
+   它的顶层有 `rm(list = ls())`、`devtools::install_github()`、
+   `source("/local/iCF/...")`、`load("HHF_SGLTvGLP_iCFCV.RData")` 等语句，
+   安装时会被当作包代码执行。
+2. **`NAMESPACE` 是旧版。** 它导出了 17 个已不存在的函数（加载时报
+   `object ... not found`），又漏掉了 `iCFCV`、`FIX_LOW_FREQ`、`PS_trim`、
+   `GG_VI` 等 29 个现用函数。`NAMESPACE` 里也没有任何 `import`。
+
+仓库根目录的 `iCF_0.0.0.9000.tar.gz` 是更早的快照，没有 `iCF_HD.R`（即没有
+`FIX_LOW_FREQ()`），不建议用。
+
+::: {.callout-warning}
+## 许可证
+
+iCF 仓库的 `DESCRIPTION` 里 `License:` 一栏仍是 usethis 模板的占位文字，
+仓库也没有 `LICENSE` 文件，法律上默认"保留所有权利"。
+本手册只引用函数签名和为说明问题所必需的几行源码；
+若要把 iCF 的代码并入自己的包或再分发，需要先取得作者许可。
+:::
+
+## 最小修补安装
+
+只改两处，其余源码一行不动：删掉示例脚本，`NAMESPACE` 改成导出全部函数。
+
+```r
+# 先在终端克隆到任意项目外目录：
+#   git clone --depth 1 https://github.com/tianshengwang/iCF.git D:/tools/iCF
+src   <- "D:/tools/iCF"
+stage <- file.path(tempdir(), "iCF")
+dir.create(stage)
+file.copy(file.path(src, c("DESCRIPTION", "R", "man")), stage, recursive = TRUE)
+file.remove(file.path(stage, "R", "iCF_README.R"))                       # 去掉示例脚本
+writeLines('exportPattern("^[[:alpha:]]+")', file.path(stage, "NAMESPACE"))  # 导出全部
+install.packages(stage, repos = NULL, type = "source")
+```
+
+安装时会有一条 NOTE：`LEAFSIZE_tune()` 调用 `iCF()` 时多传了一个参数。
+这不影响主流程（README 用的是 `MinLeafSizeTune()`），但意味着
+`LEAFSIZE_tune()` 一调用就报错，见[第 4 页](04-leafsize.qmd#sec-old-tuners)。
+
+::: {.callout-note}
+## 另一条路：`source()`
+
+README 的第一种方式是把 `R/` 下的文件逐个 `source()` 到全局环境。
+效果与上面相同（函数都在全局或包命名空间里查找全局变量），
+只是要注意 README 的 `source()` 清单漏了 `iCF_HD.R`，
+用到 hdiCF 的 `FIX_LOW_FREQ()` 时要自己补上。
+:::
+
+## 加载
+
+`NAMESPACE` 没有任何 `import`，源码里大量函数**不带包前缀**地调用
+dplyr、ggplot2、glmnet、cowplot、data.table 等包，
+所以 `library(iCF)` 之前必须把依赖**挂到搜索路径上**：
+
+```r
+pkgs <- c("MASS", "grf", "tidyverse", "rlang", "rlist", "plyr", "caret", "caTools",
+          "randomForest", "ggridges", "data.table", "broom", "rstatix", "knitr",
+          "DiagrammeR", "glmnet", "cowplot")
+invisible(lapply(pkgs, library, character.only = TRUE))
+theme_set(theme_ridges())
+library(iCF)
+length(getNamespaceExports("iCF"))
+#> [1] 75
+```
+
+顺序照搬 README（`plyr` 在 `tidyverse` 之后）。清单里有两处与 README 不同：
+
+- **加了 `glmnet` 和 `cowplot`**：README 漏写了。前者被 `prop.func()`
+  调用（`cv.glmnet()`），不挂会在最后估计亚组效应时报
+  `could not find function "cv.glmnet"`；后者被所有 `GG_CV_*()` 拼图函数调用。
+- **去掉了 `listdtr`、`DMwR`、`cobalt`、`optmatch`、`ggpubr`**：
+  README 列了，但代码里没有用到。`DMwR` 已从 CRAN 下架，装不上也无妨。
+
+::: {.callout-important}
+## `plyr` 在 `dplyr` 之后会屏蔽 `summarise()`
+
+按 README 的顺序，`plyr::summarise()`、`plyr::mutate()` 等会盖住 dplyr 的同名函数。
+主流程不受影响（iCF 在关键处写了 `dplyr::` 前缀），但 hdiCF 的 `PS_trim()`
+会因此报错，调用前必须 `detach("package:plyr")`，见[第 8 页](08-hdicf.qmd#sec-ps-trim)。
+:::
+
+### 让输出安静下来
+
+`find_best_tree()` 在检查每一棵树时都会 `cat("tree:", t)`，
+一次 `iCFCV()` 能打印上千行。下面这个包装只吞掉打印，返回值不变：
+
+```r
+quiet <- function(x) { invisible(utils::capture.output(x)); x }
+```
+
+本手册后面的代码都用它包住 iCF 的调用。
+
+## 全局变量契约 {#sec-globals}
+
+这是使用 iCF **最重要的一条规则**：核心函数通过**全局环境**读取数据，
+而不是通过参数。R 的词法作用域使包里的函数在找不到局部变量时，
+沿"包命名空间 → imports → base → 全局环境"一路找下去；
+iCF 的函数正是这样取到你在顶层定义的 `X`、`Y`、`W`。
+
+下表是按源码逐个函数整理的"读谁"：
+
+| 全局对象 | 由谁读取 | 用途 |
+|---|---|---|
+| `vars_forest` | `CF_RAW_key()`、`regression_forest_4PS()` | 协变量列名 |
+| `Train` | `CF()`、`MinLeafSizeTune()`（经 `iCF()`） | **只用 `nrow(Train)`** 算最小叶大小 |
+| `X`、`Y`、`W` | `CF()`、`iCF()`、`MAJORITY_VOTE()`、`DATA4grpmodel()`、`ANA_SUBGROUP()` | 种森林、判断变量水平数、拼公式 |
+| `Y.hat`、`W.hat` | `CF()` | 森林的 $\hat Y$、$\hat W$ |
+| `selected_cf.idx` | `CF()`、`iCF()` | 森林只在这些列上分裂 |
+| `leafsize` | `iCFCV()`（传给 `SUBGROUP_PIPELINE()`） | D2–D5 的 `denominator` |
+| `vars_catover2` | `SGMODEL_DATA()` | 哪些协变量在转换结局模型里当因子 |
+| `HTE_P_cf.raw` | `PICK_CV()` | 报告列 `grp_pick` |
+| `varimp_cf` | `PlotVI()`、`GG_Xs()` | 画图 |
+| `dxgroup`、`atcgroup` | `FIX_LOW_FREQ()` | 识别高维代码列的前缀 |
+
+反过来，`iCFCV()` 运行时会用 `<<-` **往全局环境写**一批对象
+（本机一次运行新增的全部名字见[第 5 页](05-icfcv.qmd#sec-side-effects)），
+其中包括 `formula_basic`、`formula_g2` 等后续函数要读的公式。
+
+::: {.callout-warning}
+## 两条由此而来的使用纪律
+
+1. **所有代码都在顶层运行。** 如果你把流程包进自定义函数，
+   函数里的 `X <- ...` 只是局部变量，iCF 读到的仍是全局的旧 `X`。
+   这就是作者 README 满屏 `<<-` 的原因。
+2. **换数据集时把上表的对象全部重设。** 漏掉任何一个，iCF 都会静默沿用旧数据。
+   例如只重设了 `X` 而没重设 `Train`，最小叶大小就按旧样本量算。
+:::
+
+参数与全局变量**同名但不同值**时，全局变量赢。最典型的是
+`iCFCV(min.split.var = ...)`：每折确实按它重新筛选变量，
+但种树时用的是全局的 `selected_cf.idx`，见[第 5 页](05-icfcv.qmd#sec-min-split-var)。
+
+## 数据格式
+
+| 要求 | 说明 |
+|---|---|
+| 列顺序与列名 | 第 1 列结局，列名必须是 `Y`；第 2 列治疗，列名必须是 `W`；其余为协变量 |
+| 治疗 | 0/1 数值 |
+| 结局 | 连续或 0/1；二分类时一切效应都在**风险差**尺度上 |
+| 缺失值 | **不允许**，否则报 `` `G4` must be size 11886 or 1, not 11888 `` 这类长度不匹配错误（README 原文） |
+| 分类协变量 | 用数值编码；3–8 个水平的变量由 `find_level_over2()` 登记到 `vars_catover2`，在转换结局模型里按因子处理 |
+| 连续协变量 | 亚组定义里的切点按 `split_val_round_posi` 位小数取整 |
+| 样本量 | 论文模拟 5 000–20 000；作者明确说小样本不适用（p. 774） |
+
+README 给了一个找缺失列的小函数，照抄即可：
+
+```r
+vars_with_missing <- names(Train)[sapply(Train, anyNA)]
+```
+
+生存结局 iCF 本身不支持，论文把它列为局限（p. 774）；
+README 的实证例子把"两年内是否住院"当作二分类 $Y$，删失者按未发生处理。
+更稳妥的接法见[第 9 页](09-pitfalls.qmd#sec-survival)。
+
+## 随机性与副作用 {#sec-side}
+
+| 行为 | 所在函数 | 后果 |
+|---|---|---|
+| `set.seed(1234)` | `CF_RAW_key()` 开头、`iCFCV()` 分折前 | 调用后全局随机数流被重置；同一份数据上反复运行结果相同 |
+| 每个森林的 `seed = runif(1, 0, .Machine$integer.max)` | `CF()` | 森林种子取自 R 的随机数流，因此整条流程可复现 |
+| 基础绘图 `plot(varimp_cf)` | `CF_RAW_key()` | 非交互会话（`Rscript`、knitr）里会在工作目录生成 `Rplots.pdf` |
+| `png()` 写文件 | `GG_PS()` | 写 `<filename>.png`；`iCFCV()` 每折调用 4 次 |
+| `tiff()` 写文件 | `GG_DepthDistribution()` | 写一张 15 × 25 英寸的 tiff，且**内容是空白的**，见[第 4 页](04-leafsize.qmd#sec-depth-dist) |
+| `cat("tree: ...")` | `find_best_tree()` | 大量打印，用 `quiet()` 屏蔽 |
+
+建议把工作目录设到临时目录再运行：
+
+```r
+old <- setwd(tempdir())
+# ……运行 iCF……
+setwd(old)
+```

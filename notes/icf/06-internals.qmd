@@ -1,0 +1,320 @@
+---
+title: "6. 内部引擎：最佳树、投票与亚组模型"
+subtitle: "CF / iCF / find_best_tree / MAJORITY_VOTE / TREE2SUBGROUP / SUBGROUP_PIPELINE 等逐个说明"
+lang: zh
+---
+
+`iCFCV()` 之下有四十多个函数。日常使用不必直接调用它们，
+但读懂其中十来个，才能解释 `iCFCV()` 的输出、定位报错，
+或者把某一步单独拿出来用。本页按数据流的顺序介绍，
+示例延续第 3–5 页的全局对象（`selected_cf.idx` 为 X1、X3）。
+
+```text
+CF()  ──►  iCF() / oneCF()  ──►  GET_TREE_L() / GET_TREE_DF()
+ │            └─ find_best_tree() ── get_r_loss() ── r_loss()
+ ▼
+PRE_MAJORITY_TREE_R()  ──►  MAJORITY_VOTE()  ──►  TREE2SUBGROUP()
+                                                   └─ PRE_MAJORITY_SUBGROUP() ── PARENT_NODES()
+ ▼
+SUBGROUP_PIPELINE()：D5→D4→D3→D2，DATA4grpmodel()，CF_GROUP_DECISION()
+ ▼
+iCFCV()：CV_SG_MAJORITY()、CVBIAS_D_MAJORITY()、CVBIAS_MAIN()、PICK_CV()、CATE_SG()
+```
+
+## 种树：`CF()` {#sec-cf}
+
+```r
+CF(depth, treeNo, tunepara)
+```
+
+对 `grf::causal_forest()` 的一层包装，所有数据都取自全局：
+
+```r
+grf::causal_forest(X[, selected_cf.idx], Y, W, Y.hat, W.hat,
+                   num.trees = treeNo,
+                   min.node.size = round(nrow(Train) / depth, 0),
+                   mtry = min(ceiling(sqrt(ncol(X)) + 20), ncol(X)),
+                   sample.fraction = 0.5, honesty = TRUE, honesty.fraction = 0.5,
+                   honesty.prune.leaves = TRUE, alpha = 0.05, imbalance.penalty = 0,
+                   stabilize.splits = TRUE, ci.group.size = 2,
+                   tune.parameters = tunepara,
+                   seed = runif(1, 0, .Machine$integer.max), ...)   # 摘录
+```
+
+几处值得注意：
+
+- 参数名叫 `depth`，传进来的其实是 `denominator`；
+- `mtry` 按**全体** `X` 的列数 $p$ 算，等于 $\min(\lceil\sqrt p + 20\rceil, p)$。
+  入选变量不超过这个数时（常见情形，如本例 $p = 10$ 时 `mtry` = 10、入选 2 个），
+  每次分裂都考察全部入选变量，不做特征抽样；
+- `X[, selected_cf.idx]` **没有写 `drop = FALSE`**。只选中 1 个变量时，
+  取出来的是向量而不是数据框，grf 报
+  `Currently the only supported data input types are: 'matrix', 'data.frame'`。
+  这不是边角情况：数据里只有一个强修饰变量时，"大于均值"规则常常只选出它。
+  本机在"只有连续 X2 修饰效应"的模拟上，`CF_RAW_key(min.split.var = 1)` 恰好只选出 X2，
+  随后 `iCF()` 就以这条报错退出。**`min.split.var` 至少设 2。**
+
+## 从森林取最佳树：`find_best_tree()` {#sec-besttree}
+
+```r
+find_best_tree(forest, type = c("regression", "causal"), cost = 0)
+```
+
+对森林里的每一棵树调用 `get_r_loss()`，取总 R-loss 最小者。
+R-loss 的定义见[第 1 页](01-algorithm.qmd#sec-besttree)。返回：
+
+| 元素 | 内容 |
+|---|---|
+| `best_tree` | 最佳树在森林中的编号，配合 `grf::get_tree(forest, best_tree)` 使用 |
+| `best_r_loss` | 其 R-loss |
+| `best_prune_info` | 每个节点是否被当作叶子（剪枝结果）及样本下标 |
+
+```r
+set.seed(3)
+cf_demo <- grf::causal_forest(X[, selected_cf.idx, drop = FALSE], Y, W, Y.hat = Y.hat, W.hat = W.hat,
+                              num.trees = 200, min.node.size = round(nrow(Train) / 45))
+bt <- quiet(find_best_tree(cf_demo, "causal"))
+bt$best_tree;  bt$best_r_loss
+#> [1] 180
+#> [1] 1197.6
+```
+
+200 棵树耗时 0.1 秒。两个细节：
+
+- 函数每检查 `floor(num.trees / 20)` 棵树打印一次进度。**树少于 20 棵时这个数是 0**，
+  `t %% 0` 得到 `NaN`，于是报 `missing value where TRUE/FALSE needed`（本机用 10 棵树的森林复现）。
+  所以 `treeNo` 必须 ≥ 20。
+- 进度用 `cat()` 打印，这就是需要 `quiet()` 的原因。
+
+### 剪枝信息没有被用来定义亚组 {#sec-prune}
+
+`best_prune_info` 标出了"按 R-loss 应合并"的节点，但 `iCF()` 随后把
+`grf::get_tree()` 返回的**原始**树交给 `GET_TREE_DF()`，剪枝信息被丢弃。
+这会不会改变亚组？在 5 个变量（X1–X4、X10）上用不同最小叶大小各种 8 个森林，
+比较最佳树的 grf 叶数与"按 R-loss 剪枝后"的叶数：
+
+| `denominator` | 最小叶大小 | grf 叶数（均值） | R-loss 剪枝后叶数（均值） |
+|---|---|---|---|
+| 25 | 200 | 2.0 | 2.0 |
+| 45 | 111 | 4.0 | 2.9 |
+| 85 | 59 | 6.6 | 3.1 |
+| 150 | 33 | 10.6 | 3.1 |
+| 300 | 17 | 19.3 | 3.0 |
+
+40 棵最佳树里有 31 棵，剪枝本应合并掉一部分叶子。
+也就是说，iCF 输出的亚组数由最小叶大小决定，**不是由 R-loss 剪枝决定**；
+R-loss 只用来在森林里挑出哪一棵树。
+
+### 相关的底层函数
+
+| 函数 | 作用 | 是否被主流程使用 |
+|---|---|---|
+| `r_loss(Y, samples, W.orig, W.hat, M.hat, Tau.hat)` | 单个节点的 R-loss | 是 |
+| `get_r_loss(Y, tree, index, cost, prune_info, ...)` | 递归计算子树 R-loss 并标记剪枝 | 是 |
+| `find_leaf(x, tree, prune_info)` | 按剪枝后的树找样本所在叶子 | 否 |
+| `estimate_params(X, Y, tree, prune_info)` | 用 OOB 样本估计剪枝后各叶的均值与标准差 | 否 |
+
+这四个函数与 `find_best_tree()` 一起，来自 GitHub gist *msegar*，同样没有声明许可证。
+
+## 树转成表：`GET_TREE_DF()`、`GET_TREE_L()`
+
+```r
+GET_TREE_DF(No_nodes, treetype, split_val_round_posi)
+```
+
+把 `grf::get_tree()` 的嵌套列表展开成每个节点一行的数据框，
+**切点在这里就按 `split_val_round_posi` 取整**：
+
+```r
+tr <- grf::get_tree(cf_demo, bt$best_tree)
+GET_TREE_DF(length(tr$nodes), tr, 0)
+#>      node is_leaf left_child right_child split_variable split_value samples avg_Y avg_W
+#> 1 node-01   FALSE         02          03             X3           0      NA    NA    NA
+#> 2 node-02    TRUE         NA          NA             NA          NA     629 -3.66  0.46
+#> 3 node-03   FALSE         04          05             X1           0      NA    NA    NA
+#> 4 node-04    TRUE         NA          NA             NA          NA     325 -4.31   0.5
+#> 5 node-05    TRUE         NA          NA             NA          NA     296 -3.23  0.68
+```
+
+节点编号补零成两位（`node-01`），叶子的 `samples` 是 grf 诚实估计半样本里的人数，
+`avg_Y`、`avg_W` 是叶内 grf 统计量。除 `node` 外几乎所有列都是**字符型**。
+
+`GET_TREE_L(iCF_D, listindex)` 从 `iCF()` 的结果里按位置取出一类对象：
+1 = 每次迭代的最佳树数据框，2 = grf 原始树对象，3 = 分裂频数表。
+
+## 同一深度反复种森林：`iCF()` 与 `oneCF()`
+
+```r
+iCF(depth, treeNo, tunepara = "none", iterationNo, tree_depth, split_val_round_posi)
+oneCF(depth, treeNo, tunepara = "none", tree_depth, split_val_round_posi)
+```
+
+`iCF()` 循环 `iterationNo` 次：`CF()` 种森林 → `test_calibration()` 记 P 值
+→ `split_frequencies()` 记分裂频数 → `find_best_tree()` 取最佳树
+→ `plot()` 一次（结果丢弃）→ `GET_TREE_DF()`。返回长度为 `iterationNo` 的列表，
+每个元素含 `besttreelist`、`besttreelist_L`、`splitfreqlist`。
+`oneCF()` 是 `iterationNo = 1` 的版本，另外返回森林本身和它的全部树。
+
+```r
+set.seed(5)
+it3 <- quiet(iCF(45, 200, tunepara = "none", iterationNo = 10, tree_depth = "D3", split_val_round_posi = 0))
+BT <- GET_TREE_L(it3, 1)      # 10 棵最佳树
+SF <- GET_TREE_L(it3, 3)      # 10 张分裂频数表
+SF[[1]]
+#>    X1  X3 k
+#> 1  87 113 1
+#> 2 107  87 1
+#> 3   0   0 1
+```
+
+分裂频数表的第 $d$ 行是整片森林在第 $d$ 层用各变量分裂的次数，
+与最佳树无关；投票时只作附带信息。10 次耗时 1.5 秒。
+
+## 多数投票：`MAJORITY_VOTE()`
+
+```r
+MAJORITY_VOTE(list0, list1, list2, list3, truth, truth_N1, truth_N123, split_val_round_posi)
+```
+
+| 参数 | 传什么 |
+|---|---|
+| `list0` | 原始最佳树列表（`GET_TREE_L(x, 1)`） |
+| `list1`、`list2` | 用于比较的"结构"。`SUBGROUP_PIPELINE()` 传 `PRE_MAJORITY_TREE_R(list0)`：只保留 `node`、`is_leaf`、`left_child`、`right_child`、`split_variable` 五列 |
+| `list3` | 分裂频数表列表 |
+| `truth`、`truth_N1`、`truth_N123` | 模拟研究的真树；真实数据传 `TRUTH("Unknown")` 设出的全局 `tree_true_r`、`tree_true_N1_r`、`tree_true_N123_r` |
+| `split_val_round_posi` | 合成树切点的取整位数 |
+
+```r
+TRUTH("Unknown")
+vt <- quiet(MAJORITY_VOTE(BT, PRE_MAJORITY_TREE_R(BT), PRE_MAJORITY_TREE_R(BT), SF,
+                          tree_true_r, tree_true_N1_r, tree_true_N123_r, 0))
+vt$n_occurence;  vt$stability
+#> [1] 3 2 2 2 1
+#> [1] 0.3
+vt$majority.syn
+#>      node is_leaf left_child right_child split_variable split_value samples avg_Y avg_W k     HTE_P_cf
+#> 1 node-01   FALSE         02          03             X3           0      NA    NA    NA 1 3.645632e-34
+#> 2 node-02    TRUE         NA          NA             NA          NA     618 -3.56  0.45 1 3.645632e-34
+#> 3 node-03   FALSE         04          05             X1           0      NA    NA    NA 1 3.645632e-34
+#> 4 node-04    TRUE         NA          NA             NA          NA     330 -4.22  0.53 1 3.645632e-34
+#> 5 node-05    TRUE         NA          NA             NA          NA     302 -3.23  0.65 1 3.645632e-34
+```
+
+"结构"比较的是**节点位置**，不只是变量顺序。本例 10 棵最佳树按"依次用了哪些变量"数，
+`X3 → X1` 出现 5 次；但其中只有 3 次是"先按 X3 切、再在 **X3 > 0 一侧**按 X1 切"，
+另 2 次是在 X3 ≤ 0 一侧切 X1，属于不同结构。于是胜出结构只占 3/10，稳定性 0.3。
+
+返回列表里常用的元素：
+
+| 元素 | 内容 |
+|---|---|
+| `majority` | 胜出结构（五列） |
+| `majority.syn` | 合成树：胜出结构 + 各节点切点均值 + 叶子样本量等的均值 |
+| `stability` | 胜出结构出现次数 / 总次数 |
+| `n_occurence` | 每种不同结构的出现次数 |
+| `split_value_mean`、`split_value_sd`、`split_value_quantile` | 胜出结构各分裂节点切点的均值、标准差、分位数 |
+| `split_value_plot` | 切点分布的山脊图（ggridges） |
+| `accuracy*`、`majority_EQ_true*` | 与真树比较，模拟研究用；真实数据上无意义 |
+
+合成切点的取整规则：**先**在 `GET_TREE_DF()` 里逐棵树取整，**再**对均值取整；
+如果分裂变量在全局 `X` 里的取值少于 8 个，一律取整到整数，不管 `split_val_round_posi`。
+
+## 树转亚组：`TREE2SUBGROUP()`
+
+```r
+TREE2SUBGROUP(tree)
+```
+
+从每个叶子向上追溯父节点（`PRE_MAJORITY_SUBGROUP()` 调用 20 层 `PARENT_NODES()`），
+把路径上的条件用 ` & ` 连起来，按变量名**降序**排列条件，再按字符串排序编号：
+
+```r
+TREE2SUBGROUP(vt$majority.syn)$majority
+#> # A tibble: 3 × 2
+#>   subgroupID subgroup
+#>        <int> <chr>
+#> 1          1 X3<=0
+#> 2          2 X3>0 & X1<=0
+#> 3          3 X3>0 & X1>0
+```
+
+条件排序的结果是字母倒序（X3 在 X1 前），与树里的分裂先后无关。
+同一变量出现两次时也不合并，例如[第 9 页](09-pitfalls.qmd#sec-honest)里的 `X2>0 & X2>-1`。
+
+## 单折流水线：`SUBGROUP_PIPELINE()` {#sec-pipeline}
+
+```r
+SUBGROUP_PIPELINE(X, Y, W, Y.hat, W.hat, W.hat_test, selected_cf.idx, leafsize, treeNo,
+                  iterationNo, Ntrain, Train_ID, Test_ID, variable_type, HTE_P_cf.raw,
+                  P_threshold, split_val_round_posi)
+```
+
+`iCFCV()` 每折调用一次。流程：
+
+1. 依次 `iCF()` D5、D4、D3；D2 先放进 `tryCatch()` 试跑一次，
+   **成功就把结果丢掉再正式跑一次**（失败则令 D2 = D3 并给警告
+   *The minimum leaf size is too small for Depth 2 causal forest*）。
+   `trace()` 实测每折 D2 被调用 2 次，两次结果不同，用的是第二次；
+2. 最佳树写入全局 `iCF_D5_BT` … `iCF_D2_BT`；
+3. 每个深度 `PRE_MAJORITY_TREE_R()` + `MAJORITY_VOTE()` + `TREE2SUBGROUP()`，得到 $G_5, \dots, G_2$；
+4. `DATA4grpmodel()` 给训练折、验证折的每个人贴上 G2–G5 标签，
+   并把 `formula_basic`、`formula_g2` … `formula_g5` 写入全局；
+5. `CF_GROUP_DECISION()` 在训练折上拟合五个转换结局模型。
+
+参数表里的 `X`、`Y`、`W`、`Y.hat`、`W.hat`、`selected_cf.idx` 是本折的，
+但第 1 步种树的 `CF()` 看不到它们——见[第 9 页](09-pitfalls.qmd#sec-leak)。
+
+### 转换结局模型：`DATA4grpmodel()`、`SGMODEL_DATA()`、`CF_GROUP_DECISION()`
+
+| 函数 | 作用 |
+|---|---|
+| `DATA4grpmodel(V_D5, V_D4, V_D3, V_D2, dat)` | 用 `GET_SUBGROUP_ID()` 给 `dat` 每行贴 G2–G5；生成公式 `Y ~ W + G_D + W:G_D + X1 + ... + Xp`（协变量列名取自全局 `X`） |
+| `SGMODEL_DATA(dat, outcome_type_at, W.hat)` | 计算 $Y^* = WY/\hat e - (1-W)Y/(1-\hat e)$，`"transform"` 时用 $Y^*$ 替换 `Y`；G2–G5 与 `vars_catover2` 转因子，配 `contr.sum` |
+| `CF_GROUP_DECISION(HTE_P_cf.raw, dat, method_CF, outcome_type_at, P_threshold, W.hat)` | 结局取值 ≥ 8 个用 `lm()`，恰好 2 个用 `glm(binomial)`，**3–7 个时模型对象未定义而报错**；P 值不过门槛时返回五个 `"NA"` |
+
+在 `iCFCV()` 里 `outcome_type_at` 恒为 `"transform"`，$Y^*$ 总是连续的，走 `lm()`。
+
+### 跨折汇总与选择
+
+| 函数 | 作用 |
+|---|---|
+| `CV_SG_MAJORITY(vote_D_subgroup.L, stability_D_T_r, K)` | 某深度跨折多数投票；K 折两两不同时取折内稳定性最高的一折 |
+| `CVBIAS_D_MAJORITY(vote_D_subgroup.L, stability_D_T_r, K, metric)` | 只在"与多数结果相同的折"上平均 $\text{RMSE}^2$ |
+| `CVBIAS_MAIN(metric)` | 主效应模型（不分亚组）的 CV MSE |
+| `PICK_m2345(HTE_P_value, m, g2, g3, g4, g5, P_threshold)` | 生成报告列 `grp_pick`；只有 P 值**不过**门槛时才把主效应模型 `m` 放进比较 |
+| `PICK_CV(...)` | **真正的选择**：`which.min(c(g2, g3, g4, g5))`，再用 `eval(parse())` 从全局取 `vote_D<k>_subgroup.L` 等对象 |
+
+`PICK_CV()` 从全局取的是 `HTE_P_cf.raw`，而不是它自己的形参 `HTE_P_value`。
+
+## 效应估计：`CATE_SG()` 及其下层
+
+| 函数 | 作用 |
+|---|---|
+| `CATE_SG(dat, SGdecision)` | 对外接口，见[第 5 页](05-icfcv.qmd#sec-cate-sg) |
+| `DltY_DATA(decision, dataset, label)` | 对每个亚组调用 `ANA_SUBGROUP()` 并拼回原数据 |
+| `SUBSETTING(decision, dataset)` | 用 `rlang::parse_expr()` 把条件字符串变成 `filter()`；`decision` 不是数据框时用恒真条件 `W <100` |
+| `GET_SUBGROUP_ID(decision, dataset)` | 给每行贴上 `SubgroupID` 与 `Definition`，按 `ID` 排序 |
+| `ANA_SUBGROUP(subgroup)` | 组内 `prop.func()` 估倾向评分，算三种权重，三个 `glm(Y ~ W)`，再做 t 检验或卡方检验（按**全局** `Y` 的取值个数判断结局类型） |
+| `prop.func(x, trt)` | `cv.glmnet(family = "binomial")`，取 `lambda.min` 的预测概率 |
+| `EXTRACT_SUB_ANA(...)` | 整理多个亚组的分析结果，模拟研究用 |
+
+## 模拟研究与遗留函数 {#sec-legacy}
+
+以下函数服务于论文的模拟研究或早期版本，真实数据分析用不到：
+
+| 类别 | 函数 |
+|---|---|
+| 生成数据与真值 | `GEN_SIM_DATA_HTE()`（32 个参数，复现论文 12 个场景）、`inv.logit()`、`TRUTH()` |
+| 评价 | `TREE_PERFORMANCE()`、`DISCOVERYRATE()`、`MSE_DltY()`、`CATE_MAX_SG()`、`N_SUBGROUP()`、`DETECT_STRING()` |
+| 其它方法的格式转换 | `CONVERT_tree_IT2CF()`、`CONVERT_tree_stima2CF()`、`OTHERTREE_DECI()`、`SPLITVAR_SIGN_SPLITVAL_LofDf_VT()`、`SPLITVAR_SIGN_SPLITVAL_LofDf_CT()`、`VT2CF_format()`、`SG_CONDITION_2_INT()`、`SG2INT()` |
+| 投票辅助 | `MAJORITY_COUNT()`、`STANDARD_CHECK()`、`MAJORITY_PICK_LEAF()`、`SG_PROBABILITY()`、`GET_ORI_TREE_L()`、`HTE_P_extract()` |
+| 坏掉的旧调参 | `LEAFSIZE_tune()`、`GRID_LEAFSIZE()`（见[第 4 页](04-leafsize.qmd#sec-old-tuners)） |
+
+::: {.callout-note}
+## 帮助页也是旧的
+
+仓库 `man/` 下有 65 个 Rd 文件，与现行代码对不上：其中 17 个描述的函数已经不存在
+（如 `DATA4grplasso`、`cv.grplasso`、`DELTA_Y_DATA`、`FINALDECI`），而 75 个现行函数里有 27 个没有帮助页，
+包括 `iCF()`、`oneCF()`、`find_level_over2()`、`FIX_LOW_FREQ()`、`PS_trim()` 和全部 `GG_*()`。
+以源码和本手册为准。
+:::

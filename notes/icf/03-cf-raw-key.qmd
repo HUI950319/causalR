@@ -1,0 +1,250 @@
+---
+title: "3. CF_RAW_key()：原始森林与变量筛选"
+subtitle: "第 1 步：Ŷ、Ŵ、同质性检验 P 值和进入后续森林的变量集 X_S"
+lang: zh
+---
+
+`CF_RAW_key()` 是整个流程的第一步，对应论文 Figure 1A 的"Grow a raw CF to test
+heterogeneity"。它产出后续每一步都要用的五样东西：
+$\hat Y$、$\hat W$、同质性检验 P 值、变量重要性，以及筛选出的变量下标。
+本页所有输出都来自 README 模拟数据（n = 5 000，种子 2024，见[本页末尾](#sec-sim)）。
+
+## 签名
+
+```r
+CF_RAW_key(Train_cf, min.split.var, variable_type, hdPctTop)
+```
+
+| 参数 | 含义 |
+|---|---|
+| `Train_cf` | 数据框，需含 `Y`、`W` 两列；**协变量列取自全局 `vars_forest`**，而不是"除 Y、W 外的所有列" |
+| `min.split.var` | 非高维模式下**至少**要选出的变量数，见[下文](#sec-select) |
+| `variable_type` | `"hd"`：按 `hdPctTop` 取重要性最高的一批；`"hdshrink"`：全选；其他任意字符串（README 用 `"non-hd"`）：按均值/分位数规则 |
+| `hdPctTop` | 仅 `"hd"` 时生效。`< 1` 表示取重要性高于该分位数的变量（0.95 = 前 5%）；`> 1` 表示取前 k 个；**恰好等于 1 会报错**（见[下文](#sec-select)） |
+
+## 函数内部做了什么
+
+按源码顺序：
+
+1. `set.seed(1234)`——**重置全局随机数种子**；
+2. `grf::regression_forest(X, W)` 与 `grf::regression_forest(X, Y)`，取 OOB 预测作为 $\hat W$、$\hat Y$；
+3. `grf::causal_forest(X, Y, W, Y.hat, W.hat)`，全部用 grf 默认参数；
+4. 在这片森林上跑一次 `find_best_tree()` 并 `plot()` 最佳树（结果被丢弃，只浪费时间）；
+5. `grf::test_calibration(cf.raw)[8]` 取 P 值；
+6. `grf::variable_importance(cf.raw)`，并用**基础绘图** `plot(varimp_cf)` 画散点——
+   非交互会话里会在工作目录生成 `Rplots.pdf`（本机 `Rscript` 实测确实生成）；
+7. 按规则筛选变量，返回列表。
+
+## 运行
+
+```r
+vars_forest <- colnames(Train %>% dplyr::select(-c("Y", "W")))
+X <- Train[, vars_forest]
+Y <- as.vector(as.numeric(Train[, "Y"]))
+W <- as.vector(as.numeric(Train[, "W"]))
+
+cf_raw_key.tr   <- quiet(CF_RAW_key(Train, min.split.var = 1, variable_type = "non-hd", hdPctTop = 0.90))
+Y.hat           <- cf_raw_key.tr$Y.hat
+W.hat           <- cf_raw_key.tr$W.hat
+HTE_P_cf.raw    <- cf_raw_key.tr$HTE_P_cf.raw
+varimp_cf       <- cf_raw_key.tr$varimp_cf
+selected_cf.idx <- cf_raw_key.tr$selected_cf.idx
+
+str(cf_raw_key.tr, max.level = 1)
+#> List of 9
+#>  $ X              :'data.frame':	5000 obs. of  10 variables:
+#>  $ Y              : num [1:5000] -4.42 -3.56 -2.86 -3.45 -2.97 ...
+#>  $ W              : num [1:5000] 1 1 0 0 0 1 0 0 1 1 ...
+#>  $ Y.hat          : num [1:5000] -4.37 -3.78 -2.45 -3.11 -3.94 ...
+#>  $ W.hat          : num [1:5000] 0.465 0.541 0.403 0.28 0.495 ...
+#>  $ HTE_P_cf.raw   : num 9.47e-31
+#>  $ varimp_cf      : num [1:10, 1] 0.35294 0.05699 0.40922 0.06022 0.00607 ...
+#>  $ selected_cf.idx: int [1:2] 1 3
+#>  $ time_rawCF     : 'difftime' num 14.0197849273682
+```
+
+5 000 例、10 个协变量，本机耗时 14 秒。**返回的 `X`、`Y`、`W` 不会自动写回全局**，
+上面五行赋值必须自己做——`iCFCV()` 之后读的是全局对象。
+
+### 同质性检验 P 值从哪来
+
+`test_calibration()` 返回一个 2 × 4 的矩阵，按列展开后第 8 个元素是
+*differential forest prediction* 那一行的 `Pr(>t)`：
+
+```text
+Best linear fit using forest predictions (on held-out data)
+as well as the mean forest prediction as regressors, along
+with one-sided heteroskedasticity-robust (HC3) SEs:
+
+                               Estimate Std. Error t value  Pr(>t)
+mean.forest.prediction         0.935065   0.554442  1.6865 0.04588 *
+differential.forest.prediction 0.946437   0.081525 11.6092 < 2e-16 ***
+```
+
+这是**单侧**检验（系数大于 0），系数接近 1 说明森林预测出的异质性幅度校准良好。
+本例 $P = 9.5\times 10^{-31}$，强烈提示存在异质性。
+（上面这张表是另用种子 1 重拟合的同设定森林打印的，`CF_RAW_key()` 内部那片森林的
+P 值就是 `str()` 里的 `9.47e-31`。）
+
+## 变量筛选规则 {#sec-select}
+
+先看重要性本身：
+
+```r
+round(setNames(as.numeric(varimp_cf), colnames(X)), 4)
+#>     X1     X2     X3     X4     X5     X6     X7     X8     X9    X10
+#> 0.3529 0.0570 0.4092 0.0602 0.0061 0.0021 0.0502 0.0068 0.0019 0.0535
+```
+
+grf 的变量重要性是"各层分裂次数的加权比例"，**总和恒为 1**，
+所以"大于均值"等价于"大于 $1/p$"——本例就是大于 0.1。
+非高维模式下的规则是一串逐级放宽的阈值：
+
+1. 重要性 > 均值的变量数 ≥ `min.split.var`，就用它们；
+2. 否则放宽到 > 第 75 百分位；
+3. 再不够放宽到 > 中位数；
+4. 再不够放宽到 > 第 25 百分位；
+5. 还不够就全选。
+
+同一片森林上换不同设置的实测结果：
+
+| `min.split.var` | `variable_type` | `hdPctTop` | 选出的变量 | 走到哪一级 |
+|---|---|---|---|---|
+| 1 | `"non-hd"` | — | X1, X3 | 均值 |
+| 4 | `"non-hd"` | — | X1, X2, X3, X4, X10 | 中位数（第 75 百分位只选出 3 个） |
+| 6 | `"non-hd"` | — | X1, X2, X3, X4, X7, X8, X10 | 第 25 百分位 |
+| 1 | `"hd"` | 0.7 | X1, X3, X4 | 第 70 百分位 |
+| 1 | `"hd"` | 3 | X1, X3, X4 | 前 3 个 |
+| 1 | `"hdshrink"` | — | 全部 10 个 | — |
+| 1 | `"hd"` | **1** | 报错 `object 'selected_cf.idx_hd' not found` | 源码只处理了 `< 1` 和 `> 1` |
+
+真实效应修饰变量是 X1 和 X3，"均值"规则恰好只选中它们。
+README 在第 1 步用 `min.split.var = 1`，在 `iCFCV()` 里用 4——
+后者看似会让森林在 5 个变量上分裂，实际上不会，原因见
+[第 5 页](05-icfcv.qmd#sec-min-split-var)。
+
+::: {.callout-tip}
+## 预后变量为什么排不进来
+
+X2、X4、X8、X9、X10 都直接影响结局（X8 的主效应系数 0.71，绝对值仅次于 X3 的 −0.73），
+但重要性都很低。这是因为 $\hat Y$ 已经把预后部分吸收掉了，
+因果森林只在**效应**有差异的方向上分裂。这是因果森林的重要性
+与普通预测模型重要性的根本区别，也是 iCF 用它来筛选修饰变量的理由。
+:::
+
+## 可视化 {#sec-viz}
+
+### `GG_VI()`：条形图
+
+```r
+GG_VI(varimp_cf, title, var_label)
+```
+
+`varimp_cf` 是重要性向量，`var_label` 是等长的变量名。返回 ggplot 对象。
+
+```r
+GG_VI(varimp_cf, "Variable importance (raw causal forest)", colnames(X))
+```
+
+![`GG_VI()` 的输出：X3、X1 远高于其余变量。](images/vi_gg.png){fig-align="center" width="85%"}
+
+### `PlotVI()`：带标签的散点
+
+```r
+PlotVI(varimp_CF, title, var_label)
+```
+
+::: {.callout-warning}
+## `PlotVI()` 忽略第一个参数
+
+形参名是 `varimp_CF`（大写 CF），函数体里用的却是 `varimp_cf`（小写），
+于是读到的是**全局**的 `varimp_cf`。实测传入一个全是 1 的向量，
+画出来的纵坐标仍与全局 `varimp_cf` 逐个相等。
+画别的森林的重要性时，先把它赋给全局 `varimp_cf`，或者直接用 `GG_VI()`。
+:::
+
+![`PlotVI()` 的输出。横轴是按字母序排列的变量名（不是"Index"），标签与点重叠。](images/vi_plot.png){fig-align="center" width="85%"}
+
+### `GG_PS()`：倾向评分分布
+
+```r
+GG_PS(dat, PS, title, filename)
+```
+
+按 `dat$W` 分组画 `PS` 的密度，图注给出两组的最小值、四分位数、均值和最大值。
+**副作用**：同时把图写成工作目录下的 `<filename>.png`。
+`PS` 可以是任何按行对应的数值，`iCFCV()` 也用它画 IPTW 权重的分布。
+
+```r
+GG_PS(Train, W.hat, "Propensity score (W.hat)", "PS_raw")   # 同时写出 PS_raw.png
+```
+
+![`GG_PS()` 的输出。两组重叠良好，最极端的倾向评分在 0.14 与 0.93 附近。](images/ps_raw.png){fig-align="center" width="85%"}
+
+## 相关函数：`regression_forest_4PS()`
+
+```r
+regression_forest_4PS(dat)
+```
+
+只做 `grf::regression_forest(dat[, vars_forest], dat[, 2])` 并返回 OOB 预测。
+它读全局 `vars_forest`，且**按位置取第 2 列当治疗**。
+`iCFCV()` 用它在每个**验证折内部**重新估计倾向评分，
+供验证折的转换结局 $Y^*$ 使用。
+
+## 模拟数据 {#sec-sim}
+
+本手册第 3–7 页用的都是作者 README 的模拟设定（改编自 Setoguchi 等）：
+10 个协变量，X1–X4 为混杂，X5–X7 只影响治疗（X7 为工具变量），
+X8–X10 只影响结局；X1、X3、X5、X6、X8、X9 为二分类。
+治疗效应含 `W:X1`、`W:X3` 与三阶交互 `W:X1:X3`，于是真实 CATE 只取决于 X1、X3：
+
+$$
+\tau(X) = -0.4 + 0.3X_1 + 0.4X_3 + 0.4X_1X_3 .
+$$
+
+README 用 n = 10 000，本手册取 n = 5 000 以控制运行时间：
+
+```r
+set.seed(2024)
+nstudy <- 5000
+b0 <- 0; b1 <- 0.8; b2 <- -0.25; b3 <- 0.6; b4 <- -0.4; b5 <- -0.8; b6 <- -0.5; b7 <- 0.7
+a0 <- -3.85; a1 <- 0.3; a2 <- -0.36; a3 <- -0.73; a4 <- -0.2
+a5 <- 0.71; a6 <- -0.19; a7 <- 0.26; g1 <- -0.4
+F.sample.cor <- function(X, rho) (rho * (X - mean(X))) / sqrt(var(X)) +
+  sqrt(1 - rho^2) * rnorm(length(X))
+
+X2 <- rnorm(nstudy); X4 <- rnorm(nstudy); X7 <- rnorm(nstudy); X10 <- rnorm(nstudy)
+X1 <- rnorm(nstudy); X1 <- ifelse(X1 > mean(X1), 1, 0)
+X3 <- rnorm(nstudy); X3 <- ifelse(X3 > mean(X3), 1, 0)
+X5 <- F.sample.cor(X1, 0.2); X5 <- ifelse(X5 > mean(X5), 1, 0)
+X6 <- F.sample.cor(X2, 0.9); X6 <- ifelse(X6 > mean(X6), 1, 0)
+X8 <- F.sample.cor(X3, 0.2); X8 <- ifelse(X8 > mean(X8), 1, 0)
+X9 <- F.sample.cor(X4, 0.9); X9 <- ifelse(X9 > mean(X9), 1, 0)
+
+PS <- (1 + exp(-(b0 + b1*X1 + b2*X2 + b3*X3 + b4*X4 + b5*X5 + b6*X6 + b7*X7)))^-1
+W  <- rbinom(nstudy, 1, PS)
+Y  <- a0 + a1*X1 + a2*X2 + a3*X3 + a4*X4 + a5*X8 + a6*X9 + a7*X10 + g1*W + rnorm(nstudy) +
+      0.4*W*X3 + 0.3*W*X1 + 0.4*W*X1*X3 + 0.2*X1*X3
+
+Train <- as.data.frame(cbind(Y, W, X1, X2, X3, X4, X5, X6, X7, X8, X9, X10))
+head(round(Train, 2))
+#>       Y W X1    X2 X3    X4 X5 X6    X7 X8 X9   X10
+#> 1 -4.42 1  1  0.98  1  0.69  0  1  0.00  0  1 -0.77
+#> 2 -3.56 1  1  0.47  1  0.04  0  0 -0.36  0  1  0.83
+#> 3 -2.86 0  1 -0.11  1 -1.27  1  0 -1.93  1  0  0.79
+#> 4 -3.45 0  1 -0.21  0  0.36  1  1 -1.18  1  1 -0.81
+#> 5 -2.97 0  0  1.16  1  0.34  0  1  0.39  1  1  0.83
+#> 6 -3.95 1  1  1.29  0  0.47  1  1  0.23  0  1  1.00
+```
+
+四个真实亚组：
+
+| 亚组 | 样本量 | 真实 CATE |
+|---|---|---|
+| X1 = 0 & X3 = 0 | 1 221 | −0.4 |
+| X1 = 1 & X3 = 0 | 1 281 | −0.1 |
+| X1 = 0 & X3 = 1 | 1 267 | 0.0 |
+| X1 = 1 & X3 = 1 | 1 231 | 0.7 |
+
+样本内真实 ATE 为 0.049。

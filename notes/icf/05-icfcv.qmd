@@ -1,0 +1,297 @@
+---
+title: "5. iCFCV()：交叉验证与最终亚组"
+subtitle: "第 3 步：参数逐项、27 个返回元素、结果怎么读，以及 CATE_SG()"
+lang: zh
+---
+
+`iCFCV()` 是 iCF 的主函数，把[第 1 页](01-algorithm.qmd)的 ②–⑤ 步一次跑完，
+输出最终亚组划分 $G_{iCF}$ 和每个亚组的效应。
+运行前，全局环境里必须已有[第 2 页](02-setup.qmd#sec-globals)列出的全部对象，
+包括第 4 页得到的 `leafsize`。
+
+## 签名
+
+```r
+iCFCV(dat, K, treeNo, iterationNo, min.split.var, split_val_round_posi,
+      P_threshold = 0.5, variable_type, hdPctTop, HTE_P_cf.raw)
+```
+
+| 参数 | 含义 | 实际作用 |
+|---|---|---|
+| `dat` | 完整数据，`Y`、`W` 在前 | 分折、每折的 $\hat W$、转换结局模型、最后的 `CATE_SG()` 都用它；**种树不用它**（读全局 `X`） |
+| `K` | 交叉验证折数 | 分折用 `caret::createFolds(dat[, 1], k = K)`，按结局分层，种子固定为 1234。画图函数只支持 5 或 10 |
+| `treeNo` | 每个森林的树数 | 必须 ≥ 20，否则 `find_best_tree()` 报错（[第 6 页](06-internals.qmd#sec-besttree)） |
+| `iterationNo` | 每个深度重复种森林的次数 | = 1 时改走 `oneCF()`：只种一个森林、取一棵最佳树 |
+| `min.split.var` | 同 `CF_RAW_key()` | **对种树没有影响**，见[下文](#sec-min-split-var) |
+| `split_val_round_posi` | 切点取整位数 | 连续变量取 0 会严重失真，见[第 9 页](09-pitfalls.qmd#sec-round) |
+| `P_threshold` | 同质性检验门槛 | `round(HTE_P_cf.raw, 1) <= P_threshold` 才做亚组识别；**否则报错**，见[下文](#sec-pthreshold) |
+| `variable_type`、`hdPctTop` | 同 `CF_RAW_key()` | 同 `min.split.var`，只影响每折的变量筛选结果，而种树不用它 |
+| `HTE_P_cf.raw` | 第 1 步的 P 值 | 与 `P_threshold` 比较 |
+
+## 运行
+
+README 的模拟示例设置，在本机 5 000 例数据上：
+
+```r
+res <- quiet(iCFCV(dat = Train, K = 5, treeNo = 200, iterationNo = 10, min.split.var = 4,
+                   split_val_round_posi = 0, P_threshold = 1, variable_type = "non-HD",
+                   hdPctTop = 0.95, HTE_P_cf.raw = HTE_P_cf.raw))
+res$time_iCFCV
+#> Time difference of 98.26795 secs
+```
+
+运行期间会打印十几行 `Waiting for profiling to be done...`——来自 `CATE_SG()` 里
+`confint()` 对 glm 的剖面似然计算，`quiet()` 挡不住（它们是 message），无害。
+另有一条 dplyr 弃用警告（`across(where(is.numeric), round, split_val_round_posi)`
+的旧写法），也不影响结果。
+
+## 结果怎么读
+
+### 最终亚组
+
+```r
+res$selectedSG_ori
+#> $majority
+#> # A tibble: 4 × 2
+#> # Rowwise:
+#>   subgroupID subgroup
+#>        <int> <chr>
+#> 1          1 X3<=0 & X1<=0
+#> 2          2 X3<=0 & X1>0
+#> 3          3 X3>0 & X1<=0
+#> 4          4 X3>0 & X1>0
+```
+
+`subgroup` 列是合法的 R 表达式，可以直接 `eval(parse(text = ...), data)` 取子集。
+它正确恢复了模拟设定里 X1 × X3 的四个格子。
+
+```r
+res$selectedSG_stability_ori
+#> |grp_pick |stability_vote_mean4CV |stability_CV |mse_g2_Model |mse_g3_Model |mse_g4_Model |mse_g5_Model |
+#> |:--------|:----------------------|:------------|:------------|:------------|:------------|:------------|
+#> |W:G4x    |0.6                    |1            |7.38584      |7.38503      |7.30547      |7.30547      |
+```
+
+这是一段 `knitr::kable()` 文本，不是数据框。各列：
+
+| 列 | 含义 |
+|---|---|
+| `grp_pick` | 选中的深度，`W:G4x` 即 D4。**只是报告**，真正的选择在 `PICK_CV()` 里按 `which.min(mse_g2…g5)` 做 |
+| `stability_vote_mean4CV` | 选中深度在各折**折内**投票稳定性的均值（10 棵最佳树里胜出结构占几成） |
+| `stability_CV` | 选中深度的**跨折**稳定性（几折给出同一亚组）。本包里恒为 1，原因见[第 9 页](09-pitfalls.qmd#sec-identical-folds) |
+| `mse_g2_Model` … `mse_g5_Model` | 各深度转换结局模型的交叉验证 MSE |
+
+D4 与 D5 的 MSE 相同（两者给出同一组亚组，见下），并列时取第一个。
+四个 MSE 都在 7.3–7.4 之间、差别很小：转换结局 $Y^*$ 的方差本来就大，
+这些数字只适合相互比较，不能解读为"预测误差"。
+
+`res$selectedSG_icvsw` 与 `res$selectedSG_stability_icvsw` 是
+"误差除以跨折稳定性"后的选择。跨折稳定性恒为 1，所以它与上面**永远相同**。
+
+### 各深度的候选亚组
+
+```r
+res$vote_D2_subgroup.CVmajority$majority   # X1<=0 | X1>0
+res$vote_D3_subgroup.CVmajority$majority   # X1<=0 | X3<=0 & X1>0 | X3>0 & X1>0
+res$vote_D4_subgroup.CVmajority$majority   # 四格
+res$vote_D5_subgroup.CVmajority$majority   # 四格（与 D4 相同）
+```
+
+| 深度 | 候选亚组 $G_D$ | 折内稳定性 |
+|---|---|---|
+| D2 | `X1<=0`；`X1>0` | 0.6 |
+| D3 | `X1<=0`；`X3<=0 & X1>0`；`X3>0 & X1>0` | 0.4 |
+| D4 | X1 × X3 四格 | 0.6 |
+| D5 | X1 × X3 四格 | 0.9 |
+
+```r
+res$stability_D2345_vote
+#>   stability_D2_vote stability_D3_vote stability_D4_vote stability_D5_vote
+#> 1               0.6               0.4               0.6               0.9
+res$stability_D2345_CV
+#>   stability_D2_CV stability_D3_CV stability_D4_CV stability_D5_CV
+#> 1               1               1               1               1
+```
+
+折内稳定性 0.4 的意思是：D3 的 10 棵最佳树里，胜出的那种结构只出现了 4 次。
+稳定性低说明这个深度下森林在"先切哪个变量"上摇摆，[第 7 页](07-plots.qmd)有对应的图。
+
+### 亚组效应 {#sec-cate}
+
+`CATE_t2_ori` 的结构容易误读：
+
+```r
+nrow(res$CATE_t2_ori)
+#> [1] 5000
+head(as.data.frame(res$CATE_t2_ori), 3)
+#>   SubgroupID    Definition W         Y n         CATE_crude          CATE_iptw           CATE_smr Wt
+#> 1          1 X3<=0 & X1<=0 0 -7.090993 1 -0.18(-0.32,-0.04) -0.31(-0.45,-0.17) -0.32(-0.46,-0.19) NA
+#> 2          1 X3<=0 & X1<=0 0 -7.004682 1 -0.18(-0.32,-0.04) -0.31(-0.45,-0.17) -0.32(-0.46,-0.19) NA
+#> 3          1 X3<=0 & X1<=0 0 -6.878400 1 -0.18(-0.32,-0.04) -0.31(-0.45,-0.17) -0.32(-0.46,-0.19) NA
+```
+
+`CATE_SG()` 内部按 `SubgroupID, Definition, W, Y` **四列**分组汇总，
+连续结局下每个人自成一组，于是表有 5 000 行、`n` 列全是 1——
+**`n` 不是亚组样本量**。二分类结局下则是每个亚组 4 行（W × Y 的四格计数）。
+正确的取法是去重，样本量自己算：
+
+```r
+cate <- res$CATE_t2_ori %>% ungroup() %>%
+  dplyr::distinct(SubgroupID, Definition, CATE_crude, CATE_iptw, CATE_smr)
+cate$n <- sapply(cate$Definition, function(s) sum(eval(parse(text = s), Train)))
+cate
+```
+
+| 亚组 | n | `CATE_crude` | `CATE_iptw` | `CATE_smr` | 真实值 |
+|---|---|---|---|---|---|
+| `X3<=0 & X1<=0` | 1 221 | −0.18 (−0.32, −0.04) | **−0.31** (−0.45, −0.17) | −0.32 (−0.46, −0.19) | −0.4 |
+| `X3<=0 & X1>0` | 1 281 | 0.14 (0.02, 0.27) | **−0.08** (−0.21, 0.04) | −0.09 (−0.22, 0.04) | −0.1 |
+| `X3>0 & X1<=0` | 1 267 | 0.09 (−0.04, 0.21) | **−0.04** (−0.17, 0.09) | −0.01 (−0.14, 0.12) | 0.0 |
+| `X3>0 & X1>0` | 1 231 | 0.95 (0.81, 1.08) | **0.78** (0.64, 0.91) | 0.79 (0.66, 0.92) | 0.7 |
+
+```r
+res$ATE_table %>% ungroup() %>% dplyr::distinct(Definition, CATE_crude, CATE_iptw, CATE_smr)
+#>           Definition      CATE_crude       CATE_iptw       CATE_smr
+#> 1 Overall Population 0.31(0.24,0.38) 0.08(0.01,0.14) 0.17(0.1,0.24)
+```
+
+粗效应被混杂推高了 0.2 以上，IPTW 校正后与真实值（总体 0.049）接近。
+效应是**字符串**，要画图得自己拆：
+
+```r
+parse_ci <- function(s) {
+  v <- as.numeric(regmatches(s, gregexpr("-?[0-9.]+", s))[[1]])
+  data.frame(est = v[1], lo = v[2], hi = v[3])
+}
+est <- cbind(cate[, c("SubgroupID", "Definition")], do.call(rbind, lapply(cate$CATE_iptw, parse_ci)))
+```
+
+![iCF 给出的四个亚组 IPTW 效应（蓝）与真实值（红叉）。注意这些区间是在发现亚组的同一份数据上算的。](images/cate_vs_truth.png){fig-align="center" width="85%"}
+
+### 区间是模型标准误 {#sec-cate-ci}
+
+`CATE_iptw` 的区间来自 `confint(glm(Y ~ W, weights = iptw_s))`，
+即把 IPTW 权重当作**精度权重**的剖面似然区间。它既没有用稳健（sandwich）方差，
+也没有计入倾向评分本身的估计误差。在 `X3>0 & X1>0` 亚组里复算一次：
+
+| 做法 | 点估计 | 95% 区间 | 宽度 |
+|---|---|---|---|
+| iCF 的 `confint()` | 0.775 | (0.641, 0.910) | 0.270 |
+| 同一模型换 `sandwich::vcovHC(type = "HC0")` | 0.775 | (0.595, 0.956) | 0.361 |
+
+稳健区间宽了 34%。再加上"同一批人既用来发现亚组又用来估计效应"（[第 9 页](09-pitfalls.qmd#sec-honest)），
+`iCFCV()` 输出的区间只适合做描述，不宜直接用于推断。
+
+## `CATE_SG()`：给任意亚组估计效应 {#sec-cate-sg}
+
+```r
+CATE_SG(dat, SGdecision)
+```
+
+`SGdecision` 是一个含 `subgroup` 列的数据框（与 `$majority` 同构），
+也可以传字符串 `"NA"` 表示总体。所以它也能用来估计**事先指定**的亚组：
+
+```r
+sg_user <- data.frame(subgroupID = 1:2, subgroup = c("X3 <= 0", "X3 > 0"))
+CATE_SG(Train, sg_user) %>% ungroup() %>%
+  dplyr::distinct(SubgroupID, Definition, CATE_crude, CATE_iptw, CATE_smr)
+#>   SubgroupID Definition       CATE_crude         CATE_iptw           CATE_smr
+#> 1          1    X3 <= 0 0.06(-0.04,0.15) -0.19(-0.29,-0.1) -0.18(-0.27,-0.08)
+#> 2          2     X3 > 0  0.62(0.52,0.72)   0.35(0.25,0.45)    0.44(0.34,0.54)
+
+CATE_SG(Train, "NA") %>% ungroup() %>% dplyr::distinct(Definition, CATE_iptw)
+#>   Definition       CATE_iptw
+#> 1     W <100 0.07(0.01,0.14)
+```
+
+传 `"NA"` 时 `Definition` 是一个恒真的占位条件 `W <100`；
+`iCFCV()` 在生成 `ATE_table` 时才把它改写成 `Overall Population`。
+两次总体 IPTW 估计（0.07 与 0.08）不同，是因为 LASSO 倾向评分模型的
+交叉验证分折有随机性，`CATE_SG()` 内部没有固定种子。
+
+每个亚组内部，`CATE_SG()` 用 `cv.glmnet(family = "binomial")` 在**该亚组**的全部协变量上
+重估倾向评分（定义亚组的变量在组内是常数，LASSO 会自动丢掉），
+再分别做粗效应、稳定化 IPTW、SMR 加权的 `glm(Y ~ W, family = gaussian)`，
+点估计和区间均**四舍五入到两位小数**。某亚组结局全为 0 或全为 1 时，
+glm 的剖面似然会报 `profiling has found a better solution`，该组效应不可靠。
+
+## 返回值全表
+
+27 个元素（`variable_type = "hd"` 时返回的元素完全相同）：
+
+| 元素 | 内容 |
+|---|---|
+| `selectedSG_ori` | **最终亚组**，`$majority` 是 tibble |
+| `selectedSG_stability_ori` | 选中深度、稳定性和四个 CV MSE（kable 文本） |
+| `CATE_t2_ori` | 各亚组效应，结构见上 |
+| `selectedSG_icvsw`、`selectedSG_stability_icvsw`、`CATE_t2_icvsw` | 按"MSE / 跨折稳定性"选的版本 |
+| `ATE_table` | 总体效应 |
+| `vote_D2_subgroup.CVmajority` … `D5` | 每个深度跨折多数投票的亚组 |
+| `stability_D2345_vote` | 每个深度折内稳定性的均值（1 行 4 列数据框） |
+| `stability_D2345_CV` | 每个深度的跨折稳定性 |
+| `stability_vote_across_CV` | K × 4 的逐折稳定性（元素是列表，画图用） |
+| `vote_D2_SG.L` … `D5` | 每折投票结果（kable 文本，K 张表首尾相接） |
+| `PS_distribution`、`IPTW_distribution`、`Y_star_distribution`、`Y_star_No0_distribution` | 每折**训练集**的诊断图（长度为 K 的 ggplot 列表） |
+| `PS_distribution_test` 等四个 `_test` | 每折**验证集**的同类图 |
+| `time_iCFCV` | 运行时间（difftime） |
+
+## `min.split.var` 对种树没有影响 {#sec-min-split-var}
+
+README 在第 1 步用 `min.split.var = 1`，在 `iCFCV()` 里用 4。
+看起来后者会让每折的森林在更多变量上分裂。实际不会：
+`iCFCV()` 在每折调用 `CF_RAW_key(Train_cf, min.split.var, ...)` 重新筛选，
+把结果作为参数传给 `SUBGROUP_PIPELINE()`，
+但真正种树的 `CF()` 读的是**全局** `selected_cf.idx`。本机用 `trace()` 记录：
+
+```r
+# 全局 selected_cf.idx 为 X1、X3；iCFCV(min.split.var = 4, K = 3)
+#> 每折传给 SUBGROUP_PIPELINE() 的变量数：5 5 5
+#> CF() 内 length(selected_cf.idx)：2（45 次调用全部如此）
+```
+
+`variable_type` 与 `hdPctTop` 同理。要改变森林用的变量，
+改的是**第 1 步**的 `CF_RAW_key()` 参数和由此得到的全局 `selected_cf.idx`。
+
+## `P_threshold` 与"无异质性"分支 {#sec-pthreshold}
+
+源码的判断是 `round(HTE_P_cf.raw, 1) <= P_threshold`：
+
+- P 值先四舍五入到一位小数，P = 0.14 会被当作 0.1、P = 0.15 被当作 0.2；
+- 条件成立才做亚组识别。README 设 `P_threshold = 1`，于是**永远**成立；
+- 条件不成立时进入 `else` 分支，本应只返回总体效应，
+  但 `return()` 引用了只在 `if` 分支里定义的 `vote_D2_subgroup.L.majority`，
+  **必定报错**。无异质性数据上的实测见[第 9 页](09-pitfalls.qmd#sec-null-branch)。
+
+所以在当前代码下，`P_threshold` 实际上只有两种用法：
+设成 1（总是做亚组识别），或者自己先看 `HTE_P_cf.raw` 再决定要不要调用 `iCFCV()`。
+
+## 副作用 {#sec-side-effects}
+
+一次 `iCFCV()` 在工作目录写出 4 个 png（每折覆盖一次）：
+`PS_trainCV.png`、`iptw_trainCV.png`、`PS_testCV.png`、`iptw_testCV.png`。
+
+并往全局环境写入 39 个对象（本机运行前后 `ls()` 之差）：
+
+```text
+formula_basic formula_g2 formula_g3 formula_g4 formula_g5
+iCF_D2_BT iCF_D3_BT iCF_D4_BT iCF_D5_BT intTRUE truth.list
+stability_D2_CV  stability_D3_CV  stability_D4_CV  stability_D5_CV
+stability_D2_T_r stability_D3_T_r stability_D4_T_r stability_D5_T_r
+stability_D2_vote stability_D3_vote stability_D4_vote stability_D5_vote
+tree_depth_true tree_true tree_true_N1 tree_true_N1_r tree_true_N123 tree_true_N123_r
+tree_true_r tree_true_subgroup tree_true_subgroup_0 tree_true_subgroup_key
+truth_description truth_INT
+vote_D2_subgroup.L vote_D3_subgroup.L vote_D4_subgroup.L vote_D5_subgroup.L
+```
+
+`tree_true*`、`truth*` 来自 `TRUTH("Unknown")`，是模拟研究用的"真树"占位，
+真实数据上都是字符串 `"Unknown"`。其余对象会被 `PICK_CV()`、
+`CF_GROUP_DECISION()` 等后续函数读取——**不要在两次 `iCFCV()` 之间手动改动它们**。
+
+## 耗时
+
+本机（24 线程）5 000 例、10 个协变量、`K = 5`、`treeNo = 200`、`iterationNo = 10`：
+98 秒。`CF()` 被调用 250 次 = 5 折 × 5 次 `iCF()` × 10 个森林——
+每折 D2 被种了**两遍**：源码先在 `tryCatch()` 里试跑一次 D2 检查是否报错，
+成功后把结果丢掉再正式跑一次（[第 6 页](06-internals.qmd#sec-pipeline)）。
+论文实证用 `treeNo = 2000`、`iterationNo = 1000`，报告约 3 小时。
