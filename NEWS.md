@@ -1,5 +1,24 @@
 # causalR (development version)
 
+* New `get_hte_icf()` finds subgroup rules such as `X1 = 1 & X3 = 0`
+  without naming them in advance, after the iterative causal forest (iCF)
+  of Wang et al. (2024), written from the paper since the iCF code carries
+  no licence. Half the patients (`split_frac`) discover the rules: forests
+  grown on the covariates `get_hte()` ranks at or above mean importance,
+  each tree cut at every candidate `depth` (default `1:3`), pruned and
+  judged on the patients it did not choose its splits on by the squared
+  error of the AIPW scores, each forest voting with its best tree, and the
+  depth chosen by cross-validation with depth 0 ("no subgroups") among the
+  candidates. As in the paper, subgroups are only reported when the
+  forest's calibration test gives p <= 0.1 (`rule_args$gate`). The other
+  half estimates every rule's doubly robust effect through `get_hte()`, so
+  `plt_hte_sub(res$est, sub_var = ".rule")` draws them. Continuous, binary
+  and survival outcomes work. In simulations the X1 x X3 partition was
+  found in 12 of 12 data sets with no spurious split and no subgroups were
+  reported in 12 of 12 without heterogeneity; the default 20 forests x 200
+  trees x 5 folds took 49 s at 5,000 patients. Returns
+  `list(rules, cv, vote, importance, est)`.
+
 * `get_bal(methods = )` accepts a list that mixes named scheme
   specifications with unnamed shorthands, e.g.
   ``list(`PSM 1:2` = list(design = "matching", ratio = 2), "ATE", "ATO")``;
