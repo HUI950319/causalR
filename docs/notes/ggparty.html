@@ -1811,7 +1811,16 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#模型树展示每个叶节点的回归关系" id="toc-模型树展示每个叶节点的回归关系" class="nav-link" data-scroll-target="#模型树展示每个叶节点的回归关系">5. 模型树：展示每个叶节点的回归关系</a></li>
   <li><a href="#可视化-rpart-树" id="toc-可视化-rpart-树" class="nav-link" data-scroll-target="#可视化-rpart-树">6. 可视化 rpart 树</a></li>
   <li><a href="#常见问题与实践建议" id="toc-常见问题与实践建议" class="nav-link" data-scroll-target="#常见问题与实践建议">7. 常见问题与实践建议</a></li>
-  <li><a href="#函数速查与参考资料" id="toc-函数速查与参考资料" class="nav-link" data-scroll-target="#函数速查与参考资料">8. 函数速查与参考资料</a></li>
+  <li><a href="#主要函数详解" id="toc-主要函数详解" class="nav-link" data-scroll-target="#主要函数详解">8. 主要函数详解</a>
+  <ul class="collapse">
+  <li><a href="#ggparty创建树图底图" id="toc-ggparty创建树图底图" class="nav-link" data-scroll-target="#ggparty创建树图底图">8.1 <code>ggparty()</code>：创建树图底图</a></li>
+  <li><a href="#autoplot快速查看默认图" id="toc-autoplot快速查看默认图" class="nav-link" data-scroll-target="#autoplot快速查看默认图">8.2 <code>autoplot()</code>：快速查看默认图</a></li>
+  <li><a href="#geom_edge-与-geom_edge_label分支和切分条件" id="toc-geom_edge-与-geom_edge_label分支和切分条件" class="nav-link" data-scroll-target="#geom_edge-与-geom_edge_label分支和切分条件">8.3 <code>geom_edge()</code> 与 <code>geom_edge_label()</code>：分支和切分条件</a></li>
+  <li><a href="#geom_node_label-及两个快捷图层节点文字" id="toc-geom_node_label-及两个快捷图层节点文字" class="nav-link" data-scroll-target="#geom_node_label-及两个快捷图层节点文字">8.4 <code>geom_node_label()</code> 及两个快捷图层：节点文字</a></li>
+  <li><a href="#geom_node_plot把-ggplot-小图放进树节点" id="toc-geom_node_plot把-ggplot-小图放进树节点" class="nav-link" data-scroll-target="#geom_node_plot把-ggplot-小图放进树节点">8.5 <code>geom_node_plot()</code>：把 ggplot 小图放进树节点</a></li>
+  <li><a href="#get_predictions为节点模型准备预测曲线" id="toc-get_predictions为节点模型准备预测曲线" class="nav-link" data-scroll-target="#get_predictions为节点模型准备预测曲线">8.6 <code>get_predictions()</code>：为节点模型准备预测曲线</a></li>
+  </ul></li>
+  <li><a href="#函数速查与参考资料" id="toc-函数速查与参考资料" class="nav-link" data-scroll-target="#函数速查与参考资料">9. 函数速查与参考资料</a></li>
   </ul>
 <div class="toc-actions"><ul><li><a href="https://github.com/HUI950319/causalR/blob/main/notes/ggparty.qmd" class="toc-action"><i class="bi bi-github"></i>查看代码</a></li><li><a href="https://github.com/HUI950319/causalR/issues/new" class="toc-action"><i class="bi empty"></i>反馈问题</a></li></ul></div></nav>
     </div>
@@ -2181,8 +2190,267 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </table>
 <p>较稳妥的工作顺序是：先确认输入对象继承自 <code>party</code>；再画树结构并核对切分路径；然后逐层添加节点标签；最后加节点内图，检查训练样本、坐标尺度和图例是否符合比较目标。</p>
 </section>
+<section id="主要函数详解" class="level2">
+<h2 class="anchored" data-anchor-id="主要函数详解">8. 主要函数详解</h2>
+<p><code>ggparty</code> 的工作流程分成两步：<code>ggparty()</code> 把树对象整理成可供 <code>ggplot2</code> 使用的数据；随后用 <code>geom_*()</code> 图层决定显示哪些边、标签和节点图。以下函数是制作自定义树图时最常用的一组。</p>
+<section id="ggparty创建树图底图" class="level3">
+<h3 class="anchored" data-anchor-id="ggparty创建树图底图">8.1 <code>ggparty()</code>：创建树图底图</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ggparty</span>(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  party,</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">horizontal =</span> <span class="cn">FALSE</span>,</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  terminal_space,</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">layout =</span> <span class="cn">NULL</span>,</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">add_vars =</span> <span class="cn">NULL</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p>函数接收 <code>partykit</code> 的 <code>party</code> 对象，返回可继续用 <code>+</code> 添加图层的 <code>ggplot</code> 对象。它不会重新拟合树。主要参数如下：</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>参数</th>
+<th>用途</th>
+<th>什么时候调整</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>party</code></td>
+<td>要画的树，须继承自 <code>party</code></td>
+<td><code>rpart</code> 对象先尝试用 <code>partykit::as.party()</code> 转换</td>
+</tr>
+<tr class="even">
+<td><code>horizontal</code></td>
+<td><code>TRUE</code> 时横向排树</td>
+<td>树较深，或要在叶节点放横向小图时</td>
+</tr>
+<tr class="odd">
+<td><code>terminal_space</code></td>
+<td>给末端节点图预留的绘图区比例；默认值随树深调整</td>
+<td>小图被挤压时增大；仅画树结构时通常保留默认值</td>
+</tr>
+<tr class="even">
+<td><code>layout</code></td>
+<td>含 <code>id</code>、<code>x</code>、<code>y</code> 的数据框，覆盖指定节点坐标；坐标范围为 0–1</td>
+<td>需要手工避开标签重叠或安排特殊版式时</td>
+</tr>
+<tr class="odd">
+<td><code>add_vars</code></td>
+<td>把树节点中的额外信息加入 ggplot 数据</td>
+<td>需要在标签中显示 <code>ggparty</code> 默认未提供的字段时</td>
+</tr>
+</tbody>
+</table>
+<p><code>add_vars</code> 可以用字符串路径读取节点对象中的字段，例如 <code>"$node$info$p.value"</code>。也可以给函数，函数必须恰有 <code>data</code> 和 <code>node</code> 两个参数，并对每个节点返回一个值。若要让节点内小图访问逐观测数据，列表项名称需以 <code>nodedata_</code> 开头，函数返回值须是与节点样本量对应的列表。<a href="https://cran.r-project.org/web/packages/ggparty/refman/ggparty.html#ggparty">参数定义与示例</a></p>
+</section>
+<section id="autoplot快速查看默认图" class="level3">
+<h3 class="anchored" data-anchor-id="autoplot快速查看默认图">8.2 <code>autoplot()</code>：快速查看默认图</h3>
+<p><code>autoplot()</code> 是快速检查树对象的入口。它按对象类别调用相应方法；适合先看默认布局，再按需要换成 <code>ggparty() + geom_*()</code> 自定义图层。</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>对象方法</th>
+<th>主要参数</th>
+<th>默认展示</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>autoplot.party()</code>、<code>autoplot.constparty()</code></td>
+<td><code>object, ...</code></td>
+<td>树边、切分条件、内部节点变量和末端节点信息；<code>constparty</code> 还可显示末端响应分布</td>
+</tr>
+<tr class="even">
+<td><code>autoplot.modelparty()</code></td>
+<td><code>object, plot_var = NULL, ...</code></td>
+<td>各模型节点中，响应变量与协变量 <code>plot_var</code> 的关系；默认取树数据的第二列</td>
+</tr>
+<tr class="odd">
+<td><code>autoplot.lmtree()</code></td>
+<td><code>object, plot_var = NULL, show_fit = TRUE, ...</code></td>
+<td>观测散点及节点拟合值；<code>show_fit = FALSE</code> 可隐藏拟合线</td>
+</tr>
+</tbody>
+</table>
+<p>以下代码会直接生成一张模型树默认图。由于 <code>autoplot()</code> 返回 ggplot 对象，也能继续加 <code>labs()</code>、<code>theme_*()</code> 等图层：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">autoplot</span>(car_tree, <span class="at">plot_var =</span> <span class="st">"wt"</span>, <span class="at">show_fit =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Weight (1000 lb)"</span>, <span class="at">y =</span> <span class="st">"Fuel economy (mpg)"</span>) <span class="sc">+</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_void</span>()</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-autoplot-lmtree" class="quarto-float quarto-figure quarto-figure-center anchored" alt="模型树按节点展示汽车重量与油耗的散点和线性拟合关系。">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-autoplot-lmtree-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="ggparty_files/figure-html/fig-autoplot-lmtree-1.png" class="img-fluid figure-img" alt="模型树按节点展示汽车重量与油耗的散点和线性拟合关系。" width="864">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-autoplot-lmtree-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;209.5: <code>autoplot.lmtree()</code> 以 <code>wt</code> 为横轴显示节点观测及节点模型拟合值。
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>如需控制内部/末端节点文字、边标签、配色或小图布局，应改用显式图层；这样能更清楚地知道每一层在表达什么。</p>
+</section>
+<section id="geom_edge-与-geom_edge_label分支和切分条件" class="level3">
+<h3 class="anchored" data-anchor-id="geom_edge-与-geom_edge_label分支和切分条件">8.3 <code>geom_edge()</code> 与 <code>geom_edge_label()</code>：分支和切分条件</h3>
+<p><code>geom_edge()</code> 画父节点到子节点的连线，是树图的骨架。<code>geom_edge_label()</code> 沿分支显示切分条件，默认使用树中对应的 <code>breaks_label</code>。它们都可用 <code>ids</code> 只选部分分支；这里的 ID 是<strong>子节点的 ID</strong>。</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>函数</th>
+<th>常用参数</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>geom_edge(mapping = NULL, ids = NULL, nudge_x = 0, nudge_y = 0, ...)</code></td>
+<td><code>mapping</code>、<code>ids</code>、<code>nudge_x</code>、<code>nudge_y</code></td>
+<td>默认映射父子节点坐标；<code>...</code> 传给 <code>ggplot2::geom_segment()</code>，例如 <code>colour</code>、<code>linewidth</code>、<code>linetype</code></td>
+</tr>
+<tr class="even">
+<td><code>geom_edge_label(mapping = NULL, ids = NULL, shift = 0.5, splitlevels = seq_len(100), max_length = NULL, parse = TRUE, ...)</code></td>
+<td><code>shift</code>、<code>splitlevels</code>、<code>max_length</code>、<code>parse</code></td>
+<td><code>shift</code> 在 0–1 之间控制标签沿边的位置；因子切分很多时可筛选 <code>splitlevels</code> 或截短 <code>max_length</code>；<code>...</code> 传给 <code>ggplot2::geom_label()</code></td>
+</tr>
+</tbody>
+</table>
+<p>当分支标签彼此重叠时，先试着调 <code>shift</code> 或 <code>nudge_x</code> / <code>nudge_y</code>，再考虑隐藏不重要的边标签。<code>parse</code> 默认解析比较符号；若标签是自定义普通文本，可设为 <code>FALSE</code>。完整参数见 <a href="https://cran.r-project.org/web/packages/ggparty/refman/ggparty.html#geom_edge"><code>geom_edge()</code></a> 和 <a href="https://cran.r-project.org/web/packages/ggparty/refman/ggparty.html#geom_edge_label"><code>geom_edge_label()</code></a>。</p>
+</section>
+<section id="geom_node_label-及两个快捷图层节点文字" class="level3">
+<h3 class="anchored" data-anchor-id="geom_node_label-及两个快捷图层节点文字">8.4 <code>geom_node_label()</code> 及两个快捷图层：节点文字</h3>
+<p><code>geom_node_label()</code> 在节点坐标上画文字框，默认继承树图数据中的 <code>x</code>、<code>y</code>。用 <code>aes(label = ...)</code> 映射要显示的内容，再通过 <code>ids</code> 选择节点：<code>"inner"</code> 是发生切分的内部节点，<code>"terminal"</code> 是叶节点，<code>"all"</code> 是全部节点，也可传数值型节点 ID。</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">geom_node_label</span>(</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">aes</span>(<span class="at">label =</span> <span class="fu">paste0</span>(<span class="st">"n = "</span>, nodesize)),</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">ids =</span> <span class="st">"terminal"</span>,</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">fill =</span> <span class="st">"white"</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li><code>geom_node_splitvar()</code> 是快捷写法：默认在内部节点显示切分变量 <code>splitvar</code>。</li>
+<li><code>geom_node_info()</code> 是快捷写法：默认在末端节点显示模型或节点信息 <code>info</code>。</li>
+<li><code>nudge_x</code>、<code>nudge_y</code> 可微调文字框位置；<code>label.padding</code>、<code>label.r</code>、<code>label.size</code>、<code>label.col</code>、<code>label.fill</code> 可调整留白、圆角、边框和底色。</li>
+<li><code>line_list</code> 可为多行标签分别指定 <code>aes(label = ...)</code>；此时不要再在主 <code>mapping</code> 中映射 <code>label</code>。配套的 <code>line_gpar</code> 可逐行控制文字大小、颜色或字形，两个列表的长度必须一致。</li>
+</ul>
+<p>内部节点的 p 值示例：在 <code>ggparty()</code> 中用 <code>add_vars</code> 把 <code>node$info$p.value</code> 加到绘图数据，再用多行标签显示节点编号、切分变量和 p 值。此例复用前面拟合的 <code>car_tree</code>：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ggparty</span>(</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  car_tree,</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">add_vars =</span> <span class="fu">list</span>(<span class="at">p.value =</span> <span class="st">"$node$info$p.value"</span>)</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>) <span class="sc">+</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_edge</span>() <span class="sc">+</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_edge_label</span>(<span class="at">fill =</span> <span class="st">"white"</span>) <span class="sc">+</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_node_label</span>(</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">line_list =</span> <span class="fu">list</span>(</span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>      <span class="fu">aes</span>(<span class="at">label =</span> <span class="fu">paste</span>(<span class="st">"Node"</span>, id)),</span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>      <span class="fu">aes</span>(<span class="at">label =</span> splitvar),</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>      <span class="fu">aes</span>(<span class="at">label =</span> <span class="fu">paste</span>(<span class="st">"p ="</span>, <span class="fu">formatC</span>(p.value, <span class="at">format =</span> <span class="st">"e"</span>, <span class="at">digits =</span> <span class="dv">2</span>)))</span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">line_gpar =</span> <span class="fu">list</span>(</span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a>      <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">4</span>, <span class="at">col =</span> <span class="st">"black"</span>, <span class="at">fontface =</span> <span class="st">"bold"</span>),</span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a>      <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">4</span>, <span class="at">col =</span> <span class="st">"#28627A"</span>),</span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a>      <span class="fu">list</span>(<span class="at">size =</span> <span class="fl">3.5</span>, <span class="at">col =</span> <span class="st">"#D55E00"</span>)</span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">ids =</span> <span class="st">"inner"</span>,</span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">label.fill =</span> <span class="st">"white"</span></span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_node_label</span>(</span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a>    <span class="fu">aes</span>(<span class="at">label =</span> <span class="fu">paste0</span>(<span class="st">"n = "</span>, nodesize)),</span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a>    <span class="at">ids =</span> <span class="st">"terminal"</span>,</span>
+<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a>    <span class="at">fill =</span> <span class="st">"white"</span></span>
+<span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-node-label-details" class="quarto-float quarto-figure quarto-figure-center anchored" alt="模型树的根节点显示节点编号、切分变量和 p 值，两个叶节点显示各自样本量。">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-node-label-details-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="ggparty_files/figure-html/fig-node-label-details-1.png" class="img-fluid figure-img" alt="模型树的根节点显示节点编号、切分变量和 p 值，两个叶节点显示各自样本量。" width="768">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-node-label-details-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+图&nbsp;209.6: 通过 <code>add_vars</code> 提取模型树节点的 p 值，并用 <code>line_list</code> 分行标注内部节点。
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="geom_node_plot把-ggplot-小图放进树节点" class="level3">
+<h3 class="anchored" data-anchor-id="geom_node_plot把-ggplot-小图放进树节点">8.5 <code>geom_node_plot()</code>：把 ggplot 小图放进树节点</h3>
+<p><code>geom_node_plot()</code> 会在选定的节点中分别建立小型 ggplot。<code>gglist</code> 是 ggplot 图层列表，可以放入 <code>aes()</code>、几何图层、比例尺或主题；图层可映射节点观测数据，也可映射模型树提供的 <code>fitted_values</code> 和 <code>residuals</code>。</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>参数</th>
+<th>用途</th>
+<th>选择建议</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>ids</code></td>
+<td>指定 <code>"terminal"</code>、<code>"inner"</code>、<code>"all"</code> 或数值节点 ID</td>
+<td>叶节点分组图最常用 <code>"terminal"</code></td>
+</tr>
+<tr class="even">
+<td><code>gglist</code>、<code>plot_call</code></td>
+<td>定义每个节点内的小图及创建小图的函数</td>
+<td>常见场景使用 <code>gglist</code> 添加 ggplot 图层</td>
+</tr>
+<tr class="odd">
+<td><code>scales</code></td>
+<td>坐标范围，支持 <code>"fixed"</code>、<code>"free"</code>、<code>"free_x"</code>、<code>"free_y"</code></td>
+<td>要比较数值尺度时用固定范围；只看形状时可考虑自由范围</td>
+</tr>
+<tr class="even">
+<td><code>width</code>、<code>height</code>、<code>size</code></td>
+<td>调整节点图绘图区的宽、高和整体大小</td>
+<td>图太挤时先配合 <code>terminal_space</code> 调整</td>
+</tr>
+<tr class="odd">
+<td><code>shared_axis_labels</code></td>
+<td>共享末端节点小图的坐标轴标题</td>
+<td>多个叶节点使用同一套坐标时开启</td>
+</tr>
+<tr class="even">
+<td><code>shared_legend</code>、<code>legend_separator</code></td>
+<td>共享图例；可在树与图例之间加分隔线</td>
+<td>同一映射跨节点比较时保留共享图例</td>
+</tr>
+<tr class="odd">
+<td><code>predict</code>、<code>predict_gpar</code></td>
+<td>为指定变量绘制模型预测线及其 <code>geom_line()</code> 参数</td>
+<td>模型树且支持相应 <code>predict()</code> 方法时使用</td>
+</tr>
+</tbody>
+</table>
+<p>节点图属于可视化图层，不会重新训练各节点模型。坐标是否固定会直接影响比较结论：不同节点采用自由坐标轴时，图形占满小面板并不表示原始量级相近。</p>
+</section>
+<section id="get_predictions为节点模型准备预测曲线" class="level3">
+<h3 class="anchored" data-anchor-id="get_predictions为节点模型准备预测曲线">8.6 <code>get_predictions()</code>：为节点模型准备预测曲线</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">get_predictions</span>(party_object, ids, newdata_fun, <span class="at">predict_arg =</span> <span class="cn">NULL</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p>函数返回供节点图使用的数据框，其中含预测变量、节点 <code>id</code> 和预测结果 <code>prediction</code>。<code>ids</code> 必须与承载这组数据的 <code>geom_node_plot(ids = ...)</code> 完全一致，否则预测值无法与节点对应。<code>newdata_fun</code> 接收数据并返回要交给 <code>predict()</code> 的新数据；<code>predict_arg</code> 是额外传给模型 <code>predict()</code> 的参数列表。</p>
+<p>前面模型树示例用全树 <code>wt</code> 范围建立一套共同横坐标，再把每个终末节点的拟合线叠加到节点观测上。这样各节点可以直接比较同一重量范围内的拟合关系。官方手册对 <code>newdata_fun</code> 的参数描述是节点数据；CRAN 1.0.0.1 源码的实际调用传入 <code>party_object$data</code>。若需构造每个节点不同的预测范围，建议先核对正在使用的版本实现。<a href="https://cran.r-project.org/web/packages/ggparty/refman/ggparty.html#get_predictions">函数文档</a> · <a href="https://github.com/cran/ggparty/blob/master/R/geom_node_plot.R">1.0.0.1 源码</a></p>
+</section>
+</section>
 <section id="函数速查与参考资料" class="level2">
-<h2 class="anchored" data-anchor-id="函数速查与参考资料">8. 函数速查与参考资料</h2>
+<h2 class="anchored" data-anchor-id="函数速查与参考资料">9. 函数速查与参考资料</h2>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 50%">
@@ -2228,8 +2496,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>为模型树节点生成预测数据，供节点内图形使用</td>
 </tr>
 <tr class="odd">
-<td><code>autoplot.party()</code></td>
-<td>通过 autoplot 接口绘制 party 对象</td>
+<td><code>autoplot.party()</code> / <code>autoplot.constparty()</code> / <code>autoplot.modelparty()</code> / <code>autoplot.lmtree()</code></td>
+<td>按树对象类别快速绘图；模型树方法可指定协变量并控制拟合线</td>
 </tr>
 </tbody>
 </table>

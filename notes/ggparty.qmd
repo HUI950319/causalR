@@ -236,7 +236,151 @@ ggparty(species_party) +
 
 较稳妥的工作顺序是：先确认输入对象继承自 `party`；再画树结构并核对切分路径；然后逐层添加节点标签；最后加节点内图，检查训练样本、坐标尺度和图例是否符合比较目标。
 
-## 8. 函数速查与参考资料
+## 8. 主要函数详解
+
+`ggparty` 的工作流程分成两步：`ggparty()` 把树对象整理成可供 `ggplot2` 使用的数据；随后用 `geom_*()` 图层决定显示哪些边、标签和节点图。以下函数是制作自定义树图时最常用的一组。
+
+### 8.1 `ggparty()`：创建树图底图
+
+```r
+ggparty(
+  party,
+  horizontal = FALSE,
+  terminal_space,
+  layout = NULL,
+  add_vars = NULL
+)
+```
+
+函数接收 `partykit` 的 `party` 对象，返回可继续用 `+` 添加图层的 `ggplot` 对象。它不会重新拟合树。主要参数如下：
+
+| 参数 | 用途 | 什么时候调整 |
+|---|---|---|
+| `party` | 要画的树，须继承自 `party` | `rpart` 对象先尝试用 `partykit::as.party()` 转换 |
+| `horizontal` | `TRUE` 时横向排树 | 树较深，或要在叶节点放横向小图时 |
+| `terminal_space` | 给末端节点图预留的绘图区比例；默认值随树深调整 | 小图被挤压时增大；仅画树结构时通常保留默认值 |
+| `layout` | 含 `id`、`x`、`y` 的数据框，覆盖指定节点坐标；坐标范围为 0–1 | 需要手工避开标签重叠或安排特殊版式时 |
+| `add_vars` | 把树节点中的额外信息加入 ggplot 数据 | 需要在标签中显示 `ggparty` 默认未提供的字段时 |
+
+`add_vars` 可以用字符串路径读取节点对象中的字段，例如 `"$node$info$p.value"`。也可以给函数，函数必须恰有 `data` 和 `node` 两个参数，并对每个节点返回一个值。若要让节点内小图访问逐观测数据，列表项名称需以 `nodedata_` 开头，函数返回值须是与节点样本量对应的列表。[参数定义与示例](https://cran.r-project.org/web/packages/ggparty/refman/ggparty.html#ggparty)
+
+### 8.2 `autoplot()`：快速查看默认图
+
+`autoplot()` 是快速检查树对象的入口。它按对象类别调用相应方法；适合先看默认布局，再按需要换成 `ggparty() + geom_*()` 自定义图层。
+
+| 对象方法 | 主要参数 | 默认展示 |
+|---|---|---|
+| `autoplot.party()`、`autoplot.constparty()` | `object, ...` | 树边、切分条件、内部节点变量和末端节点信息；`constparty` 还可显示末端响应分布 |
+| `autoplot.modelparty()` | `object, plot_var = NULL, ...` | 各模型节点中，响应变量与协变量 `plot_var` 的关系；默认取树数据的第二列 |
+| `autoplot.lmtree()` | `object, plot_var = NULL, show_fit = TRUE, ...` | 观测散点及节点拟合值；`show_fit = FALSE` 可隐藏拟合线 |
+
+以下代码会直接生成一张模型树默认图。由于 `autoplot()` 返回 ggplot 对象，也能继续加 `labs()`、`theme_*()` 等图层：
+
+```{r}
+#| label: fig-autoplot-lmtree
+#| fig-cap: "`autoplot.lmtree()` 以 `wt` 为横轴显示节点观测及节点模型拟合值。"
+#| fig-alt: "模型树按节点展示汽车重量与油耗的散点和线性拟合关系。"
+#| fig-width: 9
+#| fig-height: 5
+#| warning: false
+autoplot(car_tree, plot_var = "wt", show_fit = TRUE) +
+  labs(x = "Weight (1000 lb)", y = "Fuel economy (mpg)") +
+  theme_void()
+```
+
+如需控制内部/末端节点文字、边标签、配色或小图布局，应改用显式图层；这样能更清楚地知道每一层在表达什么。
+
+### 8.3 `geom_edge()` 与 `geom_edge_label()`：分支和切分条件
+
+`geom_edge()` 画父节点到子节点的连线，是树图的骨架。`geom_edge_label()` 沿分支显示切分条件，默认使用树中对应的 `breaks_label`。它们都可用 `ids` 只选部分分支；这里的 ID 是**子节点的 ID**。
+
+| 函数 | 常用参数 | 说明 |
+|---|---|---|
+| `geom_edge(mapping = NULL, ids = NULL, nudge_x = 0, nudge_y = 0, ...)` | `mapping`、`ids`、`nudge_x`、`nudge_y` | 默认映射父子节点坐标；`...` 传给 `ggplot2::geom_segment()`，例如 `colour`、`linewidth`、`linetype` |
+| `geom_edge_label(mapping = NULL, ids = NULL, shift = 0.5, splitlevels = seq_len(100), max_length = NULL, parse = TRUE, ...)` | `shift`、`splitlevels`、`max_length`、`parse` | `shift` 在 0–1 之间控制标签沿边的位置；因子切分很多时可筛选 `splitlevels` 或截短 `max_length`；`...` 传给 `ggplot2::geom_label()` |
+
+当分支标签彼此重叠时，先试着调 `shift` 或 `nudge_x` / `nudge_y`，再考虑隐藏不重要的边标签。`parse` 默认解析比较符号；若标签是自定义普通文本，可设为 `FALSE`。完整参数见 [`geom_edge()`](https://cran.r-project.org/web/packages/ggparty/refman/ggparty.html#geom_edge) 和 [`geom_edge_label()`](https://cran.r-project.org/web/packages/ggparty/refman/ggparty.html#geom_edge_label)。
+
+### 8.4 `geom_node_label()` 及两个快捷图层：节点文字
+
+`geom_node_label()` 在节点坐标上画文字框，默认继承树图数据中的 `x`、`y`。用 `aes(label = ...)` 映射要显示的内容，再通过 `ids` 选择节点：`"inner"` 是发生切分的内部节点，`"terminal"` 是叶节点，`"all"` 是全部节点，也可传数值型节点 ID。
+
+```r
+geom_node_label(
+  aes(label = paste0("n = ", nodesize)),
+  ids = "terminal",
+  fill = "white"
+)
+```
+
+- `geom_node_splitvar()` 是快捷写法：默认在内部节点显示切分变量 `splitvar`。
+- `geom_node_info()` 是快捷写法：默认在末端节点显示模型或节点信息 `info`。
+- `nudge_x`、`nudge_y` 可微调文字框位置；`label.padding`、`label.r`、`label.size`、`label.col`、`label.fill` 可调整留白、圆角、边框和底色。
+- `line_list` 可为多行标签分别指定 `aes(label = ...)`；此时不要再在主 `mapping` 中映射 `label`。配套的 `line_gpar` 可逐行控制文字大小、颜色或字形，两个列表的长度必须一致。
+
+内部节点的 p 值示例：在 `ggparty()` 中用 `add_vars` 把 `node$info$p.value` 加到绘图数据，再用多行标签显示节点编号、切分变量和 p 值。此例复用前面拟合的 `car_tree`：
+
+```{r}
+#| label: fig-node-label-details
+#| fig-cap: "通过 `add_vars` 提取模型树节点的 p 值，并用 `line_list` 分行标注内部节点。"
+#| fig-alt: "模型树的根节点显示节点编号、切分变量和 p 值，两个叶节点显示各自样本量。"
+#| fig-width: 8
+#| fig-height: 5
+#| warning: false
+ggparty(
+  car_tree,
+  add_vars = list(p.value = "$node$info$p.value")
+) +
+  geom_edge() +
+  geom_edge_label(fill = "white") +
+  geom_node_label(
+    line_list = list(
+      aes(label = paste("Node", id)),
+      aes(label = splitvar),
+      aes(label = paste("p =", formatC(p.value, format = "e", digits = 2)))
+    ),
+    line_gpar = list(
+      list(size = 4, col = "black", fontface = "bold"),
+      list(size = 4, col = "#28627A"),
+      list(size = 3.5, col = "#D55E00")
+    ),
+    ids = "inner",
+    label.fill = "white"
+  ) +
+  geom_node_label(
+    aes(label = paste0("n = ", nodesize)),
+    ids = "terminal",
+    fill = "white"
+  )
+```
+
+### 8.5 `geom_node_plot()`：把 ggplot 小图放进树节点
+
+`geom_node_plot()` 会在选定的节点中分别建立小型 ggplot。`gglist` 是 ggplot 图层列表，可以放入 `aes()`、几何图层、比例尺或主题；图层可映射节点观测数据，也可映射模型树提供的 `fitted_values` 和 `residuals`。
+
+| 参数 | 用途 | 选择建议 |
+|---|---|---|
+| `ids` | 指定 `"terminal"`、`"inner"`、`"all"` 或数值节点 ID | 叶节点分组图最常用 `"terminal"` |
+| `gglist`、`plot_call` | 定义每个节点内的小图及创建小图的函数 | 常见场景使用 `gglist` 添加 ggplot 图层 |
+| `scales` | 坐标范围，支持 `"fixed"`、`"free"`、`"free_x"`、`"free_y"` | 要比较数值尺度时用固定范围；只看形状时可考虑自由范围 |
+| `width`、`height`、`size` | 调整节点图绘图区的宽、高和整体大小 | 图太挤时先配合 `terminal_space` 调整 |
+| `shared_axis_labels` | 共享末端节点小图的坐标轴标题 | 多个叶节点使用同一套坐标时开启 |
+| `shared_legend`、`legend_separator` | 共享图例；可在树与图例之间加分隔线 | 同一映射跨节点比较时保留共享图例 |
+| `predict`、`predict_gpar` | 为指定变量绘制模型预测线及其 `geom_line()` 参数 | 模型树且支持相应 `predict()` 方法时使用 |
+
+节点图属于可视化图层，不会重新训练各节点模型。坐标是否固定会直接影响比较结论：不同节点采用自由坐标轴时，图形占满小面板并不表示原始量级相近。
+
+### 8.6 `get_predictions()`：为节点模型准备预测曲线
+
+```r
+get_predictions(party_object, ids, newdata_fun, predict_arg = NULL)
+```
+
+函数返回供节点图使用的数据框，其中含预测变量、节点 `id` 和预测结果 `prediction`。`ids` 必须与承载这组数据的 `geom_node_plot(ids = ...)` 完全一致，否则预测值无法与节点对应。`newdata_fun` 接收数据并返回要交给 `predict()` 的新数据；`predict_arg` 是额外传给模型 `predict()` 的参数列表。
+
+前面模型树示例用全树 `wt` 范围建立一套共同横坐标，再把每个终末节点的拟合线叠加到节点观测上。这样各节点可以直接比较同一重量范围内的拟合关系。官方手册对 `newdata_fun` 的参数描述是节点数据；CRAN 1.0.0.1 源码的实际调用传入 `party_object$data`。若需构造每个节点不同的预测范围，建议先核对正在使用的版本实现。[函数文档](https://cran.r-project.org/web/packages/ggparty/refman/ggparty.html#get_predictions) · [1.0.0.1 源码](https://github.com/cran/ggparty/blob/master/R/geom_node_plot.R)
+
+## 9. 函数速查与参考资料
 
 | 函数 | 用途 |
 |---|---|
@@ -248,7 +392,7 @@ ggparty(species_party) +
 | `geom_node_info()` | 便捷显示节点信息 |
 | `geom_node_plot()` | 在指定树节点嵌入 ggplot 图 |
 | `get_predictions()` | 为模型树节点生成预测数据，供节点内图形使用 |
-| `autoplot.party()` | 通过 autoplot 接口绘制 party 对象 |
+| `autoplot.party()` / `autoplot.constparty()` / `autoplot.modelparty()` / `autoplot.lmtree()` | 按树对象类别快速绘图；模型树方法可指定协变量并控制拟合线 |
 
 进一步阅读：
 
