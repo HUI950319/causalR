@@ -15638,5 +15638,115 @@
       "causalR 包函数手册",
       "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. 效应修饰变量筛选（get_hte_select）</span>"
     ]
+  },
+  {
+    "objectID": "notes/causalR/04-sens.html",
+    "href": "notes/causalR/04-sens.html",
+    "title": "4. 未测量混杂的敏感性分析：get_sens() 与 plt_sens()",
+    "section": "",
+    "text": "安装与核对环境\n观察性研究的结论总要面对同一个追问：如果还有一个没测到的混杂变量，结论会不会翻转？ get_sens() 把这个问题交给四个后端之一，并把结果整理成同一种形状； plt_sens() 画出与后端对应的敏感性图。\n两类核心量不能互相比较：稳健值（rv_q、rv_qa、xrv_qa）是 \\([0, 1)\\) 上的偏 \\(R^2\\)， E 值（evalue_point、evalue_ci）是 \\([1, \\infty)\\) 上的风险比乘数，二者之间没有单调换算。 所以它们放在不同的列，不属于自己后端的列一律是 NA。\n本页核对于 2026 年 9 月 28 日，代码块由本站渲染时真实执行：",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. 未测量混杂的敏感性分析（get_sens / plt_sens）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/04-sens.html#sec-sens-env",
+    "href": "notes/causalR/04-sens.html#sec-sens-env",
+    "title": "4. 未测量混杂的敏感性分析：get_sens() 与 plt_sens()",
+    "section": "",
+    "text": "remotes::install_github(\"HUI950319/causalR\")\ninstall.packages(c(\"sensemakr\", \"tipr\", \"survival\", \"ggplotify\"))\n# DML 与 IV 后端只在 GitHub\nremotes::install_github(c(\"carloscinelli/dml.sensemakr\", \"carloscinelli/iv.sensemakr\"))\n\n\n\n\n项目\n值\n\n\n\n\ncausalR\n0.0.0.9000（GitHub main）\n\n\nsensemakr / tipr\n0.1.6 / 1.0.2\n\n\ndml.sensemakr / iv.sensemakr\n0.2.2 / 0.1.0.9000",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. 未测量混杂的敏感性分析（get_sens / plt_sens）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/04-sens.html#sec-sens-data",
+    "href": "notes/causalR/04-sens.html#sec-sens-data",
+    "title": "4. 未测量混杂的敏感性分析：get_sens() 与 plt_sens()",
+    "section": "示例数据：一个真实存在、但没测到的混杂",
+    "text": "示例数据：一个真实存在、但没测到的混杂\n模拟数据里有一个混杂变量 U：它同时推高接受治疗的概率、推高连续结局、降低事件风险， 但不放进数据框——分析者看不到它。因为 DGP 写死，可以拿”如果测到了 U“的结果当参照， 检验敏感性分析的结论是否可靠。\n\nset.seed(20260928)\nn &lt;- 2000\nd &lt;- data.frame(x1 = round(rnorm(n), 3),       # 已测混杂（后面用作基准）\n                x2 = rbinom(n, 1, 0.4),         # 已测混杂\n                x3 = round(rnorm(n), 3))        # 只影响结局\nU &lt;- rnorm(n)                                   # 未测混杂：不进 d\nd$z &lt;- rbinom(n, 1, 0.5)                        # 工具变量：只影响治疗\nd$d &lt;- rbinom(n, 1, plogis(-0.3 + 0.5 * d$x1 + 0.4 * d$x2 + 0.8 * U + 1.2 * d$z))\n\n# 连续结局：真实效应 0.5\nd$y &lt;- round(1 + 0.5 * d$d + 0.6 * d$x1 + 0.3 * d$x2 + 0.4 * d$x3 +\n               0.7 * U + rnorm(n), 3)\n# 生存结局：真实（条件）风险比 0.8\nev   &lt;- rexp(n, 0.01 * exp(log(0.8) * d$d + 0.3 * d$x1 + 0.2 * d$x2 - 0.7 * U))\ncens &lt;- runif(n, 20, 120)\nd$time  &lt;- round(pmin(ev, cens), 2)\nd$event &lt;- as.integer(ev &lt;= cens)\n\nadj &lt;- c(\"x1\", \"x2\", \"x3\")\n\n作为参照，把 U 加回去各拟合一次（现实中做不到）：\n\ndU &lt;- cbind(d, U = U)\nfit_U   &lt;- lm(y ~ d + x1 + x2 + x3 + U, data = dU)\nfit_noU &lt;- lm(y ~ d + x1 + x2 + x3, data = d)\nc(with_U = unname(coef(fit_U)[\"d\"]), without_U = unname(coef(fit_noU)[\"d\"]))\n#&gt;    with_U without_U \n#&gt; 0.4425802 0.8811226\n\n# U 的真实强度：与处理、与结局的偏 R^2\nr2_dz &lt;- sensemakr::partial_r2(lm(d ~ x1 + x2 + x3 + U, data = dU), covariates = \"U\")\nr2_yz &lt;- sensemakr::partial_r2(fit_U, covariates = \"U\")\nr2_dz &lt;- unname(r2_dz); r2_yz &lt;- unname(r2_yz)\nc(r2_treat = r2_dz, r2_out = r2_yz)\n#&gt;   r2_treat     r2_out \n#&gt; 0.09680945 0.29078445\n\n漏掉 U 让连续结局的效应估计约翻了一倍。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. 未测量混杂的敏感性分析（get_sens / plt_sens）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/04-sens.html#sec-sens-lm",
+    "href": "notes/causalR/04-sens.html#sec-sens-lm",
+    "title": "4. 未测量混杂的敏感性分析：get_sens() 与 plt_sens()",
+    "section": "method = “lm”：偏 R² 框架",
+    "text": "method = “lm”：偏 R² 框架\n把 x1 作为基准：假想的未测混杂分别与处理、与结局的关联是 x1 的 1、2、3 倍时， 估计会变成多少？再用 bench_args$bound 手工加一个情景——就填 U 的真实偏 \\(R^2\\)：\n\ns_lm &lt;- get_sens(d, treat = \"d\", outcome = \"y\", adj_var = adj,\n                 bench_var = \"x1\", method = \"lm\",\n                 bench_args = list(k_treat = 1:3,\n                                   bound = c(r2_dz, r2_yz),\n                                   bound_label = \"True U\"))\ns_lm\n#&gt; &lt;sens_res&gt; method = \"lm\" (sensemakr 0.1.6), n = 2000, conf_level = 0.95, q = 1\n#&gt;   treat = d, outcome = y\n#&gt; \n#&gt; # A tibble: 1 × 18\n#&gt;   method estimand term  scale    estimate std.error statistic conf.low conf.high\n#&gt;   &lt;chr&gt;  &lt;chr&gt;    &lt;chr&gt; &lt;chr&gt;       &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 lm     beta     d     differe…    0.881    0.0556      15.8    0.772     0.990\n#&gt; # ℹ 9 more variables: dof &lt;dbl&gt;, rv_q &lt;dbl&gt;, rv_qa &lt;dbl&gt;, xrv_qa &lt;dbl&gt;,\n#&gt; #   r2yd_x &lt;dbl&gt;, evalue_point &lt;dbl&gt;, evalue_ci &lt;dbl&gt;, tip_effect &lt;dbl&gt;,\n#&gt; #   tip_n &lt;dbl&gt;\n#&gt; \n#&gt; Confounding scenarios:\n#&gt; # A tibble: 4 × 12\n#&gt;   method estimand bound_label r2_treat r2_out adj_estimate adj_low adj_high\n#&gt;   &lt;chr&gt;  &lt;chr&gt;    &lt;chr&gt;          &lt;dbl&gt;  &lt;dbl&gt;        &lt;dbl&gt;   &lt;dbl&gt;    &lt;dbl&gt;\n#&gt; 1 lm     beta     True U        0.0968  0.291        0.443   0.443    0.443\n#&gt; 2 lm     beta     1x x1         0.0372  0.201        0.662   0.662    0.662\n#&gt; 3 lm     beta     2x x1         0.0743  0.403        0.434   0.434    0.434\n#&gt; 4 lm     beta     3x x1         0.111   0.606        0.196   0.196    0.196\n#&gt; # ℹ 4 more variables: adj_conf.low &lt;dbl&gt;, adj_conf.high &lt;dbl&gt;, adj_se &lt;dbl&gt;,\n#&gt; #   adj_statistic &lt;dbl&gt;\n#&gt; \n#&gt; # RV / xRV are partial R2 in [0, 1); E-values are risk-ratio multipliers in [1, Inf). Not comparable.\n#&gt; # plt_sens: type = \"contour\", lim = c(0.372, 0.758)\n\n“True U” 一行的调整后估计是 0.443， 与真的把 U 放进回归得到的 0.443 相同：\n\nall.equal(s_lm$bounds$adj_estimate[s_lm$bounds$bound_label == \"True U\"],\n          unname(coef(fit_U)[\"d\"]))\n#&gt; [1] TRUE\n\n对最小二乘，遗漏变量偏倚公式是代数恒等式而非近似：只要知道混杂的两个偏 \\(R^2\\)， 调整后的估计就是精确的。敏感性分析真正的不确定性在于没人知道这两个偏 \\(R^2\\) 是多少， 基准情景就是用已测变量给它们一个参照尺度。\n\n读稳健值\n\ns_lm$stats[, c(\"estimate\", \"rv_q\", \"rv_qa\", \"xrv_qa\", \"r2yd_x\")]\n#&gt; # A tibble: 1 × 5\n#&gt;   estimate  rv_q rv_qa xrv_qa r2yd_x\n#&gt;      &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt;  &lt;dbl&gt;\n#&gt; 1    0.881 0.297 0.266  0.110  0.112\n\n\n\n\n\n\n\n\n列\n含义\n\n\n\n\nrv_q\n稳健值：一个同时解释处理和结局各 rv_q 比例残差变异的混杂，恰好能把估计拉掉 q 比例（q = 1 即拉到 0）\n\n\nrv_qa\n同上，但目标是让置信区间刚好包含”拉掉 q 后的值”（按 conf_level）\n\n\nxrv_qa\n极端稳健值：假设混杂能解释结局的全部残差变异时，它与处理的偏 \\(R^2\\) 至少要多大（按置信水平调整）\n\n\nr2yd_x\n处理与结局的偏 \\(R^2\\)；混杂与处理的偏 \\(R^2\\) 小于它时，无论与结局多强都不能把估计拉到 0\n\n\n\n本例 rv_q = 0.297：要把估计拉到 0，混杂需要同时解释处理和结局各约 30% 的残差变异。U 实际解释的是处理 9.7%、 结局 29.1%——足以让估计减半，但不足以让它归零，这与参照结果一致。\nq 控制”翻转”的定义。例如 q = 0.5 问的是”要多强的混杂才能把估计砍掉一半”：\n\nget_sens(d, treat = \"d\", outcome = \"y\", adj_var = adj, method = \"lm\",\n         q = 0.5)$stats[, c(\"rv_q\", \"rv_qa\", \"xrv_qa\")]\n#&gt; # A tibble: 1 × 3\n#&gt;    rv_q rv_qa xrv_qa\n#&gt;   &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt;\n#&gt; 1 0.162 0.125 0.0286\n\n\n\n等高线图\nmethod = \"lm\" 的等高线图是原生 ggplot：用 sensemakr 自己的 adjusted_estimate() 等函数算曲面，所以与上游图完全相同，但等高线保留数值标签， 还能继续叠加图层。红色虚线是 threshold（默认 0）对应的临界线，红点是基准与手工情景：\n\nplt_sens(s_lm)\n\n\n\n\n\n\n\n\ncontour_args$sensitivity_of 可以换成 t 值或置信限：\n\nplt_sens(s_lm, contour_args = list(sensitivity_of = \"t-value\"))\n\n\n\n\n\n\n\n\ntype = \"extreme\" 画极端情景：混杂解释结局 100%、75%、50% 残差变异时（extreme_r2）， 估计随混杂与处理的偏 \\(R^2\\) 怎样下降。这张图包装自 sensemakr 的 base 图形；包装时 ggplotify 会报几条弃用与 is.na() 警告（DML、IV 的等高线还会报”gridGraphics 无法画等高线标签”）， 不影响图形，本页把这三张包装图的警告隐藏了：\n\nplt_sens(s_lm, type = \"extreme\")\n\n\n\n\n\n\n\n\n基准情景是说”未测混杂与处理 / 结局的关联是 x1 的 k 倍”，前提是它与 x1 相互独立。 U 在本例落在 2 倍与 3 倍 x1 之间（处理侧）、1 倍与 2 倍之间（结局侧）， 而这一点在现实中无法验证：基准情景给的是尺度感，不是上界。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. 未测量混杂的敏感性分析（get_sens / plt_sens）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/04-sens.html#sec-sens-cox",
+    "href": "notes/causalR/04-sens.html#sec-sens-cox",
+    "title": "4. 未测量混杂的敏感性分析：get_sens() 与 plt_sens()",
+    "section": "method = “cox”：翻转点与 E 值",
+    "text": "method = “cox”：翻转点与 E 值\nCox 模型没有偏 \\(R^2\\) 的精确框架，改用 tipr 的翻转点分析和 E 值：\n\ns_cox &lt;- get_sens(d, treat = \"d\", outcome = \"event\", time = \"time\",\n                  adj_var = adj, method = \"cox\")\ns_cox$stats[, c(\"estimate\", \"conf.low\", \"conf.high\", \"evalue_point\",\n                \"evalue_ci\", \"tip_effect\", \"tip_n\")]\n#&gt; # A tibble: 1 × 7\n#&gt;   estimate conf.low conf.high evalue_point evalue_ci tip_effect tip_n\n#&gt;      &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;        &lt;dbl&gt;     &lt;dbl&gt;      &lt;dbl&gt; &lt;dbl&gt;\n#&gt; 1    0.557    0.491     0.632         2.36      2.09      0.728     1\n\n参照：\n\nlibrary(survival)\nhr_U &lt;- unname(exp(coef(coxph(Surv(time, event) ~ d + x1 + x2 + x3 + U,\n                                data = dU))[\"d\"]))\nhr_U\n#&gt; [1] 0.7733768\n\n漏掉 U 让保护效应被明显高估（0.557 对比 0.773； DGP 里的真实条件风险比是 0.8）。\n\n\n\n\n\n\n\n列\n含义\n\n\n\n\nevalue_point\nE 值：未测混杂与暴露、与结局的关联（风险比尺度）都至少要这么大，才能把点估计解释成无效应\n\n\nevalue_ci\n对置信区间中离 1 最近的那条界的 E 值；区间已跨过 1 时按定义为 1\n\n\ntip_effect\n翻转点：一个两组间标准化均值差为 evalue_args$smd 的连续混杂，与结局的关联（风险比）要多大才能让置信限刚好到 1\n\n\ntip_n\n需要多少个这样的混杂\n\n\n\nestimate 和置信限在风险比尺度，std.error 在对数风险尺度。\n\nrare 与二分类混杂\nevalue_args$rare 决定风险比能否直接当风险比（risk ratio）用：\n\nFALSE（默认）：结局不罕见，先做 VanderWeele–Ding 平方根变换 \\(RR = (1 - 0.5^{\\sqrt{HR}}) / (1 - 0.5^{\\sqrt{1/HR}})\\)，它把比值往 1 收，E 值更小、更保守。 这与 tipr 自己的默认（不变换）相反。\nTRUE：结局在随访期内确实罕见时才用。\n\n\nget_sens(d, treat = \"d\", outcome = \"event\", time = \"time\", adj_var = adj,\n         method = \"cox\",\n         evalue_args = list(rare = TRUE))$stats[, c(\"evalue_point\", \"evalue_ci\")]\n#&gt; # A tibble: 1 × 2\n#&gt;   evalue_point evalue_ci\n#&gt;          &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1         2.99      2.54\n\n本例事件率约 51%，不罕见，应当用默认的 FALSE。 混杂设为二分类时，要给两组的患病率：\n\nget_sens(d, treat = \"d\", outcome = \"event\", time = \"time\", adj_var = adj,\n         method = \"cox\",\n         evalue_args = list(confounder = \"binary\", exposed_prev = 0.6,\n                            unexposed_prev = 0.3))$stats[, c(\"tip_effect\", \"tip_n\")]\n#&gt; # A tibble: 1 × 2\n#&gt;   tip_effect tip_n\n#&gt;        &lt;dbl&gt; &lt;dbl&gt;\n#&gt; 1      0.288     1\n\nE 值与 EValue::evalues.HR() 在两种 rare 设置下逐位一致；函数不调用 EValue， 因为它的 estimate 方法与 dml.sensemakr 拖进来的 lava 冲突，同一会话里先跑过 DML 就会报错。\n\n\n翻转点图与 E 值图\n两张图都是原生 ggplot：\n\nplt_sens(s_cox)\n\n\n\n\n\n\n\n\n\nplt_sens(s_cox, type = \"evalue\")\n\n\n\n\n\n\n\n\n翻转点图的横轴是混杂与结局的关联，纵轴是调整后的效应；实线是点估计、虚线是离 1 最近的置信限， 虚线与 1 的交点就是 tip_effect。E 值图的曲线是能把点估计拉到 1 的所有 （混杂—暴露，混杂—结局）组合，对角线上的点就是 E 值。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. 未测量混杂的敏感性分析（get_sens / plt_sens）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/04-sens.html#sec-sens-dml",
+    "href": "notes/causalR/04-sens.html#sec-sens-dml",
+    "title": "4. 未测量混杂的敏感性分析：get_sens() 与 plt_sens()",
+    "section": "method = “dml”：双重机器学习",
+    "text": "method = “dml”：双重机器学习\n\ns_dml &lt;- get_sens(d, treat = \"d\", outcome = \"y\", adj_var = adj,\n                  bench_var = \"x1\", method = \"dml\",\n                  bench_args = list(k_treat = 1:2),\n                  dml_args = list(cf_seed = 1))\ns_dml\n#&gt; &lt;sens_res&gt; method = \"dml\" (dml.sensemakr 0.2.2), n = 2000, conf_level = 0.95, q = 1\n#&gt;   treat = d, outcome = y\n#&gt; \n#&gt; # A tibble: 1 × 18\n#&gt;   method estimand term  scale    estimate std.error statistic conf.low conf.high\n#&gt;   &lt;chr&gt;  &lt;chr&gt;    &lt;chr&gt; &lt;chr&gt;       &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 dml    ate      d     differe…    0.914    0.0579      15.8    0.800      1.03\n#&gt; # ℹ 9 more variables: dof &lt;dbl&gt;, rv_q &lt;dbl&gt;, rv_qa &lt;dbl&gt;, xrv_qa &lt;dbl&gt;,\n#&gt; #   r2yd_x &lt;dbl&gt;, evalue_point &lt;dbl&gt;, evalue_ci &lt;dbl&gt;, tip_effect &lt;dbl&gt;,\n#&gt; #   tip_n &lt;dbl&gt;\n#&gt; \n#&gt; Confounding scenarios:\n#&gt; # A tibble: 2 × 12\n#&gt;   method estimand bound_label r2_treat r2_out adj_estimate adj_low adj_high\n#&gt;   &lt;chr&gt;  &lt;chr&gt;    &lt;chr&gt;          &lt;dbl&gt;  &lt;dbl&gt;        &lt;dbl&gt;   &lt;dbl&gt;    &lt;dbl&gt;\n#&gt; 1 dml    ate      1x x1         0.0230  0.137           NA   0.770     1.06\n#&gt; 2 dml    ate      2x x1         0.0460  0.274           NA   0.623     1.20\n#&gt; # ℹ 4 more variables: adj_conf.low &lt;dbl&gt;, adj_conf.high &lt;dbl&gt;, adj_se &lt;dbl&gt;,\n#&gt; #   adj_statistic &lt;dbl&gt;\n#&gt; \n#&gt; # RV / xRV are partial R2 in [0, 1); E-values are risk-ratio multipliers in [1, Inf). Not comparable.\n#&gt; # plt_sens: type = \"contour\", lim = c(0.377, 0.377), estimand = \"ate\"\n\nDML 的界是区间而不是点：adj_low / adj_high 是混杂强度等于该情景时估计可能落到的范围， 所以 adj_estimate、adj_se、adj_statistic 为 NA。dml_args 映射到 dml.sensemakr::dml()：model（\"plm\" 部分线性 / \"npm\" 非参数）、target （\"ate\" / \"att\" / \"atu\"）、学习器 reg（caret 名称，默认 \"ranger\"）、 交叉拟合折数 cf_folds 与重复次数 cf_reps、种子 cf_seed、倾向得分修剪 ps_trim、 混杂的”对抗程度” rho2 等。不设 cf_seed 时，交叉拟合的切分是随机的，结果每次略有不同。\n\nplt_sens(s_dml)\n\n\n\n\n\n\n\n\nDML 与 IV 的等高线图包装自上游的 base 图形。gridGraphics 画不出等高线上的数值标签， 所以这两张图没有层级数值，只能看临界线的位置；本例的 DML 图也没有画出两个基准点。 默认 sensitivity_of 对 DML 和 IV 是置信下限 \"lwr\"。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. 未测量混杂的敏感性分析（get_sens / plt_sens）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/04-sens.html#sec-sens-iv",
+    "href": "notes/causalR/04-sens.html#sec-sens-iv",
+    "title": "4. 未测量混杂的敏感性分析：get_sens() 与 plt_sens()",
+    "section": "method = “iv”：工具变量",
+    "text": "method = “iv”：工具变量\n工具变量估计不怕 U（z 与 U 独立、只经治疗影响结局），它怕的是工具变量本身被混杂， 或违反排他性。IV 后端问的是：一个同时与 z、与结局相关的遗漏变量要多强，才会推翻结论？\n\ns_iv &lt;- get_sens(d, treat = \"d\", outcome = \"y\", instrument = \"z\",\n                 adj_var = adj, bench_var = \"x1\", method = \"iv\",\n                 bench_args = list(k_treat = 1:2))\ns_iv$stats[, c(\"estimand\", \"estimate\", \"conf.low\", \"conf.high\", \"rv_qa\", \"xrv_qa\")]\n#&gt; # A tibble: 3 × 6\n#&gt;   estimand estimate conf.low conf.high   rv_qa   xrv_qa\n#&gt;   &lt;chr&gt;       &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;   &lt;dbl&gt;    &lt;dbl&gt;\n#&gt; 1 iv          0.534   0.0892     0.958 0.00821 0.000790\n#&gt; 2 fs          0.249   0.208      0.290 0.199   0.0643  \n#&gt; 3 rf          0.133   0.0211     0.245 0.00821 0.000790\n\nIV 估计 0.534 接近真实效应 0.5，区间比 OLS 宽得多。 三行分别是 IV 估计本身（\"iv\"）、第一阶段（\"fs\"，工具对治疗）和简化式（\"rf\"，工具对结局）； iv_args$parm 可以只取其中几个。上游只报告按置信水平调整的稳健值，所以 rv_q 为 NA， std.error 也是 NA。\n\nplt_sens(s_iv)\n\n\n\n\n\n\n\n\n本例 z 是随机分配的，与 x1 几乎无关，所以两个基准点贴着纵轴（与工具的偏 \\(R^2\\) 约为 0）： 以 x1 为尺度，工具侧的混杂几乎不存在。IV 图的临界线由上游固定在零假设处，threshold 不影响它。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. 未测量混杂的敏感性分析（get_sens / plt_sens）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/04-sens.html#sec-sens-args",
+    "href": "notes/causalR/04-sens.html#sec-sens-args",
+    "title": "4. 未测量混杂的敏感性分析：get_sens() 与 plt_sens()",
+    "section": "参数",
+    "text": "参数\n\nget_sens()\n\n\n\n\n\n\n\n\n参数\n默认\n说明\n\n\n\n\ndata\n—\n数据框\n\n\ntreat、outcome\n—\n处理列与结局列；treat 必须对应恰好一个回归系数（数值或两水平因子）\n\n\ntime\nNULL\n随访时间列，只用于且必须用于 \"cox\"（此时 outcome 是事件指示）\n\n\ninstrument\nNULL\n工具变量列，只用于且必须用于 \"iv\"\n\n\nadj_var\nNULL\n已测协变量\n\n\nbench_var\nNULL\n基准协变量，须是 adj_var 的子集；\"cox\" 不用\n\n\nmethod\n\"lm\"\n\"lm\" / \"cox\" / \"dml\" / \"iv\"\n\n\nq\n1\n需要被解释掉的估计比例；\"cox\" 只能为 1\n\n\nconf_level\n0.95\n后端收到的 alpha 为 1 - conf_level，不另设 alpha 参数\n\n\nbench_args\nlist(k_treat = 1, k_out = NULL, bound = NULL, bound_label = \"Manual bound\")\n基准倍数（k_out = NULL 时沿用 k_treat）与一个手工情景 c(处理侧 R², 结局侧 R²)\n\n\nevalue_args\nlist(rare = FALSE, confounder = \"continuous\", smd = 1, exposed_prev = NULL, unexposed_prev = NULL)\n仅 \"cox\"\n\n\ndml_args\nlist(model = \"plm\", target = \"ate\", reg = \"ranger\", cf_folds = 5L, ...)\n仅 \"dml\"\n\n\niv_args\nlist(parm = c(\"iv\", \"fs\", \"rf\"), min = TRUE)\n仅 \"iv\"\n\n\nverbose\nFALSE\n打印后端进度并报告删掉的不完整行\n\n\n\n\n\nplt_sens()\n\n\n\n\n\n\n\n\n参数\n默认\n说明\n\n\n\n\nx\n—\nget_sens() 的结果\n\n\ntype\n视后端而定\n\"lm\"：\"contour\"（默认）/ \"extreme\"；\"dml\"、\"iv\"：\"contour\"；\"cox\"：\"tip\"（默认）/ \"evalue\"\n\n\nestimand\nNULL\nDML（\"ate\" / \"att\" / \"atu\"）或 IV（\"iv\" / \"fs\" / \"rf\"）有多行时选哪一行；NULL 取第一行\n\n\nthreshold\n0\n等高线图的临界值\n\n\nlim\nNULL\n坐标窗口；NULL 用 print() 末行给出的窗口\n\n\nextreme_r2\nc(1, 0.75, 0.5)\n\"extreme\" 的结局侧偏 \\(R^2\\)\n\n\ncontour_args\nlist(sensitivity_of = \"auto\", n_levels = 10L, grid_n = 70L, round = 3L)\n等高线的量、层数、网格（仅 DML）、标签位数\n\n\ntitle、save\nNULL、list()\n标题（只作用于 \"tip\"、\"evalue\"）；PDF 输出",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. 未测量混杂的敏感性分析（get_sens / plt_sens）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/04-sens.html#sec-sens-value",
+    "href": "notes/causalR/04-sens.html#sec-sens-value",
+    "title": "4. 未测量混杂的敏感性分析：get_sens() 与 plt_sens()",
+    "section": "返回值",
+    "text": "返回值\nsens_res 列表：\n\n\n\n\n\n\n\n元素\n内容\n\n\n\n\nstats\n每个估计量一行，固定 18 列：method、estimand、term、scale、estimate、std.error、statistic、conf.low、conf.high、dof、rv_q、rv_qa、xrv_qa、r2yd_x、evalue_point、evalue_ci、tip_effect、tip_n\n\n\nbounds\n混杂情景表（bound_label、r2_treat、r2_out、调整后的估计与区间）；没有情景或 \"cox\" 时为 NULL\n\n\nfit\n拟合的模型：lm、coxph、dml 或 iv_fit\n\n\nsens\n后端的敏感性对象；\"cox\" 为 NULL\n\n\n\n分析元数据在 attr(x, \"analysis\")。对 stats / bounds 做 dplyr 操作会丢掉它们携带的 method 属性。IV 后端要求协变量名是合法的 R 名称，内部会做 make.names()。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. 未测量混杂的敏感性分析（get_sens / plt_sens）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/04-sens.html#sec-sens-refs",
+    "href": "notes/causalR/04-sens.html#sec-sens-refs",
+    "title": "4. 未测量混杂的敏感性分析：get_sens() 与 plt_sens()",
+    "section": "参考文献",
+    "text": "参考文献\n\nCinelli C, Hazlett C (2020). Making sense of sensitivity: extending omitted variable bias. Journal of the Royal Statistical Society Series B 82(1):39–67.\nVanderWeele TJ, Ding P (2017). Sensitivity analysis in observational research: introducing the E-value. Annals of Internal Medicine 167(4):268–274.\nLin DY, Psaty BM, Kronmal RA (1998). Assessing the sensitivity of regression results to unmeasured confounders in observational studies. Biometrics 54(3):948–963.\nChernozhukov V, Cinelli C, Newey W, Sharma A, Syrgkanis V (2022). Long story short: omitted variable bias in causal machine learning. arXiv:2112.13398.\nCinelli C, Hazlett C. An omitted variable bias framework for sensitivity analysis of instrumental variables. Biometrika（2025）。\n\n完整说明见 ?get_sens、?plt_sens。本站 《Causal Inference in R》第 16 章和 Duke STA 640 第 5 章讲敏感性分析的原理。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. 未测量混杂的敏感性分析（get_sens / plt_sens）</span>"
+    ]
   }
 ]
