@@ -42,10 +42,13 @@ data ──get_hte()──► hte_res ─┬─ plt_hte_dep()   效应随单个�
 remotes::install_github("HUI950319/causalR")
 # 森林与绘图依赖都在 Suggests 里，需要单独装
 install.packages(c("grf", "patchwork", "sandwich", "forestplot", "ggplotify"))
+# 可选：画变量重要性
+remotes::install_github("HUI950319/MLR")
 ```
 
 `grf` 是 `get_hte()` 的唯一后端；`sandwich` 给连续协变量的样条检验算 HC3 标准误；
-`forestplot` + `ggplotify` 画并包装亚组森林图；`patchwork` 拼多面板图。
+`forestplot` + `ggplotify` 画并包装亚组森林图；`patchwork` 拼多面板图；
+`MLR` 的 `plt_bar_per()` 画变量重要性（不是 causalR 的依赖）。
 
 本页核对于 **2026 年 9 月 28 日**，代码块**由本站渲染时真实执行**，
 页面上的输出与图形就是本机结果：
@@ -54,6 +57,7 @@ install.packages(c("grf", "patchwork", "sandwich", "forestplot", "ggplotify"))
 |---|---|
 | causalR | `r packageVersion("causalR")`（GitHub `main`，提交 `1411dbe`） |
 | grf | `r packageVersion("grf")` |
+| MLR | `r packageVersion("MLR")`（仅 `plt_bar_per()`） |
 | R | Windows `r paste(R.version$major, R.version$minor, sep = ".")` |
 
 ## 示例数据：真值已知的生存数据 {#sec-hte-data}
@@ -235,8 +239,28 @@ res$importance
 `p_het` 是**逐变量、未校正**的单变量投影检验，只在 ATE 差值尺度上做。
 一次筛多个变量时要事先定好检验族并做多重校正，例如
 `p.adjust(res$importance$p_het, method = "BH")`；显著也不代表该变量独立于
-与它相关的其它协变量起作用。`res$importance` 的前两列正是 `MLR::plt_bar_per()`
-读的格式，可以直接画条形图。
+与它相关的其它协变量起作用。
+
+### 用 plt_bar_per() 画变量重要性 {#sec-get-hte-barper}
+
+`res$importance` 的前两列（`variable`、`importance`）正是 `MLR::plt_bar_per()` 读的格式：
+它自动取第一个文本列作变量名、第一个数值列作数值，不需要任何转换。
+`importance` 在所有协变量上加总为 1，所以 `mode = "bar_per2"` 外圈的百分比就是
+各变量占森林全部分裂的份额：
+
+```{r}
+#| label: importance-barper
+#| fig-width: 8
+#| fig-height: 5.5
+MLR::plt_bar_per(res$importance, mode = "bar_per2",
+                 add_name  = c(marker = "Biomarker", noise = "Noise"),
+                 labs_args = list(x = "grf variable importance", y = NULL))
+```
+
+`add_name` 按"旧名 = 新名"改标签，并优先于函数总会套用的 SEER 变量字典；
+`mode` 还可以是 `"bar"`（只要棒棒糖图）、`"per"` / `"per2"`（只要环图）或默认的 `"bar_per"`。
+这张图画的仍然是**分裂频率**：噪声变量照样排第二，判断效应修饰要回到上表的 `p_het`。
+`plt_bar_per()` 不读 `p_het` 列。
 
 ### 校准检验 {#sec-get-hte-calibration}
 

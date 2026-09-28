@@ -1664,6 +1664,7 @@ window.Quarto = {
   <li><a href="#sec-get-hte-value" id="toc-sec-get-hte-value" class="nav-link" data-scroll-target="#sec-get-hte-value">返回对象</a></li>
   <li><a href="#sec-get-hte-truth" id="toc-sec-get-hte-truth" class="nav-link" data-scroll-target="#sec-get-hte-truth">与真值对照</a></li>
   <li><a href="#sec-get-hte-importance" id="toc-sec-get-hte-importance" class="nav-link" data-scroll-target="#sec-get-hte-importance">变量重要性与 <code>p_het</code></a></li>
+  <li><a href="#sec-get-hte-barper" id="toc-sec-get-hte-barper" class="nav-link" data-scroll-target="#sec-get-hte-barper">用 plt_bar_per() 画变量重要性</a></li>
   <li><a href="#sec-get-hte-calibration" id="toc-sec-get-hte-calibration" class="nav-link" data-scroll-target="#sec-get-hte-calibration">校准检验</a></li>
   <li><a href="#sec-get-hte-other" id="toc-sec-get-hte-other" class="nav-link" data-scroll-target="#sec-get-hte-other">其它结局</a></li>
   <li><a href="#sec-get-hte-guards" id="toc-sec-get-hte-guards" class="nav-link" data-scroll-target="#sec-get-hte-guards">几道护栏</a></li>
@@ -1773,8 +1774,10 @@ window.Quarto = {
 <h2 class="anchored" data-anchor-id="sec-hte-env">安装与核对环境</h2>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>remotes<span class="sc">::</span><span class="fu">install_github</span>(<span class="st">"HUI950319/causalR"</span>)</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="co"># 森林与绘图依赖都在 Suggests 里，需要单独装</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">install.packages</span>(<span class="fu">c</span>(<span class="st">"grf"</span>, <span class="st">"patchwork"</span>, <span class="st">"sandwich"</span>, <span class="st">"forestplot"</span>, <span class="st">"ggplotify"</span>))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
-<p><code>grf</code> 是 <code>get_hte()</code> 的唯一后端；<code>sandwich</code> 给连续协变量的样条检验算 HC3 标准误； <code>forestplot</code> + <code>ggplotify</code> 画并包装亚组森林图；<code>patchwork</code> 拼多面板图。</p>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">install.packages</span>(<span class="fu">c</span>(<span class="st">"grf"</span>, <span class="st">"patchwork"</span>, <span class="st">"sandwich"</span>, <span class="st">"forestplot"</span>, <span class="st">"ggplotify"</span>))</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co"># 可选：画变量重要性</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>remotes<span class="sc">::</span><span class="fu">install_github</span>(<span class="st">"HUI950319/MLR"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>grf</code> 是 <code>get_hte()</code> 的唯一后端；<code>sandwich</code> 给连续协变量的样条检验算 HC3 标准误； <code>forestplot</code> + <code>ggplotify</code> 画并包装亚组森林图；<code>patchwork</code> 拼多面板图； <code>MLR</code> 的 <code>plt_bar_per()</code> 画变量重要性（不是 causalR 的依赖）。</p>
 <p>本页核对于 <strong>2026 年 9 月 28 日</strong>，代码块<strong>由本站渲染时真实执行</strong>， 页面上的输出与图形就是本机结果：</p>
 <table class="caption-top table">
 <thead>
@@ -1793,6 +1796,10 @@ window.Quarto = {
 <td>2.6.1</td>
 </tr>
 <tr class="odd">
+<td>MLR</td>
+<td>0.1.13（仅 <code>plt_bar_per()</code>）</td>
+</tr>
+<tr class="even">
 <td>R</td>
 <td>Windows 4.4.3</td>
 </tr>
@@ -2145,17 +2152,34 @@ window.Quarto = {
 <li>分类变量：各水平双稳健均值相等的 Wald 检验（<code>df</code> = 水平数 − 1）， 对 ATE 差值与 <code>$subgroup</code> 的 <code>p_inter</code> 逐位相同；</li>
 <li>连续变量（超过 5 个不同取值）：AIPW 得分对自然样条 <code>ns(x, 2)</code> 回归、 HC3 标准误下样条项的联合 Wald 检验。</li>
 </ul>
-<p><code>p_het</code> 是<strong>逐变量、未校正</strong>的单变量投影检验，只在 ATE 差值尺度上做。 一次筛多个变量时要事先定好检验族并做多重校正，例如 <code>p.adjust(res$importance$p_het, method = "BH")</code>；显著也不代表该变量独立于 与它相关的其它协变量起作用。<code>res$importance</code> 的前两列正是 <code>MLR::plt_bar_per()</code> 读的格式，可以直接画条形图。</p>
+<p><code>p_het</code> 是<strong>逐变量、未校正</strong>的单变量投影检验，只在 ATE 差值尺度上做。 一次筛多个变量时要事先定好检验族并做多重校正，例如 <code>p.adjust(res$importance$p_het, method = "BH")</code>；显著也不代表该变量独立于 与它相关的其它协变量起作用。</p>
+</section>
+<section id="sec-get-hte-barper" class="level3">
+<h3 class="anchored" data-anchor-id="sec-get-hte-barper">用 plt_bar_per() 画变量重要性</h3>
+<p><code>res$importance</code> 的前两列（<code>variable</code>、<code>importance</code>）正是 <code>MLR::plt_bar_per()</code> 读的格式： 它自动取第一个文本列作变量名、第一个数值列作数值，不需要任何转换。 <code>importance</code> 在所有协变量上加总为 1，所以 <code>mode = "bar_per2"</code> 外圈的百分比就是 各变量占森林全部分裂的份额：</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>MLR<span class="sc">::</span><span class="fu">plt_bar_per</span>(res<span class="sc">$</span>importance, <span class="at">mode =</span> <span class="st">"bar_per2"</span>,</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>                 <span class="at">add_name  =</span> <span class="fu">c</span>(<span class="at">marker =</span> <span class="st">"Biomarker"</span>, <span class="at">noise =</span> <span class="st">"Noise"</span>),</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>                 <span class="at">labs_args =</span> <span class="fu">list</span>(<span class="at">x =</span> <span class="st">"grf variable importance"</span>, <span class="at">y =</span> <span class="cn">NULL</span>))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="01-hte_files/figure-html/importance-barper-1.png" class="img-fluid figure-img" width="768"></p>
+</figure>
+</div>
+</div>
+</div>
+<p><code>add_name</code> 按”旧名 = 新名”改标签，并优先于函数总会套用的 SEER 变量字典； <code>mode</code> 还可以是 <code>"bar"</code>（只要棒棒糖图）、<code>"per"</code> / <code>"per2"</code>（只要环图）或默认的 <code>"bar_per"</code>。 这张图画的仍然是<strong>分裂频率</strong>：噪声变量照样排第二，判断效应修饰要回到上表的 <code>p_het</code>。 <code>plt_bar_per()</code> 不读 <code>p_het</code> 列。</p>
 </section>
 <section id="sec-get-hte-calibration" class="level3">
 <h3 class="anchored" data-anchor-id="sec-get-hte-calibration">校准检验</h3>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>res<span class="sc">$</span>calibration</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 2 × 5</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   term                           estimate std.error statistic  p.value</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;                             &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 mean.forest.prediction            1.01      0.218      4.65 1.71e- 6</span></span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 differential.forest.prediction    0.996     0.152      6.54 3.65e-11</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>res<span class="sc">$</span>calibration</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 2 × 5</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   term                           estimate std.error statistic  p.value</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;                             &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 mean.forest.prediction            1.01      0.218      4.65 1.71e- 6</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 differential.forest.prediction    0.996     0.152      6.54 3.65e-11</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p>这是 <code>grf::test_calibration()</code> 的回归：<code>mean.forest.prediction</code> 系数为 1 表示平均 CATE 估得准；<code>differential.forest.prediction</code> 系数为 1 表示 CATE 围绕均值的离散程度校准良好， 显著大于 0 则是”效应确实在变”的整体检验（p 值单侧）。grf 只对 <code>causal_forest</code> 提供 这个检验；<code>get_hte()</code> 对生存森林用同一回归，只把因变量换成生存森林保存的 删失校正残差。</p>
 <p><code>differential.forest.prediction</code> 为<strong>负数</strong>时读作”未检出异质性”，不要取绝对值： 森林与回归用的是同一批患者，无异质性的数据里这个系数本来就常为负， 取绝对值会让假阳性率远超名义水平。</p>
@@ -2164,30 +2188,30 @@ window.Quarto = {
 <h3 class="anchored" data-anchor-id="sec-get-hte-other">其它结局</h3>
 <p><code>surv</code> 换成一个列名就是二分类或连续结局，改用 <code>causal_forest()</code>：</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>d<span class="sc">$</span>resp <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fu">plogis</span>(<span class="sc">-</span><span class="dv">1</span> <span class="sc">+</span> <span class="fl">0.03</span> <span class="sc">*</span> (d<span class="sc">$</span>age <span class="sc">-</span> <span class="dv">60</span>) <span class="sc">+</span></span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>                                d<span class="sc">$</span>z <span class="sc">*</span> (<span class="fl">0.2</span> <span class="sc">+</span> <span class="fl">0.8</span> <span class="sc">*</span> d<span class="sc">$</span>marker)))</span>
-<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>res_bin <span class="ot">&lt;-</span> <span class="fu">get_hte</span>(d, <span class="at">cat_var =</span> <span class="st">"z"</span>,</span>
-<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>                   <span class="at">adj_var =</span> <span class="fu">c</span>(<span class="st">"age"</span>, <span class="st">"marker"</span>, <span class="st">"sex"</span>, <span class="st">"stage"</span>, <span class="st">"noise"</span>),</span>
-<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>                   <span class="at">surv =</span> <span class="st">"resp"</span>, <span class="at">measure =</span> <span class="fu">c</span>(<span class="st">"diff"</span>, <span class="st">"ratio"</span>, <span class="st">"OR"</span>),</span>
-<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>                   <span class="at">grf_args =</span> <span class="fu">list</span>(<span class="at">num.trees =</span> <span class="dv">1000</span>, <span class="at">seed =</span> <span class="dv">1</span>))</span>
-<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>res_bin<span class="sc">$</span>stats</span>
-<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 3 × 10</span></span>
-<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   method estimand measure estimate std.error conf.low conf.high p.value     n</span></span>
-<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;  &lt;chr&gt;    &lt;chr&gt;      &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;   &lt;dbl&gt; &lt;int&gt;</span></span>
-<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 grf    ATE      diff      0.0383    0.0168  0.00538    0.0712  0.0226  3000</span></span>
-<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 grf    ATE      ratio     1.14      0.0565  1.02       1.27    0.0228  3000</span></span>
-<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 3 grf    ATE      OR        1.20      0.0804  1.03       1.41    0.0227  3000</span></span>
-<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # ℹ 1 more variable: n_treat &lt;int&gt;</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>d<span class="sc">$</span>resp <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, <span class="fu">plogis</span>(<span class="sc">-</span><span class="dv">1</span> <span class="sc">+</span> <span class="fl">0.03</span> <span class="sc">*</span> (d<span class="sc">$</span>age <span class="sc">-</span> <span class="dv">60</span>) <span class="sc">+</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>                                d<span class="sc">$</span>z <span class="sc">*</span> (<span class="fl">0.2</span> <span class="sc">+</span> <span class="fl">0.8</span> <span class="sc">*</span> d<span class="sc">$</span>marker)))</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>res_bin <span class="ot">&lt;-</span> <span class="fu">get_hte</span>(d, <span class="at">cat_var =</span> <span class="st">"z"</span>,</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>                   <span class="at">adj_var =</span> <span class="fu">c</span>(<span class="st">"age"</span>, <span class="st">"marker"</span>, <span class="st">"sex"</span>, <span class="st">"stage"</span>, <span class="st">"noise"</span>),</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>                   <span class="at">surv =</span> <span class="st">"resp"</span>, <span class="at">measure =</span> <span class="fu">c</span>(<span class="st">"diff"</span>, <span class="st">"ratio"</span>, <span class="st">"OR"</span>),</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>                   <span class="at">grf_args =</span> <span class="fu">list</span>(<span class="at">num.trees =</span> <span class="dv">1000</span>, <span class="at">seed =</span> <span class="dv">1</span>))</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>res_bin<span class="sc">$</span>stats</span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 3 × 10</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   method estimand measure estimate std.error conf.low conf.high p.value     n</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;  &lt;chr&gt;    &lt;chr&gt;      &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;   &lt;dbl&gt; &lt;int&gt;</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 grf    ATE      diff      0.0383    0.0168  0.00538    0.0712  0.0226  3000</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 grf    ATE      ratio     1.14      0.0565  1.02       1.27    0.0228  3000</span></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 3 grf    ATE      OR        1.20      0.0804  1.03       1.41    0.0227  3000</span></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # ℹ 1 more variable: n_treat &lt;int&gt;</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </section>
 <section id="sec-get-hte-guards" class="level3">
 <h3 class="anchored" data-anchor-id="sec-get-hte-guards">几道护栏</h3>
 <p><code>time</code> 超出随访时，grf 自己会<strong>静默</strong>给出接近 0 的效应。<code>get_hte()</code> 在任一臂没有人 随访超过 <code>time</code> 时直接报错，少于 10 人时警告：</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">get_hte</span>(d, <span class="at">cat_var =</span> <span class="st">"z"</span>, <span class="at">adj_var =</span> <span class="fu">c</span>(<span class="st">"age"</span>, <span class="st">"marker"</span>, <span class="st">"sex"</span>, <span class="st">"stage"</span>, <span class="st">"noise"</span>),</span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>        <span class="at">time =</span> <span class="dv">160</span>, <span class="at">grf_args =</span> <span class="fu">list</span>(<span class="at">num.trees =</span> <span class="dv">200</span>, <span class="at">seed =</span> <span class="dv">1</span>))</span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Error:</span></span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ! No patient with `z` = 1 is followed beyond `time` = 160 (longest follow-up 149.8), so the effect at that time is not identified; choose a smaller `time`.</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">get_hte</span>(d, <span class="at">cat_var =</span> <span class="st">"z"</span>, <span class="at">adj_var =</span> <span class="fu">c</span>(<span class="st">"age"</span>, <span class="st">"marker"</span>, <span class="st">"sex"</span>, <span class="st">"stage"</span>, <span class="st">"noise"</span>),</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>        <span class="at">time =</span> <span class="dv">160</span>, <span class="at">grf_args =</span> <span class="fu">list</span>(<span class="at">num.trees =</span> <span class="dv">200</span>, <span class="at">seed =</span> <span class="dv">1</span>))</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Error:</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ! No patient with `z` = 1 is followed beyond `time` = 160 (longest follow-up 149.8), so the effect at that time is not identified; choose a smaller `time`.</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p>其余几条行为写在帮助页里，这里只列要点：</p>
 <ul>
@@ -2202,7 +2226,7 @@ window.Quarto = {
 <h2 class="anchored" data-anchor-id="sec-dep">plt_hte_dep()：效应随协变量怎么变</h2>
 <p>默认对每个协变量画一个面板，按 <code>$importance</code> 排序，图层是灰色的逐人 CATE 和 红色的双稳健估计，面板标题带 <code>p_het</code>：</p>
 <div class="cell page-columns page-full">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_dep</span>(res)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_dep</span>(res)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display page-columns page-full">
 <div class="page-columns page-full">
 <figure class="figure page-columns page-full">
@@ -2252,11 +2276,11 @@ window.Quarto = {
 </table>
 <p>下面把三层叠在 <code>marker</code> 上，并额外加一条绿色的<strong>真值曲线</strong>（真实 CATE 对 <code>marker</code> 的 loess 平滑，这一层是本页为了对照加的，不是函数输出）：</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_dep</span>(res, <span class="at">x_var =</span> <span class="st">"marker"</span>, <span class="at">display =</span> <span class="fu">c</span>(<span class="st">"cate"</span>, <span class="st">"dr"</span>, <span class="st">"pdp"</span>)) <span class="sc">+</span></span>
-<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_smooth</span>(<span class="fu">aes</span>(marker, tau_true), <span class="at">data =</span> res<span class="sc">$</span>data, <span class="at">method =</span> <span class="st">"loess"</span>,</span>
-<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>              <span class="at">formula =</span> y <span class="sc">~</span> x, <span class="at">se =</span> <span class="cn">FALSE</span>, <span class="at">colour =</span> <span class="st">"#1b7837"</span>, <span class="at">linewidth =</span> <span class="fl">0.8</span>,</span>
-<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>              <span class="at">inherit.aes =</span> <span class="cn">FALSE</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_dep</span>(res, <span class="at">x_var =</span> <span class="st">"marker"</span>, <span class="at">display =</span> <span class="fu">c</span>(<span class="st">"cate"</span>, <span class="st">"dr"</span>, <span class="st">"pdp"</span>)) <span class="sc">+</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_smooth</span>(<span class="fu">aes</span>(marker, tau_true), <span class="at">data =</span> res<span class="sc">$</span>data, <span class="at">method =</span> <span class="st">"loess"</span>,</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>              <span class="at">formula =</span> y <span class="sc">~</span> x, <span class="at">se =</span> <span class="cn">FALSE</span>, <span class="at">colour =</span> <span class="st">"#1b7837"</span>, <span class="at">linewidth =</span> <span class="fl">0.8</span>,</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>              <span class="at">inherit.aes =</span> <span class="cn">FALSE</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2271,7 +2295,7 @@ window.Quarto = {
 <h3 class="anchored" data-anchor-id="sec-dep-heat">双变量热图</h3>
 <p><code>type = "heat"</code> 需要恰好两个变量，画森林的二维部分依赖：</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_dep</span>(res, <span class="at">x_var =</span> <span class="fu">c</span>(<span class="st">"marker"</span>, <span class="st">"sex"</span>), <span class="at">type =</span> <span class="st">"heat"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_dep</span>(res, <span class="at">x_var =</span> <span class="fu">c</span>(<span class="st">"marker"</span>, <span class="st">"sex"</span>), <span class="at">type =</span> <span class="st">"heat"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2361,7 +2385,7 @@ window.Quarto = {
 <h2 class="anchored" data-anchor-id="sec-sub">plt_hte_sub()：亚组森林图</h2>
 <p>从存下来的森林<strong>重新计算</strong>每个水平内的双稳健 ATE，不重拟合； 与 <code>get_hte(sub_var = )</code> 的数值逐位相同。默认取森林里的全部分类协变量：</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_sub</span>(res)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_sub</span>(res)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2372,14 +2396,14 @@ window.Quarto = {
 </div>
 <p>亚组可以<strong>事后</strong>再定。下面用年龄切出一个 <code>age_65</code>，它不在森林协变量里， 函数会提示：只有当它是协变量的函数（这里正是 <code>age</code> 的函数）或不是混杂时， 亚组估计才成立；否则应当在 <code>get_hte(sub_var = )</code> 里加进森林。 同时改用事件风险比，并打开两列 P 值：</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>res<span class="sc">$</span>data<span class="sc">$</span>age_65 <span class="ot">&lt;-</span> <span class="fu">factor</span>(<span class="fu">ifelse</span>(res<span class="sc">$</span>data<span class="sc">$</span>age <span class="sc">&gt;=</span> <span class="dv">65</span>, <span class="st">"65+"</span>, <span class="st">"&lt;65"</span>),</span>
-<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>                          <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"&lt;65"</span>, <span class="st">"65+"</span>))</span>
-<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>p_sub <span class="ot">&lt;-</span> <span class="fu">plt_hte_sub</span>(res, <span class="at">sub_var =</span> <span class="fu">c</span>(<span class="st">"sex"</span>, <span class="st">"age_65"</span>), <span class="at">measure =</span> <span class="st">"ratio"</span>,</span>
-<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>                     <span class="at">show_pvalue =</span> <span class="cn">TRUE</span>, <span class="at">show_pinter =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ age_65 is not a forest covariate: the subgroup estimates hold for a function</span></span>
-<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   of the covariates or a variable that is no confounder; otherwise add it with</span></span>
-<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   get_hte(sub_var = ).</span></span>
-<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>p_sub</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>res<span class="sc">$</span>data<span class="sc">$</span>age_65 <span class="ot">&lt;-</span> <span class="fu">factor</span>(<span class="fu">ifelse</span>(res<span class="sc">$</span>data<span class="sc">$</span>age <span class="sc">&gt;=</span> <span class="dv">65</span>, <span class="st">"65+"</span>, <span class="st">"&lt;65"</span>),</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>                          <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"&lt;65"</span>, <span class="st">"65+"</span>))</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>p_sub <span class="ot">&lt;-</span> <span class="fu">plt_hte_sub</span>(res, <span class="at">sub_var =</span> <span class="fu">c</span>(<span class="st">"sex"</span>, <span class="st">"age_65"</span>), <span class="at">measure =</span> <span class="st">"ratio"</span>,</span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>                     <span class="at">show_pvalue =</span> <span class="cn">TRUE</span>, <span class="at">show_pinter =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ℹ age_65 is not a forest covariate: the subgroup estimates hold for a function</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   of the covariates or a variable that is no confounder; otherwise add it with</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   get_hte(sub_var = ).</span></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>p_sub</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2390,24 +2414,24 @@ window.Quarto = {
 </div>
 <p>图上的数值挂在 <code>attr(p, "subgroup")</code>，格式同 <code>$subgroup</code>：</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attr</span>(p_sub, <span class="st">"subgroup"</span>)[, <span class="fu">c</span>(<span class="st">"sub_var"</span>, <span class="st">"level"</span>, <span class="st">"estimate"</span>, <span class="st">"conf.low"</span>,</span>
-<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>                            <span class="st">"conf.high"</span>, <span class="st">"p.value"</span>, <span class="st">"p_inter"</span>)]</span>
-<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 4 × 7</span></span>
-<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   sub_var level estimate conf.low conf.high   p.value p_inter</span></span>
-<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;   &lt;chr&gt;    &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;   &lt;dbl&gt;</span></span>
-<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 sex     F        0.855    0.751     0.973 0.0179     0.126 </span></span>
-<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 sex     M        0.731    0.628     0.852 0.0000555  0.126 </span></span>
-<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 3 age_65  &lt;65      0.720    0.614     0.844 0.0000507  0.0525</span></span>
-<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 4 age_65  65+      0.878    0.777     0.992 0.0368     0.0525</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attr</span>(p_sub, <span class="st">"subgroup"</span>)[, <span class="fu">c</span>(<span class="st">"sub_var"</span>, <span class="st">"level"</span>, <span class="st">"estimate"</span>, <span class="st">"conf.low"</span>,</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>                            <span class="st">"conf.high"</span>, <span class="st">"p.value"</span>, <span class="st">"p_inter"</span>)]</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 4 × 7</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   sub_var level estimate conf.low conf.high   p.value p_inter</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt;   &lt;chr&gt;    &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;   &lt;dbl&gt;</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 sex     F        0.855    0.751     0.973 0.0179     0.126 </span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 sex     M        0.731    0.628     0.852 0.0000555  0.126 </span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 3 age_65  &lt;65      0.720    0.614     0.844 0.0000507  0.0525</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 4 age_65  65+      0.878    0.777     0.992 0.0368     0.0525</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p>生存概率之差的列名写作 <code>St(&lt;time / 12&gt;-year)</code>，因为 <code>time</code> 按 RegR 的惯例以<strong>月</strong>计； <code>"ratio"</code> / <code>"OR"</code> 画在对数轴上。</p>
 <section id="sec-sub-effect" class="level3">
 <h3 class="anchored" data-anchor-id="sec-sub-effect">替换行</h3>
 <p><code>effect</code> 用来把某些行换成外部数值（例如已发表研究的估计），写法与 <code>UtilsR::stat_ci_parse()</code> 能读的区间字符串一致：</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_sub</span>(res, <span class="at">sub_var =</span> <span class="st">"sex"</span>,</span>
-<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>            <span class="at">effect =</span> <span class="fu">list</span>(<span class="at">sex =</span> <span class="fu">c</span>(<span class="at">M =</span> <span class="st">"0.15 (0.05, 0.25)"</span>),</span>
-<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"All patients"</span> <span class="ot">=</span> <span class="st">"conf_0.9"</span>))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_sub</span>(res, <span class="at">sub_var =</span> <span class="st">"sex"</span>,</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>            <span class="at">effect =</span> <span class="fu">list</span>(<span class="at">sex =</span> <span class="fu">c</span>(<span class="at">M =</span> <span class="st">"0.15 (0.05, 0.25)"</span>),</span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"All patients"</span> <span class="ot">=</span> <span class="st">"conf_0.9"</span>))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2520,7 +2544,7 @@ window.Quarto = {
 <h2 class="anchored" data-anchor-id="sec-cate">plt_hte_cate()：逐人 CATE 的分布</h2>
 <p>仿 <code>StratifiedMedicine::plot_ple()</code>：瀑布图把患者按 CATE 排序、每人一根柱； 密度图画各水平的 CATE 分布。黑色虚线是总体 ATE，彩色虚线是各亚组的 双稳健 ATE（即 <code>plt_hte_sub()</code> 画的那些点）。</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_cate</span>(res, <span class="at">sub_var =</span> <span class="st">"sex"</span>, <span class="at">show_ci =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_cate</span>(res, <span class="at">sub_var =</span> <span class="st">"sex"</span>, <span class="at">show_ci =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2530,7 +2554,7 @@ window.Quarto = {
 </div>
 </div>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_cate</span>(res, <span class="at">sub_var =</span> <span class="fu">c</span>(<span class="st">"sex"</span>, <span class="st">"stage"</span>), <span class="at">type =</span> <span class="st">"density"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_cate</span>(res, <span class="at">sub_var =</span> <span class="fu">c</span>(<span class="st">"sex"</span>, <span class="st">"stage"</span>), <span class="at">type =</span> <span class="st">"density"</span>)</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2596,8 +2620,8 @@ window.Quarto = {
 </ul>
 <p>默认规则是森林 CATE。它是从结局里学出来的，拿学它的人来评估会高估， 所以函数随机切一半患者重拟合森林来排序、用另一半重拟合的森林来评估：</p>
 <div class="cell page-columns page-full">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>p_rate <span class="ot">&lt;-</span> <span class="fu">plt_hte_rate</span>(res)</span>
-<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>p_rate</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>p_rate <span class="ot">&lt;-</span> <span class="fu">plt_hte_rate</span>(res)</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>p_rate</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display page-columns page-full">
 <div class="page-columns page-full">
 <figure class="figure page-columns page-full">
@@ -2605,17 +2629,17 @@ window.Quarto = {
 </figure>
 </div>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attr</span>(p_rate, <span class="st">"rate"</span>)</span>
-<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 2 × 8</span></span>
-<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   rule  target estimate std.error conf.low conf.high p.value     n</span></span>
-<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt; &lt;chr&gt;     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;   &lt;dbl&gt; &lt;int&gt;</span></span>
-<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 cate  AUTOC    0.0673   0.0254   0.0176     0.117  0.00800  1500</span></span>
-<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 cate  QINI     0.0247   0.00806  0.00891    0.0405 0.00217  1500</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attr</span>(p_rate, <span class="st">"rate"</span>)</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 2 × 8</span></span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   rule  target estimate std.error conf.low conf.high p.value     n</span></span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   &lt;chr&gt; &lt;chr&gt;     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;   &lt;dbl&gt; &lt;int&gt;</span></span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 1 cate  AUTOC    0.0673   0.0254   0.0176     0.117  0.00800  1500</span></span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 2 cate  QINI     0.0247   0.00806  0.00891    0.0405 0.00217  1500</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p>规则也可以是一个事先给定的分数（生物标志物、已发表的风险评分）。 它不是从结局学来的，直接用已存森林的双稳健得分在全部患者上评估，不切分。 两个规则会一起画并检验差值；含 <code>"cate"</code> 时两者都在留出的一半上评估。 <code>type = "gates"</code> 把排序切成 5 组，画每组内的双稳健效应（GATES）：</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>p_gates <span class="ot">&lt;-</span> <span class="fu">plt_hte_rate</span>(res, <span class="at">priority =</span> <span class="fu">c</span>(<span class="st">"cate"</span>, <span class="st">"marker"</span>), <span class="at">type =</span> <span class="st">"gates"</span>)</span>
-<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>p_gates</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>p_gates <span class="ot">&lt;-</span> <span class="fu">plt_hte_rate</span>(res, <span class="at">priority =</span> <span class="fu">c</span>(<span class="st">"cate"</span>, <span class="st">"marker"</span>), <span class="at">type =</span> <span class="st">"gates"</span>)</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>p_gates</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2623,23 +2647,23 @@ window.Quarto = {
 </figure>
 </div>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attr</span>(p_gates, <span class="st">"gates"</span>)[, <span class="fu">c</span>(<span class="st">"rule"</span>, <span class="st">"group"</span>, <span class="st">"n"</span>, <span class="st">"estimate"</span>, <span class="st">"conf.low"</span>,</span>
-<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>                           <span class="st">"conf.high"</span>, <span class="st">"cate_mean"</span>)]</span>
-<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 12 × 7</span></span>
-<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;    rule   group     n estimate conf.low conf.high cate_mean</span></span>
-<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;    &lt;chr&gt;  &lt;chr&gt; &lt;int&gt;    &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;</span></span>
-<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  1 cate   1       300  0.225     0.110      0.340    0.223 </span></span>
-<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  2 cate   2       300  0.167     0.0582     0.275    0.108 </span></span>
-<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  3 cate   3       300  0.130     0.0134     0.246    0.0372</span></span>
-<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  4 cate   4       300  0.0533   -0.0644     0.171   -0.0386</span></span>
-<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  5 cate   5       300 -0.00645  -0.125      0.113   -0.117 </span></span>
-<span id="cb24-11"><a href="#cb24-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  6 cate   1 - 5   600  0.231     0.0657     0.397    0.339 </span></span>
-<span id="cb24-12"><a href="#cb24-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  7 marker 1       299  0.260     0.146      0.373   NA     </span></span>
-<span id="cb24-13"><a href="#cb24-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  8 marker 2       300  0.165     0.0577     0.273   NA     </span></span>
-<span id="cb24-14"><a href="#cb24-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  9 marker 3       302  0.105    -0.0147     0.225   NA     </span></span>
-<span id="cb24-15"><a href="#cb24-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 10 marker 4       300  0.0116   -0.105      0.128   NA     </span></span>
-<span id="cb24-16"><a href="#cb24-16" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 11 marker 5       299  0.0270   -0.0920     0.146   NA     </span></span>
-<span id="cb24-17"><a href="#cb24-17" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 12 marker 1 - 5   598  0.232     0.0682     0.397   NA</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attr</span>(p_gates, <span class="st">"gates"</span>)[, <span class="fu">c</span>(<span class="st">"rule"</span>, <span class="st">"group"</span>, <span class="st">"n"</span>, <span class="st">"estimate"</span>, <span class="st">"conf.low"</span>,</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>                           <span class="st">"conf.high"</span>, <span class="st">"cate_mean"</span>)]</span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; # A tibble: 12 × 7</span></span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;    rule   group     n estimate conf.low conf.high cate_mean</span></span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;    &lt;chr&gt;  &lt;chr&gt; &lt;int&gt;    &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;</span></span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  1 cate   1       300  0.225     0.110      0.340    0.223 </span></span>
+<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  2 cate   2       300  0.167     0.0582     0.275    0.108 </span></span>
+<span id="cb25-8"><a href="#cb25-8" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  3 cate   3       300  0.130     0.0134     0.246    0.0372</span></span>
+<span id="cb25-9"><a href="#cb25-9" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  4 cate   4       300  0.0533   -0.0644     0.171   -0.0386</span></span>
+<span id="cb25-10"><a href="#cb25-10" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  5 cate   5       300 -0.00645  -0.125      0.113   -0.117 </span></span>
+<span id="cb25-11"><a href="#cb25-11" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  6 cate   1 - 5   600  0.231     0.0657     0.397    0.339 </span></span>
+<span id="cb25-12"><a href="#cb25-12" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  7 marker 1       299  0.260     0.146      0.373   NA     </span></span>
+<span id="cb25-13"><a href="#cb25-13" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  8 marker 2       300  0.165     0.0577     0.273   NA     </span></span>
+<span id="cb25-14"><a href="#cb25-14" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;  9 marker 3       302  0.105    -0.0147     0.225   NA     </span></span>
+<span id="cb25-15"><a href="#cb25-15" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 10 marker 4       300  0.0116   -0.105      0.128   NA     </span></span>
+<span id="cb25-16"><a href="#cb25-16" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 11 marker 5       299  0.0270   -0.0920     0.146   NA     </span></span>
+<span id="cb25-17"><a href="#cb25-17" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; 12 marker 1 - 5   598  0.232     0.0682     0.397   NA</span></span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p>一个有靶向能力的规则，GATES 从左到右应当递减；副标题检验最高组减最低组（“1 - 5” 行）。 对 <code>"cate"</code> 规则，菱形是每组的平均森林 CATE：若菱形比点估计更集中， 说明森林把效应压向了均值。</p>
 <section id="sec-rate-read" class="level3">
@@ -2718,13 +2742,13 @@ window.Quarto = {
 <section id="sec-save" class="level2">
 <h2 class="anchored" data-anchor-id="sec-save">拼图与保存</h2>
 <p>全部返回 ggplot，可以直接用 patchwork 组合。<code>plt_hte_sub()</code> 默认钉死尺寸， 要按比例分配 patchwork 的格子时改用 <code>fixed_size = FALSE</code>：</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(patchwork)</span>
-<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_sub</span>(res, <span class="at">sub_var =</span> <span class="st">"sex"</span>, <span class="at">fixed_size =</span> <span class="cn">FALSE</span>) <span class="sc">/</span></span>
-<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plt_hte_cate</span>(res, <span class="at">sub_var =</span> <span class="st">"sex"</span>, <span class="at">type =</span> <span class="st">"density"</span>) <span class="sc">+</span></span>
-<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot_layout</span>(<span class="at">heights =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(patchwork)</span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_sub</span>(res, <span class="at">sub_var =</span> <span class="st">"sex"</span>, <span class="at">fixed_size =</span> <span class="cn">FALSE</span>) <span class="sc">/</span></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plt_hte_cate</span>(res, <span class="at">sub_var =</span> <span class="st">"sex"</span>, <span class="at">type =</span> <span class="st">"density"</span>) <span class="sc">+</span></span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot_layout</span>(<span class="at">heights =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 <p>保存走统一的 <code>save</code> 参数（本页不执行，以免渲染时往站点目录写文件）：</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_dep</span>(res, <span class="at">save =</span> <span class="fu">list</span>(<span class="at">filename =</span> <span class="st">"hte_dep.pdf"</span>))</span>
-<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_sub</span>(res, <span class="at">save =</span> <span class="fu">list</span>(<span class="at">filename =</span> <span class="st">"hte_sub.pdf"</span>, <span class="at">width =</span> <span class="dv">7</span>))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb27"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_dep</span>(res, <span class="at">save =</span> <span class="fu">list</span>(<span class="at">filename =</span> <span class="st">"hte_dep.pdf"</span>))</span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a><span class="fu">plt_hte_sub</span>(res, <span class="at">save =</span> <span class="fu">list</span>(<span class="at">filename =</span> <span class="st">"hte_sub.pdf"</span>, <span class="at">width =</span> <span class="dv">7</span>))</span></code></pre></div><button title="复制到剪贴板" class="code-copy-button"><i class="bi"></i></button></div>
 <p>只给文件名时，宽高取图自带的 <code>attr(p, "plot_size")</code>。<code>save</code> 需要装有 <code>RegR</code>。</p>
 </section>
 <section id="sec-rules" class="level2">
