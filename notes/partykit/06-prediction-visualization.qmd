@@ -1,0 +1,93 @@
+---
+title: "6. 预测与可视化"
+subtitle: "按任务选择预测类型，画出可读的树"
+lang: zh
+---
+
+## 树模型预测
+
+`predict()` 是泛型函数。`newdata` 中应包含拟合公式所需的变量，名称和类型应与建模
+数据保持一致。
+
+```r
+library(partykit)
+tree <- ctree(Species ~ ., data = iris)
+new_iris <- iris[1:6, , drop = FALSE]
+
+predict(tree, newdata = new_iris, type = "response")
+predict(tree, newdata = new_iris, type = "prob")
+predict(tree, newdata = new_iris, type = "node")
+```
+
+常用 `type`：
+
+| 类型 | 返回内容 |
+|---|---|
+| `"response"` | 类别预测、数值预测，或方法定义的响应尺度预测 |
+| `"prob"` | 预测分布；分类时通常为类别概率 |
+| `"node"` | 每个新观察值落入的节点 ID |
+
+生存结局还可返回与方法相关的生存分布信息。请以对象类对应的 `?predict` 方法说明为
+准，尤其区分概率、响应尺度、节点 ID 和生存曲线。
+
+`cforest()` 的接口类似：
+
+```r
+forest <- cforest(Species ~ ., data = iris, ntree = 300)
+predict(forest, newdata = new_iris, type = "response")
+predict(forest, newdata = new_iris, type = "prob")
+```
+
+森林的 OOB 预测专门使用训练样本中未参与对应树拟合的树；要取得 OOB 预测需省略
+`newdata`，见[第 3 章](03-cforest.qmd)。
+
+## 画单棵树
+
+```r
+tree <- ctree(Species ~ ., data = iris)
+plot(tree)
+```
+
+`plot.party()` 将图形分成节点面板和边面板。基础参数包括：
+
+- `terminal_panel` / `tp_args`：终末节点内容及参数；
+- `inner_panel` / `ip_args`：内部节点内容及参数；
+- `edge_panel` / `ep_args`：连接节点的边及参数；
+- `main`：图标题。
+
+对分类树可以指定类别构成面板：
+
+```r
+plot(
+  tree,
+  terminal_panel = node_barplot,
+  main = "Species 的条件推断树"
+)
+```
+
+对数值回归树可用箱线图面板；对生存树可用生存曲线面板：
+
+```r
+reg_tree <- ctree(mpg ~ wt + hp + cyl, data = mtcars)
+plot(reg_tree, terminal_panel = node_boxplot)
+```
+
+要画清楚，优先控制树深、字体、节点标签和面板变量。超过几层的树通常难以在一张图
+中阅读；可以限制 `maxdepth`、放大输出尺寸，或同时提供规则表格。模型森林不适合用
+一张树图代表整体预测行为；应报告性能、概率校准和必要的局部解释。
+
+## 绘图设备和报告
+
+将图形保存为文件时显式打开设备并关闭它：
+
+```r
+pdf("partykit-tree.pdf", width = 10, height = 7)
+plot(tree, main = "条件推断树")
+dev.off()
+```
+
+这比依赖交互式绘图窗口更适合批处理和报告构建。正式发表时要核对字体、节点文字
+是否截断，以及颜色在灰度打印下是否仍可辨识。
+
+如果图是探索后挑选出来的，应说明选择过程；单张漂亮的树图不能代替预先规定的模型
+验证。森林变量重要性与 OOB 诊断见[下一章](07-variable-importance.qmd)。

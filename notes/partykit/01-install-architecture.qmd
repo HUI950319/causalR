@@ -1,0 +1,85 @@
+---
+title: "1. 安装、版本与对象地图"
+subtitle: "从可复现环境开始理解 partykit"
+lang: zh
+---
+
+## 安装
+
+CRAN 稳定版：
+
+```r
+install.packages("partykit")
+packageVersion("partykit")
+```
+
+若需要 Codeberg 上游开发版（本教程核对的 1.3-1），先安装 `remotes`，再从仓库的
+R 包子目录安装：
+
+```r
+install.packages("remotes")
+remotes::install_git(
+  "https://codeberg.org/thothorn/partykit.git",
+  subdir = "pkg/partykit"
+)
+packageVersion("partykit")
+```
+
+Windows 与 WSL/Linux 有各自的 R 可执行文件和 library 路径；必须在目标 R 会话中分别
+安装。安装后先确认 `R.version.string`、`.libPaths()` 和 `packageVersion()`，不要只看
+另一个终端中的安装结果。
+
+## 包的核心入口
+
+```r
+library(partykit)
+
+## 分类树
+tree <- ctree(Species ~ ., data = iris)
+
+## 条件推断森林
+forest <- cforest(Species ~ ., data = iris, ntree = 300)
+
+## 模型树：结局 y 由 x 建模，候选分割变量是 z1、z2
+model_tree <- lmtree(y ~ x | z1 + z2, data = my_data)
+```
+
+这些入口回答的问题不同：`ctree()` 直接对结局和候选分割变量进行递归检验；
+`cforest()` 把很多棵随机化树集成为森林；`lmtree()` 则在叶节点估计线性模型，检查
+模型参数是否随分割变量改变。
+
+## 统一的树对象
+
+`partykit` 的设计重点之一是让树的结构、节点信息和方法接口彼此分开：
+
+- `partynode` 表示一棵递归树中的一个节点，包含分裂规则及子节点；
+- `party` 把树结构和数据/节点信息组合成可操作对象；
+- `constparty` 常用于每个终末节点给出常数预测或结局分布的树；
+- `modelparty` 用于终末节点保存模型拟合结果的模型树；
+- `nodeids()`、`nodeapply()`、`data_party()`、`get_paths()` 等函数提供节点访问；
+- `plot()`、`predict()` 等 S3 泛型根据对象类别分派到相应方法。
+
+先用泛型，不要依赖内部槽位或直接调用特定方法：
+
+```r
+class(tree)
+print(tree)
+plot(tree)
+predict(tree, newdata = iris[1:5, ])
+```
+
+`ctree()` 的对象通常继承 `constparty`；`lmtree()` 和 `glmtree()` 的对象通常继承
+`modelparty`。用 `class()` 查看实际对象类别，再查对应帮助页。
+
+## 函数选择速查
+
+| 函数 | 什么时候用 | 关键控制对象 |
+|---|---|---|
+| `ctree()` | 单棵分类、回归或生存树 | `ctree_control()` |
+| `cforest()` | 集成树预测和 OOB 评估 | `ctree_control()` 与森林抽样参数 |
+| `mob()` | 为自定义参数模型编写分割过程 | `mob_control()`、`fit` |
+| `lmtree()` | 叶节点拟合线性回归 | `mob_control()` |
+| `glmtree()` | 叶节点拟合广义线性模型 | `mob_control()`、`family` |
+| `varimp()` | 计算森林的置换变量重要性 | `nperm`、`conditional`、`OOB` |
+
+下一章从单棵树的分裂逻辑开始：[`ctree()` 条件推断树](02-ctree.qmd)。

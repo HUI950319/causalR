@@ -1,0 +1,79 @@
+---
+title: "partykit 包教程"
+subtitle: "条件推断树、模型树与森林的完整入门"
+lang: zh
+---
+
+`partykit` 是 R 中用于递归分割模型的通用基础设施。它提供条件推断树
+（`ctree()`）、模型基础递归分割（MOB；`mob()`、`lmtree()`、`glmtree()`）和
+条件推断森林（`cforest()`），并用统一的对象与泛型接口支持预测、绘图和节点访问。
+
+本教程从简单树开始，逐步讲到森林、模型树、对象结构和诊断。代码块是静态示例，不会
+在本站构建时执行模型。多数片段可直接运行；写有 `my_data` 或 `dat` 的公式模板需要
+替换为自己的数据。教程依据上游 `main` 分支的 `partykit` 1.3-1（核对日期：2026-09-28）。
+CRAN 发布版可能落后于开发分支；安装后可用 `packageVersion("partykit")` 查看本机版本。
+
+## 上游 1.3-1 更新摘要
+
+本教程核对的 Codeberg `main` 版本在 1.3-1 中修正了几项会影响实际使用的行为：
+
+- `cforest(..., strata = ...)` 现在按请求执行分层抽样，而不是静默忽略该参数；
+- 修正树节点数超过样本数时的节点缓冲区容量问题；
+- 修正预测结果向量长度相关的边界处理。
+
+对应上游提交：[strata 抽样修复](https://codeberg.org/thothorn/partykit/commit/bce4b7b8b85a7b7ce4185cc1ba0a66ae7732ac2a)、
+[节点缓冲区修复](https://codeberg.org/thothorn/partykit/commit/53113b4a4f29756ee0c04c0c2a44ac40fe5ed3aa)、
+[预测向量长度修复](https://codeberg.org/thothorn/partykit/commit/d51bae9d83556e72dd0e0551752eaf09aebf03e2)。
+开发版更新不改变本教程的基本建模接口；若分析依赖这些修复，请记录安装来源与提交版本。
+
+## 按目标阅读
+
+| 你想做什么 | 从这里开始 |
+|---|---|
+| 安装、判断哪个算法适合问题 | [安装与对象地图](partykit/01-install-architecture.qmd) |
+| 拟合可解释的分类或回归树 | [`ctree()` 条件推断树](partykit/02-ctree.qmd) |
+| 建立随机森林并取得袋外预测 | [`cforest()` 条件推断森林](partykit/03-cforest.qmd) |
+| 在叶节点拟合回归或广义线性模型 | [MOB、`lmtree()` 与 `glmtree()`](partykit/04-mob.qmd) |
+| 查看节点、路径和节点样本 | [树对象与节点访问](partykit/05-tree-objects.qmd) |
+| 预测新个体并调整树图 | [预测与可视化](partykit/06-prediction-visualization.qmd) |
+| 计算并解释森林变量重要性 | [变量重要性与评估](partykit/07-variable-importance.qmd) |
+| 分析生存结局或多变量结局 | [生存与多变量结局](partykit/08-survival-multivariate.qmd) |
+| 在因果问题中探索效应异质性 | [因果分析工作流与边界](partykit/09-causal-workflow.qmd) |
+
+## 先区分三类模型
+
+| 方法 | 典型入口 | 每个叶节点保存什么 | 常见用途 |
+|---|---|---|---|
+| 条件推断树 | `ctree(y ~ ., data)` | 结局分布或常数预测 | 分类、回归、生存树 |
+| 条件推断森林 | `cforest(y ~ ., data)` | 多棵随机化的条件推断树 | 集成预测、袋外误差、变量重要性 |
+| 模型基础递归分割 | `mob(y ~ x1 + x2 \| z1 + z2, data)` | 每个叶节点重新拟合的参数模型 | 回归系数、治疗效应或模型参数随人群变化 |
+
+`ctree()` 和 `cforest()` 适合以结局预测或描述性分层为目标的分析。
+若目标是“一个已指定模型的系数是否随协变量变化”，MOB 更贴合问题；但树形分层本身
+不自动提供无偏的验证，也不自动解决混杂、选择偏倚或因果识别问题。
+
+## 在本系列中你会学到
+
+1. 选择 CRAN 稳定版或 Codeberg 开发版，并识别 `partykit` 的树对象；
+2. 用 `ctree_control()` 控制分裂检验、最小节点样本量与树深；
+3. 理解 `cforest()` 的变量抽样、案例抽样、OOB 预测和 `strata`；
+4. 用 MOB 表达“模型结局变量/回归变量/分割变量”三者的区别；
+5. 用节点 ID、路径和节点数据解释模型规则；
+6. 选择合适的预测类型、绘图面板与变量重要性算法；
+7. 对生存结局和效应异质性结果作出不过度的解释。
+
+## 官方资料
+
+| 资源 | 内容 |
+|---|---|
+| [CRAN `partykit` 页面](https://cran.r-project.org/package=partykit) | CRAN 版本、手册、变更记录 |
+| [Codeberg 上游源码](https://codeberg.org/thothorn/partykit) | 开发分支；R 包位于仓库的 `pkg/partykit` 子目录 |
+| [官方参考手册与小插图](https://partykit.r-forge.r-project.org/partykit/) | 函数说明与方法介绍 |
+| [partykit 软件论文](https://jmlr.org/papers/v16/hothorn15a.html) | 包的对象体系与算法基础设施 |
+| [条件推断树方法论文](https://doi.org/10.1198/106186006X133933) | 条件推断框架及变量选择偏倚问题 |
+| [MOB 方法论文](https://doi.org/10.1198/106186008X319331) | Model-Based Recursive Partitioning |
+
+::: {.callout-note}
+本教程是面向分析者的使用指南，不是 `partykit` 全部帮助主题的逐函数翻译。遇到版本
+差异时，以安装版本的 `?ctree`、`?cforest`、`?mob` 和 CRAN/上游 NEWS 为准。
+:::

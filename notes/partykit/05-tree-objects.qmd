@@ -1,0 +1,95 @@
+---
+title: "5. 树对象、节点与规则路径"
+subtitle: "把模型结构转换成可检查的分层结果"
+lang: zh
+---
+
+## 先读对象类别和打印结果
+
+```r
+library(partykit)
+tree <- ctree(Species ~ ., data = iris)
+
+class(tree)
+tree
+```
+
+打印输出通常概括内部节点的分裂条件、子节点编号、各节点样本量和终末节点信息。
+它适合快速检查树结构，但不一定包含完整的节点数据或所有模型对象。
+
+树是递归结构。根节点通常是 `id = 1`；内部节点继续拥有子节点，终末节点没有子节点。
+不同方法使用的对象类别可能不同，因此优先使用导出的访问函数，不要手工假设内部
+列表的字段布局。
+
+## 查找节点 ID
+
+```r
+## 所有节点
+nodeids(tree)
+
+## 只取终末节点
+leaf_ids <- nodeids(tree, terminal = TRUE)
+leaf_ids
+```
+
+`nodeids()` 能把树的显示规则与程序化后处理连接起来。需要逐叶节点整理样本量、
+预测值或模型系数时，可先获取终末节点 ID，再沿用同一顺序提取信息。
+
+## 取得节点内数据
+
+对于 `party` 对象，`data_party()` 可取得指定节点对应的训练数据：
+
+```r
+leaf_data <- lapply(leaf_ids, function(id) data_party(tree, id = id))
+names(leaf_data) <- as.character(leaf_ids)
+vapply(leaf_data, nrow, integer(1))
+```
+
+这适合回答“每条规则覆盖哪些观察值”和“每个叶节点到底有多少病例”。注意：节点
+样本是建树数据的一部分，不能再当作独立验证样本计算确认性 p 值。
+
+## 对节点应用函数
+
+`nodeapply()` 用于把函数应用到选定的树节点。函数接收节点对象，节点结构字段应以
+`?nodeapply` 与对象帮助为准：
+
+```r
+node_info <- nodeapply(
+  tree,
+  ids = leaf_ids,
+  FUN = function(node) node$info
+)
+```
+
+若只是取节点规则和终末节点预测，通常 `print()`、`predict()` 或对应 `party` 方法更
+稳定；当需要批量整理节点结构时再使用 `nodeapply()`。
+
+## 检查个体路径
+
+`get_paths()` 用来取得一个或多个节点的根到节点路径描述：
+
+```r
+paths <- get_paths(tree, i = leaf_ids)
+paths
+```
+
+这些路径可以改写成报告中的规则说明，例如“`Petal.Length` 不超过某切点，且
+`Petal.Width` 不超过某切点”。路径是训练数据上学习出的描述性规则；切点附近观测的
+微小变化可能改变所属节点。
+
+## 叶节点模型对象
+
+对 `lmtree()` 或 `glmtree()`，叶节点通常包含局部模型拟合。此时对象类为
+`modelparty`，可以结合 `print()`、`predict()`、树访问器和相应模型方法查看局部结果。
+不要把 `ctree()` 的常数叶节点结构套用于模型树；它们的终末节点信息用途不同。
+
+建议的检查顺序：
+
+1. 用 `class()` 确认对象类型；
+2. 用 `print()` 或 `summary()` 阅读整体规则；
+3. 用 `nodeids(..., terminal = TRUE)` 固定叶节点集合；
+4. 用 `data_party()` 检查节点样本量与病例特征；
+5. 结合 `predict()` / 局部模型输出解释叶节点含义；
+6. 将模型拟合样本与验证样本明确区分。
+
+进一步看[预测与可视化](06-prediction-visualization.qmd)。

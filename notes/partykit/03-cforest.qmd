@@ -1,0 +1,97 @@
+---
+title: "3. cforest() 条件推断森林"
+subtitle: "森林抽样、OOB 预测与概率输出"
+lang: zh
+---
+
+## 从树到森林
+
+`cforest()` 反复抽取样本并随机抽取候选变量，拟合一组条件推断树，再汇总各树的预测。
+它保留 `ctree` 的检验型分裂思想，同时加入森林的随机化和集成。森林通常比单棵树
+稳定，但整体决策规则更难直接解释。
+
+## 分类示例
+
+```r
+library(partykit)
+
+set.seed(2026)
+iris_forest <- cforest(
+  Species ~ ., data = iris,
+  ntree = 500,
+  mtry = 2,
+  control = ctree_control(
+    teststat = "quadratic",
+    testtype = "Univariate",
+    mincriterion = 0,
+    saveinfo = FALSE
+  )
+)
+
+pred_class <- predict(iris_forest, type = "response")
+pred_prob  <- predict(iris_forest, type = "prob")
+oob_class  <- predict(iris_forest, OOB = TRUE, type = "response")
+```
+
+在森林中，单棵树通常用较宽松的停止标准生长，再靠多棵树平均来降低方差；上面的
+`mincriterion = 0` 是森林树生长常见设置。它不应照搬到需要简短、可解释的单棵
+`ctree()` 上。
+
+`type = "response"` 返回类别或数值预测；分类时 `type = "prob"` 返回类别概率。
+`OOB = TRUE` 要求 `newdata` 省略，使用训练样本的袋外树汇总预测，适合构造内部验证
+指标。它不等于独立验证集，也不能评估数据漂移。
+
+## 抽样与森林规模
+
+| 参数 | 作用 | 解释 |
+|---|---|---|
+| `ntree` | 森林树数 | 树越多，Monte Carlo 波动通常越小，计算时间越长 |
+| `mtry` | 每次节点分裂的候选变量数 | 控制树之间的差异和单树的竞争范围 |
+| `perturb` | 案例抽样方式与比例 | `replace = TRUE` 为有放回抽样；`FALSE` 为无放回子抽样 |
+| `strata` | 分层抽样所用的因子 | 适用于希望抽样时保留某些组别比例的场景 |
+| `weights` | 案例权重或抽样权重 | 需确认权重对象形式、含义和抽样机制 |
+| `cores` / `applyfun` | 并行应用配置 | 并行前先确认平台和随机数流管理策略 |
+
+例如按 `Species` 分层抽样：
+
+```r
+set.seed(2026)
+iris_stratified <- cforest(
+  Species ~ ., data = iris,
+  ntree = 500,
+  mtry = 2,
+  strata = iris$Species,
+  perturb = list(replace = FALSE, fraction = 0.632),
+  control = ctree_control(
+    teststat = "quadratic",
+    testtype = "Univariate",
+    mincriterion = 0
+  )
+)
+```
+
+近期上游版本修复了 `strata` 在 `cforest()` 中被静默忽略的问题。若依赖这一参数，
+确认安装版本并保留可复现的版本信息。`perturb$replace` 与 `fraction` 也要明确记录；
+它们决定森林中每棵树看见哪些样本。
+
+## OOB 误差的使用
+
+分类示例可用袋外类别预测计算混淆矩阵：
+
+```r
+oob_class <- predict(iris_forest, OOB = TRUE, type = "response")
+table(observed = iris$Species, predicted = oob_class)
+```
+
+对于类别不平衡数据，同时看总体准确率、各类别召回率、概率校准和决策阈值；总体
+准确率可能掩盖稀有类别表现。所有 OOB 指标都来自建模样本内部，模型开发决策若反复
+参考它们，仍可能过拟合。
+
+## 实验性 honesty 抽样
+
+`perturb = list(replace = FALSE, fraction = c(a, b))` 可以把不同子样本用于参数估计和
+树结构诱导，是实验性 honesty 路径。应查阅本机版本帮助页，确认两个比例的解释、样本
+限制和下游方法兼容性；不要把它默认为已完成的因果 honest forest 推断。
+
+森林建立后，可查看 [变量重要性](07-variable-importance.qmd)、[预测与绘图](06-prediction-visualization.qmd)，
+并将训练过程与独立验证区分开来。

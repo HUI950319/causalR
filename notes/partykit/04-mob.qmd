@@ -1,0 +1,103 @@
+---
+title: "4. MOB、lmtree() 与 glmtree()"
+subtitle: "让模型参数随人群分层改变"
+lang: zh
+---
+
+## MOB 在问什么
+
+MOB（model-based recursive partitioning）先在当前节点拟合一个参数模型，再检验模型
+参数是否与候选分割变量相关。如果参数不稳定，就选择最能揭示不稳定性的分割变量，
+切分样本并在子节点重新拟合模型；直到没有足够证据继续切分或达到控制条件。
+
+公式写法把**模型变量**和**分割变量**明确分开：
+
+```text
+y ~ x1 + x2 | z1 + z2
+```
+
+左侧 `y` 是模型响应；竖线左侧 `x1 + x2` 进入每个节点的局部模型；竖线右侧
+`z1 + z2` 用来寻找参数不稳定的子群。分割变量不自动成为节点回归模型中的预测变量。
+
+## `lmtree()`：节点内线性模型
+
+下面构造斜率随 `z` 改变的数据。`x` 是局部模型的自变量，`z` 是候选分割变量：
+
+```r
+library(partykit)
+
+set.seed(2026)
+n <- 500
+dat <- data.frame(x = rnorm(n), z = runif(n))
+dat$y <- 1 + dat$x * (1 + 2 * (dat$z > 0.5)) + rnorm(n, sd = 1)
+
+fit_lm_tree <- lmtree(
+  y ~ x | z,
+  data = dat,
+  control = mob_control(alpha = 0.05, minsize = 40, maxdepth = 3)
+)
+
+print(fit_lm_tree)
+plot(fit_lm_tree)
+```
+
+若 `z` 能解释系数变化，树会在其值域上寻找分割；每个终末节点分别估计截距和 `x`
+的斜率。`minsize` 限制分裂节点的规模，`maxdepth` 限制递归层数；节点太小会令
+叶节点系数不稳定，树太深则会产生难以复现的分组。
+
+## `glmtree()`：节点内广义线性模型
+
+二项结局示例：
+
+```r
+set.seed(2026)
+n <- 800
+dat_bin <- data.frame(x = rnorm(n), z = runif(n))
+dat_bin$event <- rbinom(
+  n, size = 1,
+  prob = plogis(-1 + 0.7 * dat_bin$x + 1.1 * (dat_bin$z > 0.55))
+)
+
+fit_glm_tree <- glmtree(
+  event ~ x | z,
+  data = dat_bin,
+  family = binomial(),
+  control = mob_control(alpha = 0.05, minsize = 60, maxdepth = 3)
+)
+```
+
+同一写法可用于其他适配 `glm()` 的 family。先检查响应编码、链接函数和收敛状态；
+在每个节点都拟合模型意味着事件数和组内变异必须足够。对稀有事件，不应仅凭树能
+生成来判断局部回归可靠。
+
+## 自定义 `mob()`
+
+当目标模型不是 `lm()` 或 `glm()` 时，`mob()` 接受 `fit` 函数来定义节点内估计器。
+常见构造包括分段似然、广义加性模型或领域专用模型。自定义拟合器需要提供 MOB 所需
+的模型对象、参数估计和得分/影响函数信息；应从 `?mob` 和官方小插图中的适配范例开始，
+而不是把任意返回预测值的函数直接传入。
+
+```r
+?mob
+?mob_control
+```
+
+## `mob_control()` 常见设置
+
+| 参数 | 含义 |
+|---|---|
+| `alpha` | 参数不稳定检验的显著性水平 |
+| `bonferroni` | 是否对候选分割变量的检验作 Bonferroni 调整 |
+| `minsize` | 允许继续分裂的最小节点样本量；未给定时依模型参数量设默认值 |
+| `maxdepth` | 最大树深 |
+
+默认控制不是“最适合所有任务”的控制。应预先给出最小叶节点规模、最大深度和分割
+检验阈值，并在验证数据或重抽样中评估规则稳定性。
+
+## 系数变化与因果解释
+
+`lmtree(y ~ treatment | age + marker)` 可以探索治疗回归系数是否在人群中不同；
+二元结局可用 `glmtree()` 拟合相应模型。可是在一般 MOB 中，截距和其他模型参数也可能
+驱动分裂。因此，某个变量出现在树中不等于它专门修饰治疗效应。要报告效应异质性，
+应提取叶节点的治疗参数、说明效应尺度、检查基线参数变化，并使用独立样本或交叉拟合
+确认发现。完整工作流见[第 9 章](09-causal-workflow.qmd)。

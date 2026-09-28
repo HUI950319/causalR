@@ -1,0 +1,77 @@
+---
+title: "8. 生存与多变量结局"
+subtitle: "从 Surv 响应到节点分布"
+lang: zh
+---
+
+## 生存结局示例
+
+条件推断树可以处理生存对象。`lung` 数据来自 `survival` 包；其 `status` 编码为 1=删失、
+2=死亡，因此先显式构造事件指标：
+
+```r
+library(partykit)
+library(survival)
+
+lung2 <- lung
+lung2$event <- lung2$status == 2
+
+surv_tree <- ctree(
+  Surv(time, event) ~ age + sex + ph.ecog + wt.loss,
+  data = lung2,
+  control = ctree_control(
+    mincriterion = 0.95,
+    minsplit = 40,
+    minbucket = 15,
+    maxdepth = 3
+  )
+)
+
+plot(surv_tree, terminal_panel = node_surv)
+```
+
+`Surv(time, event)` 同时保留随访时间和删失状态。若事件编码弄反，树的结果会完全改变；
+先核对数据字典、删失定义和时间单位。
+
+## 解释生存树
+
+- 分裂变量给出人群规则；
+- 终末节点中的生存曲线概括节点内生存分布；
+- 中位生存时间可能在随访期内不可估计；
+- 不同节点曲线是描述性/预测性分层，不自动代表协变量的调整后因果效应；
+- 需考虑删失机制、竞争风险、测量时间、缺失值和样本量。
+
+若要用森林处理生存结局，可以探索 `cforest()` 的相应响应和预测接口，但应先读当前
+安装版本帮助，明确输出是生存分布、风险评分还是其他预测量，并用与目标相匹配的
+时间依赖指标验证。不要把分类预测的准确率直接套用于生存分析。
+
+## 多变量结局
+
+当多个结局要一起进入分割检验时，可使用适配多变量响应的模型接口，例如用矩阵/多列
+响应表达相关结局。下面的 `dat` 是占位数据，请替换为至少包含 `y1`、`y2`、`age`、`sex`
+和 `marker` 列的数据框：
+
+```r
+multi_tree <- ctree(
+  cbind(y1, y2) ~ age + sex + marker,
+  data = dat
+)
+```
+
+多变量分裂的检验统计量、结局尺度和缺失模式都会影响结果。若各响应量纲不同，需确认
+方法是否标准化或需要先定义合适转换。分析中应报告哪些结局共同参与分割，以及叶节点
+解释的是联合结构还是某个单独结局。
+
+## 检查数据和预测接口
+
+```r
+nodeids(surv_tree, terminal = TRUE)
+predict(surv_tree, newdata = lung2[1:5, ], type = "response")
+predict(surv_tree, newdata = lung2[1:5, ], type = "node")
+```
+
+可用的预测 `type` 依对象类别和结局定义而异；请直接运行 `?predict.constparty` 或
+`?predict.party` 查看当前版本的具体约定。对于生存对象，建议画终末节点曲线并展示
+风险集或置信区间所需的信息；避免只报告一张树图而省略删失与随访细节。
+
+对于治疗效应而非预后分层，继续阅读[因果分析工作流](09-causal-workflow.qmd)。
