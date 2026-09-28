@@ -1,0 +1,327 @@
+---
+title: "10. 函数详解：常用入口与方法"
+subtitle: "从拟合、预测到节点访问的函数地图"
+lang: zh
+---
+
+本章按分析流程解释 `partykit` 的常用函数：每个函数做什么、关键参数如何影响结果、返回什么对象，以及什么时候应使用对应的 S3 方法。下面的接口以 Windows 与 WSL 中已检查的 `partykit` 1.3.1 帮助页为准。不同对象的 `predict()`、`plot()` 等方法并不相同，遇到未列出的参数时请以本机 `?函数名` 为准。
+
+## 函数地图
+
+```{mermaid}
+%%| label: fig-partykit-function-map
+%%| fig-cap: "partykit 的函数按工作流程分成模型拟合、对象方法、树结构访问和模型诊断四组。"
+flowchart LR
+  DATA["公式 + data"] --> FIT{"选建模入口"}
+  FIT --> CT["ctree()\n条件推断树"]
+  FIT --> CF["cforest()\n条件推断森林"]
+  FIT --> MOB["mob() / lmtree() / glmtree()\n模型树"]
+  CT --> CO["constparty / party"]
+  MOB --> MO["modelparty"]
+  CF --> FO["cforest 对象"]
+  CO --> METHODS["predict() / plot() / print()"]
+  MO --> METHODS
+  FO --> METHODS
+  METHODS --> ACCESS["nodeids() / nodeapply() / data_party()"]
+  FO --> DIAG["varimp() / OOB / gettree()"]
+  MO --> DIAG2["sctest() / refit() / prune()"]
+```
+
+| 分析步骤 | 主要函数 | 常见结果或后续接口 |
+|---|---|---|
+| 拟合一棵规则清晰的树 | `ctree()`、`ctree_control()` | `constparty`/`party`；用 `predict()` 和 `plot()` |
+| 拟合森林 | `cforest()` | 森林对象；用 `predict(..., OOB = TRUE)`、`varimp()`、`gettree()` |
+| 拟合叶节点模型 | `mob()`、`lmtree()`、`glmtree()`、`mob_control()` | `modelparty`；用 `predict()`、`refit()`、`sctest()`、`prune()` |
+| 检查树的结构 | `nodeids()`、`nodeapply()`、`data_party()`、`get_paths()` | 节点编号、节点对象、节点内训练数据和路径索引 |
+| 改变或转换树对象 | `as.party()`、`party()`、`partynode()`、`partysplit()`、`nodeprune()` | 统一树对象或经手动修剪的树 |
+| 控制绘图内容 | `plot()`、`node_terminal()`、`node_inner()`、`node_boxplot()` 等 | 树结构图与节点面板 |
+
+## 一、模型拟合函数
+
+### `ctree()`：条件推断树
+
+**用途：** 直接研究响应变量与候选分割变量之间的关系，递归地产生一棵树。每个节点先做条件独立性检验；没有足够证据时停止，有证据时再选择分割变量。因此它常用于分类、回归、生存结局和部分多变量结局的可解释分层。
+
+```r
+ctree(
+  formula, data, subset, weights,
+  na.action = na.pass, offset, cluster,
+  control = ctree_control(...),
+  ytrafo = NULL, converged = NULL, scores = NULL
+)
+```
+
+- `formula`：响应变量与候选解释/分割变量，例如 `Species ~ .`。
+- `data`、`subset`：建模数据和使用的观察子集。
+- `weights`：观测权重；帮助页说明条件推断树使用非负整数权重。
+- `na.action`：缺失值处理。默认 `na.pass`，这不表示缺失值已自动得到合理处理；需结合 `MIA` 或预先确定的缺失处理策略。
+- `control`：把停止、检验及树规模设置交给 `ctree_control()`。
+- `scores`：为有序因子指定分数；`offset` 用于已知偏移项；`cluster` 标为实验性选项。
+
+常见用法：
+
+```r
+tree <- ctree(
+  Species ~ ., data = iris,
+  control = ctree_control(
+    testtype = "Bonferroni",
+    mincriterion = 0.95,
+    minsplit = 20,
+    minbucket = 7,
+    maxdepth = 4
+  )
+)
+```
+
+返回树对象，通常可作为 `constparty` 使用。`print(tree)` 查看规则，`predict(tree, ...)` 生成预测，`plot(tree)` 绘图。更完整的拟合原理和停止参数见[第 2 章](02-ctree.qmd)。
+
+### `ctree_control()`：控制检验与树规模
+
+`ctree_control()` 返回控制列表，本身不拟合树；把它传给 `ctree(control = ...)`，也可作为 `cforest()` 的单树生长设置。
+
+| 参数 | 控制什么 | 实际解释 |
+|---|---|---|
+| `teststat`、`testtype` | 变量选择检验及其校准 | 如二次/最大统计量，Bonferroni、Monte Carlo 或单变量检验；应记录采用的检验方案 |
+| `alpha`、`mincriterion` | 继续分裂所需的检验证据 | 默认 `mincriterion = 1 - alpha`。例如 0.95 通常对应 p 值需低于 0.05；它是检验准则阈值，不是 p 值参数 |
+| `minsplit` | 节点最少需有多少观测/权重才尝试分裂 | 太小会让不稳定的小节点继续竞争分裂 |
+| `minbucket` | 终末节点最小规模 | 约束叶节点大小；不能替代对节点估计精度的检查 |
+| `maxdepth` | 最大树深 | 限制规则复杂度；适合控制展示和过拟合风险 |
+| `MIA` | 将缺失值纳入分裂处理的方式 | 不是通用的缺失数据修复方法，需理解缺失机制 |
+| `mtry` | 每个节点随机候选变量数 | 在森林中用于随机化；单树通常保留默认值 |
+
+其他控制项还包括分箱、替代分裂和并行参数。初学时优先明确检验阈值、叶节点规模与树深，再根据本机 `?ctree_control` 深入调整。
+
+### `cforest()`：条件推断森林
+
+**用途：** 拟合许多带随机化的条件推断树并汇总预测，常用于集成预测、袋外评估和置换变量重要性。森林比一棵树更稳定，但整体规则通常不如单棵树直观。
+
+```r
+cforest(
+  formula, data, weights, subset, offset, cluster, strata,
+  na.action = na.pass,
+  control = ctree_control(...),
+  ytrafo = NULL, scores = NULL, ntree = 500,
+  perturb = list(replace = FALSE, fraction = 0.632),
+  mtry = ceiling(sqrt(nvar)), applyfun = NULL, cores = NULL
+)
+```
+
+- `ntree`：树的数量；增加树数一般减少森林平均预测的 Monte Carlo 波动，但增加耗时。
+- `mtry`：每个节点随机考虑的候选变量数。
+- `perturb`：案例抽样方案及比例；`replace` 决定是否有放回抽样，`fraction` 决定抽取比例。
+- `strata`：分层抽样的分组因子；使用时核对版本，1.3.1 已包含上游的 strata 修复。
+- `control`：森林内部树通常使用 `mincriterion = 0` 等宽松生长设置，不能直接当作单棵可解释树的停止准则。
+- `weights`：可影响案例抽样；矩阵形式允许为每棵树指定案例权重，较耗内存。
+- `cores` / `applyfun`：并行应用设置；并行前需处理随机数流和可复现性。
+
+```r
+set.seed(2026)
+forest <- cforest(
+  Species ~ ., data = iris,
+  ntree = 500,
+  mtry = 2,
+  control = ctree_control(
+    teststat = "quadratic",
+    testtype = "Univariate",
+    mincriterion = 0,
+    saveinfo = FALSE
+  )
+)
+```
+
+返回森林对象。训练案例的袋外预测需省略 `newdata` 并设置 `OOB = TRUE`。参数含义、分层抽样和袋外边界见[第 3 章](03-cforest.qmd)。
+
+### `mob()`、`lmtree()`、`glmtree()`：模型基础递归分割
+
+MOB 把“节点内拟合什么模型”和“在哪些变量上寻找参数变化”分开。公式
+`y ~ x1 + x2 | z1 + z2` 中，竖线左侧是局部模型的回归变量，右侧是候选分割变量。
+
+- `mob()`：算法入口，需要通过 `fit` 指定每个节点使用的模型拟合函数；适合自定义估计器。
+- `lmtree()`：方便地拟合叶节点线性回归模型。
+- `glmtree()`：方便地拟合叶节点广义线性模型；用 `family` 指定分布和链接函数。
+- 三者返回 `modelparty` 类模型树；终末节点保存各自的局部模型。
+
+```r
+set.seed(2026)
+n <- 500
+dat <- data.frame(x = rnorm(n), z = runif(n))
+dat$y <- 1 + dat$x * (1 + 2 * (dat$z > 0.5)) + rnorm(n)
+
+fit <- lmtree(
+  y ~ x | z, data = dat,
+  control = mob_control(alpha = 0.05, minsize = 40, maxdepth = 3)
+)
+```
+
+`mob()` 的常用参数包括 `formula`、`data`、`weights`、`offset`、`cluster`、`fit` 与 `control`。自定义 `fit` 函数必须提供 MOB 用来检验参数稳定性的所需信息；任意返回预测值的函数通常不够。模型树的公式解释与因果边界见[第 4 章](04-mob.qmd)。
+
+### `mob_control()`：控制参数稳定性检验
+
+`mob_control()` 返回传给 `mob()` 系列函数的控制列表。
+
+| 参数 | 用途 | 提示 |
+|---|---|---|
+| `alpha` | 参数稳定性检验阈值 | 小于阈值才考虑分裂；多个候选变量时注意 `bonferroni` 校正 |
+| `bonferroni` | 是否校正多重检验 | 控制分割变量数量增加带来的检验机会 |
+| `minsize` | 允许继续分裂的节点最小规模 | 默认随模型参数数目设置；分析时建议显式指定 |
+| `maxdepth` | 最大分割深度 | 限制规则数量和局部模型复杂度 |
+| `parm` | 哪些模型参数进入稳定性检验 | 可只关注指定系数；若不限制，截距等参数也可能触发分裂 |
+| `trim` | 连续分割变量稳定性检验的修剪比例 | 影响可检验的边界区域 |
+| `mtry` | 每个节点随机候选分割变量数 | 用于森林式随机分割扩展，普通 `lmtree()` 通常考虑全部候选变量 |
+| `prune` | 可选后剪枝规则 | 对似然目标可用 AIC/BIC；需确认目标函数和自由度定义 |
+
+## 二、预测、绘图和诊断方法
+
+这些接口通过 R 的 S3 泛型按对象类别选择方法。一般写 `predict(object)` 和 `plot(object)`；不要为了找到某个方法而假定所有树对象接受同一组参数。
+
+### `predict()`：按对象类别返回预测
+
+| 对象 | 常用 `type` | 含义 |
+|---|---|---|
+| `ctree()` / `constparty` | `"response"` | 数值响应的均值、分类响应的预测类别，或生存响应的方法定义摘要 |
+| `ctree()` / `constparty` | `"prob"` | 分类概率；数值或生存结局可返回经验分布/生存函数信息 |
+| `ctree()` / `constparty` | `"quantile"`、`"density"`、`"node"` | 分位数、分布摘要或终末节点编号；可用 `at` 指定分位点 |
+| `cforest()` | `"response"`、`"prob"` | 森林汇总响应或类别概率 |
+| `cforest()` | `"weights"`、`"node"` | 森林权重或树的节点归属信息 |
+| `modelparty` | `"node"` 或局部模型支持的类型 | 默认返回节点编号；其他类型传给各叶节点模型的 `predict()` 方法 |
+
+```r
+new_iris <- iris[1:5, , drop = FALSE]
+predict(tree, newdata = new_iris, type = "response")
+predict(tree, newdata = new_iris, type = "prob")
+predict(tree, newdata = new_iris, type = "node")
+
+predict(forest, type = "response", OOB = TRUE)
+```
+
+`newdata` 应含建模公式所需的同名变量，并保持兼容的数据类型。对 `cforest()`，`OOB = TRUE` 表示用训练样本的袋外树作预测；不要同时提供新数据。OOB 适合内部诊断，但反复根据它调参仍会产生选择偏差。
+
+### `plot()` 与节点面板函数
+
+`plot.party()` 绘制 `party`/`constparty` 树，`plot.modelparty()` 绘制 MOB 模型树。都通过 `plot()` 泛型调用。
+
+- `terminal_panel`：指定终末节点显示方式；`tp_args` 给面板函数传参数。
+- `inner_panel`：指定内部节点文字和信息；`ip_args` 传入相应参数。
+- `edge_panel`：指定分支边的显示；`ep_args` 传入相应参数。
+- 常用面板：`node_terminal()`、`node_inner()`、`edge_simple()`、`node_barplot()`、`node_boxplot()`、`node_surv()`、`node_ecdf()`、`node_mvar()`。
+
+```r
+plot(tree, terminal_panel = node_barplot)
+reg_tree <- ctree(mpg ~ wt + hp, data = mtcars)
+plot(reg_tree, terminal_panel = node_boxplot)
+```
+
+节点面板负责“节点里画什么”，不是重新拟合模型。生存树可用生存面板，分类树可用条形图，数值响应可用箱线图。更多图形参数和保存方法见[第 6 章](06-prediction-visualization.qmd)。
+
+### `varimp()`：森林置换变量重要性
+
+`varimp()` 是泛型；对 `cforest` 常用置换重要性。
+
+```r
+vi <- varimp(
+  forest,
+  nperm = 50,
+  OOB = TRUE,
+  risk = "misclassification",
+  conditional = FALSE
+)
+```
+
+- `nperm`：每个变量置换次数；次数越多通常越稳定但更耗时。
+- `OOB`：使用袋外样本计算风险变化，建议优先于训练样本上的重要性。
+- `risk`：比较置换前后的风险函数，如对数损失或误分类风险。
+- `conditional = TRUE`：在与目标变量相关的协变量条件下置换，用于减少相关变量之间的重要性混淆；`threshold` 控制哪些变量进入条件集合。
+
+重要性表示当前森林和风险定义下的预测贡献，不是因果效应，也不是变量的独立显著性检验。完整解释见[第 7 章](07-variable-importance.qmd)。
+
+### `gettree()`、`sctest()`、`refit()` 与 `prune()`
+
+- **`gettree(forest, tree = 1)`**：从 `cforest` 中取出指定编号的一棵基树，供检查单树结构使用。单棵基树不能代表森林整体，也不应被当成森林的重要性排名。
+- **`sctest(tree, node = ...)`**：提取树节点上保存的分裂/参数稳定性检验统计量及 p 值。它读取拟合时记录的检验，不会在新数据上重新进行确认性检验；泛型来自 `strucchange`，可用 `strucchange::sctest()` 调用。
+- **`refit(model_tree, node = ...)`**：按指定节点重新拟合 MOB 的局部模型；不指定 `node` 时可对多个节点拟合。适合提取局部模型对象，再调用 `coef()`、`summary()` 等相应模型方法。
+- **`prune(model_tree, type = "AIC")`**：对 `modelparty` 做 AIC/BIC 或用户定义的后剪枝。使用 AIC/BIC 前，必须确认拟合目标函数是负对数似然且自由度计算适用；若要用 R 的 `prune()` generic，可加载 `rpart` 包。
+
+`ctree()` 的检验型停止规则和 MOB 的 `alpha` 预剪枝，与 `prune()` 的模型后剪枝不是同一过程。后剪枝不会自动解决反复尝试规则造成的验证偏差。
+
+## 三、树对象与节点访问函数
+
+### `party()`、`partynode()`、`partysplit()`：低层对象构造
+
+这些函数适用于理解对象结构、写自定义树或转换现有结果；普通建模优先使用 `ctree()`、`cforest()` 和 `mob()`。
+
+| 函数 | 构造什么 | 关键输入 |
+|---|---|---|
+| `partysplit()` | 一个节点的分裂规则 | `varid` 为变量编号；数值切分用 `breaks`，分类变量用 `index`；`right` 决定边界方向 |
+| `partynode()` | 树的单个节点及子节点递归结构 | `id`、`split`、`kids`、`surrogates`、`info` |
+| `party()` | 带数据和节点结构的完整树对象 | `node`、`data`、可选的 `fitted`、`terms`、`names`、`info` |
+
+`as.party()` 可把部分 `rpart`、Weka 或 XML 树转成 party 对象；`as.constparty()`、`as.simpleparty()` 用于特定 party 子类转换。转换后应检查对象类别、节点规则及可用预测方法，不假设源模型的所有属性都被保留。
+
+### `nodeids()`、`nodeapply()`、`data_party()`、`get_paths()`
+
+```r
+leaf_ids <- nodeids(tree, terminal = TRUE)
+leaf_rows <- data_party(tree, id = leaf_ids)
+leaf_n <- vapply(leaf_rows, nrow, integer(1))
+
+paths <- get_paths(tree, i = leaf_ids)
+leaf_info <- nodeapply(tree, ids = leaf_ids, FUN = identity)
+```
+
+- `nodeids(obj, terminal = TRUE)`：列出终末节点编号；`from` 可限定从某个子树开始。
+- `nodeapply(obj, ids, FUN, bynode = TRUE)`：把函数应用到指定节点，返回与 `ids` 对应的列表。默认把 `FUN` 应用到 `partynode` 节点对象；`bynode = FALSE` 时按对应节点子树的 `party` 对象处理。
+- `data_party(party, id)`：返回指定节点及其后代终末节点覆盖的训练记录；`id` 给多个节点时返回列表。它提取的是建模样本，不能当独立验证数据。
+- `get_paths(obj, i)`：返回到节点的树结构路径索引列表，便于访问递归结构；它不是自动整理好的文字规则。节点条件需结合分裂信息解释。
+
+常规分析推荐用这些访问器，不要硬编码树对象内部的字段布局。详细节点示例见[第 5 章](05-tree-objects.qmd)。
+
+### 结构检查、剪枝与面板辅助函数
+
+还有一批较低层的导出函数，适合构造、检查或显示树，而非普通拟合流程：
+
+| 功能 | 常见函数 |
+|---|---|
+| 树节点信息 | `id_node()`、`kids_node()`、`kidids_node()`、`split_node()`、`surrogates_node()`、`is.terminal()` |
+| 分裂规则信息 | `varid_split()`、`breaks_split()`、`index_split()`、`right_split()`、`prob_split()`、`character_split()` |
+| 对象转换与结构修改 | `as.partynode()`、`as.party()`、`node_party()`、`nodeprune()` |
+| 作图面板 | `node_terminal()`、`node_inner()`、`edge_simple()`、`node_barplot()`、`node_boxplot()`、`node_surv()`、`node_ecdf()`、`node_bivplot()`、`node_mvar()` |
+| 拟合引擎（进阶） | `extree_data()` 整理递归分割数据；`extree_fit()` 运行扩展树拟合步骤 |
+
+`nodeprune()` 是按节点编号手动修改树结构；它不是基于验证误差或 AIC 自动选择剪枝的统计准则。`extree_data()` 和 `extree_fit()` 属于较低层的拟合接口，普通使用通常不需要直接调用。
+
+## 推荐的函数使用顺序
+
+```r
+library(partykit)
+
+## 1. 拟合并检查树
+fit <- ctree(Species ~ ., data = iris)
+print(fit)
+
+## 2. 查看叶节点编号、节点样本和预测
+ids <- nodeids(fit, terminal = TRUE)
+rows_by_leaf <- data_party(fit, id = ids)
+pred <- predict(fit, newdata = iris[1:6, ], type = "prob")
+
+## 3. 展示树
+plot(fit, terminal_panel = node_barplot)
+```
+
+每一步都要按分析目标解释：树规则描述的是拟合数据中的递归分层；预测衡量新数据上的模型输出；节点样本提供规则覆盖范围。若目标是因果效应异质性，函数调用本身不会建立因果识别，参见[第 9 章](09-causal-workflow.qmd)。
+
+## 查帮助与版本差异
+
+```r
+help(package = "partykit")
+?ctree
+?ctree_control
+?cforest
+?mob
+?mob_control
+?nodeids
+?nodeapply
+?varimp
+packageVersion("partykit")
+```
+
+线上资料可从 [CRAN 参考手册](https://cran.r-project.org/web/packages/partykit/partykit.pdf)、[CRAN 函数索引](https://search.r-project.org/CRAN/refmans/partykit/html/00Index.html) 和 [Codeberg 上游源码](https://codeberg.org/thothorn/partykit/src/branch/main/pkg/partykit) 查阅。开发版和 CRAN 帮助文件可能不同；复现分析时同时记录包版本、安装来源、控制参数和随机种子。
