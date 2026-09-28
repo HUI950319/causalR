@@ -115,6 +115,10 @@ test_that("survival outcomes run through the forest on both scales", {
   expect_true(all(is.finite(res$vip$estimate)))
   expect_equal(res$vip$contrast[res$vip$variable == "grp"], rep("TRUE vs FALSE", 2))
   expect_true(all(c(".score_diff", ".score_ratio") %in% names(res$data)))
+  skip_if_not_installed("patchwork")
+  p <- plt_hte_unihtee(res, type = "dep", x_var = c("x2", "grp"), measure = "ratio")
+  expect_s3_class(p, "patchwork")
+  expect_no_warning(for (q in c(p$patches$plots, list(p))) ggplot2::ggplot_build(q))
 })
 
 test_that("candidate_var narrows the table and joins the adjustment set", {
@@ -150,4 +154,105 @@ test_that("invalid input stops with a pointed message", {
   expect_error(f(adj_var = "w1", candidate_var = "a"), "cat_var")
   expect_error(get_hte_unihtee(d, cat_var = "a", adj_var = "w1", method = "glm"),
                "method = \"grf\"")
+})
+
+
+# ---- plt_hte_unihtee() -------------------------------------------------------
+
+uni_plot_res <- local({
+  cache <- NULL
+  function() {
+    skip_if_not_installed("sandwich")
+    if (is.null(cache))
+      cache <<- get_hte_unihtee(uni_cont_data(), cat_var = "a",
+                                adj_var = c("w1", "w2", "w3", "w4", "sex"),
+                                surv = "y", method = "glm")
+    cache
+  }
+})
+
+uni_layer <- function(q, geom, col) {
+  for (l in q$layers)
+    if (inherits(l$geom, geom) && is.data.frame(l$data) && col %in% names(l$data))
+      return(l$data)
+  NULL
+}
+
+test_that("bar draws every signed estimate with its interval, coloured by p.adj", {
+  res <- uni_plot_res()
+  v   <- res$vip
+  p   <- plt_hte_unihtee(res)
+  expect_s3_class(p, "ggplot")
+  expect_identical(names(attr(p, "plot_size")), c("width", "height"))
+  b <- uni_layer(p, "GeomCol", "estimate")
+  i <- match(v$variable, b$variable)
+  expect_equal(b$estimate[i], v$estimate)
+  expect_equal(as.character(b$sig[i]),
+               ifelse(v$p.adj < 0.05, ifelse(v$estimate > 0, "Positive", "Negative"), "n.s."))
+  e <- uni_layer(p, "GeomErrorbar", "conf.low")
+  expect_equal(e$conf.high[match(v$variable, e$variable)], v$conf.high)
+  expect_identical(tail(names(formals(plt_hte_unihtee)), 1L), "save")
+})
+
+test_that("volcano plots -log10 p and labels only BH-significant candidates", {
+  res <- uni_plot_res()
+  v   <- res$vip
+  p   <- plt_hte_unihtee(res, type = "volcano", sig_level = 0.01)
+  pts <- uni_layer(p, "GeomPoint", "neglog10p")
+  expect_equal(pts$neglog10p[match(v$variable, pts$variable)], -log10(v$p.value))
+  expect_setequal(uni_layer(p, "GeomText", "variable")$variable,
+                  v$variable[v$p.adj < 0.01])
+})
+
+test_that("dep draws the TEM-VIP line, a spline check and the binary contrast", {
+  res <- uni_plot_res()
+  v   <- res$vip
+  q   <- plt_hte_unihtee(res, type = "dep", x_var = "w3")
+  expect_false(inherits(q, "patchwork"))
+  ln <- uni_layer(q, "GeomLine", "estimate")
+  ln <- ln[order(ln$x), ]
+  slope <- (ln$estimate[nrow(ln)] - ln$estimate[1]) / (ln$x[nrow(ln)] - ln$x[1])
+  expect_equal(slope * v$sd[v$variable == "w3"], v$estimate[v$variable == "w3"])
+  expect_false(is.null(uni_layer(q, "GeomLine", "spline")))
+  pr <- uni_layer(plt_hte_unihtee(res, type = "dep", x_var = "sex"),
+                  "GeomPointrange", "estimate")
+  expect_equal(diff(pr$estimate), v$estimate[v$variable == "sex"])
+  skip_if_not_installed("patchwork")
+  expect_s3_class(plt_hte_unihtee(res, type = "dep", x_var = c("w3", "sex")),
+                  "patchwork")
+})
+
+test_that("relative measures draw on the log scale", {
+  skip_if_not_installed("sandwich")
+  res <- get_hte_unihtee(uni_bin_data(), cat_var = "a", adj_var = c("w1", "w2", "sex"),
+                         surv = "y", method = "glm", measure = c("diff", "ratio"))
+  p <- plt_hte_unihtee(res, measure = "ratio")
+  b <- uni_layer(p, "GeomCol", "estimate")
+  r <- res$vip[res$vip$measure == "ratio", ]
+  expect_equal(b$estimate[match(r$variable, b$variable)], r$estimate)
+  expect_match(ggplot2::get_labs(p)$x, "ratio")
+  q <- plt_hte_unihtee(res, type = "dep", x_var = "w2", measure = "ratio")
+  expect_match(ggplot2::get_labs(q)$y, "log")
+})
+
+test_that("plt_hte_unihtee rejects invalid input", {
+  res <- uni_plot_res()
+  expect_error(plt_hte_unihtee(list(a = 1)), "get_hte_unihtee")
+  expect_error(plt_hte_unihtee(res, measure = "OR"), "measure")
+  expect_error(plt_hte_unihtee(res, x_var = "zz"), "x_var")
+  expect_error(plt_hte_unihtee(res, sig_level = 2), "sig_level")
+  expect_error(plt_hte_unihtee(res, save = "a.pdf"), "`save`")
+  expect_error(plt_hte_unihtee(res, type = "dep", dr_args = list(df = 2)), "unknown")
+  expect_error(plt_hte_unihtee(res, dr_args = list(spline_df = 3)), "type = \"dep\"")
+})
+
+test_that("save writes one PDF and returns the plot unchanged", {
+  res <- uni_plot_res()
+  expect_s3_class(plt_hte_unihtee(res, save = list()), "ggplot")
+  expect_s3_class(plt_hte_unihtee(res, save = NULL), "ggplot")
+  skip_if_not_installed("RegR")
+  f <- tempfile(fileext = ".pdf")
+  p <- plt_hte_unihtee(res, type = "volcano", save = list(filename = f))
+  expect_true(file.exists(f))
+  expect_s3_class(p, "ggplot")
 })

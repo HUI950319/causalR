@@ -145,10 +145,12 @@ true modifier gets a nonzero slope of its own. It is also linear: a
 U-shaped modification can have a true slope of zero. \code{\link[=get_hte]{get_hte()}} tests the
 same univariate projection without the linearity -- \verb{$importance$p_het}
 uses a natural spline with 2 degrees of freedom and a joint test of all
-levels of a categorical covariate -- and
+levels of a categorical covariate -- and on a \code{\link[=get_hte]{get_hte()}} result
 \code{plt_hte_dep(res, display = "dr", dr_args = list(spline_df = 1))} draws
 the straight line whose slope, per unit of the covariate, is the
-\code{"diff"} estimate here divided by \code{sd}. The table screens candidates; it
+\code{"diff"} estimate here divided by \code{sd}. \code{\link[=plt_hte_unihtee]{plt_hte_unihtee()}} draws the
+table and these lines, with a spline beside each line to show what the
+slope leaves out. The table screens candidates; it
 does not confirm modifiers, and on observational data its ranking also
 reflects how well \code{adj_var} captures confounding.
 
@@ -194,7 +196,8 @@ Hines O, Diaz-Ordaz K, Vansteelandt S (2022). Variable importance measures
 for heterogeneous causal effects. arXiv:2204.06030.
 }
 \seealso{
-\code{\link[=get_hte]{get_hte()}} for the forest, its spline test \code{p_het} and subgroup
-effects; \code{\link[=plt_hte_dep]{plt_hte_dep()}} for the doubly robust curves;
-\code{\link[=get_hte_select]{get_hte_select()}} for benefit-score variable selection.
+\code{\link[=plt_hte_unihtee]{plt_hte_unihtee()}} to plot the result; \code{\link[=get_hte]{get_hte()}} for the
+forest, its spline test \code{p_het} and subgroup effects; \code{\link[=plt_hte_dep]{plt_hte_dep()}}
+for the doubly robust curves; \code{\link[=get_hte_select]{get_hte_select()}} for benefit-score
+variable selection.
 }

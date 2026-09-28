@@ -8,7 +8,11 @@
 #                          causal forest (get_hte()) or from cross-fitted
 #                          GLMs, then regress one pseudo-outcome per measure
 #                          on each candidate alone
+#   L1  plt_hte_unihtee()  bar / volcano of the table, or one panel per
+#                          candidate with its projection line
 #   L2  .uni_glm_fit()     cross-fitted propensity and per-arm outcome GLMs
+#   L2  .uni_project()     the projection on one candidate, shared by the
+#                          table and its plotted line
 #
 # =============================================================================
 
@@ -42,6 +46,49 @@
   }
   list(e = pmin(pmax(e, ps_trim), 1 - ps_trim), mu1 = mu1, mu0 = mu0,
        n_clip = sum(e < ps_trim | e > 1 - ps_trim))
+}
+
+# Least-squares projection of a pseudo-outcome `phi` on one candidate `x`
+# (numeric, or 0/1 for a binary candidate) on its own scale. The table
+# rescales the slope to per SD -- HC3 errors rescale with it -- and the plot
+# draws the line, so both rest on the same rows, weights and covariance.
+# With `beyond` (survival) a continuous candidate keeps the values both arms
+# reach among patients followed past `time`, and a binary one needs both
+# levels in both arms there, as .hte_dr_var() does. Returns the fit, its
+# covariance, the rows used, the candidate's SD and range, or `why`.
+#' @keywords internal
+#' @noRd
+.uni_project <- function(x, phi, W, wt, cl, beyond, cont) {
+  if (!is.null(beyond)) {
+    if (cont) {
+      x1  <- x[beyond & W == 1 & !is.na(x)]
+      x0  <- x[beyond & W == 0 & !is.na(x)]
+      lim <- if (length(x1) && length(x0))
+        c(max(min(x1), min(x0)), min(max(x1), max(x0))) else c(Inf, -Inf)
+      x[!is.na(x) & (x < lim[1L] | x > lim[2L])] <- NA
+    } else if (!all(vapply(0:1, function(l)
+      any(beyond & W == 1 & x %in% l) && any(beyond & W == 0 & x %in% l),
+      logical(1L))))
+      return(list(why = "a level has no patient in one arm followed past `time`"))
+  }
+  i <- which(!is.na(x) & is.finite(phi) & wt > 0)
+  enough <- if (cont) length(unique(x[i])) >= 3L else
+    all(vapply(0:1, function(l) sum(x[i] == l & W[i] == 1) >= 2 &&
+                 sum(x[i] == l & W[i] == 0) >= 2, logical(1L)))
+  if (!enough)
+    return(list(why = if (cont) "fewer than three distinct values remain"
+                else "a level has fewer than two patients in one arm"))
+  fit <- stats::lm(p ~ x, weights = w,
+                   data = data.frame(p = phi[i], x = x[i], w = wt[i]))
+  if (fit$rank < 2L || fit$df.residual <= 0L ||
+      (length(cl) && length(unique(cl[i])) < 2L))
+    return(list(why = "the regression is rank deficient or has too few clusters"))
+  V <- if (length(cl))
+    sandwich::vcovCL(fit, cluster = cl[i], type = "HC3") else
+    sandwich::vcovHC(fit, type = "HC3")
+  list(fit = fit, V = V, i = i, range = range(x[i]),
+       sd = if (cont) sqrt(stats::cov.wt(cbind(x[i]), wt[i])$cov[1L, 1L])
+            else NA_real_)
 }
 
 
@@ -140,10 +187,12 @@
 #' U-shaped modification can have a true slope of zero. [get_hte()] tests the
 #' same univariate projection without the linearity -- `$importance$p_het`
 #' uses a natural spline with 2 degrees of freedom and a joint test of all
-#' levels of a categorical covariate -- and
+#' levels of a categorical covariate -- and on a [get_hte()] result
 #' `plt_hte_dep(res, display = "dr", dr_args = list(spline_df = 1))` draws
 #' the straight line whose slope, per unit of the covariate, is the
-#' `"diff"` estimate here divided by `sd`. The table screens candidates; it
+#' `"diff"` estimate here divided by `sd`. [plt_hte_unihtee()] draws the
+#' table and these lines, with a spline beside each line to show what the
+#' slope leaves out. The table screens candidates; it
 #' does not confirm modifiers, and on observational data its ranking also
 #' reflects how well `adj_var` captures confounding.
 #'
@@ -180,9 +229,10 @@
 #' Hines O, Diaz-Ordaz K, Vansteelandt S (2022). Variable importance measures
 #' for heterogeneous causal effects. arXiv:2204.06030.
 #'
-#' @seealso [get_hte()] for the forest, its spline test `p_het` and subgroup
-#'   effects; [plt_hte_dep()] for the doubly robust curves;
-#'   [get_hte_select()] for benefit-score variable selection.
+#' @seealso [plt_hte_unihtee()] to plot the result; [get_hte()] for the
+#'   forest, its spline test `p_het` and subgroup effects; [plt_hte_dep()]
+#'   for the doubly robust curves; [get_hte_select()] for benefit-score
+#'   variable selection.
 #'
 #' @examplesIf requireNamespace("sandwich", quietly = TRUE)
 #' set.seed(1)
@@ -295,6 +345,7 @@ get_hte_unihtee <- function(data,
     type <- an$outcome_type
     target  <- an$target
     treated <- an$treated
+    outcome <- an$outcome
     backend_args <- an$grf_args
     beyond <- if (is_surv) {
       if (identical(target, "RMST")) d$time >= time else d$time > time
@@ -403,48 +454,21 @@ get_hte_unihtee <- function(data,
   })
 
   # ---- One least-squares projection per candidate x measure ----------------
-  # Returns n, sd, slope and its HC3 standard error, or NA with a warning.
+  # n, sd, and the slope with its HC3 standard error -- per SD for a
+  # continuous candidate -- or NA with a warning.
   project <- function(j, phi, m) {
-    v <- candidate_var[j]
-    x <- d[[v]]
-    na_row <- function(why) {
-      warning(sprintf("`%s` (%s): %s; estimate set to NA.", v, m, why),
-              call. = FALSE)
-      c(NA_real_, NA_real_, NA_real_, NA_real_)
-    }
     cont <- kind[j] == "continuous"
+    x    <- d[[candidate_var[j]]]
     if (!cont) x <- match(as.character(x), levs[[j]]) - 1L
-    if (!is.null(beyond)) {
-      if (cont) {
-        x1  <- x[beyond & W == 1 & !is.na(x)]
-        x0  <- x[beyond & W == 0 & !is.na(x)]
-        lim <- if (length(x1) && length(x0))
-          c(max(min(x1), min(x0)), min(max(x1), max(x0))) else c(Inf, -Inf)
-        x[!is.na(x) & (x < lim[1L] | x > lim[2L])] <- NA
-      } else if (!all(vapply(0:1, function(l)
-        any(beyond & W == 1 & x %in% l) && any(beyond & W == 0 & x %in% l),
-        logical(1L))))
-        return(na_row("a level has no patient in one arm followed past `time`"))
+    pr <- .uni_project(x, phi, W, wt, cl, beyond, cont)
+    if (!is.null(pr$why)) {
+      warning(sprintf("`%s` (%s): %s; estimate set to NA.", candidate_var[j],
+                      m, pr$why), call. = FALSE)
+      return(rep(NA_real_, 4L))
     }
-    i <- which(!is.na(x) & is.finite(phi) & wt > 0)
-    enough <- if (cont) length(unique(x[i])) >= 3L else
-      all(vapply(0:1, function(l) sum(x[i] == l & W[i] == 1) >= 2 &&
-                   sum(x[i] == l & W[i] == 0) >= 2, logical(1L)))
-    if (!enough)
-      return(na_row(if (cont) "fewer than three distinct values remain"
-                    else "a level has fewer than two patients in one arm"))
-    sdv <- if (cont) sqrt(stats::cov.wt(cbind(x[i]), wt[i])$cov[1L, 1L]) else NA_real_
-    lm_fit <- stats::lm(p ~ xs, weights = w,
-                        data = data.frame(p = phi[i],
-                                          xs = if (cont) x[i] / sdv else x[i],
-                                          w = wt[i]))
-    if (lm_fit$rank < 2L || lm_fit$df.residual <= 0L ||
-        (length(cl) && length(unique(cl[i])) < 2L))
-      return(na_row("the regression is rank deficient or has too few clusters"))
-    V <- if (length(cl))
-      sandwich::vcovCL(lm_fit, cluster = cl[i], type = "HC3") else
-      sandwich::vcovHC(lm_fit, type = "HC3")
-    c(length(i), sdv, stats::coef(lm_fit)[[2L]], sqrt(V[2L, 2L]))
+    k <- if (cont) pr$sd else 1
+    c(length(pr$i), pr$sd, stats::coef(pr$fit)[[2L]] * k,
+      sqrt(pr$V[2L, 2L]) * k)
   }
 
   z <- stats::qnorm(1 - (1 - conf_level) / 2)
@@ -480,7 +504,316 @@ get_hte_unihtee <- function(data,
       method = method, outcome_type = type, cat_var = cat_var,
       treated = treated, surv = surv, candidate_var = candidate_var,
       adj_var = adj_var, covariates = covars, measure = measure,
-      target = target, time = if (is_surv) time else NULL,
+      target = target, time = if (is_surv) time else NULL, outcome = outcome,
       conf_level = conf_level, n = length(W), n_treat = sum(W),
-      ps_range = range(e), seed = seed, backend_args = backend_args))
+      ps_range = range(e), seed = seed, backend_args = backend_args,
+      candidate_type = stats::setNames(kind, candidate_var),
+      candidate_levels = stats::setNames(levs, candidate_var),
+      weights = if (any(wt != 1)) wt, clusters = if (length(cl)) cl))
+}
+
+# ---- L1 plot -----------------------------------------------------------------
+
+#' Plot an effect-modifier screen from get_hte_unihtee()
+#'
+#' Draws the table of [get_hte_unihtee()] for one measure as a bar chart of
+#' the signed estimates with their confidence intervals (`"bar"`) or as a
+#' volcano plot (`"volcano"`), or draws one panel per candidate with the
+#' projection behind its row (`"dep"`). Candidates whose Benjamini-Hochberg
+#' `p.adj` is below `sig_level` are coloured by the direction of the
+#' estimate.
+#'
+#' @param x The list returned by [get_hte_unihtee()].
+#' @param type `"bar"` (default), `"volcano"` or `"dep"`.
+#' @param x_var Candidates to draw: `NULL` (default) for every candidate, in
+#'   the `p.value` order of the table, or a character vector of candidate
+#'   names in the order to draw. Rows whose estimate is `NA` are left out of
+#'   `"bar"` and `"volcano"`.
+#' @param measure The measure to draw, one of those in `x`; `NULL` (default)
+#'   takes the first.
+#' @param sig_level Threshold on `p.adj`, strictly between 0 and 1. Default
+#'   `0.05`. Candidates below it are red (positive) or blue (negative) and, in
+#'   the volcano plot, labelled; the volcano's dashed line marks the largest
+#'   raw p-value that passes it.
+#' @param dr_args Named list for `type = "dep"` only:
+#'   \describe{
+#'     \item{`spline_df`}{Finite whole number of at least 1, default `2`, as
+#'       in [plt_hte_dep()]: degrees of freedom of the natural spline drawn
+#'       beside the line of a continuous candidate with more than 5 distinct
+#'       values.}
+#'   }
+#' @param title Plot title, or `NULL` (default).
+#' @param save `NULL` or a list with `filename`, `width` and `height`, passed
+#'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
+#'   list naming only the file is completed with this figure's pinned size.
+#'   Do not include the `plot` argument; it is supplied internally.
+#'
+#' @section What the panels show:
+#' In `"dep"` the red line and band are the least-squares projection of the
+#' pseudo-outcome `.score_<measure>` on the candidate with the confidence
+#' band of its HC3 covariance: the slope times `sd` is the table's estimate
+#' (on the log scale for `"ratio"` and `"OR"`). A binary candidate gets the
+#' fitted mean of each level instead, whose difference is the estimate. The
+#' grey dashed curve is a natural spline of the same pseudo-outcome, the
+#' `"dr"` layer of [plt_hte_dep()]; where it bends away from the line the
+#' slope summarises the modification poorly, and a U shape can hide behind a
+#' flat line. The dashed horizontal line is the mean pseudo-outcome, the
+#' doubly robust ATE for `"diff"`. All panels share one y range, which covers
+#' the lines but not the bands.
+#'
+#' @return A `ggplot`, or for `"dep"` with several candidates a patchwork
+#'   with one panel per candidate, three per row. The pinned size is in
+#'   `attr(p, "plot_size")`. If `save` is non-empty, the same plot is also
+#'   written to PDF through `RegR::save_plt()`.
+#'
+#' @seealso [get_hte_unihtee()]; [plt_hte_dep()] for the forest's own CATE.
+#'
+#' @examplesIf requireNamespace("sandwich", quietly = TRUE) && requireNamespace("patchwork", quietly = TRUE)
+#' set.seed(1)
+#' n <- 600
+#' d <- data.frame(w1 = rnorm(n), w2 = rnorm(n), w3 = rnorm(n),
+#'                 sex = factor(sample(c("F", "M"), n, replace = TRUE)))
+#' d$a <- rbinom(n, 1, plogis(0.5 * d$w1))
+#' d$y <- d$w1 + d$w2 + d$a * (d$w3 + (d$sex == "M")) + rnorm(n)
+#' res <- get_hte_unihtee(d, cat_var = "a", adj_var = c("w1", "w2", "w3", "sex"),
+#'                        surv = "y", method = "glm")
+#'
+#' plt_hte_unihtee(res)                      # signed estimates with CIs
+#' plt_hte_unihtee(res, type = "volcano")
+#' plt_hte_unihtee(res, type = "dep", x_var = c("w3", "sex", "w2"))
+#'
+#' @export
+plt_hte_unihtee <- function(x,
+                            type      = c("bar", "volcano", "dep"),
+                            x_var     = NULL,
+                            measure   = NULL,
+                            sig_level = 0.05,
+                            dr_args   = list(spline_df = 2),
+                            title     = NULL,
+                            save      = list()) {
+
+  a <- attr(x, "analysis")
+  if (!is.list(x) || !all(c("vip", "data") %in% names(x)) ||
+      is.null(a$candidate_levels))
+    stop("`x` must be the list returned by get_hte_unihtee().", call. = FALSE)
+  type <- match.arg(type)
+  if (type != "dep" && !missing(dr_args))
+    stop("`dr_args` only applies to type = \"dep\".", call. = FALSE)
+  dr_args <- .merge_named_arg(dr_args, list(spline_df = 2), "dr_args")
+  if (!is.numeric(dr_args$spline_df) || length(dr_args$spline_df) != 1L ||
+      !is.finite(dr_args$spline_df) || dr_args$spline_df < 1 ||
+      dr_args$spline_df != floor(dr_args$spline_df))
+    stop("`dr_args$spline_df` must be a finite whole number of at least 1.",
+         call. = FALSE)
+  if (is.null(measure)) measure <- a$measure[1L]
+  if (!is.character(measure) || length(measure) != 1L ||
+      !measure %in% a$measure)
+    stop(sprintf("`measure` must be one measure of `x`: %s.",
+                 paste0("\"", a$measure, "\"", collapse = ", ")), call. = FALSE)
+  if (!is.numeric(sig_level) || length(sig_level) != 1L || is.na(sig_level) ||
+      sig_level <= 0 || sig_level >= 1)
+    stop("`sig_level` must be a single number strictly between 0 and 1.",
+         call. = FALSE)
+  if (!is.null(save) && !is.list(save))
+    stop("`save` must be `NULL` or a list.", call. = FALSE)
+
+  v    <- x$vip[x$vip$measure == measure, , drop = FALSE]
+  vars <- if (is.null(x_var)) v$variable else {
+    if (!is.character(x_var) || anyNA(x_var))
+      stop("`x_var` must be `NULL` or candidate names.", call. = FALSE)
+    miss <- setdiff(x_var, v$variable)
+    if (length(miss))
+      stop(sprintf("`x_var` names no candidate of `x`: %s. Candidates are %s.",
+                   paste0("`", miss, "`", collapse = ", "),
+                   paste0("`", v$variable, "`", collapse = ", ")), call. = FALSE)
+    unique(x_var)
+  }
+  v   <- v[match(vars, v$variable), , drop = FALSE]
+  rel <- measure != "diff"
+
+  # the measures as get_hte() names them
+  ref   <- setdiff(levels(factor(x$data[[a$cat_var]])), a$treated)[1L]
+  scale <- switch(
+    a$outcome_type,
+    survival   = if (identical(a$target, "RMST"))
+      c(diff = "RMST difference", ratio = "RMST ratio")[[measure]] else
+      c(diff = sprintf("S(%s) difference", format(a$time)),
+        ratio = "event-risk ratio", OR = "event odds ratio")[[measure]],
+    binary     = c(diff = "risk difference", ratio = "risk ratio",
+                   OR = "odds ratio")[[measure]],
+    continuous = c(diff = "mean difference", ratio = "ratio of means")[[measure]])
+  conf <- 100 * a$conf_level
+  sig  <- factor(ifelse(!is.na(v$p.adj) & v$p.adj < sig_level,
+                        ifelse((if (rel) log(v$estimate) else v$estimate) > 0,
+                               "Positive", "Negative"), "n.s."),
+                 levels = c("Positive", "Negative", "n.s."))
+  cols <- c(Positive = "firebrick", Negative = "steelblue", n.s. = "grey70")
+  null <- if (rel) 1 else 0
+
+  # ---- Bar and volcano ------------------------------------------------------
+  if (type != "dep") {
+    ok <- is.finite(v$estimate)
+    if (!any(ok))
+      stop("No candidate of `x` has an estimate for this measure.", call. = FALSE)
+    pd <- data.frame(variable = v$variable,
+                     label = paste0(v$variable, " (", v$contrast, ")"),
+                     estimate = v$estimate, conf.low = v$conf.low,
+                     conf.high = v$conf.high, neglog10p = -log10(v$p.value),
+                     sig = sig, stringsAsFactors = FALSE)[ok, , drop = FALSE]
+    xlab <- sprintf("%s the %s per SD or between levels",
+                    if (rel) "Factor on" else "Change in", scale)
+    # About 10 caption characters fit per inch of the 6.5-inch figure, as in
+    # plt_hte_dep().
+    wrap <- function(s) paste(strwrap(s, width = 65L), collapse = "\n")
+    if (type == "bar") {
+      pd$label <- factor(pd$label, levels = pd$label[order(
+        if (rel) log(pd$estimate) else pd$estimate)])
+      p <- ggplot2::ggplot() +
+        ggplot2::geom_col(data = pd, ggplot2::aes(x = estimate, y = label,
+                                                  fill = sig), width = 0.7) +
+        ggplot2::geom_errorbar(data = pd, ggplot2::aes(xmin = conf.low,
+                                                       xmax = conf.high,
+                                                       y = label),
+                               width = 0.25, orientation = "y") +
+        ggplot2::geom_vline(xintercept = null, colour = "grey40") +
+        ggplot2::scale_fill_manual(values = cols, name = NULL) +
+        ggplot2::labs(x = xlab, y = NULL, title = title,
+                      caption = wrap(sprintf("Bars: estimate with %g%% CI; coloured: BH p.adj < %g",
+                                             conf, sig_level)))
+      size <- c(6.5, max(3, 1.2 + 0.35 * nrow(pd)))
+    } else {
+      pass <- !is.na(v$p.adj[ok]) & v$p.adj[ok] < sig_level
+      p <- ggplot2::ggplot() +
+        ggplot2::geom_vline(xintercept = null, colour = "grey40")
+      if (any(pass))
+        p <- p + ggplot2::geom_hline(yintercept = -log10(max(v$p.value[ok][pass])),
+                                     linetype = 2, colour = "grey40")
+      p <- p +
+        ggplot2::geom_point(data = pd, ggplot2::aes(x = estimate, y = neglog10p,
+                                                    colour = sig), size = 2.5) +
+        ggplot2::geom_text(data = pd[pd$sig != "n.s.", , drop = FALSE],
+                           ggplot2::aes(x = estimate, y = neglog10p,
+                                        label = variable),
+                           vjust = -0.8, size = 3.2) +
+        ggplot2::scale_colour_manual(values = cols, name = NULL) +
+        # room above the top point for its label
+        ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.05, 0.12))) +
+        ggplot2::labs(x = xlab, y = "-log10(p)", title = title,
+                      caption = wrap(sprintf("Coloured and labelled: BH p.adj < %g%s",
+                                             sig_level, if (any(pass))
+                                               "; dashed: the largest raw p that passes" else "")))
+      size <- c(6.5, 5)
+    }
+    if (rel) p <- p + ggplot2::scale_x_log10()
+    p <- p + UtilsR::theme_my(base_rect_size = 1.5)
+
+  # ---- One panel per candidate ---------------------------------------------
+  } else {
+    if (!requireNamespace("sandwich", quietly = TRUE))
+      stop("Package 'sandwich' is required for the projection bands.",
+           call. = FALSE)
+    if (length(vars) > 1L && !requireNamespace("patchwork", quietly = TRUE))
+      stop("Package 'patchwork' is required to combine several panels.",
+           call. = FALSE)
+    d      <- x$data
+    W      <- as.integer(as.character(d[[a$cat_var]]) == a$treated)
+    phi    <- d[[paste0(".score_", measure)]]
+    wt     <- if (is.null(a$weights)) rep(1, nrow(d)) else a$weights
+    beyond <- .hte_beyond(x)
+    z      <- stats::qnorm(1 - (1 - a$conf_level) / 2)
+    mid    <- stats::weighted.mean(phi, wt, na.rm = TRUE)
+    ylab   <- if (rel) sprintf("log %s: %s vs %s", scale, a$treated, ref)
+              else .hte_cate_label(x)
+    fmt_p  <- function(p) if (is.na(p)) "NA" else if (p < 0.001) "< 0.001"
+                          else sprintf("= %.3f", p)
+    dd     <- d
+    dd$.dr_score <- phi
+    has_spline <- FALSE
+
+    panel <- function(j) {
+      vn    <- vars[j]
+      cont  <- a$candidate_type[[vn]] == "continuous"
+      lv    <- a$candidate_levels[[vn]]
+      xv    <- d[[vn]]
+      if (!cont) xv <- match(as.character(xv), lv) - 1L
+      pr    <- .uni_project(xv, phi, W, wt, a$clusters, beyond, cont)
+      label <- sprintf("%s: %s %s, p.adj %s", vn, v$contrast[j],
+                       format(signif(v$estimate[j], 3)), fmt_p(v$p.adj[j]))
+      q  <- ggplot2::ggplot(data.frame(panel = label)) +
+        ggplot2::geom_hline(yintercept = 0, colour = "grey75") +
+        ggplot2::geom_hline(yintercept = mid, linetype = 2)
+      yv <- c(0, mid)
+      if (is.null(pr$why)) {
+        g   <- if (cont) seq(pr$range[1L], pr$range[2L], length.out = 100L) else 0:1
+        M   <- cbind(1, g)
+        est <- drop(M %*% stats::coef(pr$fit))
+        se  <- sqrt(rowSums((M %*% pr$V) * M))
+        ln  <- data.frame(x = if (cont) g else factor(lv, levels = lv),
+                          estimate = est, conf.low = est - z * se,
+                          conf.high = est + z * se, panel = label)
+        yv  <- c(yv, est)
+        q <- q + if (cont) list(
+          ggplot2::geom_ribbon(data = ln, ggplot2::aes(x = x, ymin = conf.low,
+                                                       ymax = conf.high),
+                               fill = "firebrick", alpha = 0.15),
+          ggplot2::geom_line(data = ln, ggplot2::aes(x = x, y = estimate),
+                             colour = "firebrick", linewidth = 0.8)) else
+          ggplot2::geom_pointrange(data = ln, ggplot2::aes(x = x, y = estimate,
+                                                           ymin = conf.low,
+                                                           ymax = conf.high),
+                                   colour = "firebrick")
+        if (cont && .hte_is_num(d[[vn]])) {
+          sp <- .hte_dr_var(dd, vn, W, z, dr_args$spline_df, beyond, wt,
+                            a$clusters)$curve
+          if (NROW(sp)) {
+            sc <- data.frame(x = sp$x, spline = sp$estimate, panel = label)
+            q  <- q + ggplot2::geom_line(data = sc, ggplot2::aes(x = x, y = spline),
+                                         colour = "grey30", linetype = "longdash",
+                                         linewidth = 0.7)
+            yv <- c(yv, sc$spline)
+            has_spline <<- TRUE
+          }
+        }
+      }
+      q <- q + ggplot2::facet_wrap(~panel) +
+        ggplot2::labs(x = vn, y = ylab) +
+        UtilsR::theme_my(base_rect_size = 1.5)
+      list(plot = q, yv = yv)
+    }
+
+    built <- lapply(seq_along(vars), panel)
+    rng   <- range(unlist(lapply(built, `[[`, "yv")), na.rm = TRUE)
+    plots <- lapply(built, function(b) b$plot + ggplot2::coord_cartesian(ylim = rng))
+    caption <- paste(c(
+      sprintf("red: projection on the candidate with %g%% CI (level means for a binary one)",
+              conf),
+      if (has_spline) sprintf("grey dashed: natural spline, df = %d",
+                              as.integer(dr_args$spline_df)),
+      sprintf("dashed: mean pseudo-outcome%s", if (rel) "" else " (ATE)")),
+      collapse = "; ")
+    caption <- paste0(toupper(substr(caption, 1L, 1L)), substring(caption, 2L))
+    ncol <- min(3L, length(plots))
+    size <- if (length(plots) == 1L) c(5, 4.2) else
+      c(3.4 * ncol + 0.6, 3 * ceiling(length(plots) / ncol) + 0.8)
+    caption <- paste(strwrap(caption, width = floor(10 * size[1L])),
+                     collapse = "\n")
+    p <- if (length(plots) == 1L) {
+      plots[[1L]] + ggplot2::labs(title = title, caption = caption)
+    } else {
+      patchwork::wrap_plots(plots, ncol = ncol) +
+        patchwork::plot_layout(axis_titles = "collect") +
+        patchwork::plot_annotation(title = title, caption = caption,
+                                   theme = UtilsR::theme_my(base_rect_size = 1.5))
+    }
+  }
+
+  attr(p, "plot_size") <- stats::setNames(size, c("width", "height"))
+  if (!is.null(save) && length(save) > 0L) {
+    if (!requireNamespace("RegR", quietly = TRUE))
+      stop("Package 'RegR' is required for a non-empty `save`.", call. = FALSE)
+    if (is.null(save$width))  save$width  <- size[1L]
+    if (is.null(save$height)) save$height <- size[2L]
+    do.call(RegR::save_plt, c(list(plot = p), save))
+  }
+  p
 }

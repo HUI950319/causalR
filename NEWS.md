@@ -1,5 +1,17 @@
 # causalR (development version)
 
+* New `plt_hte_unihtee()` draws a `get_hte_unihtee()` screen for one
+  measure: `type = "bar"` (default) the signed estimates with their
+  intervals, `"volcano"` estimate against -log10(p) with the BH-significant
+  candidates labelled, and `"dep"` one panel per candidate with the
+  projection behind its row -- the line whose slope times `sd` is the
+  estimate, or the two level means of a binary candidate -- beside a natural
+  spline of the same pseudo-outcome that shows what the slope leaves out
+  (a U-shaped modifier has a flat line and a curved spline). Works for both
+  `method`s, every measure (ratio and OR on a log axis) and survival
+  outcomes, with no forest refitted. `get_hte_unihtee()` and the plot share
+  one projection, so every drawn line matches its table row.
+
 * New `get_hte_unihtee()` screens candidate effect modifiers with the
   treatment effect modifier variable importance parameter (TEM-VIP) of
   Boileau et al. (2025), the estimand of the `unihtee` package, written
