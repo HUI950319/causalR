@@ -1,0 +1,262 @@
+---
+title: "1. 总览、对象结构与示例数据"
+subtitle: "policytree 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(policytree)
+library(grf)
+set.seed(20260928)
+```
+
+本页先把策略学习要回答的问题说清楚，再给出 `policytree` 的三步工作流、
+输入数据的硬性要求、`policy_tree` 对象的内部结构，
+最后介绍包自带的两个数据生成函数 `gen_data_epl()` 与 `gen_data_mapl()`——
+其中前者有一个**文档没有明说、但足以让结果完全反号**的设定。
+
+## 策略学习要回答的问题 {#sec-problem}
+
+设有 $d$ 种可选处理 $a \in \{1, \dots, d\}$，每个人有协变量 $X_i$ 和潜在结局
+$Y_i(1), \dots, Y_i(d)$。一条**策略**（policy）就是一个映射
+$\pi: \mathcal X \to \{1, \dots, d\}$，告诉我们协变量为 $x$ 的人该接受哪种处理。
+策略的好坏用**策略价值**（policy value）衡量：
+
+$$
+V(\pi) = \mathbb E\bigl[\,Y_i\bigl(\pi(X_i)\bigr)\bigr],
+$$
+
+即"所有人都按 $\pi$ 分配处理"时结局的总体均值（结局越大越好）。
+在一个事先限定的策略类 $\Pi$ 里，最优策略是 $\pi^* = \arg\max_{\pi \in \Pi} V(\pi)$，
+一条策略 $\pi$ 的**后悔值**（regret）是 $V(\pi^*) - V(\pi)$。
+
+$V(\pi)$ 里的 $Y_i(\pi(X_i))$ 对大部分人是反事实，不能直接平均。
+Kitagawa & Tetenov (2018) 的**经验福利最大化**（empirical welfare maximization, EWM）
+用逆概率加权去估它；Athey & Wager (2021) 把它换成**双稳健得分**
+$\hat\Gamma_{ia}$——一个对 $\mathbb E[Y_i(a) \mid X_i]$ 近似无偏、且对冗余函数估计误差
+只有二阶敏感的量——然后求解
+
+$$
+\hat\pi = \arg\max_{\pi \in \Pi} \; \frac{1}{n} \sum_{i=1}^{n} \hat\Gamma_{i,\pi(X_i)} .
+$$ {#eq-ewm}
+
+他们证明了，只要冗余函数估计误差的乘积是 $o_p(n^{-1/2})$、且 $\Pi$ 的复杂度有限，
+$\hat\pi$ 的后悔值上界为 $O_p(\sqrt{\mathrm{VC}(\Pi)/n})$，达到极小极大最优速率。Zhou, Athey & Wager (2023) 把结论推广到 $d > 2$ 种处理。
+
+`policytree` 选的策略类 $\Pi$ 是**深度为 $k$ 的决策树**：每个内部节点是
+"$X_j \le v$ 走左、否则走右"的二分，每片叶子指定一种处理。
+这样得到的策略可以直接写成规则，这是它与"按 $\hat\tau(x) > 0$ 分配"这种黑箱策略的根本区别。
+
+## 三步工作流 {#sec-pipeline}
+
+```text
+(X, Y, W)            grf 训练一个森林（二值 / 多臂 / 工具变量 / 生存）
+   │  causal_forest() / multi_arm_causal_forest() / instrumental_forest() / causal_survival_forest()
+   ▼
+森林对象
+   │  ① double_robust_scores()：OOB 预测 → n × d 的得分矩阵 Gamma
+   ▼
+Gamma（每行一个人，每列一种处理）
+   │  ② policy_tree() / hybrid_policy_tree()：在深度 k 的树里找使 sum(Gamma[i, π(X_i)]) 最大者
+   ▼
+policy_tree 对象
+   │  ③ predict()：新数据 → 列号（1..d）或叶子编号
+   ▼
+分配结果 + 在留出样本上用 Gamma 评估策略价值
+```
+
+三步里**只有第 ② 步是 `policytree` 自己的算法**。第 ① 步只是把 grf 森林里的
+$\hat Y$、$\hat W$、$\hat\tau$ 组装成双稳健得分（见[第 2 页](02-scores.qmd)），
+第 ③ 步的评估包里没有函数，要自己写（见[第 6 页](06-evaluation.qmd)）。
+`policy_tree()` 本身并不关心 `Gamma` 从哪里来：任何 $n \times d$ 的数值奖励矩阵都可以喂给它，
+包括自己用 AIPW、TMLE 伪结局或已知的真实奖励构造的矩阵。
+
+下面是一条完整的最小链路，数据是本手册自造的**无混杂**观察性数据：
+
+```{r}
+#| label: pipeline
+n <- 2000
+X <- round(matrix(rnorm(n * 5), n, 5), 2)
+colnames(X) <- paste0("X", 1:5)
+e   <- plogis(0.5 * X[, 3])                                  # 倾向得分只依赖 X3
+W   <- rbinom(n, 1, e)
+tau <- (pmax(0, X[, 1]) + pmax(0, X[, 2]) - 1) / 2           # 真 CATE
+Y   <- pmax(0, X[, 3] + X[, 4]) + W * tau + rnorm(n)
+
+cf    <- causal_forest(X, Y, W, num.trees = 1000, seed = 1)  # 第 0 步
+Gamma <- double_robust_scores(cf)                            # 第 ① 步
+tree  <- policy_tree(X, Gamma, depth = 2)                    # 第 ② 步
+tree
+head(predict(tree, X))                                       # 第 ③ 步：1 = control, 2 = treated
+```
+
+真实的 $\tau(x)$ 只在 $X_1$ 或 $X_2$ 足够大时为正，树的前两刀正是切在 $X_2$、$X_1$ 上。
+右边那一刀切在 $X_3$ 上，而 $X_3$ 只影响倾向得分和基线结局、与 $\tau$ 无关；
+它分出的叶子 (7) 只有 `r sum(predict(tree, X, type = "node.id") == 7)` 个人。
+这是精确搜索在默认 `min.node.size = 1` 下拟合噪声的典型表现，
+[第 3 页](03-policy-tree.qmd#sec-minnode)专门讨论。
+
+## 输入数据的硬性要求 {#sec-input}
+
+`policy_tree()` 与 `predict()` 开头的校验（源码可见）决定了能喂什么：
+
+| 要求 | 违反时的表现 |
+|---|---|
+| `X`、`Gamma` 必须是 `matrix` 或 `data.frame` | `Currently the only supported data input types are: `matrix`, `data.frame`` |
+| `as.matrix(X)` 必须是数值型 | 含因子或字符列：`The feature matrix X must be numeric` |
+| 不得有缺失 | `Covariate matrix X contains missing values.` / `Gamma matrix contains missing values.` |
+| `nrow(X) == nrow(Gamma)` | `X and Gamma do not have the same number of rows` |
+| `split.step`、`min.node.size` 为 ≥ 1 的整数 | 各自的报错 |
+
+逻辑型列可以（`as.matrix()` 与数值列混合时会转成 0/1）；**因子不行**：
+
+```{r}
+#| label: input-factor
+df <- data.frame(stage = factor(sample(c("I", "II", "III"), n, TRUE)), age = X[, 1])
+try(policy_tree(df, Gamma, depth = 1))
+```
+
+分类变量有两种编码法，树的行为不同：
+
+- **整数编码**（`as.integer(stage)`）：切分 "$\le v$" 只能把**相邻**水平分到一边，
+  适合本来有序的变量（分期、等级）；
+- **one-hot**（`model.matrix(~ stage - 1, df)`）：每次切分把**一个**水平与其余分开，
+  深度 2 的树最多只能单独拎出两个水平。
+
+两种编码都会改变策略类 $\Pi$，是建模决定而不是技术细节。
+
+```{r}
+#| label: input-onehot
+Xdf <- cbind(model.matrix(~ stage - 1, df), age = df$age)
+head(Xdf, 3)
+class(policy_tree(Xdf, Gamma, depth = 1))
+```
+
+## policy_tree 对象的结构 {#sec-object}
+
+```{r}
+#| label: object-str
+str(unclass(tree), max.level = 1)
+```
+
+| 字段 | 含义 |
+|---|---|
+| `nodes` | 节点列表，**按层序编号**（根为 1，第 $k$ 个节点的子节点编号见 `left_child` / `right_child`） |
+| `_tree_array` | 给 C++ 预测用的 $m \times 4$ 数值矩阵，见下 |
+| `depth` | **调用时指定的深度**，不是剪枝后的实际深度 |
+| `n.actions` | `ncol(Gamma)` |
+| `n.features` | `ncol(X)`，`predict()` 只核对这一项 |
+| `action.names` | `colnames(Gamma)` 经 `type.convert()`；无列名时为 `1..d` |
+| `columns` | `colnames(X)`；无列名时为 `make.names(1:p)`，即 `"X1"`, `"X2"`, … |
+
+内部节点是 `list(is_leaf = FALSE, split_variable, split_value, left_child, right_child)`，
+叶子是 `list(is_leaf = TRUE, action)`：
+
+```{r}
+#| label: object-nodes
+str(tree$nodes[1:2])
+tree[["_tree_array"]]
+```
+
+`_tree_array` 每行一个节点：内部节点的四列是
+（切分变量列号, 切分值, 左子行号, 右子行号），叶子的第一列为 `-1`、第二列是处理列号。
+`predict(type = "node.id")` 返回的就是这里的行号，也就是 `print()` 里括号中的编号
+（见[第 5 页](05-predict-plot.qmd#sec-predict)）。
+
+::: {.callout-note}
+## `depth` 字段不随剪枝变化
+
+树在"同一节点左右两片叶子推荐相同处理"时会被剪掉（见[第 3 页](03-policy-tree.qmd#sec-objective)），
+但 `tree$depth` 和 `print()` 里的 `Tree depth:` 仍是调用时写的数字。
+要知道实际有几片叶子，数 `sum(sapply(tree$nodes, "[[", "is_leaf"))`。
+:::
+
+## 示例数据一：gen_data_epl() {#sec-epl}
+
+`gen_data_epl(n, type = c("continuous", "jump"))` 生成 Athey & Wager (2021)
+第 5.2 节的模拟数据，返回列表 `W, Z, tau, Y, X`。源码对应的数据生成过程是：
+
+$$
+\begin{aligned}
+X_i &\sim N(0, I_{10}), \qquad
+Z_i \sim \mathrm{Bern}\bigl(\mathrm{expit}(X_{i3})\bigr), \qquad
+\varepsilon_i \sim N(0,1), \\
+Q_i &\sim \mathrm{Bern}\bigl(\mathrm{expit}(\varepsilon_i + X_{i4})\bigr), \qquad
+W_i = Q_i \cdot Z_i, \\
+\tau(x) &= \begin{cases}
+\bigl(\max(0, x_1) + \max(0, x_2) - 1\bigr)/2 & \texttt{"continuous"}\\
+\operatorname{sign}(x_1 x_2)/2 & \texttt{"jump"}
+\end{cases}\\
+Y_i &= \max(0, X_{i3} + X_{i4}) + W_i\,\tau(X_i) + \varepsilon_i .
+\end{aligned}
+$$
+
+注意 $W_i$ 经 $Q_i$ **依赖结局噪声 $\varepsilon_i$**：接受处理的人天生结局就偏高。
+这是一个**工具变量设计**——$Z$ 是工具，$W$ 是内生处理。帮助页只写了
+"The DGP from section 5.2"，没有提醒这一点；拿它直接跑 `causal_forest()` 会怎样：
+
+```{r}
+#| label: epl-endogenous
+d <- gen_data_epl(4000, type = "continuous")
+c(true_ATE      = mean(d$tau),
+  naive_diff    = mean(d$Y[d$W == 1]) - mean(d$Y[d$W == 0]),
+  causal_forest = unname(average_treatment_effect(
+                    causal_forest(d$X, d$Y, d$W, num.trees = 500, seed = 1))[1]),
+  instrumental  = mean(double_robust_scores(
+                    instrumental_forest(d$X, d$Y, d$W, d$Z, num.trees = 500, seed = 1))[, 2]))
+```
+
+因果森林只校正了**观测到的** $X$，校正不了 $\varepsilon$，
+于是把一个真值为负的平均效应估成明显为正——据此学出来的策略会让几乎所有人接受处理。
+**`gen_data_epl()` 必须配 `instrumental_forest()` 用**
+（上游 pkgdown 文章的 Example 3 确实是这样做的）。
+严格说工具变量估计的是依从者的局部效应，与 `mean(tau)` 不必相等，但符号与量级一致。
+完整的工具变量策略学习见[第 7 页](07-multi-iv-surv.qmd#sec-iv)。
+
+`type = "jump"` 时 $\tau$ 只取 $\pm 1/2$，在象限边界上跳变，
+是检验"树能否恰好切在 0 上"的好例子；`"continuous"` 时 $\tau$ 在 $X_1, X_2$ 上连续，
+上面这份数据里只有 `r round(100 * mean(d$tau > 0))`% 的人 $\tau > 0$。
+
+## 示例数据二：gen_data_mapl() {#sec-mapl}
+
+`gen_data_mapl(n, p = 10, sigma2 = 4)` 生成 Zhou, Athey & Wager (2023) 第 6.4.1 节的
+**三处理**数据。$X \sim U[0,1]^p$（`p < 7` 直接报错），按 $X_5, X_7$ 把空间分成三个区域，
+每个区域的最优处理不同：
+
+| 区域 | 条件（源码） | 三种处理的真实奖励 $\mu_a$ | 最优 |
+|---|---|---|---|
+| 0 | $X_5 < 0.6$ 且 $X_7 > 0.35$ | $(3, 2, 1)$ | 处理 0 |
+| 2 | 两个椭圆之一：$X_5^2/0.6^2 + X_7^2/0.35^2 < 1$，或 $(X_5-1)^2/0.4^2 + (X_7-1)^2/0.35^2 < 1$ | $(-1.5, 0, 1.5)$ | 处理 2 |
+| 1 | 其余 | $(1.5, 2, 1.5)$ | 处理 1 |
+
+两个椭圆分别只落在 $X_7 < 0.35$ 与 $X_5 > 0.6$ 的范围内，与区域 0 不相交，三个区域互斥。
+处理分配概率随区域变化（区域 0、1 为 $(0.2, 0.6, 0.2)$，区域 2 为 $(0.4, 0.2, 0.4)$），
+所以这是**依观测变量混杂**的观察性数据，结局 $Y \sim N(\mu_{A}, \sigma^2)$，默认噪声方差 4。
+
+```{r}
+#| label: mapl
+m <- gen_data_mapl(3000)
+names(m)
+table(action = m$action, region = m$region)
+head(m$mu.all, 3)          # 每个人在三种处理下的真实期望结局
+```
+
+返回列表里的 `mu.all` 是**真实奖励矩阵**，可以直接当 `Gamma` 喂给 `policy_tree()`，
+得到"如果奖励已知，深度 2 的树能做到多好"的上限：
+
+```{r}
+#| label: mapl-oracle
+oracle_tree <- policy_tree(m$X, m$mu.all, depth = 2)
+oracle_tree
+```
+
+两点值得注意：
+
+- 处理的**名字**是字符串 `"0"`, `"1"`, `"2"`（`colnames(mu.all)`），经 `type.convert()`
+  后变成整数 `0:2`；而 `print()` 里的 `action:` 与 `predict()` 的返回值都是**列号** `1:3`。
+  两套编号错开一位，是这个包最容易出错的地方，见[第 5 页](05-predict-plot.qmd#sec-actions)。
+- 区域边界是椭圆，深度 2 的轴平行树只能近似它；这正是"可解释性换价值"的代价，
+  [第 7 页](07-multi-iv-surv.qmd#sec-multi)会量化它。

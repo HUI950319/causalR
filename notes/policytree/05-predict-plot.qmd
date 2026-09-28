@@ -1,0 +1,234 @@
+---
+title: "5. predict()、print()、plot() 与内部函数"
+subtitle: "policytree 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(policytree)
+library(grf)
+set.seed(20260928)
+```
+
+树找到之后的三件事：给新样本分配处理（`predict()`）、把规则读出来（`print()`）、
+画出来（`plot()`）。本页还覆盖四个有帮助页但未导出的内部函数。
+这一页的两个坑——返回值是**列号**、预测时**不核对列名**——比算法本身更容易出错。
+
+```{r}
+#| label: data
+n <- 2000
+X <- round(matrix(rnorm(n * 5), n, 5), 2)
+colnames(X) <- paste0("X", 1:5)
+W   <- rbinom(n, 1, plogis(0.5 * X[, 3]))
+tau <- (pmax(0, X[, 1]) + pmax(0, X[, 2]) - 1) / 2
+Y   <- pmax(0, X[, 3] + X[, 4]) + W * tau + rnorm(n)
+cf    <- causal_forest(X, Y, W, num.trees = 1000, seed = 1)
+Gamma <- double_robust_scores(cf)
+tree  <- policy_tree(X, Gamma, depth = 2, min.node.size = 50)
+tree
+```
+
+## predict() {#sec-predict}
+
+```r
+predict(object, newdata, type = c("action.id", "node.id"), ...)
+```
+
+| `type` | 返回 |
+|---|---|
+| `"action.id"`（默认） | 每个样本被分配到的处理的**列号**，取值 `1..d` |
+| `"node.id"` | 每个样本落入的叶子编号，即 `print()` 括号里的数字、`tree$nodes` 的下标 |
+
+```{r}
+#| label: predict
+a    <- predict(tree, X)
+leaf <- predict(tree, X, type = "node.id")
+table(action = a, leaf = leaf)
+```
+
+`node.id` 按**层序**紧凑编号：根为 1，深度 2 的满树叶子是 4–7；
+剪枝后重新编号，这里右子 (3) 直接是叶子，左子的两片叶子就成了 4、5。
+它最常见的用途是按叶子汇总双稳健得分，看每片叶子的估计效应（[第 6 页](06-evaluation.qmd#sec-leaf)）。
+
+`predict()` 的输入检查：必须是数值 `matrix` / `data.frame`、不得有缺失、列数必须与训练时相同：
+
+```{r}
+#| label: predict-checks
+try(predict(tree, X[, 1:4]))
+Xna <- X[1:5, ]; Xna[1, 1] <- NA
+try(predict(tree, Xna))
+identical(predict(tree, as.data.frame(X)), a)
+```
+
+## 返回的是列号，不是处理名 {#sec-actions}
+
+二值因果森林的得分列名是 `control`、`treated`，所以 `predict()` 的 1 是 control、2 是 treated。
+要得到与原始 `W` 一致的 0/1 编码，要**减 1**；要得到处理名，用 `tree$action.names` 去索引：
+
+```{r}
+#| label: actions-binary
+head(a)
+head(a - 1)                       # 与 W 的 0/1 编码一致
+head(tree$action.names[a])        # 处理名
+```
+
+处理名本身像数字时最容易出错。`gen_data_mapl()` 的三种处理叫 `"0"`、`"1"`、`"2"`：
+
+```{r}
+#| label: actions-mapl
+m  <- gen_data_mapl(3000)
+tm <- policy_tree(m$X, m$mu.all, depth = 2)
+tm$action.names                   # type.convert() 之后是整数 0:2
+am <- predict(tm, m$X)
+table(predict = am)               # 却是 1:3
+```
+
+`print()` 输出的 `Actions:  1: 0 2: 1 3: 2` 与叶子里的 `action: 3` 用的也是列号。
+如果把 `predict()` 的返回值直接当成处理名，拿去和"真实最优处理"比对，每个人都错开一位：
+
+```{r}
+#| label: actions-mapl-wrong
+best <- tm$action.names[max.col(m$mu.all)]    # 每个人真实的最优处理名：0 / 1 / 2
+c(wrong = mean(am == best),                   # 把列号当处理名
+  right = mean(tm$action.names[am] == best))  # 先转成处理名
+```
+
+这里的树是用真实奖励 `mu.all` 训练的，本该有很高的吻合率；错开一位后吻合率直接掉到很低，
+而且不会报任何错。
+
+稳妥的写法是**始终经 `action.names` 转换**：`tree$action.names[predict(tree, newX)]`。
+
+## 预测时不核对列名 {#sec-colorder}
+
+帮助页写着 newdata "should have the same number of columns as the training matrix,
+and the columns must appear in the same order"。但源码只检查了列数
+（`tree$n.features != ncol(newdata)`），**不看列名**。把两个切分变量的列对调：
+
+```{r}
+#| label: colorder
+Xswap <- X[, c("X2", "X1", "X3", "X4", "X5")]   # 列名跟着换了位置
+mean(predict(tree, Xswap) != a)                   # 分配改变的比例，没有任何提示
+```
+
+新数据来自另一张表、`select()` 时顺序不同、或者多了/少了一列又补齐时，都会发生这种事。
+预测前加一行断言：
+
+```{r}
+#| label: colorder-guard
+safe_predict <- function(tree, newdata, ...) {
+  stopifnot(identical(colnames(newdata), tree$columns))
+  predict(tree, newdata, ...)
+}
+try(safe_predict(tree, Xswap))
+```
+
+训练时 `X` 没有列名，`tree$columns` 会是 `"X1"`, `"X2"`, … 这些 `make.names()` 生成的名字，
+断言就失去了意义——所以训练时一定给 `X` 起列名。
+
+## print() {#sec-print}
+
+`print()` 的输出由四部分组成：`Tree depth`（参数值，不是剪枝后的实际深度）、
+`Actions`（列号与处理名的对照；处理名恰为 `1..d` 时只打印列号）、
+以及按深度缩进的切分规则。切分值用 `signif()` 保留 6 位有效数字。
+左子是 "$\le$ 切分值"，右子是 "$>$ 切分值"：
+
+```{r}
+#| label: print
+tree
+```
+
+读作：`X1` $\le$ 切分值时进入 (2)，否则进入 (3)；叶子里的 `action` 是列号。
+
+## plot() {#sec-plot}
+
+```r
+plot(x, leaf.labels = NULL, ...)
+```
+
+`plot()` 把树转成 Graphviz 的 DOT 文本，再用 `DiagrammeR::grViz()` 画成 HTML 小部件。
+`DiagrammeR` 只在 Suggests 里，没装时报 `Package "DiagrammeR" must be installed to plot trees.`。
+默认叶子标签是 `leaf node action = 1` 这样的列号，给 `leaf.labels` 换成处理名更易读，
+长度必须等于处理数：
+
+```{r}
+#| label: plot
+plot(tree, leaf.labels = c("不治疗", "治疗"))
+```
+
+```{r}
+#| label: plot-bad-labels
+try(plot(tree, leaf.labels = "治疗"))
+```
+
+根节点的两条边标着 True / False，True（左）对应 "$\le$ 切分值"；更深的边不再标注，同样是左真右假。
+
+::: {.callout-warning}
+## 图上的切分值只保留两位小数
+
+生成 DOT 文本的内部函数 `create_dot_body()` 写的是 `round(node$split_value, 2)`，
+而 `print()` 用的是 `signif()`。变量量纲很小时，图上的规则会失真：
+
+```{r}
+#| label: plot-rounding
+Xs <- X
+Xs[, "X1"] <- Xs[, "X1"] / 1000          # 换个单位
+ts <- policy_tree(Xs, Gamma, depth = 1)
+ts$nodes[[1]]$split_value                # 真实切分值
+grepl("<= 0 ", policytree:::export_graphviz(ts))   # 图上写的是 X1 <= 0
+```
+
+画图前把变量换成量纲合适的单位，或者以 `print()` 的输出为准。
+:::
+
+要把图存成文件，帮助页给的办法是 `DiagrammeRsvg` 包（本机未安装，下面这段**未在本站执行**）：
+
+```r
+tree.plot <- plot(tree)
+cat(DiagrammeRsvg::export_svg(tree.plot), file = "tree.svg")
+# 再转 PNG / PDF：rsvg::rsvg_png("tree.svg", "tree.png")
+```
+
+也可以把 `policytree:::export_graphviz()` 的 DOT 文本交给命令行的 `dot -Tpdf`。
+
+## 内部函数 {#sec-internal}
+
+以下四个函数有帮助页但没有导出，需要 `policytree:::` 访问。
+
+### export_graphviz() 与 create_dot_body()
+
+`export_graphviz(tree)` 返回完整的 DOT 字符串，`create_dot_body(tree, index = 1)`
+从第 `index` 个节点开始递归生成节点与边的描述。叶子标签取自 `tree$leaf.labels`——
+这个字段只由 `plot()` 临时写入，**直接调用时它不存在，叶子标签是空的**：
+
+```{r}
+#| label: dot
+t1 <- policy_tree(X, Gamma, depth = 1)
+cat(policytree:::export_graphviz(t1))
+t1$leaf.labels <- c("control", "treated")
+cat(policytree:::create_dot_body(t1))
+```
+
+### make_tree() 与 predict_test_tree()
+
+这两个是给包的单元测试用的：`make_tree(X, depth, d)` 从 `X` 里随机抽切分变量和切分值、
+在叶子里随机抽处理，造一棵随机树；`predict_test_tree(tree, newdata)` 用纯 R 逐样本走树。
+`make_tree()` 造的树**没有 `_tree_array`**，所以不能交给 `predict()`：
+
+```{r}
+#| label: make-tree
+rt <- policytree:::make_tree(X, depth = 2, d = 3)
+class(rt)
+head(policytree:::predict_test_tree(rt, X))
+try(predict(rt, X))
+```
+
+`predict_test_tree()` 对 `policy_tree()` 找到的正常树也能用，结果与 `predict()` 一致，
+可以用来核对 C++ 预测：
+
+```{r}
+#| label: predict-test-tree
+all(policytree:::predict_test_tree(tree, X) == predict(tree, X))
+```

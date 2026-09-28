@@ -1,0 +1,283 @@
+---
+title: "3. policy_tree()：精确树搜索"
+subtitle: "policytree 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(policytree)
+library(grf)
+set.seed(20260928)
+```
+
+`policy_tree()` 是整个包的核心：在所有深度不超过 `depth` 的轴平行决策树里，
+**穷举**出使奖励之和最大的那一棵。本页逐个说明它的参数，
+重点是两件帮助页写了但没有演示的事——默认 `min.node.size = 1` 的过拟合，
+以及运行时间随 $n$、$p$、取值个数的增长——并补上两件帮助页没写的事：
+怎样加样本权重，以及更快的替代求解器 `fastpolicytree`。
+
+## 签名与参数
+
+```r
+policy_tree(X, Gamma, depth = 2, split.step = 1, min.node.size = 1, verbose = TRUE)
+```
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `X` | — | $n \times p$ 数值 `matrix` / `data.frame`，无缺失；列名会存进树里 |
+| `Gamma` | — | $n \times d$ 奖励矩阵，第 $a$ 列是"给第 $i$ 人处理 $a$"的奖励；列名即处理名 |
+| `depth` | `2` | 树的最大深度；`0` 表示不切分、所有人同一处理 |
+| `split.step` | `1` | 每隔几个样本才考虑一个候选切点；`1` 为穷举 |
+| `min.node.size` | `1` | 叶子的最小样本量 |
+| `verbose` | `TRUE` | 打印规模警告；交互会话中长时间求解时显示心跳进度 |
+
+返回 `policy_tree` 对象，结构见[第 1 页](01-overview.qmd#sec-object)。
+
+## 目标函数、切分规则与剪枝 {#sec-objective}
+
+`policy_tree()` 求解
+
+$$
+\hat\pi = \arg\max_{\pi \in \Pi_k} \sum_{i=1}^{n} \Gamma_{i,\pi(X_i)},
+$$
+
+$\Pi_k$ 是深度 $\le k$ 的树：每个内部节点把 $X_j \le v$ 的样本送往左子、其余送往右子，
+候选切点 $v$ 取自样本中 $X_j$ 的观测值。每片叶子内部，最优处理就是该叶子里
+**列和最大**的那一列。与 CART 的逐层贪心不同，这里对所有变量、所有切点的组合一起优化，
+得到的是**全局最优**解（Sverdrup et al. 2020）。
+
+帮助页的 Description 说："如果某节点左右两片叶子的最优处理相同，该节点被剪掉。"
+下面把每个人的 treated 得分都抬高 5，人人都该治疗：
+
+```{r}
+#| label: data
+n <- 2000
+X <- round(matrix(rnorm(n * 5), n, 5), 2)
+colnames(X) <- paste0("X", 1:5)
+W   <- rbinom(n, 1, plogis(0.5 * X[, 3]))
+tau <- (pmax(0, X[, 1]) + pmax(0, X[, 2]) - 1) / 2
+Y   <- pmax(0, X[, 3] + X[, 4]) + W * tau + rnorm(n)
+cf    <- causal_forest(X, Y, W, num.trees = 1000, seed = 1)
+Gamma <- double_robust_scores(cf)
+
+G_all <- Gamma
+G_all[, "treated"] <- G_all[, "treated"] + 5
+policy_tree(X, G_all, depth = 2, min.node.size = 10)
+```
+
+剪枝确实发生了，整棵树只剩一片叶子——但 `Tree depth:` 仍然写 2，
+这个字段是调用时的参数，不是实际深度。上面加了 `min.node.size = 10`，原因见下一节。
+
+## min.node.size：默认值会切出单人叶子 {#sec-minnode}
+
+同一份 `G_all`，用默认的 `min.node.size = 1`：
+
+```{r}
+#| label: minnode-default
+t1 <- policy_tree(X, G_all, depth = 2)
+t1
+table(leaf = predict(t1, X, type = "node.id"))
+sum(G_all[, "control"] > G_all[, "treated"])     # 逐人看，得分偏好 control 的人数
+```
+
+人人加 5 之后，逐人比较仍有少数几个人的 `control` 得分高于 `treated`——双稳健得分是
+**有噪声的无偏估计**，单个人的得分可以离谱。精确搜索会不惜代价把这些人切出来，
+于是树里出现了只有一两个人、推荐 `control` 的叶子。
+这些叶子对应的"规则"（例如某个变量恰好等于某个值）毫无意义，
+在新样本上也不会带来任何收益。
+
+这不是算法错误，而是**最大化样本内奖励之和**的必然结果：
+树越深、叶子越小，越能拟合得分里的噪声。`min.node.size` 是最直接的约束：
+
+```{r}
+#| label: minnode-sweep
+sapply(c(1, 5, 10, 50), function(m) {
+  t <- policy_tree(X, G_all, depth = 2, min.node.size = m)
+  c(min.node.size = m, n_leaves = sum(sapply(t$nodes, `[[`, "is_leaf")))
+})
+```
+
+没有抬高得分的原始数据上，差别体现在留出样本的**真实**策略价值上
+（此处能算真值，因为模拟数据里 $\tau$ 已知）：
+
+```{r}
+#| label: minnode-heldout
+train <- sample(n, n / 2)
+test  <- setdiff(seq_len(n), train)
+sapply(c(1, 20, 100), function(m) {
+  t <- policy_tree(X[train, ], Gamma[train, ], depth = 2, min.node.size = m)
+  a <- predict(t, X[test, ])
+  c(min.node.size = m,
+    smallest_leaf = min(table(predict(t, X[train, ], type = "node.id"))),
+    true_gain     = round(mean(tau[test] * (a == 2)), 4))
+})
+```
+
+`true_gain` 是留出样本上"按树分配"相对"谁都不治"的真实平均增益。
+这份数据上三种设置的真实增益几乎相同（默认设置下这次最小的叶子也有几十人）：
+`min.node.size` 的主要作用是防止前面那种单人叶子，而不是提高价值。
+一片小叶子可能碰巧是对的，但它**从不**是一个可信的规则。实践中建议按样本量设一个有实际意义的下限
+（例如每片叶子至少占样本的 2%–5%），并始终在留出样本上评估（[第 6 页](06-evaluation.qmd)）。
+
+## depth = 0：最好的单一处理 {#sec-depth0}
+
+`depth = 0` 不切分，返回列和最大的那一种处理，可以当作"一刀切"基准：
+
+```{r}
+#| label: depth0
+policy_tree(X, Gamma, depth = 0)
+names(which.max(colSums(Gamma)))
+```
+
+## 运行时间 {#sec-runtime}
+
+帮助页给出的摊还复杂度是
+
+$$
+O\bigl(p^k\, n^k\, (\log n + d) + p\, n \log n\bigr),
+$$
+
+$n$ 指每个变量的**不同取值个数**（不是样本量本身），$k$ 是深度。
+所以深度 2 的运行时间对 $n$ 和 $p$ 都是平方增长；把连续变量取整、降低取值个数，
+比减少样本量有效得多。本机实测（深度 2，两种处理，随机数据）：
+
+```{r}
+#| label: runtime
+time_it <- function(n, p, d = 2, digits = NULL, split.step = 1) {
+  Xr <- matrix(rnorm(n * p), n, p)
+  if (!is.null(digits)) Xr <- round(Xr, digits)
+  Gr <- matrix(rnorm(n * d), n, d)
+  unname(system.time(policy_tree(Xr, Gr, depth = 2, split.step = split.step,
+                                 verbose = FALSE))["elapsed"])
+}
+rt <- expand.grid(n = c(1000, 2000, 4000), p = 5)
+rt$continuous   <- mapply(time_it, rt$n, rt$p)
+rt$round_1      <- mapply(time_it, rt$n, rt$p, digits = 1)
+rt$split_step10 <- mapply(time_it, rt$n, rt$p, split.step = 10)
+rt
+c(p5  = time_it(2000, 5), p10 = time_it(2000, 10))       # p 翻倍
+c(d2  = time_it(2000, 5, d = 2), d10 = time_it(2000, 5, d = 10))  # 处理数
+```
+
+$n$ 翻倍，连续变量的耗时约涨四倍；取整到一位小数后每个变量只剩几十个取值，
+耗时降到约十分之一（仍随 $n$ 增长，因为复杂度里还有排序与逐样本累加的项）；
+$p$ 翻倍也是约四倍；处理数 $d$ 从 2 增到 10，耗时增长不到三倍。
+上游 pkgdown 文章给过更大规模的参考（深度 2、$p = 30$、$d = 20$）：
+$n = 1000$ 要 1.5 分钟、$n = 10\,000$ 要 3 小时，`split.step = 10` 时分别是 7 秒和 14 分钟。
+深度 3 更是只适合小数据：[第 4 页](04-hybrid.qmd)里 $n = 1000$、5 个取整变量的精确深度 3 树要几秒，
+$n$ 稍大就要换 `hybrid_policy_tree()`。
+
+`verbose = TRUE` 时，函数在三种情况下发出**建议性警告**（源码中的阈值）：
+
+| 条件 | 警告大意 |
+|---|---|
+| `split.step == 1` 且某变量不同取值 > 20 000 | 考虑 `split.step` 或离散化 |
+| `ncol(X) > 50` | 先按 `grf::variable_importance()` 降维 |
+| `depth > 2` 且 `nrow(X) > 5000` | 改用 `hybrid_policy_tree()` |
+
+警告只是提醒，不会阻止计算。1.2.4 起求解器可以用 Ctrl+C / Esc 中断，
+交互会话中还会显示一个心跳进度指示；非交互环境（`Rscript`、knitr）里不显示。
+
+## split.step 与手工离散化 {#sec-splitstep}
+
+`split.step = s` 表示每个变量排序后每隔 $s$ 个样本才考虑一个切点，是对穷举的近似。
+帮助页建议：能按问题本身离散化（年龄取整到岁、化验值取整到临床有意义的精度）时，
+手工离散化控制得更精细。两种近似都会损失一些样本内奖励：
+
+```{r}
+#| label: splitstep
+Xc <- matrix(rnorm(3000 * 5), 3000, 5)
+Gc <- cbind(0, 0.3 * Xc[, 1] + rnorm(3000))
+reward <- function(t, Xe) sum(Gc[cbind(seq_len(nrow(Gc)), predict(t, Xe))])
+c(exact        = reward(policy_tree(Xc, Gc, 2, verbose = FALSE), Xc),
+  split_step10 = reward(policy_tree(Xc, Gc, 2, split.step = 10, verbose = FALSE), Xc),
+  round_1      = reward(policy_tree(round(Xc, 1), Gc, 2, verbose = FALSE), round(Xc, 1)))
+```
+
+注意：用取整后的 `X` 训练的树，预测时也要喂**同样取整**的 `X`，
+否则切点附近的样本会被分到另一侧。
+
+## 样本权重：没有参数，但可以缩放行 {#sec-weights}
+
+`policy_tree()` 没有 `sample.weights` 参数。由于目标是**按行求和**，
+给第 $i$ 行乘上权重 $w_i$ 就等价于加权目标 $\sum_i w_i \Gamma_{i,\pi(X_i)}$。
+整数权重下可以直接验证它与"把第 $i$ 行复制 $w_i$ 次"给出同一棵树：
+
+```{r}
+#| label: weights
+w <- sample(1:3, n, replace = TRUE)
+t_scaled <- policy_tree(X, Gamma * w, depth = 2)
+idx      <- rep(seq_len(n), w)
+t_dup    <- policy_tree(X[idx, ], Gamma[idx, ], depth = 2)
+identical(t_scaled[["_tree_array"]], t_dup[["_tree_array"]])
+```
+
+抽样权重、把样本推广到目标人群的权重都可以这样加。
+注意 `min.node.size` 数的仍是**行数**而不是权重之和。
+
+## 处理成本 {#sec-cost}
+
+处理有成本 $c$（以结局的量纲计）时，从对应列减去 $c$ 即可：
+
+```{r}
+#| label: cost
+G_cost <- Gamma
+G_cost[, "treated"] <- G_cost[, "treated"] - 0.2
+t_cost <- policy_tree(X, G_cost, depth = 2, min.node.size = 50)
+c(treated_share_no_cost = mean(predict(policy_tree(X, Gamma, 2, min.node.size = 50), X) == 2),
+  treated_share_cost    = mean(predict(t_cost, X) == 2))
+```
+
+帮助页示例用 `grf::average_treatment_effect()` 的估计值当"成本"，
+含义是"只治疗获益高于平均水平的人"，这是一种相对标准而非真实成本。
+两点提醒：减成本只对 $(\hat\Gamma_{i0}, \hat\Gamma_{i1})$ 形式的得分正确，
+工具变量和生存森林的正负号得分会把门槛变成 $c/2$（[第 2 页](02-scores.qmd#sec-pm)）；
+有预算上限（"最多治疗 20% 的人"）时，树的目标函数表达不了这个约束，
+应当用 [maq 包](../grf/11-maq.qmd) 的 Qini 曲线。
+
+## 协变量太多时 {#sec-varsel}
+
+$p^k$ 使变量数成为主要瓶颈。帮助页的建议是只用因果森林变量重要性最高的几个：
+
+```{r}
+#| label: varsel
+vi  <- variable_importance(cf)
+top <- order(vi, decreasing = TRUE)[1:3]
+colnames(X)[top]
+policy_tree(X[, top], Gamma, depth = 2, min.node.size = 50)
+```
+
+这样选出来的变量在同一份数据上又用于找树和评估，会让样本内结果更乐观；
+严格的做法是把变量筛选也放进留出/交叉拟合的流程里。
+另外 `variable_importance()` 统计的是森林分裂频率，衡量"$\tau$ 随它变化多少"，
+与"它对分配决策有多重要"不完全是一回事。
+
+## 更快的求解器：fastpolicytree {#sec-fast}
+
+README 推荐了两个替代求解器：CRAN 上的
+[`fastpolicytree`](https://CRAN.R-project.org/package=fastpolicytree)（C 实现）
+和 GitHub 上的 [`sparsepolicytree`](https://github.com/beniaminogreen/sparsepolicytree)（Rust 实现）。
+前者返回的就是 `policy_tree` 类对象，`predict()`、`print()`、`plot()` 可以照用。
+本机对照（深度 3，$n = 1000$，5 个取整变量）：
+
+```{r}
+#| label: fast
+#| message: false
+library(fastpolicytree)
+Xf <- round(matrix(rnorm(1000 * 5), 1000, 5), 1)
+Gf <- cbind(0, 0.3 * Xf[, 1] - 0.3 * Xf[, 2] + rnorm(1000))
+tm_pt  <- system.time(t_pt  <- policy_tree(Xf, Gf, depth = 3, verbose = FALSE))["elapsed"]
+tm_fpt <- system.time(t_fpt <- fastpolicytree(Xf, Gf, depth = 3))["elapsed"]
+c(policytree = unname(tm_pt), fastpolicytree = unname(tm_fpt))
+class(t_fpt)
+mean(predict(t_pt, Xf) == predict(t_fpt, Xf))       # 分配完全一致
+```
+
+两者给出同一个最优分配（精确算法的最优值唯一，树的写法可以不同），
+这次 `fastpolicytree` 快了约 `r round(tm_pt / tm_fpt)` 倍
+（本机在别的规模上测到 5–10 倍，深度 2 时同样一致）。两点差异：它的 `depth` **默认是 3** 而不是 2；
+没有 `split.step`，取而代之的是一组 `strategy.*` 调优开关。
+本手册只核对了 `fastpolicytree` 1.0 在上述规模下的一致性，没有逐项测试它的开关。

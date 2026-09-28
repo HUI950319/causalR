@@ -1,0 +1,155 @@
+---
+title: "8. 实测清单与工作流"
+subtitle: "全部失效路径、默认值陷阱，以及一套可照抄的流程"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+本页汇总前七页的全部实测结论，并给出一套可以直接抄的流程。
+所有结论在 2026-09-28、Windows R 4.4.3、`policytree` 1.2.5、`grf` 2.6.1 下复核。
+
+## 一、会报错的路径
+
+| # | 触发条件 | 报错 | 修法 |
+|---:|---|---|---|
+| 1 | `X` 含因子或字符列 | `The feature matrix X must be numeric` | 有序变量整数编码，无序变量 one-hot（[第 1 页](01-overview.qmd#sec-input)） |
+| 2 | `X`、`Gamma` 或 `newdata` 有缺失 | `Covariate matrix X contains missing values.` 等 | 先插补或删行；`Gamma` 的行要与 `X` 同步删 |
+| 3 | `causal_forest` 的处理不是 0/1 | `policytree currently only supports causal forest with binary treatment.` | 多值处理用 `multi_arm_causal_forest` |
+| 4 | `instrumental_forest` 的工具不是 0/1 | `... only supports instrumental forest with binary instrument.` | 无包内替代 |
+| 5 | 多臂森林的 `outcome` 名字对不上 | `` `outcome` should be a column number/name specifying a column in Y. `` | 用 `colnames(Y)` 里的名字或列号 |
+| 6 | `hybrid_policy_tree()` 的 `search.depth >= depth` | `` `search.depth` should be less than `depth`. `` | `depth` 至少比 `search.depth` 大 1 |
+| 7 | `hybrid_policy_tree()` 的 `depth > 20` | `Specified depth is too large ...` | — |
+| 8 | `predict()` 的列数与训练时不同 | `This tree was trained with 5 variables. Provided: 4` | 见下表第 11 条，列数对了也不够 |
+| 9 | `plot()` 的 `leaf.labels` 长度不等于处理数 | `If provided, `leaf.labels` should be a vector ...` | 长度 = `ncol(Gamma)` |
+| 10 | 未装 `DiagrammeR` 时 `plot()` | `Package "DiagrammeR" must be installed to plot trees.` | 装包，或用 `print()` |
+
+## 二、不报错但结果是错的
+
+::: {.callout-important}
+## 这一组才是真正的风险
+
+| # | 条件 | 表现 | 判别 | 修法 |
+|---:|---|---|---|---|
+| 11 | `predict()` 的 `newdata` 列顺序与训练时不同 | 静默按列位置套用规则，实测互换两列后 19% 的人分配改变 | 无提示 | 预测前 `stopifnot(identical(colnames(newdata), tree$columns))`（[第 5 页](05-predict-plot.qmd#sec-colorder)） |
+| 12 | 把 `predict()` 的返回值当处理名 | 返回的是列号 `1..d`；处理名为 `0,1,2` 时整体错开一位，与真实最优的吻合率从 92.7% 掉到 0.03% | `tree$action.names` 与 `1:d` 是否相同 | 始终 `tree$action.names[predict(tree, X)]`（[第 5 页](05-predict-plot.qmd#sec-actions)） |
+| 13 | `double_robust_scores(forest, newdata = )` | 新数据的 $\hat\tau$ 与训练集的 $\hat m$、$\hat e$ 循环拼接；行数整除 $n$ 时无警告 | 返回行数等于训练集行数 | 得分只在训练样本上算（[第 2 页](02-scores.qmd#sec-newdata)） |
+| 14 | 工具变量 / 生存森林的得分上直接扣成本 | 得分是 $(-\hat\gamma, \hat\gamma)$，门槛变成 $c/2$ | `all(rowSums(Gamma) == 0)` | 先改写成 `cbind(0, Gamma[, 2])`（[第 2 页](02-scores.qmd#sec-pm)） |
+| 15 | 同上，用 `Gamma[cbind(i, a)] - Gamma[i, 1]` 评估 | 增益翻倍 | 同上 | 同上（[第 7 页](07-multi-iv-surv.qmd#sec-iv)） |
+| 16 | `gen_data_epl()` 的数据喂给 `causal_forest()` | 处理内生，ATE 估成正的（真值为负），学到的树给 94% 的人处理、真实增益为负 | 读源码：`W` 依赖结局噪声 | 用 `instrumental_forest()`（[第 1 页](01-overview.qmd#sec-epl)） |
+| 17 | 在找树的样本上评估策略 | 样本内增益平均比真值高约一半 | — | 留出样本或交叉拟合（[第 6 页](06-evaluation.qmd#sec-optimism)） |
+| 18 | `plot()` 读切分值 | 切分值四舍五入到两位小数，0.00068 画成 `<= 0` | 与 `print()` 对照 | 换量纲，或以 `print()` 为准（[第 5 页](05-predict-plot.qmd#sec-plot)） |
+| 19 | 用取整后的 `X` 训练、未取整的 `X` 预测 | 切点附近的样本分到另一侧 | — | 训练与预测用同一套预处理（[第 3 页](03-policy-tree.qmd#sec-splitstep)） |
+| 20 | `multi_causal_forest()` 传 `tune.*`、`orthog.boosting` | 这些参数不会转发给 grf，静默无效 | 读源码 | 直接用 `grf::multi_arm_causal_forest()`（[第 2 页](02-scores.qmd#sec-deprecated)） |
+:::
+
+## 三、默认值与接口陷阱
+
+| 项 | 默认 / 现状 | 后果 | 建议 |
+|---|---|---|---|
+| `min.node.size` | `1` | 精确搜索会切出单人叶子去拟合得分噪声（[第 3 页](03-policy-tree.qmd#sec-minnode)） | 设为样本量的 2%–5% 或有实际意义的下限 |
+| `depth` 字段与 `print()` 的 `Tree depth` | 调用时的参数值 | 剪枝后不反映实际深度 | 数叶子：`sum(sapply(tree$nodes, "[[", "is_leaf"))` |
+| 倾向得分截断 | 无 | 重叠性差时个别得分极大，左右切分 | 先看 `summary(forest$W.hat)`，必要时修剪样本（[第 2 页](02-scores.qmd#sec-cf)） |
+| `compliance.score` | `NULL`：每次调用重拟合一个 2000 棵树的依从性森林 | 慢，且每次结果略有不同 | 算好一次，显式传入（[第 2 页](02-scores.qmd#sec-iv)） |
+| 多臂基线 | 因子的第一个水平 | 得分列顺序、`predict()` 列号都以它为准 | 需要时先 `relevel()` |
+| 样本权重 | `policy_tree()` 没有该参数 | — | 权重乘到 `Gamma` 的行上（[第 3 页](03-policy-tree.qmd#sec-weights)） |
+| 预算约束 | 目标函数表达不了 | — | 用 [maq](../grf/11-maq.qmd) |
+| `verbose` | `TRUE` | 只发建议性警告；进度指示仅在交互会话显示 | 批处理里可设 `FALSE` |
+| `fastpolicytree()` | `depth = 3` | 与 `policy_tree()` 的默认 2 不同 | 显式写 `depth` |
+
+## 四、可照抄的工作流
+
+二值处理、观察性数据。每一步的理由在括号里的页面。
+
+```{r}
+#| label: template-data
+library(policytree)
+library(grf)
+set.seed(20260928)
+
+# 0. 数据：X 必须是有列名的数值矩阵（第 1 页）
+n <- 4000
+X <- round(matrix(rnorm(n * 5), n, 5), 2)            # 连续变量取整，降低取值个数（第 3 页）
+colnames(X) <- c("age_z", "bmi_z", "lab_z", "score_z", "noise_z")
+tau <- (pmax(0, X[, 1]) + pmax(0, X[, 2]) - 1) / 2
+W <- rbinom(n, 1, plogis(0.5 * X[, 3]))
+Y <- pmax(0, X[, 3] + X[, 4]) + W * tau + rnorm(n)
+```
+
+```{r}
+#| label: template-scores
+# 1. 森林与得分；先看重叠性（第 2 页）
+cf <- causal_forest(X, Y, W, num.trees = 2000, seed = 1)
+summary(cf$W.hat)
+Gamma <- double_robust_scores(cf)
+cost  <- 0                                             # 有成本时减在 treated 列（第 3 页）
+Gamma[, "treated"] <- Gamma[, "treated"] - cost
+```
+
+```{r}
+#| label: template-crossfit
+# 2. 交叉拟合评估"找树流程"的价值（第 6 页）
+K <- 5; folds <- sample(rep(1:K, length.out = n)); a_cf <- integer(n)
+for (k in 1:K) {
+  out <- folds == k
+  t_k <- policy_tree(X[!out, ], Gamma[!out, ], depth = 2,
+                     min.node.size = ceiling(0.02 * n), verbose = FALSE)
+  a_cf[out] <- predict(t_k, X[out, ])
+}
+g <- Gamma[cbind(seq_len(n), a_cf)] - Gamma[, "control"]
+c(gain_vs_none = mean(g), se = sd(g) / sqrt(n), treated_share = mean(a_cf == 2))
+```
+
+```{r}
+#| label: template-final
+# 3. 全样本找最终的树，读规则、画图（第 5 页）
+tree <- policy_tree(X, Gamma, depth = 2, min.node.size = ceiling(0.02 * n))
+tree
+plot(tree, leaf.labels = c("不治疗", "治疗"))
+```
+
+```{r}
+#| label: template-predict
+# 4. 部署：核对列名、把列号转成处理名（第 5 页）
+safe_predict <- function(tree, newdata) {
+  stopifnot(identical(colnames(newdata), tree$columns))
+  tree$action.names[predict(tree, newdata)]
+}
+X_new <- X[1:5, ]
+safe_predict(tree, X_new)
+```
+
+工具变量或生存结局只改第 1 步：拿到得分后立即改写成
+`cbind(control = 0, treated = double_robust_scores(forest)[, "treated"])`（[第 7 页](07-multi-iv-surv.qmd)）。
+多臂处理把第 2 步里的 `Gamma[, "control"]` 换成基线臂那一列，
+第 4 步的 `action.names` 转换在多臂时尤其不能省。
+
+## 什么时候该用这个包
+
+**适合**：
+
+- 需要一条**能写进方案或指南**的分配规则，而不是一个黑箱打分；
+- 协变量不多（十几个以内）、深度 2–3 就能表达主要异质性；
+- 已经在用 grf，得分可以直接取；或者有自己的双稳健得分 / 伪结局。
+
+**不适合**：
+
+- 只想最大化价值、不在乎规则可读——按 $\hat\tau(x)$ 的符号分配通常更好
+  （[第 6 页](06-evaluation.qmd#sec-vs-cate)）；
+- 有预算或比例约束——用 [maq](../grf/11-maq.qmd)；
+- 要检验"是否存在异质性"——用 grf 的 RATE / 校准检验（[grf 的 RATE 一章](../grf/02-rate.qmd)），
+  树找到了切分不等于异质性显著；
+- 协变量上百、样本几十万——精确搜索跑不动，先降维，或换 `fastpolicytree`、`hybrid_policy_tree()`。
+
+## 版本与环境
+
+```{r}
+#| label: session
+sapply(c("policytree", "grf", "DiagrammeR", "fastpolicytree"),
+       function(p) as.character(packageVersion(p)))
+R.version.string
+```

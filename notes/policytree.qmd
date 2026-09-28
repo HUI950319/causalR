@@ -1,0 +1,221 @@
+---
+title: "policytree 包函数手册"
+subtitle: "基于 1.2.5 的逐函数用法说明与本机实测"
+lang: zh
+---
+
+`policytree` 回答的是异质性效应分析的**下一个**问题：已经知道不同的人对处理反应不同，
+那么**谁该接受哪种处理**？它给出的答案是一棵浅层决策树——
+"年龄 ≤ 60 岁且肌酐 ≤ 1.2 mg/dL 的人用药，其余不用"——可以直接写进方案或指南。
+方法是 Athey & Wager (2021) 的**双稳健经验福利最大化**：先用 grf 的森林算出每个人在每种处理下的
+双稳健得分 $\hat\Gamma_{ia}$，再在所有深度为 $k$ 的轴平行决策树里**穷举**出使
+$\sum_i \hat\Gamma_{i,\pi(X_i)}$ 最大的那一棵。与 CART 的逐层贪心不同，它找到的是**全局最优**的浅树。
+
+本部分是该包的**函数用法手册**，逐个覆盖包内全部 **15 个帮助主题**
+（[pkgdown 站点](https://grf-labs.github.io/policytree/)、
+[CRAN 参考手册](https://cran.r-project.org/web/packages/policytree/refman/policytree.html)），
+包括 4 个有帮助页但未导出的内部函数。
+每页给出参数逐项说明、可直接运行的代码、返回对象的结构，
+以及**本机实际运行后发现的默认值陷阱与失效路径**。
+本书另有 grf 官方教程的中译 [用最优决策树做策略学习](grf/10-policy-learning.qmd)，
+是这个包的入门示例；本手册在它之后，讲每个函数的细节和坑。
+
+## 核对环境与证据边界
+
+本手册核对截止 **2026 年 9 月 28 日**，环境为：
+
+| 项目 | 值 |
+|---|---|
+| 包版本 | `policytree` 1.2.5（CRAN 2026-08-04，MIT，维护者 Erik Sverdrup） |
+| R | Windows R 4.4.3 |
+| Imports | `Rcpp`、`grf` (≥ 2.0.0)；LinkingTo `Rcpp`、`BH` |
+| Suggests（影响可用功能） | `DiagrammeR`（`plot()` 必需）、`testthat` |
+| 已装版本 | grf 2.6.1、DiagrammeR 1.0.11；对照用 `fastpolicytree` 1.0 |
+| 示例数据 | 包自带的 `gen_data_epl()`、`gen_data_mapl()`，以及本手册的模拟数据（真值已知） |
+
+证据分三级，正文中逐处标明：
+
+1. **文档**——包自带帮助页、pkgdown 文章、README 与 CHANGELOG 的原文；
+2. **源码**——本机已安装包的函数体（`policytree:::` 可复核）；
+3. **实测**——在上述环境下实际运行的输出。
+
+本手册的代码块**由本站渲染时真实执行**，页面上的输出与图形就是本机结果。
+随机过程已固定种子（`set.seed(20260928)`，grf 森林另设 `seed = 1`）。
+本手册是原创的用法说明，不是官方文档的翻译；个别示例改编自包自带的帮助页（MIT 许可）。
+
+::: {.callout-important}
+## 七处文档没有写明的实测结论
+
+在展开之前先给出结论，它们影响所有使用者：
+
+1. **`predict()` 只核对列数，不核对列名。** 帮助页要求 newdata 的列顺序与训练时相同，
+   但源码只比较 `ncol()`。把两个切分变量的列对调，实测 19% 的人分配改变，没有任何提示。
+   见[第 5 页](policytree/05-predict-plot.qmd#sec-colorder)。
+2. **`predict()` 返回的是列号 `1..d`，不是处理名。** 二值森林里 1 是 control、2 是 treated；
+   `gen_data_mapl()` 的处理名是 0/1/2，把返回值直接当处理名，与真实最优处理的吻合率从 92.7% 掉到 0.03%。
+   见[第 5 页](policytree/05-predict-plot.qmd#sec-actions)。
+3. **工具变量森林和生存森林的得分是 $(-\hat\gamma_i, \hat\gamma_i)$，不是两个潜在结局的得分。**
+   找到的树不受影响，但照帮助页的写法从 treated 列减成本 $c$，实际门槛是 $c/2$；
+   用 `Gamma[cbind(i, a)] - Gamma[i, 1]` 评估策略，增益被算成两倍。
+   见[第 2 页](policytree/02-scores.qmd#sec-pm)。
+4. **`double_robust_scores(forest, newdata = ...)` 不报错。** `...` 被转给 `predict()`，
+   新数据的 $\hat\tau$ 与训练集的 $\hat m$、$\hat e$ 按 R 的循环规则拼在一起；
+   行数整除训练集行数时连警告都没有。见[第 2 页](policytree/02-scores.qmd#sec-newdata)。
+5. **默认 `min.node.size = 1` 会切出单人叶子。** 把每个人的 treated 得分都抬高 5（人人该治），
+   默认设置仍给出两片各只有 1 个人、推荐 control 的叶子；`min.node.size = 10` 才得到"全部治疗"。
+   见[第 3 页](policytree/03-policy-tree.qmd#sec-minnode)。
+6. **`gen_data_epl()` 的处理是内生的。** 它是 Athey & Wager (2021) 第 5.2 节的工具变量设计，
+   处理依赖结局噪声。喂给 `causal_forest()` 得到的 ATE 是 0.45，真值 −0.10；
+   据此学到的树给 94% 的人处理，真实增益为负。必须用 `instrumental_forest()`。
+   见[第 1 页](policytree/01-overview.qmd#sec-epl)与[第 7 页](policytree/07-multi-iv-surv.qmd#sec-iv)。
+7. **`plot()` 把切分值四舍五入到两位小数。** 真实切分值 0.00068 画出来是 `X1 <= 0`；
+   `print()` 用 `signif()` 保留 6 位有效数字才是准的。
+   见[第 5 页](policytree/05-predict-plot.qmd#sec-plot)。
+
+另有一条方法上的提醒：在找树的同一批样本上评估策略，增益平均被高估约一半
+（[第 6 页](policytree/06-evaluation.qmd#sec-optimism)）；更深的树样本内奖励更高、
+测试集真实增益反而更低（[第 4 页](policytree/04-hybrid.qmd#sec-compare)）。
+其余失效路径汇总在[第 8 页](policytree/08-pitfalls.qmd)。
+:::
+
+## 这个包在做什么
+
+给定 $(X_i, W_i, Y_i)$ 与 $d$ 种可选处理，策略 $\pi$ 把协变量映射到处理，它的价值是
+$V(\pi) = \mathbb E[Y_i(\pi(X_i))]$。`policytree` 的做法分两步：
+
+$$
+\hat\Gamma_{ia} = \hat\mu_a(X_i) + \frac{\mathbb 1(W_i = a)}{\hat e_a(X_i)}\bigl(Y_i - \hat\mu_a(X_i)\bigr),
+\qquad
+\hat\pi = \arg\max_{\pi \in \Pi_k} \sum_{i=1}^{n} \hat\Gamma_{i,\pi(X_i)},
+$$
+
+左边是交叉拟合的 AIPW 双稳健得分（由 grf 森林的 OOB 预测组装，`double_robust_scores()`），
+右边在深度 $\le k$ 的决策树类 $\Pi_k$ 里精确求最优（`policy_tree()`）。
+$\hat\Gamma$ 对"给第 $i$ 人处理 $a$ 的期望结局"近似无偏，于是对得分求和就是对策略价值的估计，
+最大化它就是在估计意义下找最优策略。Athey & Wager (2021) 证明了这样得到的策略后悔值
+以极小极大最优速率收敛。
+
+```text
+(X, Y, W) ──grf──▶ 森林 ──double_robust_scores()──▶ Gamma (n × d)
+                                                      │
+                          policy_tree() / hybrid_policy_tree()
+                                                      ▼
+                     policy_tree 对象 ──predict()──▶ 列号 1..d ──▶ 留出样本上评估
+```
+
+::: {.callout-warning}
+## 得分的质量决定一切
+
+`policy_tree()` 忠实地最大化你给它的 `Gamma`，它不知道也不检查 `Gamma` 是否可信。
+无混杂、重叠性、森林的拟合质量这些因果推断的前提，全部由第一步的森林承担。
+得分有偏（例如处理内生却用了因果森林），树就会以"全局最优"的方式把人分错，
+而输出里看不出任何异常——上面第 6 条就是这样的例子。
+:::
+
+## 函数地图
+
+15 个帮助主题：7 个导出函数、3 个 S3 方法、4 个未导出的内部函数、1 个包总览页。
+
+### 构造奖励矩阵
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `double_robust_scores()` | 由 grf 森林构造 $n \times d$ 双稳健得分；方法：`causal_forest`、`multi_arm_causal_forest`、`instrumental_forest`、`causal_survival_forest` | [2. 得分](policytree/02-scores.qmd) |
+| `conditional_means()` | 由 grf 森林构造条件均值 $\hat\mu_a(X_i)$；方法同上 | [2. 得分](policytree/02-scores.qmd#sec-cf) |
+| `multi_causal_forest()` | 已弃用，转发给 `grf::multi_arm_causal_forest()` | [2. 得分](policytree/02-scores.qmd#sec-deprecated) |
+
+### 找树
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `policy_tree()` | 精确搜索深度 $k$ 的最优树 | [3. policy_tree](policytree/03-policy-tree.qmd) |
+| `hybrid_policy_tree()` | 前瞻精确搜索 + 逐层贪心，造更深的树 | [4. hybrid_policy_tree](policytree/04-hybrid.qmd) |
+
+### 使用树（S3 方法）
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `predict()`（`policy_tree` 方法） | 分配处理（列号）或返回叶子编号 | [5. predict / plot](policytree/05-predict-plot.qmd#sec-predict) |
+| `print()`（`policy_tree` 方法） | 按缩进打印切分规则 | [5. predict / plot](policytree/05-predict-plot.qmd#sec-print) |
+| `plot()`（`policy_tree` 方法） | 用 DiagrammeR 画树 | [5. predict / plot](policytree/05-predict-plot.qmd#sec-plot) |
+
+### 示例数据
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `gen_data_epl()` | Athey & Wager (2021) 的二值处理 + 工具变量数据 | [1. 总览](policytree/01-overview.qmd#sec-epl) |
+| `gen_data_mapl()` | Zhou, Athey & Wager (2023) 的三处理数据，附真实奖励矩阵 | [1. 总览](policytree/01-overview.qmd#sec-mapl) |
+
+### 有帮助页但未导出（需 `policytree:::`）
+
+| 函数 | 作用 | 页面 |
+|---|---|---|
+| `export_graphviz()`、`create_dot_body()` | 把树转成 Graphviz DOT 文本 | [5. predict / plot](policytree/05-predict-plot.qmd#sec-internal) |
+| `make_tree()`、`predict_test_tree()` | 单元测试用的随机树与纯 R 预测 | [5. predict / plot](policytree/05-predict-plot.qmd#sec-internal) |
+
+包总览页 `?policytree` 只有简介与一个多臂示例。
+另外两页不对应具体函数：[6. 策略评估](policytree/06-evaluation.qmd)补上包里没有的评估流程，
+[7. 多臂、工具变量与生存结局](policytree/07-multi-iv-surv.qmd)把整套流程搬到另外三种森林上；
+最后一页[8. 实测清单与工作流](policytree/08-pitfalls.qmd)汇总全部失效路径、默认值陷阱和一套可照抄的模板。
+
+## 最小可运行例子
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+```{r}
+#| label: minimal
+#| message: false
+library(policytree)
+library(grf)
+
+set.seed(20260928)
+n <- 4000
+X <- round(matrix(rnorm(n * 5), n, 5), 2)          # 取整可大幅加快精确搜索
+colnames(X) <- paste0("X", 1:5)
+W   <- rbinom(n, 1, plogis(0.5 * X[, 3]))          # 倾向得分只依赖 X3（无混杂）
+tau <- (pmax(0, X[, 1]) + pmax(0, X[, 2]) - 1) / 2 # 真 CATE：X1、X2 大时处理有益
+Y   <- pmax(0, X[, 3] + X[, 4]) + W * tau + rnorm(n)
+
+cf    <- causal_forest(X, Y, W, num.trees = 1000, seed = 1)
+Gamma <- double_robust_scores(cf)                   # 列：control, treated
+
+train <- sample(n, n / 2)
+test  <- setdiff(seq_len(n), train)
+tree  <- policy_tree(X[train, ], Gamma[train, ], depth = 2, min.node.size = 50)
+tree
+```
+
+在没有参与找树的一半样本上评估"按树分配"相对"谁都不治"的增益，并与真值对照：
+
+```{r}
+#| label: minimal-eval
+a    <- predict(tree, X[test, ])                    # 1 = control, 2 = treated
+gain <- Gamma[test, ][cbind(seq_along(a), a)] - Gamma[test, "control"]
+c(estimate = mean(gain), se = sd(gain) / sqrt(length(gain)),
+  truth    = mean(tau[test] * (a == 2)))
+```
+
+```{r}
+#| label: minimal-plot
+plot(tree, leaf.labels = c("不治疗", "治疗"))
+```
+
+整个流程（1000 棵树的因果森林 + 深度 2 精确搜索）在本机耗时几秒。
+
+## 官方资料
+
+| 资源 | 位置 |
+|---|---|
+| pkgdown 站点（含 Get started 文章） | <https://grf-labs.github.io/policytree/> |
+| CRAN 页面 | <https://cran.r-project.org/package=policytree> |
+| 源码与问题 | <https://github.com/grf-labs/policytree> |
+| 软件论文 | Sverdrup, E., Kanodia, A., Zhou, Z., Athey, S. & Wager, S. (2020). policytree: Policy learning via doubly robust empirical welfare maximization over trees. *Journal of Open Source Software* 5(50), 2232. [doi:10.21105/joss.02232](https://doi.org/10.21105/joss.02232) |
+| 方法原文（二值处理） | Athey, S. & Wager, S. (2021). Policy learning with observational data. *Econometrica* 89(1), 133–161. [doi:10.3982/ECTA15732](https://doi.org/10.3982/ECTA15732) |
+| 方法原文（多处理） | Zhou, Z., Athey, S. & Wager, S. (2023). Offline multi-action policy learning: Generalization and optimization. *Operations Research* 71(1), 148–183. [doi:10.1287/opre.2022.2271](https://doi.org/10.1287/opre.2022.2271) |
+| 经验福利最大化 | Kitagawa, T. & Tetenov, A. (2018). Who should be treated? Empirical welfare maximization methods for treatment choice. *Econometrica* 86(2), 591–616. [doi:10.3982/ECTA13288](https://doi.org/10.3982/ECTA13288) |
+| 更快的求解器 | [`fastpolicytree`](https://CRAN.R-project.org/package=fastpolicytree)（CRAN）、[`sparsepolicytree`](https://github.com/beniaminogreen/sparsepolicytree)（GitHub） |
+| 本书相关页 | [grf：用最优决策树做策略学习](grf/10-policy-learning.qmd)、[grf：maq 与预算约束](grf/11-maq.qmd)、[grf 使用指南](grf/01-grf-guide.qmd) |

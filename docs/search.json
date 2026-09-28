@@ -15748,5 +15748,692 @@
       "causalR 包函数手册",
       "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. 未测量混杂的敏感性分析（get_sens / plt_sens）</span>"
     ]
+  },
+  {
+    "objectID": "notes/policytree/01-overview.html",
+    "href": "notes/policytree/01-overview.html",
+    "title": "1. 总览、对象结构与示例数据",
+    "section": "",
+    "text": "策略学习要回答的问题\n本页先把策略学习要回答的问题说清楚，再给出 policytree 的三步工作流、 输入数据的硬性要求、policy_tree 对象的内部结构， 最后介绍包自带的两个数据生成函数 gen_data_epl() 与 gen_data_mapl()—— 其中前者有一个文档没有明说、但足以让结果完全反号的设定。\n设有 \\(d\\) 种可选处理 \\(a \\in \\{1, \\dots, d\\}\\)，每个人有协变量 \\(X_i\\) 和潜在结局 \\(Y_i(1), \\dots, Y_i(d)\\)。一条策略（policy）就是一个映射 \\(\\pi: \\mathcal X \\to \\{1, \\dots, d\\}\\)，告诉我们协变量为 \\(x\\) 的人该接受哪种处理。 策略的好坏用策略价值（policy value）衡量：\n\\[\nV(\\pi) = \\mathbb E\\bigl[\\,Y_i\\bigl(\\pi(X_i)\\bigr)\\bigr],\n\\]\n即”所有人都按 \\(\\pi\\) 分配处理”时结局的总体均值（结局越大越好）。 在一个事先限定的策略类 \\(\\Pi\\) 里，最优策略是 \\(\\pi^* = \\arg\\max_{\\pi \\in \\Pi} V(\\pi)\\)， 一条策略 \\(\\pi\\) 的后悔值（regret）是 \\(V(\\pi^*) - V(\\pi)\\)。\n\\(V(\\pi)\\) 里的 \\(Y_i(\\pi(X_i))\\) 对大部分人是反事实，不能直接平均。 Kitagawa & Tetenov (2018) 的经验福利最大化（empirical welfare maximization, EWM） 用逆概率加权去估它；Athey & Wager (2021) 把它换成双稳健得分 \\(\\hat\\Gamma_{ia}\\)——一个对 \\(\\mathbb E[Y_i(a) \\mid X_i]\\) 近似无偏、且对冗余函数估计误差 只有二阶敏感的量——然后求解\n\\[\n\\hat\\pi = \\arg\\max_{\\pi \\in \\Pi} \\; \\frac{1}{n} \\sum_{i=1}^{n} \\hat\\Gamma_{i,\\pi(X_i)} .\n\\tag{223.1}\\]\n他们证明了，只要冗余函数估计误差的乘积是 \\(o_p(n^{-1/2})\\)、且 \\(\\Pi\\) 的复杂度有限， \\(\\hat\\pi\\) 的后悔值上界为 \\(O_p(\\sqrt{\\mathrm{VC}(\\Pi)/n})\\)，达到极小极大最优速率。Zhou, Athey & Wager (2023) 把结论推广到 \\(d &gt; 2\\) 种处理。\npolicytree 选的策略类 \\(\\Pi\\) 是深度为 \\(k\\) 的决策树：每个内部节点是 “\\(X_j \\le v\\) 走左、否则走右”的二分，每片叶子指定一种处理。 这样得到的策略可以直接写成规则，这是它与”按 \\(\\hat\\tau(x) &gt; 0\\) 分配”这种黑箱策略的根本区别。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>223</span>  <span class='chapter-title'>1. 总览、对象结构与示例数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/01-overview.html#sec-pipeline",
+    "href": "notes/policytree/01-overview.html#sec-pipeline",
+    "title": "1. 总览、对象结构与示例数据",
+    "section": "三步工作流",
+    "text": "三步工作流\n(X, Y, W)            grf 训练一个森林（二值 / 多臂 / 工具变量 / 生存）\n   │  causal_forest() / multi_arm_causal_forest() / instrumental_forest() / causal_survival_forest()\n   ▼\n森林对象\n   │  ① double_robust_scores()：OOB 预测 → n × d 的得分矩阵 Gamma\n   ▼\nGamma（每行一个人，每列一种处理）\n   │  ② policy_tree() / hybrid_policy_tree()：在深度 k 的树里找使 sum(Gamma[i, π(X_i)]) 最大者\n   ▼\npolicy_tree 对象\n   │  ③ predict()：新数据 → 列号（1..d）或叶子编号\n   ▼\n分配结果 + 在留出样本上用 Gamma 评估策略价值\n三步里只有第 ② 步是 policytree 自己的算法。第 ① 步只是把 grf 森林里的 \\(\\hat Y\\)、\\(\\hat W\\)、\\(\\hat\\tau\\) 组装成双稳健得分（见第 2 页）， 第 ③ 步的评估包里没有函数，要自己写（见第 6 页）。 policy_tree() 本身并不关心 Gamma 从哪里来：任何 \\(n \\times d\\) 的数值奖励矩阵都可以喂给它， 包括自己用 AIPW、TMLE 伪结局或已知的真实奖励构造的矩阵。\n下面是一条完整的最小链路，数据是本手册自造的无混杂观察性数据：\n\nn &lt;- 2000\nX &lt;- round(matrix(rnorm(n * 5), n, 5), 2)\ncolnames(X) &lt;- paste0(\"X\", 1:5)\ne   &lt;- plogis(0.5 * X[, 3])                                  # 倾向得分只依赖 X3\nW   &lt;- rbinom(n, 1, e)\ntau &lt;- (pmax(0, X[, 1]) + pmax(0, X[, 2]) - 1) / 2           # 真 CATE\nY   &lt;- pmax(0, X[, 3] + X[, 4]) + W * tau + rnorm(n)\n\ncf    &lt;- causal_forest(X, Y, W, num.trees = 1000, seed = 1)  # 第 0 步\nGamma &lt;- double_robust_scores(cf)                            # 第 ① 步\ntree  &lt;- policy_tree(X, Gamma, depth = 2)                    # 第 ② 步\ntree\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: control 2: treated \n#&gt; Variable splits: \n#&gt; (1) split_variable: X2  split_value: 1.14 \n#&gt;   (2) split_variable: X1  split_value: 0.68 \n#&gt;     (4) * action: 1 \n#&gt;     (5) * action: 2 \n#&gt;   (3) split_variable: X3  split_value: 1.6 \n#&gt;     (6) * action: 2 \n#&gt;     (7) * action: 1\nhead(predict(tree, X))                                       # 第 ③ 步：1 = control, 2 = treated\n#&gt; [1] 1 1 1 1 2 1\n\n真实的 \\(\\tau(x)\\) 只在 \\(X_1\\) 或 \\(X_2\\) 足够大时为正，树的前两刀正是切在 \\(X_2\\)、\\(X_1\\) 上。 右边那一刀切在 \\(X_3\\) 上，而 \\(X_3\\) 只影响倾向得分和基线结局、与 \\(\\tau\\) 无关； 它分出的叶子 (7) 只有 8 个人。 这是精确搜索在默认 min.node.size = 1 下拟合噪声的典型表现， 第 3 页专门讨论。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>223</span>  <span class='chapter-title'>1. 总览、对象结构与示例数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/01-overview.html#sec-input",
+    "href": "notes/policytree/01-overview.html#sec-input",
+    "title": "1. 总览、对象结构与示例数据",
+    "section": "输入数据的硬性要求",
+    "text": "输入数据的硬性要求\npolicy_tree() 与 predict() 开头的校验（源码可见）决定了能喂什么：\n\n\n\n\n\n\n\n要求\n违反时的表现\n\n\n\n\nX、Gamma 必须是 matrix 或 data.frame\nCurrently the only supported data input types are:matrix,data.frame`| |as.matrix(X)必须是数值型 | 含因子或字符列：The feature matrix X must be numeric| | 不得有缺失 |Covariate matrix X contains missing values./Gamma matrix contains missing values.| |nrow(X) == nrow(Gamma)|X and Gamma do not have the same number of rows| |split.step、min.node.size` 为 ≥ 1 的整数\n\n\n\n逻辑型列可以（as.matrix() 与数值列混合时会转成 0/1）；因子不行：\n\ndf &lt;- data.frame(stage = factor(sample(c(\"I\", \"II\", \"III\"), n, TRUE)), age = X[, 1])\ntry(policy_tree(df, Gamma, depth = 1))\n#&gt; Error in policy_tree(df, Gamma, depth = 1) : \n#&gt;   The feature matrix X must be numeric\n\n分类变量有两种编码法，树的行为不同：\n\n整数编码（as.integer(stage)）：切分 “\\(\\le v\\)” 只能把相邻水平分到一边， 适合本来有序的变量（分期、等级）；\none-hot（model.matrix(~ stage - 1, df)）：每次切分把一个水平与其余分开， 深度 2 的树最多只能单独拎出两个水平。\n\n两种编码都会改变策略类 \\(\\Pi\\)，是建模决定而不是技术细节。\n\nXdf &lt;- cbind(model.matrix(~ stage - 1, df), age = df$age)\nhead(Xdf, 3)\n#&gt;   stageI stageII stageIII   age\n#&gt; 1      0       1        0 -0.83\n#&gt; 2      1       0        0 -1.82\n#&gt; 3      0       1        0 -0.17\nclass(policy_tree(Xdf, Gamma, depth = 1))\n#&gt; [1] \"policy_tree\"",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>223</span>  <span class='chapter-title'>1. 总览、对象结构与示例数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/01-overview.html#sec-object",
+    "href": "notes/policytree/01-overview.html#sec-object",
+    "title": "1. 总览、对象结构与示例数据",
+    "section": "policy_tree 对象的结构",
+    "text": "policy_tree 对象的结构\n\nstr(unclass(tree), max.level = 1)\n#&gt; List of 7\n#&gt;  $ nodes       :List of 7\n#&gt;  $ _tree_array : num [1:7, 1:4] 2 1 3 -1 -1 -1 -1 1.14 0.68 1.6 ...\n#&gt;  $ depth       : num 2\n#&gt;  $ n.actions   : int 2\n#&gt;  $ n.features  : int 5\n#&gt;  $ action.names: chr [1:2] \"control\" \"treated\"\n#&gt;  $ columns     : chr [1:5] \"X1\" \"X2\" \"X3\" \"X4\" ...\n\n\n\n\n\n\n\n\n字段\n含义\n\n\n\n\nnodes\n节点列表，按层序编号（根为 1，第 \\(k\\) 个节点的子节点编号见 left_child / right_child）\n\n\n_tree_array\n给 C++ 预测用的 \\(m \\times 4\\) 数值矩阵，见下\n\n\ndepth\n调用时指定的深度，不是剪枝后的实际深度\n\n\nn.actions\nncol(Gamma)\n\n\nn.features\nncol(X)，predict() 只核对这一项\n\n\naction.names\ncolnames(Gamma) 经 type.convert()；无列名时为 1..d\n\n\ncolumns\ncolnames(X)；无列名时为 make.names(1:p)，即 \"X1\", \"X2\", …\n\n\n\n内部节点是 list(is_leaf = FALSE, split_variable, split_value, left_child, right_child)， 叶子是 list(is_leaf = TRUE, action)：\n\nstr(tree$nodes[1:2])\n#&gt; List of 2\n#&gt;  $ :List of 5\n#&gt;   ..$ is_leaf       : logi FALSE\n#&gt;   ..$ split_variable: num 2\n#&gt;   ..$ split_value   : num 1.14\n#&gt;   ..$ left_child    : int 2\n#&gt;   ..$ right_child   : int 3\n#&gt;  $ :List of 5\n#&gt;   ..$ is_leaf       : logi FALSE\n#&gt;   ..$ split_variable: num 1\n#&gt;   ..$ split_value   : num 0.68\n#&gt;   ..$ left_child    : int 4\n#&gt;   ..$ right_child   : int 5\ntree[[\"_tree_array\"]]\n#&gt;      [,1] [,2] [,3] [,4]\n#&gt; [1,]    2 1.14    2    3\n#&gt; [2,]    1 0.68    4    5\n#&gt; [3,]    3 1.60    6    7\n#&gt; [4,]   -1 1.00    0    0\n#&gt; [5,]   -1 2.00    0    0\n#&gt; [6,]   -1 2.00    0    0\n#&gt; [7,]   -1 1.00    0    0\n\n_tree_array 每行一个节点：内部节点的四列是 （切分变量列号, 切分值, 左子行号, 右子行号），叶子的第一列为 -1、第二列是处理列号。 predict(type = \"node.id\") 返回的就是这里的行号，也就是 print() 里括号中的编号 （见第 5 页）。\n\n\n\n\n\n\n注记depth 字段不随剪枝变化\n\n\n\n树在”同一节点左右两片叶子推荐相同处理”时会被剪掉（见第 3 页）， 但 tree$depth 和 print() 里的 Tree depth: 仍是调用时写的数字。 要知道实际有几片叶子，数 sum(sapply(tree$nodes, \"[[\", \"is_leaf\"))。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>223</span>  <span class='chapter-title'>1. 总览、对象结构与示例数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/01-overview.html#sec-epl",
+    "href": "notes/policytree/01-overview.html#sec-epl",
+    "title": "1. 总览、对象结构与示例数据",
+    "section": "示例数据一：gen_data_epl()",
+    "text": "示例数据一：gen_data_epl()\ngen_data_epl(n, type = c(\"continuous\", \"jump\")) 生成 Athey & Wager (2021) 第 5.2 节的模拟数据，返回列表 W, Z, tau, Y, X。源码对应的数据生成过程是：\n\\[\n\\begin{aligned}\nX_i &\\sim N(0, I_{10}), \\qquad\nZ_i \\sim \\mathrm{Bern}\\bigl(\\mathrm{expit}(X_{i3})\\bigr), \\qquad\n\\varepsilon_i \\sim N(0,1), \\\\\nQ_i &\\sim \\mathrm{Bern}\\bigl(\\mathrm{expit}(\\varepsilon_i + X_{i4})\\bigr), \\qquad\nW_i = Q_i \\cdot Z_i, \\\\\n\\tau(x) &= \\begin{cases}\n\\bigl(\\max(0, x_1) + \\max(0, x_2) - 1\\bigr)/2 & \\texttt{\"continuous\"}\\\\\n\\operatorname{sign}(x_1 x_2)/2 & \\texttt{\"jump\"}\n\\end{cases}\\\\\nY_i &= \\max(0, X_{i3} + X_{i4}) + W_i\\,\\tau(X_i) + \\varepsilon_i .\n\\end{aligned}\n\\]\n注意 \\(W_i\\) 经 \\(Q_i\\) 依赖结局噪声 \\(\\varepsilon_i\\)：接受处理的人天生结局就偏高。 这是一个工具变量设计——\\(Z\\) 是工具，\\(W\\) 是内生处理。帮助页只写了 “The DGP from section 5.2”，没有提醒这一点；拿它直接跑 causal_forest() 会怎样：\n\nd &lt;- gen_data_epl(4000, type = \"continuous\")\nc(true_ATE      = mean(d$tau),\n  naive_diff    = mean(d$Y[d$W == 1]) - mean(d$Y[d$W == 0]),\n  causal_forest = unname(average_treatment_effect(\n                    causal_forest(d$X, d$Y, d$W, num.trees = 500, seed = 1))[1]),\n  instrumental  = mean(double_robust_scores(\n                    instrumental_forest(d$X, d$Y, d$W, d$Z, num.trees = 500, seed = 1))[, 2]))\n#&gt;      true_ATE    naive_diff causal_forest  instrumental \n#&gt;   -0.09828655    0.90462398    0.44936867   -0.06855563\n\n因果森林只校正了观测到的 \\(X\\)，校正不了 \\(\\varepsilon\\)， 于是把一个真值为负的平均效应估成明显为正——据此学出来的策略会让几乎所有人接受处理。 gen_data_epl() 必须配 instrumental_forest() 用 （上游 pkgdown 文章的 Example 3 确实是这样做的）。 严格说工具变量估计的是依从者的局部效应，与 mean(tau) 不必相等，但符号与量级一致。 完整的工具变量策略学习见第 7 页。\ntype = \"jump\" 时 \\(\\tau\\) 只取 \\(\\pm 1/2\\)，在象限边界上跳变， 是检验”树能否恰好切在 0 上”的好例子；\"continuous\" 时 \\(\\tau\\) 在 \\(X_1, X_2\\) 上连续， 上面这份数据里只有 35% 的人 \\(\\tau &gt; 0\\)。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>223</span>  <span class='chapter-title'>1. 总览、对象结构与示例数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/01-overview.html#sec-mapl",
+    "href": "notes/policytree/01-overview.html#sec-mapl",
+    "title": "1. 总览、对象结构与示例数据",
+    "section": "示例数据二：gen_data_mapl()",
+    "text": "示例数据二：gen_data_mapl()\ngen_data_mapl(n, p = 10, sigma2 = 4) 生成 Zhou, Athey & Wager (2023) 第 6.4.1 节的 三处理数据。\\(X \\sim U[0,1]^p\\)（p &lt; 7 直接报错），按 \\(X_5, X_7\\) 把空间分成三个区域， 每个区域的最优处理不同：\n\n\n\n\n\n\n\n\n\n区域\n条件（源码）\n三种处理的真实奖励 \\(\\mu_a\\)\n最优\n\n\n\n\n0\n\\(X_5 &lt; 0.6\\) 且 \\(X_7 &gt; 0.35\\)\n\\((3, 2, 1)\\)\n处理 0\n\n\n2\n两个椭圆之一：\\(X_5^2/0.6^2 + X_7^2/0.35^2 &lt; 1\\)，或 \\((X_5-1)^2/0.4^2 + (X_7-1)^2/0.35^2 &lt; 1\\)\n\\((-1.5, 0, 1.5)\\)\n处理 2\n\n\n1\n其余\n\\((1.5, 2, 1.5)\\)\n处理 1\n\n\n\n两个椭圆分别只落在 \\(X_7 &lt; 0.35\\) 与 \\(X_5 &gt; 0.6\\) 的范围内，与区域 0 不相交，三个区域互斥。 处理分配概率随区域变化（区域 0、1 为 \\((0.2, 0.6, 0.2)\\)，区域 2 为 \\((0.4, 0.2, 0.4)\\)）， 所以这是依观测变量混杂的观察性数据，结局 \\(Y \\sim N(\\mu_{A}, \\sigma^2)\\)，默认噪声方差 4。\n\nm &lt;- gen_data_mapl(3000)\nnames(m)\n#&gt; [1] \"action\" \"Y\"      \"X\"      \"region\" \"mu\"     \"mu.all\"\ntable(action = m$action, region = m$region)\n#&gt;       region\n#&gt; action   0   1   2\n#&gt;      0 217 202 287\n#&gt;      1 690 614 190\n#&gt;      2 261 219 320\nhead(m$mu.all, 3)          # 每个人在三种处理下的真实期望结局\n#&gt;        0 1   2\n#&gt; [1,] 3.0 2 1.0\n#&gt; [2,] 1.5 2 1.5\n#&gt; [3,] 1.5 2 1.5\n\n返回列表里的 mu.all 是真实奖励矩阵，可以直接当 Gamma 喂给 policy_tree()， 得到”如果奖励已知，深度 2 的树能做到多好”的上限：\n\noracle_tree &lt;- policy_tree(m$X, m$mu.all, depth = 2)\noracle_tree\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: 0 2: 1 3: 2 \n#&gt; Variable splits: \n#&gt; (1) split_variable: X5  split_value: 0.599689 \n#&gt;   (2) split_variable: X7  split_value: 0.345847 \n#&gt;     (4) * action: 3 \n#&gt;     (5) * action: 1 \n#&gt;   (3) split_variable: X7  split_value: 0.680644 \n#&gt;     (6) * action: 2 \n#&gt;     (7) * action: 3\n\n两点值得注意：\n\n处理的名字是字符串 \"0\", \"1\", \"2\"（colnames(mu.all)），经 type.convert() 后变成整数 0:2；而 print() 里的 action: 与 predict() 的返回值都是列号 1:3。 两套编号错开一位，是这个包最容易出错的地方，见第 5 页。\n区域边界是椭圆，深度 2 的轴平行树只能近似它；这正是”可解释性换价值”的代价， 第 7 页会量化它。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>223</span>  <span class='chapter-title'>1. 总览、对象结构与示例数据</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/02-scores.html",
+    "href": "notes/policytree/02-scores.html",
+    "title": "2. double_robust_scores() 与 conditional_means()",
+    "section": "",
+    "text": "方法一览\npolicy_tree() 需要一个 \\(n \\times d\\) 的奖励矩阵 Gamma。这两个 S3 泛型负责从 grf 森林里把它组装出来： conditional_means() 给出条件均值 \\(\\hat\\mu_a(X_i) \\approx \\mathbb E[Y_i(a) \\mid X_i]\\)， double_robust_scores() 在此基础上加一项逆概率加权的残差修正，得到双稳健得分 \\(\\hat\\Gamma_{ia}\\)。 两者都只是对森林已有的 OOB 预测做代数运算，不重新拟合任何东西 （工具变量森林默认会额外拟合一个依从性森林，是唯一的例外）。\n后两行的得分不是两个潜在结局的得分，而是”效应得分取正负号”。 这对找树没有影响，但对扣成本和评估策略有影响，见 本页末节。\nregression_forest、probability_forest、quantile_forest、causal_forest 的连续处理等 都没有方法，调用会报 no applicable method 或 policytree currently only supports causal forest with binary treatment.",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. double_robust_scores() 与 conditional_means()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/02-scores.html#sec-methods",
+    "href": "notes/policytree/02-scores.html#sec-methods",
+    "title": "2. double_robust_scores() 与 conditional_means()",
+    "section": "",
+    "text": "森林类（grf）\nconditional_means() 返回\ndouble_robust_scores() 返回\n限制\n\n\n\n\ncausal_forest\n\\((\\hat\\mu_0, \\hat\\mu_1)\\)，列名 control、treated\n\\((\\hat\\Gamma_{i0}, \\hat\\Gamma_{i1})\\)\n处理必须是 0/1\n\n\nmulti_arm_causal_forest\n\\((\\hat\\mu_1, \\dots, \\hat\\mu_K)\\)，列名为 levels(W)\n\\((\\hat\\Gamma_{i1}, \\dots, \\hat\\Gamma_{iK})\\)\n多结局时用 outcome 选一列\n\n\ninstrumental_forest\n\\((\\hat\\mu_0, \\hat\\mu_1)\\)\n\\((-\\hat\\gamma_i,\\ \\hat\\gamma_i)\\)\n工具变量必须是 0/1\n\n\ncausal_survival_forest\n\\((\\hat\\mu_0, \\hat\\mu_1)\\)\n\\((-\\hat\\gamma_i,\\ \\hat\\gamma_i)\\)\n处理必须是 0/1",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. double_robust_scores() 与 conditional_means()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/02-scores.html#sec-cf",
+    "href": "notes/policytree/02-scores.html#sec-cf",
+    "title": "2. double_robust_scores() 与 conditional_means()",
+    "section": "二值处理：causal_forest",
+    "text": "二值处理：causal_forest\n下面沿用第 1 页的无混杂模拟数据：\n\nn &lt;- 2000\nX &lt;- round(matrix(rnorm(n * 5), n, 5), 2)\ncolnames(X) &lt;- paste0(\"X\", 1:5)\nW   &lt;- rbinom(n, 1, plogis(0.5 * X[, 3]))\ntau &lt;- (pmax(0, X[, 1]) + pmax(0, X[, 2]) - 1) / 2\nY   &lt;- pmax(0, X[, 3] + X[, 4]) + W * tau + rnorm(n)\ncf  &lt;- causal_forest(X, Y, W, num.trees = 1000, seed = 1)\n\n森林对象里存着三组 OOB 估计：$m(X_i) = $ cf$Y.hat（对处理边缘化后的结局均值）、 $e(X_i) = $ cf$W.hat（倾向得分）、$(X_i) = $ predict(cf)$predictions。 由 \\(m = e\\,\\mu_1 + (1-e)\\,\\mu_0\\) 与 \\(\\tau = \\mu_1 - \\mu_0\\) 反解出两个条件均值：\n\\[\n\\hat\\mu_0(X_i) = \\hat m(X_i) - \\hat e(X_i)\\,\\hat\\tau(X_i), \\qquad\n\\hat\\mu_1(X_i) = \\hat m(X_i) + \\bigl(1 - \\hat e(X_i)\\bigr)\\,\\hat\\tau(X_i),\n\\]\n再做 AIPW 修正：\n\\[\n\\hat\\Gamma_{i1} = \\hat\\mu_1(X_i) + \\frac{W_i}{\\hat e(X_i)}\\bigl(Y_i - \\hat\\mu_1(X_i)\\bigr), \\qquad\n\\hat\\Gamma_{i0} = \\hat\\mu_0(X_i) + \\frac{1 - W_i}{1 - \\hat e(X_i)}\\bigl(Y_i - \\hat\\mu_0(X_i)\\bigr).\n\\]\n逐字按公式手算，与包的输出对照：\n\nmu    &lt;- conditional_means(cf)\nGamma &lt;- double_robust_scores(cf)\ne     &lt;- cf$W.hat\ntauh  &lt;- predict(cf)$predictions\n\nmax(abs(mu - cbind(cf$Y.hat - e * tauh, cf$Y.hat + (1 - e) * tauh)))\n#&gt; [1] 0\nG1 &lt;- mu[, \"treated\"] + W / e * (Y - mu[, \"treated\"])\nG0 &lt;- mu[, \"control\"] + (1 - W) / (1 - e) * (Y - mu[, \"control\"])\nmax(abs(Gamma - cbind(G0, G1)))\n#&gt; [1] 0\nhead(Gamma, 3)\n#&gt;        control     treated\n#&gt; [1,] 0.1583723  1.15769965\n#&gt; [2,] 1.6472808  2.55470198\n#&gt; [3,] 0.2499100 -0.04084196\n\n两处差都是 0。一个直接推论：得分之差的均值就是 grf 的 AIPW 平均处理效应，逐位相同：\n\nc(mean_score_diff = mean(Gamma[, \"treated\"] - Gamma[, \"control\"]),\n  grf_ATE         = unname(average_treatment_effect(cf)[\"estimate\"]))\n#&gt; mean_score_diff         grf_ATE \n#&gt;     -0.03420584     -0.03420584\n\n帮助页 Details 说这是 CAIPWL（Cross-fitted Augmented Inverse Propensity Weighted Learning）用的矩阵。 “交叉拟合”来自 grf 的 OOB 预测：每个人的 \\(\\hat m\\)、\\(\\hat e\\)、\\(\\hat\\tau\\) 都来自没有用到他本人的那些树，这是 Athey & Wager (2021) 理论保证所需的样本分割。\n\n\n\n\n\n\n警告包不做任何倾向得分截断\n\n\n\n公式里有 \\(1/\\hat e\\) 与 \\(1/(1-\\hat e)\\)，重叠性差时个别得分会非常大， 而 policy_tree() 求的是得分之和，几个极端值就能左右切分。 grf 的 average_treatment_effect() 在倾向得分极端时会发警告，double_robust_scores() 不会。 用观察性数据时先看一眼：\n\nsummary(cf$W.hat)\n#&gt;    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. \n#&gt;  0.2945  0.4246  0.5006  0.4995  0.5739  0.7179\nsummary(abs(Gamma[, \"treated\"] - Gamma[, \"control\"]))\n#&gt;    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. \n#&gt; 0.00071 0.68190 1.43545 1.70837 2.43679 8.22688\n\n重叠性差时的常见做法是在训练森林前按 \\(\\hat e\\) 修剪样本，或在 Gamma 上做稳健化处理； 这些都要自己写，包里没有开关。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. double_robust_scores() 与 conditional_means()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/02-scores.html#sec-newdata",
+    "href": "notes/policytree/02-scores.html#sec-newdata",
+    "title": "2. double_robust_scores() 与 conditional_means()",
+    "section": "不要给它 newdata",
+    "text": "不要给它 newdata\n两个泛型的签名都是 (object, ...)，帮助页只写 “Additional arguments”。 源码里 ... 被原样传给 predict(object, ...)，所以传 newdata 在语法上是合法的—— 但只有 \\(\\hat\\tau\\) 换成了新数据上的预测，\\(\\hat m\\)、\\(\\hat e\\)、\\(Y\\)、\\(W\\) 仍是训练集的， 两组长度不同的向量按 R 的循环规则相加：\n\nXnew &lt;- X[1:300, ]\ndim(double_robust_scores(cf, newdata = Xnew))       # 300 行不整除 2000：有警告\n#&gt; Warning in object$W.hat * tau.hat: longer object length is not a multiple of\n#&gt; shorter object length\n#&gt; Warning in (1 - object$W.hat) * tau.hat: longer object length is not a multiple\n#&gt; of shorter object length\n#&gt; [1] 2000    2\n\n\ndim(conditional_means(cf, newdata = X[1:1000, ]))   # 1000 行整除 2000：一声不吭\n#&gt; [1] 2000    2\n\n返回的矩阵行数是训练集的 2000，内容是错位拼接的，而且行数整除时没有任何警告。 双稳健得分需要观测到的 \\(Y_i\\)、\\(W_i\\)，本来就只能在训练样本上计算； 要给新样本分配处理，应当先在训练样本上 policy_tree()，再对新样本 predict() 树。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. double_robust_scores() 与 conditional_means()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/02-scores.html#sec-multi",
+    "href": "notes/policytree/02-scores.html#sec-multi",
+    "title": "2. double_robust_scores() 与 conditional_means()",
+    "section": "多臂处理：multi_arm_causal_forest",
+    "text": "多臂处理：multi_arm_causal_forest\n\\(K\\) 种处理时，grf 的 multi_arm_causal_forest() 估计的是每种处理相对第一个因子水平的对比 \\(\\hat\\tau_k(X_i)\\)（\\(k = 2, \\dots, K\\)），W.hat 是 \\(n \\times K\\) 的倾向得分矩阵。 条件均值由\n\\[\n\\hat\\mu_1 = \\hat m - \\sum_{k=2}^{K} \\hat e_k\\,\\hat\\tau_k, \\qquad\n\\hat\\mu_k = \\hat\\mu_1 + \\hat\\tau_k \\quad (k \\ge 2)\n\\]\n给出，得分仍是 \\(\\hat\\Gamma_{ik} = \\hat\\mu_k + \\mathbb 1(W_i = k)\\,(Y_i - \\hat\\mu_k)/\\hat e_k\\)。 列名取 levels(W)，所以基线是因子的第一个水平，想换基线就先 relevel()。\n\nWm &lt;- factor(sample(c(\"A\", \"B\", \"C\"), n, replace = TRUE))\nYm &lt;- X[, 1] + X[, 2] * (Wm == \"B\") + X[, 3] * (Wm == \"C\") + rnorm(n)\nmcf &lt;- multi_arm_causal_forest(X, Ym, Wm, num.trees = 1000, seed = 1)\nhead(double_robust_scores(mcf), 3)\n#&gt;               A         B          C\n#&gt; [1,] -0.5876748 -2.357234 -0.7615731\n#&gt; [2,]  2.6518914 -1.049491 -1.2745285\n#&gt; [3,] -0.1062138 -2.597564  0.1426687\n\ngrf 允许多臂森林同时拟合多个结局（Y 为矩阵）。这时用 outcome = 指定用哪一列， 可以给列号或列名，默认第 1 列；名字对不上时报 `outcome` should be a column number/name specifying a column in Y.\n\nY2   &lt;- cbind(main = Ym, side = rnorm(n))\nmcf2 &lt;- multi_arm_causal_forest(X, Y2, Wm, num.trees = 500, seed = 1)\nall.equal(double_robust_scores(mcf2, outcome = \"side\"),\n          double_robust_scores(mcf2, outcome = 2))\n#&gt; [1] TRUE\ntry(double_robust_scores(mcf2, outcome = \"cost\"))\n#&gt; Error in double_robust_scores.multi_arm_causal_forest(mcf2, outcome = \"cost\") : \n#&gt;   `outcome` should be a column number/name specifying a column in Y.\n\n多结局的得分可以加权求和后再找树（例如”疗效 − λ × 副作用”）， policy_tree() 不关心 Gamma 的来历，见第 7 页。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. double_robust_scores() 与 conditional_means()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/02-scores.html#sec-iv",
+    "href": "notes/policytree/02-scores.html#sec-iv",
+    "title": "2. double_robust_scores() 与 conditional_means()",
+    "section": "工具变量：instrumental_forest",
+    "text": "工具变量：instrumental_forest\n处理 \\(W\\) 内生、有二值工具 \\(Z\\) 时，double_robust_scores.instrumental_forest() 实现 Athey & Wager (2021) 式 (44) 的双稳健效应得分：\n\\[\n\\hat\\gamma_i = \\hat\\tau(X_i) + \\frac{1}{\\hat\\Delta(X_i)}\\,\n\\frac{Z_i - \\hat z(X_i)}{\\hat z(X_i)\\bigl(1 - \\hat z(X_i)\\bigr)}\\,\n\\Bigl(Y_i - \\hat m(X_i) - \\bigl(W_i - \\hat w(X_i)\\bigr)\\,\\hat\\tau(X_i)\\Bigr),\n\\]\n其中 $z = $ Z.hat，$w = $ W.hat， \\(\\hat\\Delta(X) \\approx \\mathbb E[W \\mid X, Z=1] - \\mathbb E[W \\mid X, Z=0]\\) 是依从性得分。 参数 compliance.score = NULL（默认）时，函数内部会再训练一个 causal_forest(X, Y = W, W = Z, Y.hat = W.hat, W.hat = Z.hat) 来估计它—— 这是整个包里唯一会重新拟合模型的地方，用默认的 2000 棵树，每次调用都要重算一遍。 需要多次取得分时，先算好依从性得分再传进去：\n\nd   &lt;- gen_data_epl(3000, type = \"continuous\")          # 工具变量设计，见第 1 页\nivf &lt;- instrumental_forest(d$X, d$Y, d$W, d$Z, num.trees = 1000, seed = 1)\n\ncmp &lt;- causal_forest(d$X, d$W, d$Z, Y.hat = ivf$W.hat, W.hat = ivf$Z.hat,\n                     num.trees = 1000, seed = 1)\nGiv &lt;- double_robust_scores(ivf, compliance.score = predict(cmp)$predictions)\nhead(Giv, 3)\n#&gt;         control    treated\n#&gt; [1,] -0.6156108  0.6156108\n#&gt; [2,] -7.5310697  7.5310697\n#&gt; [3,]  0.5326066 -0.5326066\nall(rowSums(Giv) == 0)\n#&gt; [1] TRUE\n\n\\(\\hat\\Delta\\) 接近 0（弱工具）的地方 \\(1/\\hat\\Delta\\) 会爆炸，这里同样没有截断。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. double_robust_scores() 与 conditional_means()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/02-scores.html#sec-surv",
+    "href": "notes/policytree/02-scores.html#sec-surv",
+    "title": "2. double_robust_scores() 与 conditional_means()",
+    "section": "生存结局：causal_survival_forest",
+    "text": "生存结局：causal_survival_forest\ndouble_robust_scores.causal_survival_forest() 只有一行：取 grf::get_scores(object)， 即森林目标量（target = \"RMST\" 的限制平均生存时间差，或 \"survival.probability\" 的 horizon 处生存概率差）的双稳健得分，然后拼成 \\((-\\hat\\gamma_i, \\hat\\gamma_i)\\)。 得分的均值就是森林的平均效应：\n\nns &lt;- 2000\nXs &lt;- matrix(rnorm(ns * 5), ns, 5)\nWs &lt;- rbinom(ns, 1, 0.5)\nTs &lt;- rexp(ns, rate = exp(0.3 * Xs[, 1] - 0.5 * Ws * (Xs[, 2] &gt; 0)))  # X2 &gt; 0 时处理有益\nCs &lt;- rexp(ns, rate = 0.2)\ncsf &lt;- causal_survival_forest(Xs, pmin(Ts, Cs), Ws, as.integer(Ts &lt;= Cs),\n                              target = \"RMST\", horizon = 2, num.trees = 1000, seed = 1)\nGs &lt;- double_robust_scores(csf)\nhead(Gs, 3)\n#&gt;        control  treated\n#&gt; [1,] -1.071223 1.071223\n#&gt; [2,] -1.368760 1.368760\n#&gt; [3,] -1.714819 1.714819\nc(mean_score = mean(Gs[, \"treated\"]),\n  grf_ATE    = unname(average_treatment_effect(csf)[\"estimate\"]))\n#&gt; mean_score    grf_ATE \n#&gt;  0.1193075  0.1193075\nhead(conditional_means(csf), 3)\n#&gt;        control   treated\n#&gt; [1,] 1.0236152 0.9863476\n#&gt; [2,] 1.0178253 0.9474309\n#&gt; [3,] 0.8914908 1.0172324\n\n注意同一个森林上两个函数的口径不一致：conditional_means() 给的是真正的 \\((\\hat\\mu_0, \\hat\\mu_1)\\)（RMST 的量纲，都在 0 到 horizon 之间）， double_robust_scores() 给的却是正负效应得分。 horizon 的选择、删失的处理等问题属于 grf，见本书的 grf 生存分析一章。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. double_robust_scores() 与 conditional_means()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/02-scores.html#sec-pm",
+    "href": "notes/policytree/02-scores.html#sec-pm",
+    "title": "2. double_robust_scores() 与 conditional_means()",
+    "section": "正负号结构的后果",
+    "text": "正负号结构的后果\n对工具变量森林和生存森林，Gamma = cbind(-γ, γ)。代入 policy_tree() 的目标函数 （得分按策略求和，见第 1 页），得到\n\\[\n\\sum_{i:\\pi(X_i)=2} \\hat\\gamma_i - \\sum_{i:\\pi(X_i)=1} \\hat\\gamma_i\n= 2\\sum_{i:\\pi(X_i)=2} \\hat\\gamma_i - \\sum_{i} \\hat\\gamma_i .\n\\tag{224.1}\\]\n第二项与 \\(\\pi\\) 无关，所以找到的树与用 \\((0, \\hat\\gamma_i)\\) 找到的完全一样：\n\nXiv   &lt;- round(d$X, 2)\nGiv01 &lt;- cbind(control = 0, treated = Giv[, \"treated\"])\nt_pm  &lt;- policy_tree(Xiv, Giv,   depth = 2)\nt_01  &lt;- policy_tree(Xiv, Giv01, depth = 2)\nidentical(t_pm[[\"_tree_array\"]], t_01[[\"_tree_array\"]])\n#&gt; [1] TRUE\n\n但系数 2 在另外两件事上会出错：\n扣成本。 policy_tree() 帮助页示例的做法是从 treated 列减去成本 \\(c\\)。 在 \\((\\hat\\Gamma_{i0}, \\hat\\Gamma_{i1})\\) 上这等价于”效应超过 \\(c\\) 才治疗”； 在 \\((-\\hat\\gamma_i, \\hat\\gamma_i)\\) 上，比较的是 \\(\\hat\\gamma_i - c\\) 与 \\(-\\hat\\gamma_i\\)， 门槛变成 \\(c/2\\)：\n\ncost &lt;- 0.3\nGc &lt;- Giv;   Gc[, \"treated\"]   &lt;- Gc[, \"treated\"]   - cost\nG1c &lt;- Giv01; G1c[, \"treated\"] &lt;- G1c[, \"treated\"] - cost\nc(prefer_treat_pm = mean(Gc[, \"treated\"]  &gt; Gc[, \"control\"]),\n  gamma_gt_c_half = mean(Giv[, \"treated\"] &gt; cost / 2),\n  prefer_treat_01 = mean(G1c[, \"treated\"] &gt; G1c[, \"control\"]),\n  gamma_gt_c      = mean(Giv[, \"treated\"] &gt; cost))\n#&gt; prefer_treat_pm gamma_gt_c_half prefer_treat_01      gamma_gt_c \n#&gt;       0.4736667       0.4736667       0.4610000       0.4610000\n\n逐行看，在正负号矩阵上扣成本后”更偏好治疗”的比例恰好等于 \\(\\hat\\gamma_i &gt; c/2\\) 的比例。\n评估策略。 常见写法 mean(Gamma[cbind(i, a)] - Gamma[i, 1]) （策略相对”谁都不治”的增益）在正负号矩阵上对被治疗者算的是 \\(\\hat\\gamma_i - (-\\hat\\gamma_i) = 2\\hat\\gamma_i\\)，增益翻倍。 第 7 页用真值演示了这一点。\n\n\n\n\n\n\n提示统一的修法\n\n\n\n拿到工具变量或生存森林的得分后，第一步就改成\nGamma &lt;- cbind(control = 0, treated = double_robust_scores(forest)[, \"treated\"])\n找树的结果不变，扣成本、评估策略的写法就和 causal_forest 完全一致了。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. double_robust_scores() 与 conditional_means()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/02-scores.html#sec-deprecated",
+    "href": "notes/policytree/02-scores.html#sec-deprecated",
+    "title": "2. double_robust_scores() 与 conditional_means()",
+    "section": "已弃用：multi_causal_forest()",
+    "text": "已弃用：multi_causal_forest()\nmulti_causal_forest() 是 policytree 1.0 时代的”一对多”因果森林。 自 1.1 起它只是一个转发壳：发一条弃用警告，把参数原样传给 grf::multi_arm_causal_forest() 并返回后者的对象。 签名里的 tune.parameters、tune.num.trees、tune.num.reps、tune.num.draws、 orthog.boosting 不会被转发（源码的调用里没有它们），写了也不生效。\n\nf &lt;- withCallingHandlers(\n  multi_causal_forest(X, Ym, Wm, num.trees = 200),\n  warning = function(w) { message(\"警告：\", trimws(conditionMessage(w))); invokeRestart(\"muffleWarning\") })\n#&gt; 警告：Deprecation warning:\n#&gt; This forest is deprecated. Returning an object of type `multi_arm_causal_forest` available in GRF 2.0+\nclass(f)\n#&gt; [1] \"multi_arm_causal_forest\" \"grf\"\n\n帮助页特意提醒：用于策略学习时它与旧版等价，但逐点预测不同—— multi_arm_causal_forest 的 predict() 给的是对基线的对比，而不是旧版的”一对多”效应。 新代码直接用 grf::multi_arm_causal_forest()。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>224</span>  <span class='chapter-title'>2. double_robust_scores() 与 conditional_means()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/03-policy-tree.html",
+    "href": "notes/policytree/03-policy-tree.html",
+    "title": "3. policy_tree()：精确树搜索",
+    "section": "",
+    "text": "签名与参数\npolicy_tree() 是整个包的核心：在所有深度不超过 depth 的轴平行决策树里， 穷举出使奖励之和最大的那一棵。本页逐个说明它的参数， 重点是两件帮助页写了但没有演示的事——默认 min.node.size = 1 的过拟合， 以及运行时间随 \\(n\\)、\\(p\\)、取值个数的增长——并补上两件帮助页没写的事： 怎样加样本权重，以及更快的替代求解器 fastpolicytree。\n返回 policy_tree 对象，结构见第 1 页。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/03-policy-tree.html#签名与参数",
+    "href": "notes/policytree/03-policy-tree.html#签名与参数",
+    "title": "3. policy_tree()：精确树搜索",
+    "section": "",
+    "text": "policy_tree(X, Gamma, depth = 2, split.step = 1, min.node.size = 1, verbose = TRUE)\n\n\n\n\n\n\n\n\n参数\n默认\n说明\n\n\n\n\nX\n—\n\\(n \\times p\\) 数值 matrix / data.frame，无缺失；列名会存进树里\n\n\nGamma\n—\n\\(n \\times d\\) 奖励矩阵，第 \\(a\\) 列是”给第 \\(i\\) 人处理 \\(a\\)“的奖励；列名即处理名\n\n\ndepth\n2\n树的最大深度；0 表示不切分、所有人同一处理\n\n\nsplit.step\n1\n每隔几个样本才考虑一个候选切点；1 为穷举\n\n\nmin.node.size\n1\n叶子的最小样本量\n\n\nverbose\nTRUE\n打印规模警告；交互会话中长时间求解时显示心跳进度",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/03-policy-tree.html#sec-objective",
+    "href": "notes/policytree/03-policy-tree.html#sec-objective",
+    "title": "3. policy_tree()：精确树搜索",
+    "section": "目标函数、切分规则与剪枝",
+    "text": "目标函数、切分规则与剪枝\npolicy_tree() 求解\n\\[\n\\hat\\pi = \\arg\\max_{\\pi \\in \\Pi_k} \\sum_{i=1}^{n} \\Gamma_{i,\\pi(X_i)},\n\\]\n\\(\\Pi_k\\) 是深度 \\(\\le k\\) 的树：每个内部节点把 \\(X_j \\le v\\) 的样本送往左子、其余送往右子， 候选切点 \\(v\\) 取自样本中 \\(X_j\\) 的观测值。每片叶子内部，最优处理就是该叶子里 列和最大的那一列。与 CART 的逐层贪心不同，这里对所有变量、所有切点的组合一起优化， 得到的是全局最优解（Sverdrup et al. 2020）。\n帮助页的 Description 说：“如果某节点左右两片叶子的最优处理相同，该节点被剪掉。” 下面把每个人的 treated 得分都抬高 5，人人都该治疗：\n\nn &lt;- 2000\nX &lt;- round(matrix(rnorm(n * 5), n, 5), 2)\ncolnames(X) &lt;- paste0(\"X\", 1:5)\nW   &lt;- rbinom(n, 1, plogis(0.5 * X[, 3]))\ntau &lt;- (pmax(0, X[, 1]) + pmax(0, X[, 2]) - 1) / 2\nY   &lt;- pmax(0, X[, 3] + X[, 4]) + W * tau + rnorm(n)\ncf    &lt;- causal_forest(X, Y, W, num.trees = 1000, seed = 1)\nGamma &lt;- double_robust_scores(cf)\n\nG_all &lt;- Gamma\nG_all[, \"treated\"] &lt;- G_all[, \"treated\"] + 5\npolicy_tree(X, G_all, depth = 2, min.node.size = 10)\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: control 2: treated \n#&gt; Variable splits: \n#&gt; (1) * action: 2\n\n剪枝确实发生了，整棵树只剩一片叶子——但 Tree depth: 仍然写 2， 这个字段是调用时的参数，不是实际深度。上面加了 min.node.size = 10，原因见下一节。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/03-policy-tree.html#sec-minnode",
+    "href": "notes/policytree/03-policy-tree.html#sec-minnode",
+    "title": "3. policy_tree()：精确树搜索",
+    "section": "min.node.size：默认值会切出单人叶子",
+    "text": "min.node.size：默认值会切出单人叶子\n同一份 G_all，用默认的 min.node.size = 1：\n\nt1 &lt;- policy_tree(X, G_all, depth = 2)\nt1\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: control 2: treated \n#&gt; Variable splits: \n#&gt; (1) split_variable: X5  split_value: -2.4 \n#&gt;   (2) split_variable: X3  split_value: 1.13 \n#&gt;     (4) * action: 2 \n#&gt;     (5) * action: 1 \n#&gt;   (3) split_variable: X5  split_value: -2.39 \n#&gt;     (6) * action: 1 \n#&gt;     (7) * action: 2\ntable(leaf = predict(t1, X, type = \"node.id\"))\n#&gt; leaf\n#&gt;    4    5    6    7 \n#&gt;   20    1    1 1978\nsum(G_all[, \"control\"] &gt; G_all[, \"treated\"])     # 逐人看，得分偏好 control 的人数\n#&gt; [1] 30\n\n人人加 5 之后，逐人比较仍有少数几个人的 control 得分高于 treated——双稳健得分是 有噪声的无偏估计，单个人的得分可以离谱。精确搜索会不惜代价把这些人切出来， 于是树里出现了只有一两个人、推荐 control 的叶子。 这些叶子对应的”规则”（例如某个变量恰好等于某个值）毫无意义， 在新样本上也不会带来任何收益。\n这不是算法错误，而是最大化样本内奖励之和的必然结果： 树越深、叶子越小，越能拟合得分里的噪声。min.node.size 是最直接的约束：\n\nsapply(c(1, 5, 10, 50), function(m) {\n  t &lt;- policy_tree(X, G_all, depth = 2, min.node.size = m)\n  c(min.node.size = m, n_leaves = sum(sapply(t$nodes, `[[`, \"is_leaf\")))\n})\n#&gt;               [,1] [,2] [,3] [,4]\n#&gt; min.node.size    1    5   10   50\n#&gt; n_leaves         4    1    1    1\n\n没有抬高得分的原始数据上，差别体现在留出样本的真实策略价值上 （此处能算真值，因为模拟数据里 \\(\\tau\\) 已知）：\n\ntrain &lt;- sample(n, n / 2)\ntest  &lt;- setdiff(seq_len(n), train)\nsapply(c(1, 20, 100), function(m) {\n  t &lt;- policy_tree(X[train, ], Gamma[train, ], depth = 2, min.node.size = m)\n  a &lt;- predict(t, X[test, ])\n  c(min.node.size = m,\n    smallest_leaf = min(table(predict(t, X[train, ], type = \"node.id\"))),\n    true_gain     = round(mean(tau[test] * (a == 2)), 4))\n})\n#&gt;                  [,1]    [,2]     [,3]\n#&gt; min.node.size  1.0000 20.0000 100.0000\n#&gt; smallest_leaf 35.0000 35.0000 104.0000\n#&gt; true_gain      0.1057  0.1057   0.1079\n\ntrue_gain 是留出样本上”按树分配”相对”谁都不治”的真实平均增益。 这份数据上三种设置的真实增益几乎相同（默认设置下这次最小的叶子也有几十人）： min.node.size 的主要作用是防止前面那种单人叶子，而不是提高价值。 一片小叶子可能碰巧是对的，但它从不是一个可信的规则。实践中建议按样本量设一个有实际意义的下限 （例如每片叶子至少占样本的 2%–5%），并始终在留出样本上评估（第 6 页）。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/03-policy-tree.html#sec-depth0",
+    "href": "notes/policytree/03-policy-tree.html#sec-depth0",
+    "title": "3. policy_tree()：精确树搜索",
+    "section": "depth = 0：最好的单一处理",
+    "text": "depth = 0：最好的单一处理\ndepth = 0 不切分，返回列和最大的那一种处理，可以当作”一刀切”基准：\n\npolicy_tree(X, Gamma, depth = 0)\n#&gt; policy_tree object \n#&gt; Tree depth:  0 \n#&gt; Actions:  1: control 2: treated \n#&gt; Variable splits: \n#&gt; (1) * action: 1\nnames(which.max(colSums(Gamma)))\n#&gt; [1] \"control\"",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/03-policy-tree.html#sec-runtime",
+    "href": "notes/policytree/03-policy-tree.html#sec-runtime",
+    "title": "3. policy_tree()：精确树搜索",
+    "section": "运行时间",
+    "text": "运行时间\n帮助页给出的摊还复杂度是\n\\[\nO\\bigl(p^k\\, n^k\\, (\\log n + d) + p\\, n \\log n\\bigr),\n\\]\n\\(n\\) 指每个变量的不同取值个数（不是样本量本身），\\(k\\) 是深度。 所以深度 2 的运行时间对 \\(n\\) 和 \\(p\\) 都是平方增长；把连续变量取整、降低取值个数， 比减少样本量有效得多。本机实测（深度 2，两种处理，随机数据）：\n\ntime_it &lt;- function(n, p, d = 2, digits = NULL, split.step = 1) {\n  Xr &lt;- matrix(rnorm(n * p), n, p)\n  if (!is.null(digits)) Xr &lt;- round(Xr, digits)\n  Gr &lt;- matrix(rnorm(n * d), n, d)\n  unname(system.time(policy_tree(Xr, Gr, depth = 2, split.step = split.step,\n                                 verbose = FALSE))[\"elapsed\"])\n}\nrt &lt;- expand.grid(n = c(1000, 2000, 4000), p = 5)\nrt$continuous   &lt;- mapply(time_it, rt$n, rt$p)\nrt$round_1      &lt;- mapply(time_it, rt$n, rt$p, digits = 1)\nrt$split_step10 &lt;- mapply(time_it, rt$n, rt$p, split.step = 10)\nrt\n#&gt;      n p continuous round_1 split_step10\n#&gt; 1 1000 5       0.10    0.02         0.03\n#&gt; 2 2000 5       0.49    0.03         0.06\n#&gt; 3 4000 5       2.29    0.14         0.25\nc(p5  = time_it(2000, 5), p10 = time_it(2000, 10))       # p 翻倍\n#&gt;   p5  p10 \n#&gt; 0.66 2.20\nc(d2  = time_it(2000, 5, d = 2), d10 = time_it(2000, 5, d = 10))  # 处理数\n#&gt;   d2  d10 \n#&gt; 0.51 1.89\n\n\\(n\\) 翻倍，连续变量的耗时约涨四倍；取整到一位小数后每个变量只剩几十个取值， 耗时降到约十分之一（仍随 \\(n\\) 增长，因为复杂度里还有排序与逐样本累加的项）； \\(p\\) 翻倍也是约四倍；处理数 \\(d\\) 从 2 增到 10，耗时增长不到三倍。 上游 pkgdown 文章给过更大规模的参考（深度 2、\\(p = 30\\)、\\(d = 20\\)）： \\(n = 1000\\) 要 1.5 分钟、\\(n = 10\\,000\\) 要 3 小时，split.step = 10 时分别是 7 秒和 14 分钟。 深度 3 更是只适合小数据：第 4 页里 \\(n = 1000\\)、5 个取整变量的精确深度 3 树要几秒， \\(n\\) 稍大就要换 hybrid_policy_tree()。\nverbose = TRUE 时，函数在三种情况下发出建议性警告（源码中的阈值）：\n\n\n\n\n\n\n\n条件\n警告大意\n\n\n\n\nsplit.step == 1 且某变量不同取值 &gt; 20 000\n考虑 split.step 或离散化\n\n\nncol(X) &gt; 50\n先按 grf::variable_importance() 降维\n\n\ndepth &gt; 2 且 nrow(X) &gt; 5000\n改用 hybrid_policy_tree()\n\n\n\n警告只是提醒，不会阻止计算。1.2.4 起求解器可以用 Ctrl+C / Esc 中断， 交互会话中还会显示一个心跳进度指示；非交互环境（Rscript、knitr）里不显示。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/03-policy-tree.html#sec-splitstep",
+    "href": "notes/policytree/03-policy-tree.html#sec-splitstep",
+    "title": "3. policy_tree()：精确树搜索",
+    "section": "split.step 与手工离散化",
+    "text": "split.step 与手工离散化\nsplit.step = s 表示每个变量排序后每隔 \\(s\\) 个样本才考虑一个切点，是对穷举的近似。 帮助页建议：能按问题本身离散化（年龄取整到岁、化验值取整到临床有意义的精度）时， 手工离散化控制得更精细。两种近似都会损失一些样本内奖励：\n\nXc &lt;- matrix(rnorm(3000 * 5), 3000, 5)\nGc &lt;- cbind(0, 0.3 * Xc[, 1] + rnorm(3000))\nreward &lt;- function(t, Xe) sum(Gc[cbind(seq_len(nrow(Gc)), predict(t, Xe))])\nc(exact        = reward(policy_tree(Xc, Gc, 2, verbose = FALSE), Xc),\n  split_step10 = reward(policy_tree(Xc, Gc, 2, split.step = 10, verbose = FALSE), Xc),\n  round_1      = reward(policy_tree(round(Xc, 1), Gc, 2, verbose = FALSE), round(Xc, 1)))\n#&gt;        exact split_step10      round_1 \n#&gt;     379.8267     377.5725     372.2729\n\n注意：用取整后的 X 训练的树，预测时也要喂同样取整的 X， 否则切点附近的样本会被分到另一侧。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/03-policy-tree.html#sec-weights",
+    "href": "notes/policytree/03-policy-tree.html#sec-weights",
+    "title": "3. policy_tree()：精确树搜索",
+    "section": "样本权重：没有参数，但可以缩放行",
+    "text": "样本权重：没有参数，但可以缩放行\npolicy_tree() 没有 sample.weights 参数。由于目标是按行求和， 给第 \\(i\\) 行乘上权重 \\(w_i\\) 就等价于加权目标 \\(\\sum_i w_i \\Gamma_{i,\\pi(X_i)}\\)。 整数权重下可以直接验证它与”把第 \\(i\\) 行复制 \\(w_i\\) 次”给出同一棵树：\n\nw &lt;- sample(1:3, n, replace = TRUE)\nt_scaled &lt;- policy_tree(X, Gamma * w, depth = 2)\nidx      &lt;- rep(seq_len(n), w)\nt_dup    &lt;- policy_tree(X[idx, ], Gamma[idx, ], depth = 2)\nidentical(t_scaled[[\"_tree_array\"]], t_dup[[\"_tree_array\"]])\n#&gt; [1] TRUE\n\n抽样权重、把样本推广到目标人群的权重都可以这样加。 注意 min.node.size 数的仍是行数而不是权重之和。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/03-policy-tree.html#sec-cost",
+    "href": "notes/policytree/03-policy-tree.html#sec-cost",
+    "title": "3. policy_tree()：精确树搜索",
+    "section": "处理成本",
+    "text": "处理成本\n处理有成本 \\(c\\)（以结局的量纲计）时，从对应列减去 \\(c\\) 即可：\n\nG_cost &lt;- Gamma\nG_cost[, \"treated\"] &lt;- G_cost[, \"treated\"] - 0.2\nt_cost &lt;- policy_tree(X, G_cost, depth = 2, min.node.size = 50)\nc(treated_share_no_cost = mean(predict(policy_tree(X, Gamma, 2, min.node.size = 50), X) == 2),\n  treated_share_cost    = mean(predict(t_cost, X) == 2))\n#&gt; treated_share_no_cost    treated_share_cost \n#&gt;                 0.328                 0.240\n\n帮助页示例用 grf::average_treatment_effect() 的估计值当”成本”， 含义是”只治疗获益高于平均水平的人”，这是一种相对标准而非真实成本。 两点提醒：减成本只对 \\((\\hat\\Gamma_{i0}, \\hat\\Gamma_{i1})\\) 形式的得分正确， 工具变量和生存森林的正负号得分会把门槛变成 \\(c/2\\)（第 2 页）； 有预算上限（“最多治疗 20% 的人”）时，树的目标函数表达不了这个约束， 应当用 maq 包 的 Qini 曲线。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/03-policy-tree.html#sec-varsel",
+    "href": "notes/policytree/03-policy-tree.html#sec-varsel",
+    "title": "3. policy_tree()：精确树搜索",
+    "section": "协变量太多时",
+    "text": "协变量太多时\n\\(p^k\\) 使变量数成为主要瓶颈。帮助页的建议是只用因果森林变量重要性最高的几个：\n\nvi  &lt;- variable_importance(cf)\ntop &lt;- order(vi, decreasing = TRUE)[1:3]\ncolnames(X)[top]\n#&gt; [1] \"X2\" \"X1\" \"X4\"\npolicy_tree(X[, top], Gamma, depth = 2, min.node.size = 50)\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: control 2: treated \n#&gt; Variable splits: \n#&gt; (1) split_variable: X1  split_value: 0.68 \n#&gt;   (2) split_variable: X2  split_value: 1.14 \n#&gt;     (4) * action: 1 \n#&gt;     (5) * action: 2 \n#&gt;   (3) * action: 2\n\n这样选出来的变量在同一份数据上又用于找树和评估，会让样本内结果更乐观； 严格的做法是把变量筛选也放进留出/交叉拟合的流程里。 另外 variable_importance() 统计的是森林分裂频率，衡量”\\(\\tau\\) 随它变化多少”， 与”它对分配决策有多重要”不完全是一回事。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/03-policy-tree.html#sec-fast",
+    "href": "notes/policytree/03-policy-tree.html#sec-fast",
+    "title": "3. policy_tree()：精确树搜索",
+    "section": "更快的求解器：fastpolicytree",
+    "text": "更快的求解器：fastpolicytree\nREADME 推荐了两个替代求解器：CRAN 上的 fastpolicytree（C 实现） 和 GitHub 上的 sparsepolicytree（Rust 实现）。 前者返回的就是 policy_tree 类对象，predict()、print()、plot() 可以照用。 本机对照（深度 3，\\(n = 1000\\)，5 个取整变量）：\n\nlibrary(fastpolicytree)\nXf &lt;- round(matrix(rnorm(1000 * 5), 1000, 5), 1)\nGf &lt;- cbind(0, 0.3 * Xf[, 1] - 0.3 * Xf[, 2] + rnorm(1000))\ntm_pt  &lt;- system.time(t_pt  &lt;- policy_tree(Xf, Gf, depth = 3, verbose = FALSE))[\"elapsed\"]\ntm_fpt &lt;- system.time(t_fpt &lt;- fastpolicytree(Xf, Gf, depth = 3))[\"elapsed\"]\nc(policytree = unname(tm_pt), fastpolicytree = unname(tm_fpt))\n#&gt;     policytree fastpolicytree \n#&gt;           3.54           0.84\nclass(t_fpt)\n#&gt; [1] \"policy_tree\"\nmean(predict(t_pt, Xf) == predict(t_fpt, Xf))       # 分配完全一致\n#&gt; [1] 1\n\n两者给出同一个最优分配（精确算法的最优值唯一，树的写法可以不同）， 这次 fastpolicytree 快了约 4 倍 （本机在别的规模上测到 5–10 倍，深度 2 时同样一致）。两点差异：它的 depth 默认是 3 而不是 2； 没有 split.step，取而代之的是一组 strategy.* 调优开关。 本手册只核对了 fastpolicytree 1.0 在上述规模下的一致性，没有逐项测试它的开关。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>225</span>  <span class='chapter-title'>3. policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/04-hybrid.html",
+    "href": "notes/policytree/04-hybrid.html",
+    "title": "4. hybrid_policy_tree()：更深的树",
+    "section": "",
+    "text": "签名与参数\n精确搜索的复杂度含 \\(n^k p^k\\)，深度 3 在几千个样本上就已经很慢（第 3 页）。 hybrid_policy_tree()（1.2.0 引入）用”前瞻若干层的精确搜索 + 逐层贪心”来造更深的树， 总耗时只是深度为 search.depth 的精确搜索的若干倍。\n返回的也是 policy_tree 对象，predict()、print()、plot() 通用； depth 字段同样记录的是参数值。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. hybrid_policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/04-hybrid.html#签名与参数",
+    "href": "notes/policytree/04-hybrid.html#签名与参数",
+    "title": "4. hybrid_policy_tree()：更深的树",
+    "section": "",
+    "text": "hybrid_policy_tree(X, Gamma, depth = 3, search.depth = 2,\n                   split.step = 1, min.node.size = 1, verbose = TRUE)\n\n\n\n\n\n\n\n\n参数\n默认\n说明\n\n\n\n\ndepth\n3\n目标深度，必须 &gt; search.depth，且 &lt;= 20\n\n\nsearch.depth\n2\n每一步前瞻的深度；建议 2 或 3，其余值在 verbose = TRUE 时警告\n\n\nsplit.step、min.node.size\n1\n原样传给每一次内部的 policy_tree()\n\n\nverbose\nTRUE\n同上，并传给内部调用",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. hybrid_policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/04-hybrid.html#sec-algorithm",
+    "href": "notes/policytree/04-hybrid.html#sec-algorithm",
+    "title": "4. hybrid_policy_tree()：更深的树",
+    "section": "算法",
+    "text": "算法\n帮助页 Details 与源码一致，写成步骤是：\n\n对当前节点的样本子集，用 policy_tree(depth = search.depth) 做一次精确搜索；\n如果这棵子树的根就是叶子（即不切分最好），当前节点成为叶子，停止；\n如果”当前层数 + search.depth = depth“，把整棵子树挂在当前节点下，停止；\n否则只保留子树的根切分，把样本分到左右两个子节点，对它们重复第 1 步。\n\n以默认的 depth = 3, search.depth = 2 为例：根节点的切分来自一棵在全样本上找到的 最优深度 2 树（但只用它的第一刀）；两个子节点各自在自己的样本上再找一棵最优深度 2 树， 整棵挂上去，总深度 3。每一刀都是”看两步再决定”，所以它比逐层贪心的 CART 更不容易被 交互结构骗到，但也不再保证全局最优。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. hybrid_policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/04-hybrid.html#sec-compare",
+    "href": "notes/policytree/04-hybrid.html#sec-compare",
+    "title": "4. hybrid_policy_tree()：更深的树",
+    "section": "与精确深度 3 对比",
+    "text": "与精确深度 3 对比\n下面的效应是一个”异或”结构：\\(\\tau(x) = \\operatorname{sign}(x_1 x_2)/2\\)， \\(X_1\\)、\\(X_2\\) 同号时处理有益。单看 \\(X_1\\) 或 \\(X_2\\)，平均效应都是 0。 处理分配无混杂（倾向得分只依赖 \\(X_3\\)）。另生成一个两万人的测试集， 用真值计算每棵树的真实增益：\n\nsim &lt;- function(n) {\n  X &lt;- round(matrix(rnorm(n * 5), n, 5), 1)\n  colnames(X) &lt;- paste0(\"X\", 1:5)\n  tau &lt;- sign(X[, 1] * X[, 2]) / 2\n  W &lt;- rbinom(n, 1, plogis(0.5 * X[, 3]))\n  Y &lt;- X[, 3] + W * tau + rnorm(n)\n  list(X = X, W = W, Y = Y, tau = tau)\n}\ntr &lt;- sim(1000)\nte &lt;- sim(20000)\ncf    &lt;- causal_forest(tr$X, tr$Y, tr$W, num.trees = 1000, seed = 1)\nGamma &lt;- double_robust_scores(cf)\n\n\nfit &lt;- list(\n  exact_d2  = function() policy_tree(tr$X, Gamma, depth = 2, verbose = FALSE),\n  exact_d3  = function() policy_tree(tr$X, Gamma, depth = 3, verbose = FALSE),\n  hybrid_d3 = function() hybrid_policy_tree(tr$X, Gamma, depth = 3, search.depth = 2, verbose = FALSE),\n  hybrid_d4 = function() hybrid_policy_tree(tr$X, Gamma, depth = 4, search.depth = 2, verbose = FALSE)\n)\nres &lt;- t(sapply(fit, function(f) {\n  sec  &lt;- system.time(t &lt;- f())[\"elapsed\"]\n  a_tr &lt;- predict(t, tr$X)\n  a_te &lt;- predict(t, te$X)\n  c(seconds          = unname(sec),\n    in_sample_reward = sum(Gamma[cbind(seq_len(nrow(Gamma)), a_tr)]),\n    n_leaves         = sum(sapply(t$nodes, `[[`, \"is_leaf\")),\n    true_gain_test   = mean(te$tau * (a_te == 2)))\n}))\nround(res, 3)\n#&gt;           seconds in_sample_reward n_leaves true_gain_test\n#&gt; exact_d2     0.02          169.486        4          0.175\n#&gt; exact_d3     3.92          243.145        8          0.114\n#&gt; hybrid_d3    0.03          224.524        8          0.117\n#&gt; hybrid_d4    0.05          291.265       16          0.082\nc(oracle_gain = mean(pmax(te$tau, 0)))\n#&gt; oracle_gain \n#&gt;     0.23115\n\n几点读法：\n\n耗时：混合搜索的深度 3、深度 4 与精确深度 2 在同一量级（都在零点几秒以内）， 精确深度 3 要 3.9 秒，慢了约两个数量级；\n样本内奖励：精确深度 3 按定义是深度 \\(\\le 3\\) 的树里最大的， 混合深度 3 比它低 8%； 混合深度 4 允许更深，样本内奖励反而超过了精确深度 3；\n测试集真实增益：才是真正该看的数，而它的排序与样本内奖励正好相反—— 深度 2 最好（0.175，理论上限 0.231）， 深度 3 的两种树相近，深度 4 最差。异或结构用深度 2 就足以表达， 多出来的切分全在拟合 1000 个样本里的噪声。更深的树在样本内总是更好看，这一点本身不说明任何问题。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. hybrid_policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/04-hybrid.html#sec-greedy",
+    "href": "notes/policytree/04-hybrid.html#sec-greedy",
+    "title": "4. hybrid_policy_tree()：更深的树",
+    "section": "纯贪心会被交互结构骗到",
+    "text": "纯贪心会被交互结构骗到\nsearch.depth = 1 退化为逐层贪心（会收到”建议取 2 或 3”的警告）。在异或结构上， 单独一刀切 \\(X_1\\) 或 \\(X_2\\) 平均没有收益，贪心的第一刀只能靠噪声来选：\n\nt_greedy &lt;- withCallingHandlers(\n  hybrid_policy_tree(tr$X, Gamma, depth = 2, search.depth = 1),\n  warning = function(w) { message(\"警告：\", conditionMessage(w)); invokeRestart(\"muffleWarning\") })\n#&gt; 警告：Suggested values for `search.depth` is 2 or 3.\nt_greedy\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: control 2: treated \n#&gt; Variable splits: \n#&gt; (1) split_variable: X2  split_value: 0.4 \n#&gt;   (2) split_variable: X5  split_value: -0.3 \n#&gt;     (4) * action: 2 \n#&gt;     (5) * action: 1 \n#&gt;   (3) split_variable: X1  split_value: 0 \n#&gt;     (6) * action: 1 \n#&gt;     (7) * action: 2\nt_exact2 &lt;- policy_tree(tr$X, Gamma, depth = 2, verbose = FALSE)\nt_exact2\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: control 2: treated \n#&gt; Variable splits: \n#&gt; (1) split_variable: X1  split_value: 0 \n#&gt;   (2) split_variable: X2  split_value: -0.5 \n#&gt;     (4) * action: 2 \n#&gt;     (5) * action: 1 \n#&gt;   (3) split_variable: X2  split_value: 0.2 \n#&gt;     (6) * action: 1 \n#&gt;     (7) * action: 2\nc(greedy = mean(te$tau * (predict(t_greedy, te$X) == 2)),\n  exact  = mean(te$tau * (predict(t_exact2, te$X) == 2)))\n#&gt;   greedy    exact \n#&gt; 0.078125 0.174800\n\n贪心树的根切在 \\(X_2 \\le 0.4\\) 而不是 0，左子树又切在与效应无关的 \\(X_5\\) 上， 真实增益不到精确深度 2 的一半；精确搜索则把两刀都放在了 0 附近。 这正是 policytree 坚持精确搜索的理由：浅层树的每一刀都需要”知道后面还能怎么切”。 search.depth 至少取 2。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. hybrid_policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/04-hybrid.html#sec-checks",
+    "href": "notes/policytree/04-hybrid.html#sec-checks",
+    "title": "4. hybrid_policy_tree()：更深的树",
+    "section": "参数校验",
+    "text": "参数校验\n\ntry(hybrid_policy_tree(tr$X, Gamma, depth = 2, search.depth = 2))\n#&gt; Error in hybrid_policy_tree(tr$X, Gamma, depth = 2, search.depth = 2) : \n#&gt;   `search.depth` should be less than `depth`.\ntry(hybrid_policy_tree(tr$X, Gamma, depth = 21))\n#&gt; Error in hybrid_policy_tree(tr$X, Gamma, depth = 21) : \n#&gt;   Specified depth is too large (as internal tree array requires `2^(depth + 1) - 1` number of rows).\n\ndepth &gt; 20 被拒绝，是因为内部要分配 \\(2^{\\text{depth}+1} - 1\\) 行的节点数组。 X 与 Gamma 的类型、行数检查与 policy_tree() 相同。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. hybrid_policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/04-hybrid.html#sec-when",
+    "href": "notes/policytree/04-hybrid.html#sec-when",
+    "title": "4. hybrid_policy_tree()：更深的树",
+    "section": "什么时候用",
+    "text": "什么时候用\n\n需要深度 3 以上、而精确深度 3 在当前 \\((n, p)\\) 下跑不动时。 前提是深度 search.depth 的精确搜索本身跑得动——混合搜索要在根节点和每个子节点上各跑一次。\n深树的每片叶子更小，更容易拟合噪声。min.node.size 在这里比在浅树上更重要， 而且树越深，越需要在留出样本上核对真实收益（第 6 页）。\n深度 4 以上的树已经很难算”可解释”。如果目的只是最大化价值、不在乎规则可读， 直接按 \\(\\hat\\tau(x)\\) 的符号分配往往更好，树的意义在于给出可以落地的规则。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>226</span>  <span class='chapter-title'>4. hybrid_policy_tree()</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/05-predict-plot.html",
+    "href": "notes/policytree/05-predict-plot.html",
+    "title": "5. predict()、print()、plot() 与内部函数",
+    "section": "",
+    "text": "predict()\n树找到之后的三件事：给新样本分配处理（predict()）、把规则读出来（print()）、 画出来（plot()）。本页还覆盖四个有帮助页但未导出的内部函数。 这一页的两个坑——返回值是列号、预测时不核对列名——比算法本身更容易出错。\na    &lt;- predict(tree, X)\nleaf &lt;- predict(tree, X, type = \"node.id\")\ntable(action = a, leaf = leaf)\n#&gt;       leaf\n#&gt; action    3    4    5\n#&gt;      1    0 1344    0\n#&gt;      2  489    0  167\nnode.id 按层序紧凑编号：根为 1，深度 2 的满树叶子是 4–7； 剪枝后重新编号，这里右子 (3) 直接是叶子，左子的两片叶子就成了 4、5。 它最常见的用途是按叶子汇总双稳健得分，看每片叶子的估计效应（第 6 页）。\npredict() 的输入检查：必须是数值 matrix / data.frame、不得有缺失、列数必须与训练时相同：\ntry(predict(tree, X[, 1:4]))\n#&gt; Error in predict.policy_tree(tree, X[, 1:4]) : \n#&gt;   This tree was trained with 5 variables. Provided: 4\nXna &lt;- X[1:5, ]; Xna[1, 1] &lt;- NA\ntry(predict(tree, Xna))\n#&gt; Error in predict.policy_tree(tree, Xna) : \n#&gt;   Covariate matrix X contains missing values.\nidentical(predict(tree, as.data.frame(X)), a)\n#&gt; [1] TRUE",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>227</span>  <span class='chapter-title'>5. predict()、print()、plot() 与内部函数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/05-predict-plot.html#sec-predict",
+    "href": "notes/policytree/05-predict-plot.html#sec-predict",
+    "title": "5. predict()、print()、plot() 与内部函数",
+    "section": "",
+    "text": "predict(object, newdata, type = c(\"action.id\", \"node.id\"), ...)\n\n\n\n\n\n\n\ntype\n返回\n\n\n\n\n\"action.id\"（默认）\n每个样本被分配到的处理的列号，取值 1..d\n\n\n\"node.id\"\n每个样本落入的叶子编号，即 print() 括号里的数字、tree$nodes 的下标",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>227</span>  <span class='chapter-title'>5. predict()、print()、plot() 与内部函数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/05-predict-plot.html#sec-actions",
+    "href": "notes/policytree/05-predict-plot.html#sec-actions",
+    "title": "5. predict()、print()、plot() 与内部函数",
+    "section": "返回的是列号，不是处理名",
+    "text": "返回的是列号，不是处理名\n二值因果森林的得分列名是 control、treated，所以 predict() 的 1 是 control、2 是 treated。 要得到与原始 W 一致的 0/1 编码，要减 1；要得到处理名，用 tree$action.names 去索引：\n\nhead(a)\n#&gt; [1] 1 1 1 1 2 1\nhead(a - 1)                       # 与 W 的 0/1 编码一致\n#&gt; [1] 0 0 0 0 1 0\nhead(tree$action.names[a])        # 处理名\n#&gt; [1] \"control\" \"control\" \"control\" \"control\" \"treated\" \"control\"\n\n处理名本身像数字时最容易出错。gen_data_mapl() 的三种处理叫 \"0\"、\"1\"、\"2\"：\n\nm  &lt;- gen_data_mapl(3000)\ntm &lt;- policy_tree(m$X, m$mu.all, depth = 2)\ntm$action.names                   # type.convert() 之后是整数 0:2\n#&gt; [1] 0 1 2\nam &lt;- predict(tm, m$X)\ntable(predict = am)               # 却是 1:3\n#&gt; predict\n#&gt;    1    2    3 \n#&gt; 1145  759 1096\n\nprint() 输出的 Actions:  1: 0 2: 1 3: 2 与叶子里的 action: 3 用的也是列号。 如果把 predict() 的返回值直接当成处理名，拿去和”真实最优处理”比对，每个人都错开一位：\n\nbest &lt;- tm$action.names[max.col(m$mu.all)]    # 每个人真实的最优处理名：0 / 1 / 2\nc(wrong = mean(am == best),                   # 把列号当处理名\n  right = mean(tm$action.names[am] == best))  # 先转成处理名\n#&gt;        wrong        right \n#&gt; 0.0003333333 0.9270000000\n\n这里的树是用真实奖励 mu.all 训练的，本该有很高的吻合率；错开一位后吻合率直接掉到很低， 而且不会报任何错。\n稳妥的写法是始终经 action.names 转换：tree$action.names[predict(tree, newX)]。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>227</span>  <span class='chapter-title'>5. predict()、print()、plot() 与内部函数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/05-predict-plot.html#sec-colorder",
+    "href": "notes/policytree/05-predict-plot.html#sec-colorder",
+    "title": "5. predict()、print()、plot() 与内部函数",
+    "section": "预测时不核对列名",
+    "text": "预测时不核对列名\n帮助页写着 newdata “should have the same number of columns as the training matrix, and the columns must appear in the same order”。但源码只检查了列数 （tree$n.features != ncol(newdata)），不看列名。把两个切分变量的列对调：\n\nXswap &lt;- X[, c(\"X2\", \"X1\", \"X3\", \"X4\", \"X5\")]   # 列名跟着换了位置\nmean(predict(tree, Xswap) != a)                   # 分配改变的比例，没有任何提示\n#&gt; [1] 0.191\n\n新数据来自另一张表、select() 时顺序不同、或者多了/少了一列又补齐时，都会发生这种事。 预测前加一行断言：\n\nsafe_predict &lt;- function(tree, newdata, ...) {\n  stopifnot(identical(colnames(newdata), tree$columns))\n  predict(tree, newdata, ...)\n}\ntry(safe_predict(tree, Xswap))\n#&gt; Error in safe_predict(tree, Xswap) : \n#&gt;   identical(colnames(newdata), tree$columns) is not TRUE\n\n训练时 X 没有列名，tree$columns 会是 \"X1\", \"X2\", … 这些 make.names() 生成的名字， 断言就失去了意义——所以训练时一定给 X 起列名。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>227</span>  <span class='chapter-title'>5. predict()、print()、plot() 与内部函数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/05-predict-plot.html#sec-print",
+    "href": "notes/policytree/05-predict-plot.html#sec-print",
+    "title": "5. predict()、print()、plot() 与内部函数",
+    "section": "print()",
+    "text": "print()\nprint() 的输出由四部分组成：Tree depth（参数值，不是剪枝后的实际深度）、 Actions（列号与处理名的对照；处理名恰为 1..d 时只打印列号）、 以及按深度缩进的切分规则。切分值用 signif() 保留 6 位有效数字。 左子是 “\\(\\le\\) 切分值”，右子是 “\\(&gt;\\) 切分值”：\n\ntree\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: control 2: treated \n#&gt; Variable splits: \n#&gt; (1) split_variable: X1  split_value: 0.68 \n#&gt;   (2) split_variable: X2  split_value: 1.14 \n#&gt;     (4) * action: 1 \n#&gt;     (5) * action: 2 \n#&gt;   (3) * action: 2\n\n读作：X1 \\(\\le\\) 切分值时进入 (2)，否则进入 (3)；叶子里的 action 是列号。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>227</span>  <span class='chapter-title'>5. predict()、print()、plot() 与内部函数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/05-predict-plot.html#sec-plot",
+    "href": "notes/policytree/05-predict-plot.html#sec-plot",
+    "title": "5. predict()、print()、plot() 与内部函数",
+    "section": "plot()",
+    "text": "plot()\nplot(x, leaf.labels = NULL, ...)\nplot() 把树转成 Graphviz 的 DOT 文本，再用 DiagrammeR::grViz() 画成 HTML 小部件。 DiagrammeR 只在 Suggests 里，没装时报 Package \"DiagrammeR\" must be installed to plot trees.。 默认叶子标签是 leaf node action = 1 这样的列号，给 leaf.labels 换成处理名更易读， 长度必须等于处理数：\n\nplot(tree, leaf.labels = c(\"不治疗\", \"治疗\"))\n\n\n\n\n\n\ntry(plot(tree, leaf.labels = \"治疗\"))\n#&gt; Error in plot.policy_tree(tree, leaf.labels = \"治疗\") : \n#&gt;   If provided, `leaf.labels` should be a vector with leaf labels for each treatment 1,..,K\n\n根节点的两条边标着 True / False，True（左）对应 “\\(\\le\\) 切分值”；更深的边不再标注，同样是左真右假。\n\n\n\n\n\n\n警告图上的切分值只保留两位小数\n\n\n\n生成 DOT 文本的内部函数 create_dot_body() 写的是 round(node$split_value, 2)， 而 print() 用的是 signif()。变量量纲很小时，图上的规则会失真：\n\nXs &lt;- X\nXs[, \"X1\"] &lt;- Xs[, \"X1\"] / 1000          # 换个单位\nts &lt;- policy_tree(Xs, Gamma, depth = 1)\nts$nodes[[1]]$split_value                # 真实切分值\n#&gt; [1] 0.00068\ngrepl(\"&lt;= 0 \", policytree:::export_graphviz(ts))   # 图上写的是 X1 &lt;= 0\n#&gt; [1] TRUE\n\n画图前把变量换成量纲合适的单位，或者以 print() 的输出为准。\n\n\n要把图存成文件，帮助页给的办法是 DiagrammeRsvg 包（本机未安装，下面这段未在本站执行）：\ntree.plot &lt;- plot(tree)\ncat(DiagrammeRsvg::export_svg(tree.plot), file = \"tree.svg\")\n# 再转 PNG / PDF：rsvg::rsvg_png(\"tree.svg\", \"tree.png\")\n也可以把 policytree:::export_graphviz() 的 DOT 文本交给命令行的 dot -Tpdf。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>227</span>  <span class='chapter-title'>5. predict()、print()、plot() 与内部函数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/05-predict-plot.html#sec-internal",
+    "href": "notes/policytree/05-predict-plot.html#sec-internal",
+    "title": "5. predict()、print()、plot() 与内部函数",
+    "section": "内部函数",
+    "text": "内部函数\n以下四个函数有帮助页但没有导出，需要 policytree::: 访问。\n\nexport_graphviz() 与 create_dot_body()\nexport_graphviz(tree) 返回完整的 DOT 字符串，create_dot_body(tree, index = 1) 从第 index 个节点开始递归生成节点与边的描述。叶子标签取自 tree$leaf.labels—— 这个字段只由 plot() 临时写入，直接调用时它不存在，叶子标签是空的：\n\nt1 &lt;- policy_tree(X, Gamma, depth = 1)\ncat(policytree:::export_graphviz(t1))\n#&gt; digraph nodes { \n#&gt;  node [shape=box] ;\n#&gt; 0 [label=\" X1 &lt;= 0.68 \"] ;\n#&gt; 0 -&gt; 1 [labeldistance=2.5, labelangle=45, headlabel=\"True\"];\n#&gt; 0 -&gt; 2 [labeldistance=2.5, labelangle=-45, headlabel=\"False\"]\n#&gt; 1  [shape=box,style=filled,color=\".7 .3 1.0\" , label=\"  \"];\n#&gt; 2  [shape=box,style=filled,color=\".7 .3 1.0\" , label=\"  \"];\n#&gt; }\nt1$leaf.labels &lt;- c(\"control\", \"treated\")\ncat(policytree:::create_dot_body(t1))\n#&gt; 0 [label=\" X1 &lt;= 0.68 \"] ;\n#&gt; 0 -&gt; 1 [labeldistance=2.5, labelangle=45, headlabel=\"True\"];\n#&gt; 0 -&gt; 2 [labeldistance=2.5, labelangle=-45, headlabel=\"False\"]\n#&gt; 1  [shape=box,style=filled,color=\".7 .3 1.0\" , label=\" control \"];\n#&gt; 2  [shape=box,style=filled,color=\".7 .3 1.0\" , label=\" treated \"];\n\n\n\nmake_tree() 与 predict_test_tree()\n这两个是给包的单元测试用的：make_tree(X, depth, d) 从 X 里随机抽切分变量和切分值、 在叶子里随机抽处理，造一棵随机树；predict_test_tree(tree, newdata) 用纯 R 逐样本走树。 make_tree() 造的树没有 _tree_array，所以不能交给 predict()：\n\nrt &lt;- policytree:::make_tree(X, depth = 2, d = 3)\nclass(rt)\n#&gt; [1] \"policy_tree\"\nhead(policytree:::predict_test_tree(rt, X))\n#&gt; [1] 2 2 2 2 2 2\ntry(predict(rt, X))\n#&gt; Error in eval(expr, envir) : \n#&gt;   Not compatible with requested type: [type=NULL; target=double].\n\npredict_test_tree() 对 policy_tree() 找到的正常树也能用，结果与 predict() 一致， 可以用来核对 C++ 预测：\n\nall(policytree:::predict_test_tree(tree, X) == predict(tree, X))\n#&gt; [1] TRUE",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>227</span>  <span class='chapter-title'>5. predict()、print()、plot() 与内部函数</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/06-evaluation.html",
+    "href": "notes/policytree/06-evaluation.html",
+    "title": "6. 策略评估",
+    "section": "",
+    "text": "策略价值的双稳健估计\npolicytree 只负责找树，不提供任何评估函数。帮助页示例里的评估只有一段 aggregate()。本页补上完整的评估流程：策略价值的双稳健估计与标准误、 为什么必须在留出样本上做、按叶子看效应、交叉拟合评估，以及与”按 \\(\\hat\\tau\\) 符号分配”的比较。 模拟数据里 \\(\\tau\\) 已知，每一步都可以与真值对照。\n对一条与评估样本无关的固定策略 \\(\\pi\\)，它的价值可以用双稳健得分的样本均值估计：\n\\[\n\\hat V(\\pi) = \\frac{1}{m} \\sum_{i \\in \\text{test}} \\hat\\Gamma_{i,\\pi(X_i)}, \\qquad\n\\widehat{\\mathrm{se}} = \\frac{\\operatorname{sd}\\bigl(\\hat\\Gamma_{i,\\pi(X_i)}\\bigr)}{\\sqrt m}.\n\\]\n与基准策略的差（“谁都不治”、“人人都治”）逐人相减后同样求均值和标准误， 这比两个价值分别估计再相减的标准误小得多，因为同一个人的两个得分高度相关。 写一个小函数：\neval_policy &lt;- function(Gamma, a) {\n  i   &lt;- seq_len(nrow(Gamma))\n  val &lt;- Gamma[cbind(i, a)]\n  est &lt;- function(x) c(estimate = mean(x), se = sd(x) / sqrt(length(x)))\n  rbind(value          = est(val),\n        gain_vs_none   = est(val - Gamma[, 1]),\n        gain_vs_all    = est(val - Gamma[, 2]),\n        treated_share  = c(mean(a == 2), NA))\n}\ngain_vs_none 与 gain_vs_all 这两行只适用于第 1 列是 control、第 2 列是 treated 的二值得分； 工具变量和生存森林的正负号得分要先改写成 \\((0, \\hat\\gamma_i)\\)（第 2 页）。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>228</span>  <span class='chapter-title'>6. 策略评估</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/06-evaluation.html#sec-holdout",
+    "href": "notes/policytree/06-evaluation.html#sec-holdout",
+    "title": "6. 策略评估",
+    "section": "留出样本上的完整流程",
+    "text": "留出样本上的完整流程\n\nsim &lt;- function(n) {\n  X &lt;- round(matrix(rnorm(n * 5), n, 5), 2)\n  colnames(X) &lt;- paste0(\"X\", 1:5)\n  tau &lt;- (pmax(0, X[, 1]) + pmax(0, X[, 2]) - 1) / 2\n  W &lt;- rbinom(n, 1, plogis(0.5 * X[, 3]))\n  Y &lt;- pmax(0, X[, 3] + X[, 4]) + W * tau + rnorm(n)\n  list(X = X, W = W, Y = Y, tau = tau)\n}\nn &lt;- 4000\nd &lt;- sim(n)\ncf    &lt;- causal_forest(d$X, d$Y, d$W, num.trees = 1000, seed = 1)\nGamma &lt;- double_robust_scores(cf)\n\ntrain &lt;- sample(n, n / 2)\ntest  &lt;- setdiff(seq_len(n), train)\ntree  &lt;- policy_tree(d$X[train, ], Gamma[train, ], depth = 2, min.node.size = 50)\ntree\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: control 2: treated \n#&gt; Variable splits: \n#&gt; (1) split_variable: X1  split_value: 0.63 \n#&gt;   (2) split_variable: X2  split_value: 0.76 \n#&gt;     (4) * action: 1 \n#&gt;     (5) * action: 2 \n#&gt;   (3) split_variable: X3  split_value: 0.76 \n#&gt;     (6) * action: 2 \n#&gt;     (7) * action: 1\na_test &lt;- predict(tree, d$X[test, ])\nround(eval_policy(Gamma[test, ], a_test), 4)\n#&gt;               estimate     se\n#&gt; value           0.6599 0.0384\n#&gt; gain_vs_none    0.0979 0.0288\n#&gt; gain_vs_all     0.2132 0.0383\n#&gt; treated_share   0.3500     NA\nc(true_gain_vs_none = mean(d$tau[test] * (a_test == 2)))\n#&gt; true_gain_vs_none \n#&gt;           0.09651\n\n森林用全部样本训练，得分是 OOB 的，测试集每个人的得分都不依赖他本人参与训练的树； 树只用训练集的得分找出来。于是在测试集上，\\(\\pi\\) 相对测试样本是固定的，上面的标准误成立。 真值落在估计值的一两个标准误以内。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>228</span>  <span class='chapter-title'>6. 策略评估</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/06-evaluation.html#sec-optimism",
+    "href": "notes/policytree/06-evaluation.html#sec-optimism",
+    "title": "6. 策略评估",
+    "section": "为什么必须留出",
+    "text": "为什么必须留出\n在训练样本上算同样的量，结果会系统性地偏乐观——树就是按”让这批得分之和最大”挑出来的， 它当然在这批数据上表现最好。重复几次模拟：\n\none_rep &lt;- function() {\n  d  &lt;- sim(4000)\n  f  &lt;- causal_forest(d$X, d$Y, d$W, num.trees = 500)\n  G  &lt;- double_robust_scores(f)\n  tr &lt;- sample(4000, 2000); te &lt;- setdiff(1:4000, tr)\n  t  &lt;- policy_tree(d$X[tr, ], G[tr, ], depth = 2, verbose = FALSE)\n  a_tr &lt;- predict(t, d$X[tr, ]); a_te &lt;- predict(t, d$X[te, ])\n  c(in_sample = mean(G[cbind(tr, a_tr)] - G[tr, 1]),\n    held_out  = mean(G[cbind(te, a_te)] - G[te, 1]),\n    truth     = mean(d$tau[te] * (a_te == 2)))\n}\nopt &lt;- t(replicate(6, one_rep()))\nround(opt, 3)\n#&gt;      in_sample held_out truth\n#&gt; [1,]     0.114    0.095 0.106\n#&gt; [2,]     0.167    0.097 0.116\n#&gt; [3,]     0.168    0.143 0.117\n#&gt; [4,]     0.148    0.133 0.099\n#&gt; [5,]     0.155    0.059 0.054\n#&gt; [6,]     0.169    0.101 0.121\nround(colMeans(opt), 3)\n#&gt; in_sample  held_out     truth \n#&gt;     0.154     0.105     0.102\n\n样本内估计的增益平均比真值高出 50%， 留出样本的估计则围绕真值波动。这个乐观偏差随树加深、叶子变小而变大 （第 4 页里深度 4 的样本内奖励最高、真实增益最低）。 任何报告的策略价值都应当来自没有参与找树的样本。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>228</span>  <span class='chapter-title'>6. 策略评估</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/06-evaluation.html#sec-leaf",
+    "href": "notes/policytree/06-evaluation.html#sec-leaf",
+    "title": "6. 策略评估",
+    "section": "按叶子看效应",
+    "text": "按叶子看效应\n帮助页示例的评估方式：在测试集上按叶子分组，分别求两列得分的均值和标准误， 看每片叶子推荐的处理是否确实更好。\n\nleaf &lt;- predict(tree, d$X[test, ], type = \"node.id\")\nby_leaf &lt;- aggregate(Gamma[test, ], by = list(leaf = leaf),\n                     FUN = function(g) c(mean = mean(g), se = sd(g) / sqrt(length(g))))\nprint(by_leaf, digits = 2)\n#&gt;   leaf control.mean control.se treated.mean treated.se\n#&gt; 1    4        0.539      0.047        0.168      0.052\n#&gt; 2    5        0.476      0.088        0.625      0.106\n#&gt; 3    6        0.371      0.086        0.750      0.084\n#&gt; 4    7        1.673      0.197        1.787      0.160\n\n更直接的是看每片叶子里的平均处理效应。它就是这片叶子里 treated − control 得分差的均值， 也等于 grf::average_treatment_effect() 限定在这片叶子上的 AIPW 估计：\n\nleaf_ate &lt;- t(sapply(sort(unique(leaf)), function(k) {\n  idx &lt;- test[leaf == k]\n  dr  &lt;- Gamma[idx, \"treated\"] - Gamma[idx, \"control\"]\n  c(leaf        = k,\n    n           = length(idx),\n    action      = predict(tree, d$X[idx[1], , drop = FALSE]),\n    ate_dr      = mean(dr),\n    se          = sd(dr) / sqrt(length(idx)),\n    grf_subset  = unname(average_treatment_effect(cf, subset = idx)[\"estimate\"]),\n    true_cate   = mean(d$tau[idx]))\n}))\nround(leaf_ate, 3)\n#&gt;      leaf    n action ate_dr    se grf_subset true_cate\n#&gt; [1,]    4 1184      1 -0.371 0.061     -0.371    -0.387\n#&gt; [2,]    5  302      2  0.149 0.121      0.149     0.248\n#&gt; [3,]    6  398      2  0.379 0.111      0.379     0.296\n#&gt; [4,]    7  116      1  0.113 0.217      0.113     0.329\n\nate_dr 与 grf_subset 两列相同。推荐 treated（action = 2）的叶子，估计效应应当为正， 推荐 control 的叶子应当为负；对不上时，要么叶子太小、要么这一刀是在拟合噪声。 这次的叶子 7 就是例子：它推荐 control，但测试集上的估计效应和真值都是正的—— 它来自训练集里切在 \\(X_3\\) 上的一刀，而 \\(X_3\\) 与 \\(\\tau\\) 无关。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>228</span>  <span class='chapter-title'>6. 策略评估</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/06-evaluation.html#sec-crossfit",
+    "href": "notes/policytree/06-evaluation.html#sec-crossfit",
+    "title": "6. 策略评估",
+    "section": "交叉拟合评估",
+    "text": "交叉拟合评估\n一分为二浪费了一半样本：找树只用了一半，评估也只用了一半。 交叉拟合把样本分成 \\(K\\) 折，每折用其余 \\(K-1\\) 折找树、在本折上预测， 最后把 \\(K\\) 折的预测拼起来统一评估。它估计的是”用这套流程找树”能达到的价值， 再用全部样本找一棵最终的树交付使用：\n\nK     &lt;- 5\nfolds &lt;- sample(rep(1:K, length.out = n))\na_cf  &lt;- integer(n)\nfor (k in 1:K) {\n  out &lt;- folds == k\n  t_k &lt;- policy_tree(d$X[!out, ], Gamma[!out, ], depth = 2, min.node.size = 50, verbose = FALSE)\n  a_cf[out] &lt;- predict(t_k, d$X[out, ])\n}\nround(eval_policy(Gamma, a_cf), 4)\n#&gt;               estimate     se\n#&gt; value           0.6841 0.0275\n#&gt; gain_vs_none    0.1099 0.0207\n#&gt; gain_vs_all     0.2190 0.0270\n#&gt; treated_share   0.3430     NA\nc(true_gain_vs_none = mean(d$tau * (a_cf == 2)))\n#&gt; true_gain_vs_none \n#&gt;        0.09987875\ntree_final &lt;- policy_tree(d$X, Gamma, depth = 2, min.node.size = 50)\ntree_final\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: control 2: treated \n#&gt; Variable splits: \n#&gt; (1) split_variable: X1  split_value: 0.63 \n#&gt;   (2) split_variable: X2  split_value: 1.27 \n#&gt;     (4) * action: 1 \n#&gt;     (5) * action: 2 \n#&gt;   (3) split_variable: X4  split_value: 1.07 \n#&gt;     (6) * action: 2 \n#&gt;     (7) * action: 1\n\n各折找到的树可能不同，交叉拟合评估的是流程而不是某一棵树； 各折的树越相似，这个估计越接近最终那棵树的价值。 严格说，拼接后的得分之间并不完全独立，上面的标准误只是近似。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>228</span>  <span class='chapter-title'>6. 策略评估</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/06-evaluation.html#sec-vs-cate",
+    "href": "notes/policytree/06-evaluation.html#sec-vs-cate",
+    "title": "6. 策略评估",
+    "section": "与”按 \\(\\hat\\tau\\) 符号分配”比较",
+    "text": "与”按 \\(\\hat\\tau\\) 符号分配”比较\n不在乎可解释性时，最自然的策略是 \\(\\pi(x) = \\mathbb 1\\{\\hat\\tau(x) &gt; 0\\}\\)。 在同一个测试集上，用真值比较两种策略：\n\ntau_hat &lt;- predict(cf)$predictions          # OOB 预测，测试集每人的预测不含本人\na_sign  &lt;- ifelse(tau_hat[test] &gt; 0, 2L, 1L)\nc(tree_true_gain   = mean(d$tau[test] * (a_test == 2)),\n  sign_true_gain   = mean(d$tau[test] * (a_sign == 2)),\n  oracle_true_gain = mean(pmax(d$tau[test], 0)))\n#&gt;   tree_true_gain   sign_true_gain oracle_true_gain \n#&gt;        0.0965100        0.1195625        0.1231475\n\n深度 2 的树只用两三条规则，就拿到了黑箱策略的大部分价值；差额就是可解释性的代价。 如果差额很大，说明异质性结构超出了浅树的表达能力，此时应当考虑加深（第 4 页） 或者干脆接受黑箱策略。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>228</span>  <span class='chapter-title'>6. 策略评估</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/06-evaluation.html#sec-inference",
+    "href": "notes/policytree/06-evaluation.html#sec-inference",
+    "title": "6. 策略评估",
+    "section": "推断的边界",
+    "text": "推断的边界\n\n标准误只在”策略与评估样本独立”时成立。在找树的样本上报告的标准误没有意义。\n比较多种深度、多组 min.node.size 后挑最好的一个，再在同一个测试集上报告它的价值， 又会引入一轮选择偏差；需要时再留一个最终测试集。\n预算约束（“最多治疗 20% 的人”）树的目标函数表达不了。按预算画价值曲线请用 maq 包，按 \\(\\hat\\tau\\) 排序检验异质性请用 grf 的 RATE（grf 的 RATE 一章）。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>228</span>  <span class='chapter-title'>6. 策略评估</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/07-multi-iv-surv.html",
+    "href": "notes/policytree/07-multi-iv-surv.html",
+    "title": "7. 多臂、工具变量与生存结局",
+    "section": "",
+    "text": "多臂处理\n前几页都用二值处理的 causal_forest。本页把同一套流程搬到另外三种森林上， 每个场景都用真值已知的模拟数据，把第 2 页和第 5 页 讲过的两个坑——正负号得分、列号与处理名——放回完整流程里再看一遍。\ngen_data_mapl() 有三种处理、三个区域，每个区域的最优处理不同（第 1 页）。 处理名是 \"0\"、\"1\"、\"2\"，正好用来检验列号与处理名的转换：\nm  &lt;- gen_data_mapl(6000)\nXm &lt;- round(m$X, 2)\ncolnames(Xm) &lt;- paste0(\"X\", 1:ncol(Xm))\nmcf &lt;- multi_arm_causal_forest(Xm, m$Y, as.factor(m$action), num.trees = 1000, seed = 1)\nGm  &lt;- double_robust_scores(mcf)\nhead(Gm, 3)\n#&gt;              0        1        2\n#&gt; [1,] 19.181695 1.828823 1.476665\n#&gt; [2,]  2.887404 2.047550 1.612725\n#&gt; [3,]  1.243430 3.644841 1.459426\n\ntrain &lt;- 1:4000\ntest  &lt;- 4001:6000\ntm &lt;- policy_tree(Xm[train, ], Gm[train, ], depth = 2, min.node.size = 50)\ntm\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: 0 2: 1 3: 2 \n#&gt; Variable splits: \n#&gt; (1) split_variable: X5  split_value: 0.56 \n#&gt;   (2) split_variable: X7  split_value: 0.35 \n#&gt;     (4) * action: 3 \n#&gt;     (5) * action: 1 \n#&gt;   (3) split_variable: X7  split_value: 0.69 \n#&gt;     (6) * action: 2 \n#&gt;     (7) * action: 3\n真实的区域边界由 \\(X_5\\)、\\(X_7\\) 决定，树应当只切这两个变量。 用 mu.all（真实奖励）评估测试集上的策略价值，与几个基准比较：\na_id   &lt;- predict(tm, Xm[test, ])                  # 列号 1..3\na_name &lt;- tm$action.names[a_id]                    # 处理名 0..2\nmu_te  &lt;- m$mu.all[test, ]\noracle_tree &lt;- policy_tree(Xm[train, ], m$mu.all[train, ], depth = 2)   # 奖励已知时的最优深度 2 树\nc(learned_tree   = mean(mu_te[cbind(seq_along(a_id), a_id)]),\n  oracle_tree    = mean(mu_te[cbind(seq_along(a_id), predict(oracle_tree, Xm[test, ]))]),\n  best_one_arm   = max(colMeans(mu_te)),\n  oracle_any     = mean(apply(mu_te, 1, max)))\n#&gt; learned_tree  oracle_tree best_one_arm   oracle_any \n#&gt;      2.16000      2.19700      1.43300      2.24625\ntable(learned = a_name, true_best = tm$action.names[max.col(mu_te)])\n#&gt;        true_best\n#&gt; learned   0   1   2\n#&gt;       0 724   0   0\n#&gt;       1  24 538  22\n#&gt;       2  28 119 545\nmu.all 的列顺序与 Gm 相同，所以用列号 a_id 直接做下标是对的； 和”真实最优处理名”比对时，则要先转成处理名 a_name。 学到的树接近”奖励已知时的最优深度 2 树”，两者与 oracle_any（逐人取最优）的差距， 就是轴平行浅树近似椭圆边界的代价。画出来看得更清楚：\ncols &lt;- c(\"0\" = \"#1b9e77\", \"1\" = \"#d95f02\", \"2\" = \"#7570b3\")\nplot(Xm[test, \"X5\"], Xm[test, \"X7\"], col = cols[as.character(a_name)], pch = 16, cex = 0.5,\n     xlab = \"X5\", ylab = \"X7\", asp = 1)\nth &lt;- seq(0, pi / 2, length.out = 100)\nlines(0.6 * cos(th), 0.35 * sin(th), lwd = 2)                 # 区域 2 的左下椭圆\nlines(1 - 0.4 * cos(th), 1 - 0.35 * sin(th), lwd = 2)         # 区域 2 的右上椭圆\nsegments(0.6, 0.35, 0.6, 1, lwd = 2); segments(0, 0.35, 0.6, 0.35, lwd = 2)   # 区域 0\nlegend(\"topright\", legend = paste(\"处理\", names(cols)), col = cols, pch = 16, bg = \"white\")\n\n\n\n\n\n\n\n图 229.1: 测试集上学到的策略（颜色）与真实区域边界（黑线）\n多臂森林支持多结局。若要在疗效与副作用之间权衡，可以对两列得分加权求和后再找树，例如 Gamma &lt;- double_robust_scores(f, outcome = \"efficacy\") - lambda * double_robust_scores(f, outcome = \"toxicity\")， \\(\\lambda\\) 是两种结局之间的换算率。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>229</span>  <span class='chapter-title'>7. 多臂、工具变量与生存结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/07-multi-iv-surv.html#sec-iv",
+    "href": "notes/policytree/07-multi-iv-surv.html#sec-iv",
+    "title": "7. 多臂、工具变量与生存结局",
+    "section": "工具变量",
+    "text": "工具变量\ngen_data_epl() 的处理 \\(W\\) 内生，\\(Z\\) 是工具（第 1 页）。 同一份数据分别走”错误”（因果森林）和”正确”（工具变量森林）两条路：\n\nd  &lt;- gen_data_epl(6000, type = \"continuous\")\nXd &lt;- round(d$X, 2)\ncolnames(Xd) &lt;- paste0(\"X\", 1:10)\ntrain &lt;- 1:4000\ntest  &lt;- 4001:6000\n\nivf  &lt;- instrumental_forest(Xd, d$Y, d$W, d$Z, num.trees = 1000, seed = 1)\nGiv  &lt;- double_robust_scores(ivf)\nGiv01 &lt;- cbind(control = 0, treated = Giv[, \"treated\"])     # 改写成 (0, γ)\n\ncf_wrong &lt;- causal_forest(Xd, d$Y, d$W, num.trees = 1000, seed = 1)\nG_wrong  &lt;- double_robust_scores(cf_wrong)\n\nt_iv    &lt;- policy_tree(Xd[train, ], Giv01[train, ],   depth = 2, min.node.size = 50)\nt_wrong &lt;- policy_tree(Xd[train, ], G_wrong[train, ], depth = 2, min.node.size = 50)\nt_iv\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: control 2: treated \n#&gt; Variable splits: \n#&gt; (1) split_variable: X2  split_value: 0.54 \n#&gt;   (2) split_variable: X1  split_value: 0.76 \n#&gt;     (4) * action: 1 \n#&gt;     (5) * action: 2 \n#&gt;   (3) split_variable: X4  split_value: -1.18 \n#&gt;     (6) * action: 1 \n#&gt;     (7) * action: 2\n\n真实的 \\(\\tau(x) = (\\max(0, x_1) + \\max(0, x_2) - 1)/2\\)，工具变量树应当切在 \\(X_1\\)、\\(X_2\\) 上。 在测试集上比较三种评估写法和真值：\n\na_iv    &lt;- predict(t_iv,    Xd[test, ])\na_wrong &lt;- predict(t_wrong, Xd[test, ])\nte &lt;- seq_along(test)\ngain_iv &lt;- Giv01[test, ][cbind(te, a_iv)] - Giv01[test, 1]\nrbind(\n  iv_tree = c(naive_pm   = mean(Giv[test, ][cbind(te, a_iv)] - Giv[test, 1]),   # 在正负号矩阵上相减\n              correct    = mean(gain_iv),\n              correct_se = sd(gain_iv) / sqrt(length(te)),\n              truth      = mean(d$tau[test] * (a_iv == 2)),\n              treated    = mean(a_iv == 2)),\n  causal_forest_tree = c(naive_pm = NA, correct = NA, correct_se = NA,\n              truth      = mean(d$tau[test] * (a_wrong == 2)),\n              treated    = mean(a_wrong == 2)))\n#&gt;                      naive_pm     correct correct_se      truth treated\n#&gt; iv_tree            -0.1995433 -0.09977167 0.06756387  0.0979981  0.4150\n#&gt; causal_forest_tree         NA          NA         NA -0.1104787  0.9405\n\n在正负号矩阵上直接相减（naive_pm）恰好是正确写法（correct）的两倍，这一点是代数恒等式。 但这一次，正确写法的估计也离真值很远——看它的标准误：测试集 2000 人时约 0.07，与效应本身同一量级。 工具变量得分里有 \\(1/\\hat\\Delta\\) 和 \\(1/[\\hat z(1-\\hat z)]\\) 两个放大因子，方差比普通 AIPW 得分大得多。 把同一流程重复十次，看估计有没有系统偏差：\n\niv_rep &lt;- function() {\n  d  &lt;- gen_data_epl(6000, type = \"continuous\")\n  Xd &lt;- round(d$X, 2)\n  f  &lt;- instrumental_forest(Xd, d$Y, d$W, d$Z, num.trees = 500)\n  cp &lt;- causal_forest(Xd, d$W, d$Z, Y.hat = f$W.hat, W.hat = f$Z.hat, num.trees = 500)\n  g  &lt;- double_robust_scores(f, compliance.score = predict(cp)$predictions)[, \"treated\"]\n  t  &lt;- policy_tree(Xd[1:4000, ], cbind(0, g[1:4000]), depth = 2, min.node.size = 50, verbose = FALSE)\n  a  &lt;- predict(t, Xd[4001:6000, ])\n  x  &lt;- g[4001:6000] * (a == 2)\n  c(estimate = mean(x), se = sd(x) / sqrt(2000), truth = mean(d$tau[4001:6000] * (a == 2)))\n}\nreps &lt;- t(replicate(10, iv_rep()))\nround(reps, 3)\n#&gt;       estimate    se truth\n#&gt;  [1,]    0.025 0.076 0.048\n#&gt;  [2,]    0.125 0.070 0.119\n#&gt;  [3,]    0.208 0.071 0.124\n#&gt;  [4,]    0.151 0.068 0.118\n#&gt;  [5,]    0.170 0.079 0.028\n#&gt;  [6,]    0.136 0.085 0.092\n#&gt;  [7,]   -0.022 0.075 0.060\n#&gt;  [8,]   -0.106 0.076 0.049\n#&gt;  [9,]    0.040 0.091 0.082\n#&gt; [10,]   -0.015 0.081 0.019\nround(colMeans(reps), 3)\n#&gt; estimate       se    truth \n#&gt;    0.071    0.077    0.074\n\n十次的估计围绕真值上下波动，平均值接近真值，单次偏离可以达到两三个标准误——没有系统偏差， 只是噪声大。工具变量场景下评估策略需要比二值处理大得多的测试集。\n另外两点： - 用因果森林得分找的树几乎给所有人分配处理，真实增益为负—— 内生性把效应估成了正的（第 1 页），策略随之反向。 这类错误无法从 policy_tree() 的输出本身看出来。 - 工具变量得分识别的是依从者的局部效应（LATE 型）。只有在效应对依从者与非依从者相同、 或者决策本来就只影响依从者时，按它找的策略才等于总体最优。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>229</span>  <span class='chapter-title'>7. 多臂、工具变量与生存结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/07-multi-iv-surv.html#sec-surv",
+    "href": "notes/policytree/07-multi-iv-surv.html#sec-surv",
+    "title": "7. 多臂、工具变量与生存结局",
+    "section": "生存结局",
+    "text": "生存结局\ncausal_survival_forest() 的目标量是 horizon 内的限制平均生存时间（RMST）差， 或 horizon 处的生存概率差。下面的指数生存模型里 RMST 有闭式，可以算出每个人的真实效应：\n\\[\n\\lambda_0(x) = e^{0.3 x_1}, \\quad \\lambda_1(x) = e^{0.3 x_1 - 0.5\\,\\mathbb 1(x_2 &gt; 0)}, \\qquad\n\\mathrm{RMST}_a(x) = \\frac{1 - e^{-\\lambda_a(x) h}}{\\lambda_a(x)} .\n\\]\n\\(X_2 &gt; 0\\) 的人处理后风险降低、RMST 延长，其余人处理无效；再给处理加一个成本， 让”无效者不治”成为正确答案。\n\nns &lt;- 4000; h &lt;- 2\nXs &lt;- round(matrix(rnorm(ns * 5), ns, 5), 2)\ncolnames(Xs) &lt;- paste0(\"X\", 1:5)\nWs &lt;- rbinom(ns, 1, 0.5)\nlam0 &lt;- exp(0.3 * Xs[, 1])\nlam1 &lt;- exp(0.3 * Xs[, 1] - 0.5 * (Xs[, 2] &gt; 0))\nTs &lt;- rexp(ns, ifelse(Ws == 1, lam1, lam0))\nCs &lt;- rexp(ns, 0.2)\ntau_rmst &lt;- (1 - exp(-lam1 * h)) / lam1 - (1 - exp(-lam0 * h)) / lam0   # 真实 RMST 差\n\ncsf &lt;- causal_survival_forest(Xs, pmin(Ts, Cs), Ws, as.integer(Ts &lt;= Cs),\n                              target = \"RMST\", horizon = h, num.trees = 1000, seed = 1)\ncost &lt;- 0.05                                                  # 以 RMST 的时间单位计\nGs01 &lt;- cbind(control = 0, treated = double_robust_scores(csf)[, \"treated\"] - cost)\n\ntrain &lt;- 1:3000; test &lt;- 3001:4000\nt_s &lt;- policy_tree(Xs[train, ], Gs01[train, ], depth = 2, min.node.size = 50)\nt_s\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: control 2: treated \n#&gt; Variable splits: \n#&gt; (1) split_variable: X2  split_value: -0.71 \n#&gt;   (2) split_variable: X2  split_value: -1.06 \n#&gt;     (4) * action: 1 \n#&gt;     (5) * action: 2 \n#&gt;   (3) split_variable: X2  split_value: 0.03 \n#&gt;     (6) * action: 1 \n#&gt;     (7) * action: 2\na_s &lt;- predict(t_s, Xs[test, ])\nc(est_net_gain  = mean(Gs01[test, \"treated\"] * (a_s == 2)),\n  true_net_gain = mean((tau_rmst[test] - cost) * (a_s == 2)),\n  oracle        = mean(pmax(tau_rmst[test] - cost, 0)),\n  treat_all     = mean(tau_rmst[test] - cost))\n#&gt;  est_net_gain true_net_gain        oracle     treat_all \n#&gt;    0.13812430    0.11161457    0.11954843    0.09504843\n\n改写成 \\((0, \\hat\\gamma)\\) 之后再减成本，门槛才是真正的 \\(c\\)； 直接在 double_robust_scores() 的正负号矩阵上减，门槛会变成 \\(c/2\\)（第 2 页）。\n生存场景额外要注意的都属于 grf：horizon 要落在两组都有足够随访的范围内， 删失机制要能被协变量解释。详见 grf 生存分析一章。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>229</span>  <span class='chapter-title'>7. 多臂、工具变量与生存结局</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree.html",
+    "href": "notes/policytree.html",
+    "title": "policytree 包函数手册",
+    "section": "",
+    "text": "核对环境与证据边界\npolicytree 回答的是异质性效应分析的下一个问题：已经知道不同的人对处理反应不同， 那么谁该接受哪种处理？它给出的答案是一棵浅层决策树—— “年龄 ≤ 60 岁且肌酐 ≤ 1.2 mg/dL 的人用药，其余不用”——可以直接写进方案或指南。 方法是 Athey & Wager (2021) 的双稳健经验福利最大化：先用 grf 的森林算出每个人在每种处理下的 双稳健得分 \\(\\hat\\Gamma_{ia}\\)，再在所有深度为 \\(k\\) 的轴平行决策树里穷举出使 \\(\\sum_i \\hat\\Gamma_{i,\\pi(X_i)}\\) 最大的那一棵。与 CART 的逐层贪心不同，它找到的是全局最优的浅树。\n本部分是该包的函数用法手册，逐个覆盖包内全部 15 个帮助主题 （pkgdown 站点、 CRAN 参考手册）， 包括 4 个有帮助页但未导出的内部函数。 每页给出参数逐项说明、可直接运行的代码、返回对象的结构， 以及本机实际运行后发现的默认值陷阱与失效路径。 本书另有 grf 官方教程的中译 用最优决策树做策略学习， 是这个包的入门示例；本手册在它之后，讲每个函数的细节和坑。\n本手册核对截止 2026 年 9 月 28 日，环境为：\n证据分三级，正文中逐处标明：\n本手册的代码块由本站渲染时真实执行，页面上的输出与图形就是本机结果。 随机过程已固定种子（set.seed(20260928)，grf 森林另设 seed = 1）。 本手册是原创的用法说明，不是官方文档的翻译；个别示例改编自包自带的帮助页（MIT 许可）。",
+    "crumbs": [
+      "policytree 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/policytree.html#核对环境与证据边界",
+    "href": "notes/policytree.html#核对环境与证据边界",
+    "title": "policytree 包函数手册",
+    "section": "",
+    "text": "项目\n值\n\n\n\n\n包版本\npolicytree 1.2.5（CRAN 2026-08-04，MIT，维护者 Erik Sverdrup）\n\n\nR\nWindows R 4.4.3\n\n\nImports\nRcpp、grf (≥ 2.0.0)；LinkingTo Rcpp、BH\n\n\nSuggests（影响可用功能）\nDiagrammeR（plot() 必需）、testthat\n\n\n已装版本\ngrf 2.6.1、DiagrammeR 1.0.11；对照用 fastpolicytree 1.0\n\n\n示例数据\n包自带的 gen_data_epl()、gen_data_mapl()，以及本手册的模拟数据（真值已知）\n\n\n\n\n\n文档——包自带帮助页、pkgdown 文章、README 与 CHANGELOG 的原文；\n源码——本机已安装包的函数体（policytree::: 可复核）；\n实测——在上述环境下实际运行的输出。\n\n\n\n\n\n\n\n\n重要七处文档没有写明的实测结论\n\n\n\n在展开之前先给出结论，它们影响所有使用者：\n\npredict() 只核对列数，不核对列名。 帮助页要求 newdata 的列顺序与训练时相同， 但源码只比较 ncol()。把两个切分变量的列对调，实测 19% 的人分配改变，没有任何提示。 见第 5 页。\npredict() 返回的是列号 1..d，不是处理名。 二值森林里 1 是 control、2 是 treated； gen_data_mapl() 的处理名是 0/1/2，把返回值直接当处理名，与真实最优处理的吻合率从 92.7% 掉到 0.03%。 见第 5 页。\n工具变量森林和生存森林的得分是 \\((-\\hat\\gamma_i, \\hat\\gamma_i)\\)，不是两个潜在结局的得分。 找到的树不受影响，但照帮助页的写法从 treated 列减成本 \\(c\\)，实际门槛是 \\(c/2\\)； 用 Gamma[cbind(i, a)] - Gamma[i, 1] 评估策略，增益被算成两倍。 见第 2 页。\ndouble_robust_scores(forest, newdata = ...) 不报错。 ... 被转给 predict()， 新数据的 \\(\\hat\\tau\\) 与训练集的 \\(\\hat m\\)、\\(\\hat e\\) 按 R 的循环规则拼在一起； 行数整除训练集行数时连警告都没有。见第 2 页。\n默认 min.node.size = 1 会切出单人叶子。 把每个人的 treated 得分都抬高 5（人人该治）， 默认设置仍给出两片各只有 1 个人、推荐 control 的叶子；min.node.size = 10 才得到”全部治疗”。 见第 3 页。\ngen_data_epl() 的处理是内生的。 它是 Athey & Wager (2021) 第 5.2 节的工具变量设计， 处理依赖结局噪声。喂给 causal_forest() 得到的 ATE 是 0.45，真值 −0.10； 据此学到的树给 94% 的人处理，真实增益为负。必须用 instrumental_forest()。 见第 1 页与第 7 页。\nplot() 把切分值四舍五入到两位小数。 真实切分值 0.00068 画出来是 X1 &lt;= 0； print() 用 signif() 保留 6 位有效数字才是准的。 见第 5 页。\n\n另有一条方法上的提醒：在找树的同一批样本上评估策略，增益平均被高估约一半 （第 6 页）；更深的树样本内奖励更高、 测试集真实增益反而更低（第 4 页）。 其余失效路径汇总在第 8 页。",
+    "crumbs": [
+      "policytree 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/policytree.html#这个包在做什么",
+    "href": "notes/policytree.html#这个包在做什么",
+    "title": "policytree 包函数手册",
+    "section": "这个包在做什么",
+    "text": "这个包在做什么\n给定 \\((X_i, W_i, Y_i)\\) 与 \\(d\\) 种可选处理，策略 \\(\\pi\\) 把协变量映射到处理，它的价值是 \\(V(\\pi) = \\mathbb E[Y_i(\\pi(X_i))]\\)。policytree 的做法分两步：\n\\[\n\\hat\\Gamma_{ia} = \\hat\\mu_a(X_i) + \\frac{\\mathbb 1(W_i = a)}{\\hat e_a(X_i)}\\bigl(Y_i - \\hat\\mu_a(X_i)\\bigr),\n\\qquad\n\\hat\\pi = \\arg\\max_{\\pi \\in \\Pi_k} \\sum_{i=1}^{n} \\hat\\Gamma_{i,\\pi(X_i)},\n\\]\n左边是交叉拟合的 AIPW 双稳健得分（由 grf 森林的 OOB 预测组装，double_robust_scores()）， 右边在深度 \\(\\le k\\) 的决策树类 \\(\\Pi_k\\) 里精确求最优（policy_tree()）。 \\(\\hat\\Gamma\\) 对”给第 \\(i\\) 人处理 \\(a\\) 的期望结局”近似无偏，于是对得分求和就是对策略价值的估计， 最大化它就是在估计意义下找最优策略。Athey & Wager (2021) 证明了这样得到的策略后悔值 以极小极大最优速率收敛。\n(X, Y, W) ──grf──▶ 森林 ──double_robust_scores()──▶ Gamma (n × d)\n                                                      │\n                          policy_tree() / hybrid_policy_tree()\n                                                      ▼\n                     policy_tree 对象 ──predict()──▶ 列号 1..d ──▶ 留出样本上评估\n\n\n\n\n\n\n警告得分的质量决定一切\n\n\n\npolicy_tree() 忠实地最大化你给它的 Gamma，它不知道也不检查 Gamma 是否可信。 无混杂、重叠性、森林的拟合质量这些因果推断的前提，全部由第一步的森林承担。 得分有偏（例如处理内生却用了因果森林），树就会以”全局最优”的方式把人分错， 而输出里看不出任何异常——上面第 6 条就是这样的例子。",
+    "crumbs": [
+      "policytree 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/policytree.html#函数地图",
+    "href": "notes/policytree.html#函数地图",
+    "title": "policytree 包函数手册",
+    "section": "函数地图",
+    "text": "函数地图\n15 个帮助主题：7 个导出函数、3 个 S3 方法、4 个未导出的内部函数、1 个包总览页。\n\n构造奖励矩阵\n\n\n\n函数\n作用\n页面\n\n\n\n\ndouble_robust_scores()\n由 grf 森林构造 \\(n \\times d\\) 双稳健得分；方法：causal_forest、multi_arm_causal_forest、instrumental_forest、causal_survival_forest\n2. 得分\n\n\nconditional_means()\n由 grf 森林构造条件均值 \\(\\hat\\mu_a(X_i)\\)；方法同上\n2. 得分\n\n\nmulti_causal_forest()\n已弃用，转发给 grf::multi_arm_causal_forest()\n2. 得分\n\n\n\n\n\n找树\n\n\n\n函数\n作用\n页面\n\n\n\n\npolicy_tree()\n精确搜索深度 \\(k\\) 的最优树\n3. policy_tree\n\n\nhybrid_policy_tree()\n前瞻精确搜索 + 逐层贪心，造更深的树\n4. hybrid_policy_tree\n\n\n\n\n\n使用树（S3 方法）\n\n\n\n函数\n作用\n页面\n\n\n\n\npredict()（policy_tree 方法）\n分配处理（列号）或返回叶子编号\n5. predict / plot\n\n\nprint()（policy_tree 方法）\n按缩进打印切分规则\n5. predict / plot\n\n\nplot()（policy_tree 方法）\n用 DiagrammeR 画树\n5. predict / plot\n\n\n\n\n\n示例数据\n\n\n\n函数\n作用\n页面\n\n\n\n\ngen_data_epl()\nAthey & Wager (2021) 的二值处理 + 工具变量数据\n1. 总览\n\n\ngen_data_mapl()\nZhou, Athey & Wager (2023) 的三处理数据，附真实奖励矩阵\n1. 总览\n\n\n\n\n\n有帮助页但未导出（需 policytree:::）\n\n\n\n函数\n作用\n页面\n\n\n\n\nexport_graphviz()、create_dot_body()\n把树转成 Graphviz DOT 文本\n5. predict / plot\n\n\nmake_tree()、predict_test_tree()\n单元测试用的随机树与纯 R 预测\n5. predict / plot\n\n\n\n包总览页 ?policytree 只有简介与一个多臂示例。 另外两页不对应具体函数：6. 策略评估补上包里没有的评估流程， 7. 多臂、工具变量与生存结局把整套流程搬到另外三种森林上； 最后一页8. 实测清单与工作流汇总全部失效路径、默认值陷阱和一套可照抄的模板。",
+    "crumbs": [
+      "policytree 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/policytree.html#最小可运行例子",
+    "href": "notes/policytree.html#最小可运行例子",
+    "title": "policytree 包函数手册",
+    "section": "最小可运行例子",
+    "text": "最小可运行例子\n\nlibrary(policytree)\nlibrary(grf)\n\nset.seed(20260928)\nn &lt;- 4000\nX &lt;- round(matrix(rnorm(n * 5), n, 5), 2)          # 取整可大幅加快精确搜索\ncolnames(X) &lt;- paste0(\"X\", 1:5)\nW   &lt;- rbinom(n, 1, plogis(0.5 * X[, 3]))          # 倾向得分只依赖 X3（无混杂）\ntau &lt;- (pmax(0, X[, 1]) + pmax(0, X[, 2]) - 1) / 2 # 真 CATE：X1、X2 大时处理有益\nY   &lt;- pmax(0, X[, 3] + X[, 4]) + W * tau + rnorm(n)\n\ncf    &lt;- causal_forest(X, Y, W, num.trees = 1000, seed = 1)\nGamma &lt;- double_robust_scores(cf)                   # 列：control, treated\n\ntrain &lt;- sample(n, n / 2)\ntest  &lt;- setdiff(seq_len(n), train)\ntree  &lt;- policy_tree(X[train, ], Gamma[train, ], depth = 2, min.node.size = 50)\ntree\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: control 2: treated \n#&gt; Variable splits: \n#&gt; (1) split_variable: X1  split_value: 0.63 \n#&gt;   (2) split_variable: X2  split_value: 0.76 \n#&gt;     (4) * action: 1 \n#&gt;     (5) * action: 2 \n#&gt;   (3) split_variable: X3  split_value: 0.76 \n#&gt;     (6) * action: 2 \n#&gt;     (7) * action: 1\n\n在没有参与找树的一半样本上评估”按树分配”相对”谁都不治”的增益，并与真值对照：\n\na    &lt;- predict(tree, X[test, ])                    # 1 = control, 2 = treated\ngain &lt;- Gamma[test, ][cbind(seq_along(a), a)] - Gamma[test, \"control\"]\nc(estimate = mean(gain), se = sd(gain) / sqrt(length(gain)),\n  truth    = mean(tau[test] * (a == 2)))\n#&gt;   estimate         se      truth \n#&gt; 0.09794613 0.02875356 0.09651000\n\n\nplot(tree, leaf.labels = c(\"不治疗\", \"治疗\"))\n\n\n\n\n\n整个流程（1000 棵树的因果森林 + 深度 2 精确搜索）在本机耗时几秒。",
+    "crumbs": [
+      "policytree 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/policytree.html#官方资料",
+    "href": "notes/policytree.html#官方资料",
+    "title": "policytree 包函数手册",
+    "section": "官方资料",
+    "text": "官方资料\n\n\n\n资源\n位置\n\n\n\n\npkgdown 站点（含 Get started 文章）\nhttps://grf-labs.github.io/policytree/\n\n\nCRAN 页面\nhttps://cran.r-project.org/package=policytree\n\n\n源码与问题\nhttps://github.com/grf-labs/policytree\n\n\n软件论文\nSverdrup, E., Kanodia, A., Zhou, Z., Athey, S. & Wager, S. (2020). policytree: Policy learning via doubly robust empirical welfare maximization over trees. Journal of Open Source Software 5(50), 2232. doi:10.21105/joss.02232\n\n\n方法原文（二值处理）\nAthey, S. & Wager, S. (2021). Policy learning with observational data. Econometrica 89(1), 133–161. doi:10.3982/ECTA15732\n\n\n方法原文（多处理）\nZhou, Z., Athey, S. & Wager, S. (2023). Offline multi-action policy learning: Generalization and optimization. Operations Research 71(1), 148–183. doi:10.1287/opre.2022.2271\n\n\n经验福利最大化\nKitagawa, T. & Tetenov, A. (2018). Who should be treated? Empirical welfare maximization methods for treatment choice. Econometrica 86(2), 591–616. doi:10.3982/ECTA13288\n\n\n更快的求解器\nfastpolicytree（CRAN）、sparsepolicytree（GitHub）\n\n\n本书相关页\ngrf：用最优决策树做策略学习、grf：maq 与预算约束、grf 使用指南",
+    "crumbs": [
+      "policytree 包函数手册"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/08-pitfalls.html",
+    "href": "notes/policytree/08-pitfalls.html",
+    "title": "8. 实测清单与工作流",
+    "section": "",
+    "text": "一、会报错的路径\n本页汇总前七页的全部实测结论，并给出一套可以直接抄的流程。 所有结论在 2026-09-28、Windows R 4.4.3、policytree 1.2.5、grf 2.6.1 下复核。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>230</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/08-pitfalls.html#一会报错的路径",
+    "href": "notes/policytree/08-pitfalls.html#一会报错的路径",
+    "title": "8. 实测清单与工作流",
+    "section": "",
+    "text": "#\n触发条件\n报错\n修法\n\n\n\n\n1\nX 含因子或字符列\nThe feature matrix X must be numeric\n有序变量整数编码，无序变量 one-hot（第 1 页）\n\n\n2\nX、Gamma 或 newdata 有缺失\nCovariate matrix X contains missing values. 等\n先插补或删行；Gamma 的行要与 X 同步删\n\n\n3\ncausal_forest 的处理不是 0/1\npolicytree currently only supports causal forest with binary treatment.\n多值处理用 multi_arm_causal_forest\n\n\n4\ninstrumental_forest 的工具不是 0/1\n... only supports instrumental forest with binary instrument.\n无包内替代\n\n\n5\n多臂森林的 outcome 名字对不上\n`outcome` should be a column number/name specifying a column in Y.\n用 colnames(Y) 里的名字或列号\n\n\n6\nhybrid_policy_tree() 的 search.depth &gt;= depth\n`search.depth` should be less than `depth`.\ndepth 至少比 search.depth 大 1\n\n\n7\nhybrid_policy_tree() 的 depth &gt; 20\nSpecified depth is too large ...\n—\n\n\n8\npredict() 的列数与训练时不同\nThis tree was trained with 5 variables. Provided: 4\n见下表第 11 条，列数对了也不够\n\n\n9\nplot() 的 leaf.labels 长度不等于处理数\nIf provided,leaf.labelsshould be a vector ...\n长度 = ncol(Gamma)\n\n\n10\n未装 DiagrammeR 时 plot()\nPackage \"DiagrammeR\" must be installed to plot trees.\n装包，或用 print()",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>230</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/08-pitfalls.html#二不报错但结果是错的",
+    "href": "notes/policytree/08-pitfalls.html#二不报错但结果是错的",
+    "title": "8. 实测清单与工作流",
+    "section": "二、不报错但结果是错的",
+    "text": "二、不报错但结果是错的\n\n\n\n\n\n\n重要这一组才是真正的风险\n\n\n\n\n\n\n#\n条件\n表现\n判别\n修法\n\n\n\n\n11\npredict() 的 newdata 列顺序与训练时不同\n静默按列位置套用规则，实测互换两列后 19% 的人分配改变\n无提示\n预测前 stopifnot(identical(colnames(newdata), tree$columns))（第 5 页）\n\n\n12\n把 predict() 的返回值当处理名\n返回的是列号 1..d；处理名为 0,1,2 时整体错开一位，与真实最优的吻合率从 92.7% 掉到 0.03%\ntree$action.names 与 1:d 是否相同\n始终 tree$action.names[predict(tree, X)]（第 5 页）\n\n\n13\ndouble_robust_scores(forest, newdata = )\n新数据的 \\(\\hat\\tau\\) 与训练集的 \\(\\hat m\\)、\\(\\hat e\\) 循环拼接；行数整除 \\(n\\) 时无警告\n返回行数等于训练集行数\n得分只在训练样本上算（第 2 页）\n\n\n14\n工具变量 / 生存森林的得分上直接扣成本\n得分是 \\((-\\hat\\gamma, \\hat\\gamma)\\)，门槛变成 \\(c/2\\)\nall(rowSums(Gamma) == 0)\n先改写成 cbind(0, Gamma[, 2])（第 2 页）\n\n\n15\n同上，用 Gamma[cbind(i, a)] - Gamma[i, 1] 评估\n增益翻倍\n同上\n同上（第 7 页）\n\n\n16\ngen_data_epl() 的数据喂给 causal_forest()\n处理内生，ATE 估成正的（真值为负），学到的树给 94% 的人处理、真实增益为负\n读源码：W 依赖结局噪声\n用 instrumental_forest()（第 1 页）\n\n\n17\n在找树的样本上评估策略\n样本内增益平均比真值高约一半\n—\n留出样本或交叉拟合（第 6 页）\n\n\n18\nplot() 读切分值\n切分值四舍五入到两位小数，0.00068 画成 &lt;= 0\n与 print() 对照\n换量纲，或以 print() 为准（第 5 页）\n\n\n19\n用取整后的 X 训练、未取整的 X 预测\n切点附近的样本分到另一侧\n—\n训练与预测用同一套预处理（第 3 页）\n\n\n20\nmulti_causal_forest() 传 tune.*、orthog.boosting\n这些参数不会转发给 grf，静默无效\n读源码\n直接用 grf::multi_arm_causal_forest()（第 2 页）",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>230</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/08-pitfalls.html#三默认值与接口陷阱",
+    "href": "notes/policytree/08-pitfalls.html#三默认值与接口陷阱",
+    "title": "8. 实测清单与工作流",
+    "section": "三、默认值与接口陷阱",
+    "text": "三、默认值与接口陷阱\n\n\n\n项\n默认 / 现状\n后果\n建议\n\n\n\n\nmin.node.size\n1\n精确搜索会切出单人叶子去拟合得分噪声（第 3 页）\n设为样本量的 2%–5% 或有实际意义的下限\n\n\ndepth 字段与 print() 的 Tree depth\n调用时的参数值\n剪枝后不反映实际深度\n数叶子：sum(sapply(tree$nodes, \"[[\", \"is_leaf\"))\n\n\n倾向得分截断\n无\n重叠性差时个别得分极大，左右切分\n先看 summary(forest$W.hat)，必要时修剪样本（第 2 页）\n\n\ncompliance.score\nNULL：每次调用重拟合一个 2000 棵树的依从性森林\n慢，且每次结果略有不同\n算好一次，显式传入（第 2 页）\n\n\n多臂基线\n因子的第一个水平\n得分列顺序、predict() 列号都以它为准\n需要时先 relevel()\n\n\n样本权重\npolicy_tree() 没有该参数\n—\n权重乘到 Gamma 的行上（第 3 页）\n\n\n预算约束\n目标函数表达不了\n—\n用 maq\n\n\nverbose\nTRUE\n只发建议性警告；进度指示仅在交互会话显示\n批处理里可设 FALSE\n\n\nfastpolicytree()\ndepth = 3\n与 policy_tree() 的默认 2 不同\n显式写 depth",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>230</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/08-pitfalls.html#四可照抄的工作流",
+    "href": "notes/policytree/08-pitfalls.html#四可照抄的工作流",
+    "title": "8. 实测清单与工作流",
+    "section": "四、可照抄的工作流",
+    "text": "四、可照抄的工作流\n二值处理、观察性数据。每一步的理由在括号里的页面。\n\nlibrary(policytree)\nlibrary(grf)\nset.seed(20260928)\n\n# 0. 数据：X 必须是有列名的数值矩阵（第 1 页）\nn &lt;- 4000\nX &lt;- round(matrix(rnorm(n * 5), n, 5), 2)            # 连续变量取整，降低取值个数（第 3 页）\ncolnames(X) &lt;- c(\"age_z\", \"bmi_z\", \"lab_z\", \"score_z\", \"noise_z\")\ntau &lt;- (pmax(0, X[, 1]) + pmax(0, X[, 2]) - 1) / 2\nW &lt;- rbinom(n, 1, plogis(0.5 * X[, 3]))\nY &lt;- pmax(0, X[, 3] + X[, 4]) + W * tau + rnorm(n)\n\n\n# 1. 森林与得分；先看重叠性（第 2 页）\ncf &lt;- causal_forest(X, Y, W, num.trees = 2000, seed = 1)\nsummary(cf$W.hat)\n#&gt;    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. \n#&gt;  0.2222  0.4074  0.4795  0.4931  0.5858  0.8048\nGamma &lt;- double_robust_scores(cf)\ncost  &lt;- 0                                             # 有成本时减在 treated 列（第 3 页）\nGamma[, \"treated\"] &lt;- Gamma[, \"treated\"] - cost\n\n\n# 2. 交叉拟合评估\"找树流程\"的价值（第 6 页）\nK &lt;- 5; folds &lt;- sample(rep(1:K, length.out = n)); a_cf &lt;- integer(n)\nfor (k in 1:K) {\n  out &lt;- folds == k\n  t_k &lt;- policy_tree(X[!out, ], Gamma[!out, ], depth = 2,\n                     min.node.size = ceiling(0.02 * n), verbose = FALSE)\n  a_cf[out] &lt;- predict(t_k, X[out, ])\n}\ng &lt;- Gamma[cbind(seq_len(n), a_cf)] - Gamma[, \"control\"]\nc(gain_vs_none = mean(g), se = sd(g) / sqrt(n), treated_share = mean(a_cf == 2))\n#&gt;  gain_vs_none            se treated_share \n#&gt;    0.10800858    0.02057881    0.33525000\n\n\n# 3. 全样本找最终的树，读规则、画图（第 5 页）\ntree &lt;- policy_tree(X, Gamma, depth = 2, min.node.size = ceiling(0.02 * n))\ntree\n#&gt; policy_tree object \n#&gt; Tree depth:  2 \n#&gt; Actions:  1: control 2: treated \n#&gt; Variable splits: \n#&gt; (1) split_variable: age_z  split_value: 0.63 \n#&gt;   (2) split_variable: bmi_z  split_value: 1.27 \n#&gt;     (4) * action: 1 \n#&gt;     (5) * action: 2 \n#&gt;   (3) split_variable: score_z  split_value: 1.07 \n#&gt;     (6) * action: 2 \n#&gt;     (7) * action: 1\nplot(tree, leaf.labels = c(\"不治疗\", \"治疗\"))\n\n\n\n\n\n\n# 4. 部署：核对列名、把列号转成处理名（第 5 页）\nsafe_predict &lt;- function(tree, newdata) {\n  stopifnot(identical(colnames(newdata), tree$columns))\n  tree$action.names[predict(tree, newdata)]\n}\nX_new &lt;- X[1:5, ]\nsafe_predict(tree, X_new)\n#&gt; [1] \"control\" \"control\" \"control\" \"treated\" \"treated\"\n\n工具变量或生存结局只改第 1 步：拿到得分后立即改写成 cbind(control = 0, treated = double_robust_scores(forest)[, \"treated\"])（第 7 页）。 多臂处理把第 2 步里的 Gamma[, \"control\"] 换成基线臂那一列， 第 4 步的 action.names 转换在多臂时尤其不能省。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>230</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/08-pitfalls.html#什么时候该用这个包",
+    "href": "notes/policytree/08-pitfalls.html#什么时候该用这个包",
+    "title": "8. 实测清单与工作流",
+    "section": "什么时候该用这个包",
+    "text": "什么时候该用这个包\n适合：\n\n需要一条能写进方案或指南的分配规则，而不是一个黑箱打分；\n协变量不多（十几个以内）、深度 2–3 就能表达主要异质性；\n已经在用 grf，得分可以直接取；或者有自己的双稳健得分 / 伪结局。\n\n不适合：\n\n只想最大化价值、不在乎规则可读——按 \\(\\hat\\tau(x)\\) 的符号分配通常更好 （第 6 页）；\n有预算或比例约束——用 maq；\n要检验”是否存在异质性”——用 grf 的 RATE / 校准检验（grf 的 RATE 一章）， 树找到了切分不等于异质性显著；\n协变量上百、样本几十万——精确搜索跑不动，先降维，或换 fastpolicytree、hybrid_policy_tree()。",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>230</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
+  },
+  {
+    "objectID": "notes/policytree/08-pitfalls.html#版本与环境",
+    "href": "notes/policytree/08-pitfalls.html#版本与环境",
+    "title": "8. 实测清单与工作流",
+    "section": "版本与环境",
+    "text": "版本与环境\n\nsapply(c(\"policytree\", \"grf\", \"DiagrammeR\", \"fastpolicytree\"),\n       function(p) as.character(packageVersion(p)))\n#&gt;     policytree            grf     DiagrammeR fastpolicytree \n#&gt;        \"1.2.5\"        \"2.6.1\"       \"1.0.11\"          \"1.0\"\nR.version.string\n#&gt; [1] \"R version 4.4.3 (2025-02-28 ucrt)\"",
+    "crumbs": [
+      "policytree 包函数手册",
+      "<span class='chapter-number'>230</span>  <span class='chapter-title'>8. 实测清单与工作流</span>"
+    ]
   }
 ]

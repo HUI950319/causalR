@@ -1,0 +1,312 @@
+---
+title: "2. double_robust_scores() 与 conditional_means()"
+subtitle: "policytree 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(policytree)
+library(grf)
+set.seed(20260928)
+```
+
+`policy_tree()` 需要一个 $n \times d$ 的奖励矩阵 `Gamma`。这两个 S3 泛型负责从 grf 森林里把它组装出来：
+`conditional_means()` 给出**条件均值** $\hat\mu_a(X_i) \approx \mathbb E[Y_i(a) \mid X_i]$，
+`double_robust_scores()` 在此基础上加一项逆概率加权的残差修正，得到**双稳健得分** $\hat\Gamma_{ia}$。
+两者都只是对森林已有的 OOB 预测做代数运算，**不重新拟合任何东西**
+（工具变量森林默认会额外拟合一个依从性森林，是唯一的例外）。
+
+## 方法一览 {#sec-methods}
+
+| 森林类（grf） | `conditional_means()` 返回 | `double_robust_scores()` 返回 | 限制 |
+|---|---|---|---|
+| `causal_forest` | $(\hat\mu_0, \hat\mu_1)$，列名 `control`、`treated` | $(\hat\Gamma_{i0}, \hat\Gamma_{i1})$ | 处理必须是 0/1 |
+| `multi_arm_causal_forest` | $(\hat\mu_1, \dots, \hat\mu_K)$，列名为 `levels(W)` | $(\hat\Gamma_{i1}, \dots, \hat\Gamma_{iK})$ | 多结局时用 `outcome` 选一列 |
+| `instrumental_forest` | $(\hat\mu_0, \hat\mu_1)$ | $(-\hat\gamma_i,\ \hat\gamma_i)$ | 工具变量必须是 0/1 |
+| `causal_survival_forest` | $(\hat\mu_0, \hat\mu_1)$ | $(-\hat\gamma_i,\ \hat\gamma_i)$ | 处理必须是 0/1 |
+
+后两行的得分**不是**两个潜在结局的得分，而是"效应得分取正负号"。
+这对找树没有影响，但对扣成本和评估策略有影响，见 [本页末节](#sec-pm)。
+
+`regression_forest`、`probability_forest`、`quantile_forest`、`causal_forest` 的连续处理等
+都没有方法，调用会报 `no applicable method` 或
+`policytree currently only supports causal forest with binary treatment.`
+
+## 二值处理：causal_forest {#sec-cf}
+
+下面沿用[第 1 页](01-overview.qmd#sec-pipeline)的无混杂模拟数据：
+
+```{r}
+#| label: data
+n <- 2000
+X <- round(matrix(rnorm(n * 5), n, 5), 2)
+colnames(X) <- paste0("X", 1:5)
+W   <- rbinom(n, 1, plogis(0.5 * X[, 3]))
+tau <- (pmax(0, X[, 1]) + pmax(0, X[, 2]) - 1) / 2
+Y   <- pmax(0, X[, 3] + X[, 4]) + W * tau + rnorm(n)
+cf  <- causal_forest(X, Y, W, num.trees = 1000, seed = 1)
+```
+
+森林对象里存着三组 OOB 估计：$\hat m(X_i) = $ `cf$Y.hat`（对处理边缘化后的结局均值）、
+$\hat e(X_i) = $ `cf$W.hat`（倾向得分）、$\hat\tau(X_i) = $ `predict(cf)$predictions`。
+由 $m = e\,\mu_1 + (1-e)\,\mu_0$ 与 $\tau = \mu_1 - \mu_0$ 反解出两个条件均值：
+
+$$
+\hat\mu_0(X_i) = \hat m(X_i) - \hat e(X_i)\,\hat\tau(X_i), \qquad
+\hat\mu_1(X_i) = \hat m(X_i) + \bigl(1 - \hat e(X_i)\bigr)\,\hat\tau(X_i),
+$$
+
+再做 AIPW 修正：
+
+$$
+\hat\Gamma_{i1} = \hat\mu_1(X_i) + \frac{W_i}{\hat e(X_i)}\bigl(Y_i - \hat\mu_1(X_i)\bigr), \qquad
+\hat\Gamma_{i0} = \hat\mu_0(X_i) + \frac{1 - W_i}{1 - \hat e(X_i)}\bigl(Y_i - \hat\mu_0(X_i)\bigr).
+$$
+
+逐字按公式手算，与包的输出对照：
+
+```{r}
+#| label: cf-handcheck
+mu    <- conditional_means(cf)
+Gamma <- double_robust_scores(cf)
+e     <- cf$W.hat
+tauh  <- predict(cf)$predictions
+
+max(abs(mu - cbind(cf$Y.hat - e * tauh, cf$Y.hat + (1 - e) * tauh)))
+G1 <- mu[, "treated"] + W / e * (Y - mu[, "treated"])
+G0 <- mu[, "control"] + (1 - W) / (1 - e) * (Y - mu[, "control"])
+max(abs(Gamma - cbind(G0, G1)))
+head(Gamma, 3)
+```
+
+两处差都是 0。一个直接推论：得分之差的均值就是 grf 的 AIPW 平均处理效应，逐位相同：
+
+```{r}
+#| label: cf-ate
+c(mean_score_diff = mean(Gamma[, "treated"] - Gamma[, "control"]),
+  grf_ATE         = unname(average_treatment_effect(cf)["estimate"]))
+```
+
+帮助页 Details 说这是 CAIPWL（Cross-fitted Augmented Inverse Propensity Weighted Learning）用的矩阵。
+"交叉拟合"来自 grf 的 OOB 预测：每个人的 $\hat m$、$\hat e$、$\hat\tau$
+都来自**没有用到他本人**的那些树，这是 Athey & Wager (2021) 理论保证所需的样本分割。
+
+::: {.callout-warning}
+## 包不做任何倾向得分截断
+
+公式里有 $1/\hat e$ 与 $1/(1-\hat e)$，重叠性差时个别得分会非常大，
+而 `policy_tree()` 求的是**得分之和**，几个极端值就能左右切分。
+grf 的 `average_treatment_effect()` 在倾向得分极端时会发警告，`double_robust_scores()` 不会。
+用观察性数据时先看一眼：
+
+```{r}
+#| label: cf-overlap
+summary(cf$W.hat)
+summary(abs(Gamma[, "treated"] - Gamma[, "control"]))
+```
+
+重叠性差时的常见做法是在训练森林前按 $\hat e$ 修剪样本，或在 `Gamma` 上做稳健化处理；
+这些都要自己写，包里没有开关。
+:::
+
+## 不要给它 newdata {#sec-newdata}
+
+两个泛型的签名都是 `(object, ...)`，帮助页只写 "Additional arguments"。
+源码里 `...` 被原样传给 `predict(object, ...)`，所以传 `newdata` 在语法上是合法的——
+但只有 $\hat\tau$ 换成了新数据上的预测，$\hat m$、$\hat e$、$Y$、$W$ 仍是训练集的，
+两组长度不同的向量按 R 的循环规则相加：
+
+```{r}
+#| label: newdata-300
+Xnew <- X[1:300, ]
+dim(double_robust_scores(cf, newdata = Xnew))       # 300 行不整除 2000：有警告
+```
+
+```{r}
+#| label: newdata-1000
+dim(conditional_means(cf, newdata = X[1:1000, ]))   # 1000 行整除 2000：一声不吭
+```
+
+返回的矩阵行数是训练集的 `r n`，内容是错位拼接的，而且行数整除时**没有任何警告**。
+双稳健得分需要观测到的 $Y_i$、$W_i$，本来就只能在训练样本上计算；
+要给新样本分配处理，应当先在训练样本上 `policy_tree()`，再对新样本 `predict()` 树。
+
+## 多臂处理：multi_arm_causal_forest {#sec-multi}
+
+$K$ 种处理时，grf 的 `multi_arm_causal_forest()` 估计的是每种处理相对**第一个因子水平**的对比
+$\hat\tau_k(X_i)$（$k = 2, \dots, K$），`W.hat` 是 $n \times K$ 的倾向得分矩阵。
+条件均值由
+
+$$
+\hat\mu_1 = \hat m - \sum_{k=2}^{K} \hat e_k\,\hat\tau_k, \qquad
+\hat\mu_k = \hat\mu_1 + \hat\tau_k \quad (k \ge 2)
+$$
+
+给出，得分仍是 $\hat\Gamma_{ik} = \hat\mu_k + \mathbb 1(W_i = k)\,(Y_i - \hat\mu_k)/\hat e_k$。
+列名取 `levels(W)`，所以**基线是因子的第一个水平**，想换基线就先 `relevel()`。
+
+```{r}
+#| label: multi
+Wm <- factor(sample(c("A", "B", "C"), n, replace = TRUE))
+Ym <- X[, 1] + X[, 2] * (Wm == "B") + X[, 3] * (Wm == "C") + rnorm(n)
+mcf <- multi_arm_causal_forest(X, Ym, Wm, num.trees = 1000, seed = 1)
+head(double_robust_scores(mcf), 3)
+```
+
+grf 允许多臂森林同时拟合多个结局（`Y` 为矩阵）。这时用 `outcome =` 指定用哪一列，
+可以给列号或列名，默认第 1 列；名字对不上时报
+`` `outcome` should be a column number/name specifying a column in Y. ``
+
+```{r}
+#| label: multi-outcome
+Y2   <- cbind(main = Ym, side = rnorm(n))
+mcf2 <- multi_arm_causal_forest(X, Y2, Wm, num.trees = 500, seed = 1)
+all.equal(double_robust_scores(mcf2, outcome = "side"),
+          double_robust_scores(mcf2, outcome = 2))
+try(double_robust_scores(mcf2, outcome = "cost"))
+```
+
+多结局的得分可以加权求和后再找树（例如"疗效 − λ × 副作用"），
+`policy_tree()` 不关心 `Gamma` 的来历，见[第 7 页](07-multi-iv-surv.qmd#sec-multi)。
+
+## 工具变量：instrumental_forest {#sec-iv}
+
+处理 $W$ 内生、有二值工具 $Z$ 时，`double_robust_scores.instrumental_forest()` 实现
+Athey & Wager (2021) 式 (44) 的双稳健效应得分：
+
+$$
+\hat\gamma_i = \hat\tau(X_i) + \frac{1}{\hat\Delta(X_i)}\,
+\frac{Z_i - \hat z(X_i)}{\hat z(X_i)\bigl(1 - \hat z(X_i)\bigr)}\,
+\Bigl(Y_i - \hat m(X_i) - \bigl(W_i - \hat w(X_i)\bigr)\,\hat\tau(X_i)\Bigr),
+$$
+
+其中 $\hat z = $ `Z.hat`，$\hat w = $ `W.hat`，
+$\hat\Delta(X) \approx \mathbb E[W \mid X, Z=1] - \mathbb E[W \mid X, Z=0]$ 是**依从性得分**。
+参数 `compliance.score = NULL`（默认）时，函数内部会再训练一个
+`causal_forest(X, Y = W, W = Z, Y.hat = W.hat, W.hat = Z.hat)` 来估计它——
+这是整个包里唯一会重新拟合模型的地方，用默认的 2000 棵树，每次调用都要重算一遍。
+需要多次取得分时，先算好依从性得分再传进去：
+
+```{r}
+#| label: iv
+d   <- gen_data_epl(3000, type = "continuous")          # 工具变量设计，见第 1 页
+ivf <- instrumental_forest(d$X, d$Y, d$W, d$Z, num.trees = 1000, seed = 1)
+
+cmp <- causal_forest(d$X, d$W, d$Z, Y.hat = ivf$W.hat, W.hat = ivf$Z.hat,
+                     num.trees = 1000, seed = 1)
+Giv <- double_robust_scores(ivf, compliance.score = predict(cmp)$predictions)
+head(Giv, 3)
+all(rowSums(Giv) == 0)
+```
+
+$\hat\Delta$ 接近 0（弱工具）的地方 $1/\hat\Delta$ 会爆炸，这里同样没有截断。
+
+## 生存结局：causal_survival_forest {#sec-surv}
+
+`double_robust_scores.causal_survival_forest()` 只有一行：取 `grf::get_scores(object)`，
+即森林目标量（`target = "RMST"` 的限制平均生存时间差，或 `"survival.probability"` 的
+horizon 处生存概率差）的双稳健得分，然后拼成 $(-\hat\gamma_i, \hat\gamma_i)$。
+得分的均值就是森林的平均效应：
+
+```{r}
+#| label: surv
+ns <- 2000
+Xs <- matrix(rnorm(ns * 5), ns, 5)
+Ws <- rbinom(ns, 1, 0.5)
+Ts <- rexp(ns, rate = exp(0.3 * Xs[, 1] - 0.5 * Ws * (Xs[, 2] > 0)))  # X2 > 0 时处理有益
+Cs <- rexp(ns, rate = 0.2)
+csf <- causal_survival_forest(Xs, pmin(Ts, Cs), Ws, as.integer(Ts <= Cs),
+                              target = "RMST", horizon = 2, num.trees = 1000, seed = 1)
+Gs <- double_robust_scores(csf)
+head(Gs, 3)
+c(mean_score = mean(Gs[, "treated"]),
+  grf_ATE    = unname(average_treatment_effect(csf)["estimate"]))
+head(conditional_means(csf), 3)
+```
+
+注意同一个森林上两个函数的口径**不一致**：`conditional_means()` 给的是真正的
+$(\hat\mu_0, \hat\mu_1)$（RMST 的量纲，都在 0 到 horizon 之间），
+`double_robust_scores()` 给的却是正负效应得分。
+horizon 的选择、删失的处理等问题属于 grf，见本书的
+[grf 生存分析一章](../grf/04-survival.qmd)。
+
+## 正负号结构的后果 {#sec-pm}
+
+对工具变量森林和生存森林，`Gamma = cbind(-γ, γ)`。代入 `policy_tree()` 的目标函数
+（得分按策略求和，见[第 1 页](01-overview.qmd#sec-problem)），得到
+
+$$
+\sum_{i:\pi(X_i)=2} \hat\gamma_i - \sum_{i:\pi(X_i)=1} \hat\gamma_i
+= 2\sum_{i:\pi(X_i)=2} \hat\gamma_i - \sum_{i} \hat\gamma_i .
+$$ {#eq-ewm-pm}
+
+第二项与 $\pi$ 无关，所以**找到的树**与用 $(0, \hat\gamma_i)$ 找到的完全一样：
+
+```{r}
+#| label: pm-same-tree
+Xiv   <- round(d$X, 2)
+Giv01 <- cbind(control = 0, treated = Giv[, "treated"])
+t_pm  <- policy_tree(Xiv, Giv,   depth = 2)
+t_01  <- policy_tree(Xiv, Giv01, depth = 2)
+identical(t_pm[["_tree_array"]], t_01[["_tree_array"]])
+```
+
+但系数 2 在另外两件事上会出错：
+
+**扣成本。** `policy_tree()` 帮助页示例的做法是从 treated 列减去成本 $c$。
+在 $(\hat\Gamma_{i0}, \hat\Gamma_{i1})$ 上这等价于"效应超过 $c$ 才治疗"；
+在 $(-\hat\gamma_i, \hat\gamma_i)$ 上，比较的是 $\hat\gamma_i - c$ 与 $-\hat\gamma_i$，
+门槛变成 $c/2$：
+
+```{r}
+#| label: pm-cost
+cost <- 0.3
+Gc <- Giv;   Gc[, "treated"]   <- Gc[, "treated"]   - cost
+G1c <- Giv01; G1c[, "treated"] <- G1c[, "treated"] - cost
+c(prefer_treat_pm = mean(Gc[, "treated"]  > Gc[, "control"]),
+  gamma_gt_c_half = mean(Giv[, "treated"] > cost / 2),
+  prefer_treat_01 = mean(G1c[, "treated"] > G1c[, "control"]),
+  gamma_gt_c      = mean(Giv[, "treated"] > cost))
+```
+
+逐行看，在正负号矩阵上扣成本后"更偏好治疗"的比例恰好等于 $\hat\gamma_i > c/2$ 的比例。
+
+**评估策略。** 常见写法 `mean(Gamma[cbind(i, a)] - Gamma[i, 1])`
+（策略相对"谁都不治"的增益）在正负号矩阵上对被治疗者算的是
+$\hat\gamma_i - (-\hat\gamma_i) = 2\hat\gamma_i$，增益翻倍。
+[第 7 页](07-multi-iv-surv.qmd#sec-iv)用真值演示了这一点。
+
+::: {.callout-tip}
+## 统一的修法
+
+拿到工具变量或生存森林的得分后，第一步就改成
+
+```r
+Gamma <- cbind(control = 0, treated = double_robust_scores(forest)[, "treated"])
+```
+
+找树的结果不变，扣成本、评估策略的写法就和 `causal_forest` 完全一致了。
+:::
+
+## 已弃用：multi_causal_forest() {#sec-deprecated}
+
+`multi_causal_forest()` 是 policytree 1.0 时代的"一对多"因果森林。
+自 1.1 起它只是一个转发壳：发一条弃用警告，把参数原样传给
+`grf::multi_arm_causal_forest()` 并返回后者的对象。
+签名里的 `tune.parameters`、`tune.num.trees`、`tune.num.reps`、`tune.num.draws`、
+`orthog.boosting` **不会**被转发（源码的调用里没有它们），写了也不生效。
+
+```{r}
+#| label: deprecated
+f <- withCallingHandlers(
+  multi_causal_forest(X, Ym, Wm, num.trees = 200),
+  warning = function(w) { message("警告：", trimws(conditionMessage(w))); invokeRestart("muffleWarning") })
+class(f)
+```
+
+帮助页特意提醒：用于策略学习时它与旧版等价，但**逐点预测不同**——
+`multi_arm_causal_forest` 的 `predict()` 给的是对基线的对比，而不是旧版的"一对多"效应。
+新代码直接用 `grf::multi_arm_causal_forest()`。

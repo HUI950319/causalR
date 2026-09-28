@@ -1,0 +1,196 @@
+---
+title: "6. 策略评估"
+subtitle: "policytree 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(policytree)
+library(grf)
+set.seed(20260928)
+```
+
+`policytree` 只负责找树，不提供任何评估函数。帮助页示例里的评估只有一段
+`aggregate()`。本页补上完整的评估流程：策略价值的双稳健估计与标准误、
+为什么必须在留出样本上做、按叶子看效应、交叉拟合评估，以及与"按 $\hat\tau$ 符号分配"的比较。
+模拟数据里 $\tau$ 已知，每一步都可以与真值对照。
+
+## 策略价值的双稳健估计 {#sec-value}
+
+对一条**与评估样本无关**的固定策略 $\pi$，它的价值可以用双稳健得分的样本均值估计：
+
+$$
+\hat V(\pi) = \frac{1}{m} \sum_{i \in \text{test}} \hat\Gamma_{i,\pi(X_i)}, \qquad
+\widehat{\mathrm{se}} = \frac{\operatorname{sd}\bigl(\hat\Gamma_{i,\pi(X_i)}\bigr)}{\sqrt m}.
+$$
+
+与基准策略的差（"谁都不治"、"人人都治"）逐人相减后同样求均值和标准误，
+这比两个价值分别估计再相减的标准误小得多，因为同一个人的两个得分高度相关。
+写一个小函数：
+
+```{r}
+#| label: eval-fn
+eval_policy <- function(Gamma, a) {
+  i   <- seq_len(nrow(Gamma))
+  val <- Gamma[cbind(i, a)]
+  est <- function(x) c(estimate = mean(x), se = sd(x) / sqrt(length(x)))
+  rbind(value          = est(val),
+        gain_vs_none   = est(val - Gamma[, 1]),
+        gain_vs_all    = est(val - Gamma[, 2]),
+        treated_share  = c(mean(a == 2), NA))
+}
+```
+
+`gain_vs_none` 与 `gain_vs_all` 这两行只适用于第 1 列是 control、第 2 列是 treated 的二值得分；
+工具变量和生存森林的正负号得分要先改写成 $(0, \hat\gamma_i)$（[第 2 页](02-scores.qmd#sec-pm)）。
+
+## 留出样本上的完整流程 {#sec-holdout}
+
+```{r}
+#| label: data
+sim <- function(n) {
+  X <- round(matrix(rnorm(n * 5), n, 5), 2)
+  colnames(X) <- paste0("X", 1:5)
+  tau <- (pmax(0, X[, 1]) + pmax(0, X[, 2]) - 1) / 2
+  W <- rbinom(n, 1, plogis(0.5 * X[, 3]))
+  Y <- pmax(0, X[, 3] + X[, 4]) + W * tau + rnorm(n)
+  list(X = X, W = W, Y = Y, tau = tau)
+}
+n <- 4000
+d <- sim(n)
+cf    <- causal_forest(d$X, d$Y, d$W, num.trees = 1000, seed = 1)
+Gamma <- double_robust_scores(cf)
+
+train <- sample(n, n / 2)
+test  <- setdiff(seq_len(n), train)
+tree  <- policy_tree(d$X[train, ], Gamma[train, ], depth = 2, min.node.size = 50)
+tree
+a_test <- predict(tree, d$X[test, ])
+round(eval_policy(Gamma[test, ], a_test), 4)
+c(true_gain_vs_none = mean(d$tau[test] * (a_test == 2)))
+```
+
+森林用全部样本训练，得分是 OOB 的，测试集每个人的得分都不依赖他本人参与训练的树；
+树只用训练集的得分找出来。于是在测试集上，$\pi$ 相对测试样本是固定的，上面的标准误成立。
+真值落在估计值的一两个标准误以内。
+
+## 为什么必须留出 {#sec-optimism}
+
+在训练样本上算同样的量，结果会系统性地偏乐观——树就是按"让这批得分之和最大"挑出来的，
+它当然在这批数据上表现最好。重复几次模拟：
+
+```{r}
+#| label: optimism
+one_rep <- function() {
+  d  <- sim(4000)
+  f  <- causal_forest(d$X, d$Y, d$W, num.trees = 500)
+  G  <- double_robust_scores(f)
+  tr <- sample(4000, 2000); te <- setdiff(1:4000, tr)
+  t  <- policy_tree(d$X[tr, ], G[tr, ], depth = 2, verbose = FALSE)
+  a_tr <- predict(t, d$X[tr, ]); a_te <- predict(t, d$X[te, ])
+  c(in_sample = mean(G[cbind(tr, a_tr)] - G[tr, 1]),
+    held_out  = mean(G[cbind(te, a_te)] - G[te, 1]),
+    truth     = mean(d$tau[te] * (a_te == 2)))
+}
+opt <- t(replicate(6, one_rep()))
+round(opt, 3)
+round(colMeans(opt), 3)
+```
+
+样本内估计的增益平均比真值高出 `r round(100 * (mean(opt[, "in_sample"]) / mean(opt[, "truth"]) - 1))`%，
+留出样本的估计则围绕真值波动。这个乐观偏差随树加深、叶子变小而变大
+（[第 4 页](04-hybrid.qmd#sec-compare)里深度 4 的样本内奖励最高、真实增益最低）。
+**任何报告的策略价值都应当来自没有参与找树的样本。**
+
+## 按叶子看效应 {#sec-leaf}
+
+帮助页示例的评估方式：在测试集上按叶子分组，分别求两列得分的均值和标准误，
+看每片叶子推荐的处理是否确实更好。
+
+```{r}
+#| label: leaf
+leaf <- predict(tree, d$X[test, ], type = "node.id")
+by_leaf <- aggregate(Gamma[test, ], by = list(leaf = leaf),
+                     FUN = function(g) c(mean = mean(g), se = sd(g) / sqrt(length(g))))
+print(by_leaf, digits = 2)
+```
+
+更直接的是看每片叶子里的平均处理效应。它就是这片叶子里 `treated − control` 得分差的均值，
+也等于 `grf::average_treatment_effect()` 限定在这片叶子上的 AIPW 估计：
+
+```{r}
+#| label: leaf-ate
+leaf_ate <- t(sapply(sort(unique(leaf)), function(k) {
+  idx <- test[leaf == k]
+  dr  <- Gamma[idx, "treated"] - Gamma[idx, "control"]
+  c(leaf        = k,
+    n           = length(idx),
+    action      = predict(tree, d$X[idx[1], , drop = FALSE]),
+    ate_dr      = mean(dr),
+    se          = sd(dr) / sqrt(length(idx)),
+    grf_subset  = unname(average_treatment_effect(cf, subset = idx)["estimate"]),
+    true_cate   = mean(d$tau[idx]))
+}))
+round(leaf_ate, 3)
+```
+
+`ate_dr` 与 `grf_subset` 两列相同。推荐 treated（`action = 2`）的叶子，估计效应应当为正，
+推荐 control 的叶子应当为负；对不上时，要么叶子太小、要么这一刀是在拟合噪声。
+这次的叶子 7 就是例子：它推荐 control，但测试集上的估计效应和真值都是正的——
+它来自训练集里切在 $X_3$ 上的一刀，而 $X_3$ 与 $\tau$ 无关。
+
+## 交叉拟合评估 {#sec-crossfit}
+
+一分为二浪费了一半样本：找树只用了一半，评估也只用了一半。
+**交叉拟合**把样本分成 $K$ 折，每折用其余 $K-1$ 折找树、在本折上预测，
+最后把 $K$ 折的预测拼起来统一评估。它估计的是"用这套流程找树"能达到的价值，
+再用全部样本找一棵最终的树交付使用：
+
+```{r}
+#| label: crossfit
+K     <- 5
+folds <- sample(rep(1:K, length.out = n))
+a_cf  <- integer(n)
+for (k in 1:K) {
+  out <- folds == k
+  t_k <- policy_tree(d$X[!out, ], Gamma[!out, ], depth = 2, min.node.size = 50, verbose = FALSE)
+  a_cf[out] <- predict(t_k, d$X[out, ])
+}
+round(eval_policy(Gamma, a_cf), 4)
+c(true_gain_vs_none = mean(d$tau * (a_cf == 2)))
+tree_final <- policy_tree(d$X, Gamma, depth = 2, min.node.size = 50)
+tree_final
+```
+
+各折找到的树可能不同，交叉拟合评估的是流程而不是某一棵树；
+各折的树越相似，这个估计越接近最终那棵树的价值。
+严格说，拼接后的得分之间并不完全独立，上面的标准误只是近似。
+
+## 与"按 $\hat\tau$ 符号分配"比较 {#sec-vs-cate}
+
+不在乎可解释性时，最自然的策略是 $\pi(x) = \mathbb 1\{\hat\tau(x) > 0\}$。
+在同一个测试集上，用真值比较两种策略：
+
+```{r}
+#| label: vs-cate
+tau_hat <- predict(cf)$predictions          # OOB 预测，测试集每人的预测不含本人
+a_sign  <- ifelse(tau_hat[test] > 0, 2L, 1L)
+c(tree_true_gain   = mean(d$tau[test] * (a_test == 2)),
+  sign_true_gain   = mean(d$tau[test] * (a_sign == 2)),
+  oracle_true_gain = mean(pmax(d$tau[test], 0)))
+```
+
+深度 2 的树只用两三条规则，就拿到了黑箱策略的大部分价值；差额就是可解释性的代价。
+如果差额很大，说明异质性结构超出了浅树的表达能力，此时应当考虑加深（[第 4 页](04-hybrid.qmd)）
+或者干脆接受黑箱策略。
+
+## 推断的边界 {#sec-inference}
+
+- 标准误只在"策略与评估样本独立"时成立。在找树的样本上报告的标准误没有意义。
+- 比较多种深度、多组 `min.node.size` 后挑最好的一个，再在同一个测试集上报告它的价值，
+  又会引入一轮选择偏差；需要时再留一个最终测试集。
+- 预算约束（"最多治疗 20% 的人"）树的目标函数表达不了。按预算画价值曲线请用
+  [maq 包](../grf/11-maq.qmd)，按 $\hat\tau$ 排序检验异质性请用 grf 的 RATE（[grf 的 RATE 一章](../grf/02-rate.qmd)）。

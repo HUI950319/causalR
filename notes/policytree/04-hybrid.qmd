@@ -1,0 +1,147 @@
+---
+title: "4. hybrid_policy_tree()：更深的树"
+subtitle: "policytree 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(policytree)
+library(grf)
+set.seed(20260928)
+```
+
+精确搜索的复杂度含 $n^k p^k$，深度 3 在几千个样本上就已经很慢（[第 3 页](03-policy-tree.qmd#sec-runtime)）。
+`hybrid_policy_tree()`（1.2.0 引入）用"前瞻若干层的精确搜索 + 逐层贪心"来造更深的树，
+总耗时只是深度为 `search.depth` 的精确搜索的若干倍。
+
+## 签名与参数
+
+```r
+hybrid_policy_tree(X, Gamma, depth = 3, search.depth = 2,
+                   split.step = 1, min.node.size = 1, verbose = TRUE)
+```
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `depth` | `3` | 目标深度，必须 `> search.depth`，且 `<= 20` |
+| `search.depth` | `2` | 每一步前瞻的深度；建议 2 或 3，其余值在 `verbose = TRUE` 时警告 |
+| `split.step`、`min.node.size` | `1` | 原样传给每一次内部的 `policy_tree()` |
+| `verbose` | `TRUE` | 同上，并传给内部调用 |
+
+返回的也是 `policy_tree` 对象，`predict()`、`print()`、`plot()` 通用；
+`depth` 字段同样记录的是**参数值**。
+
+## 算法 {#sec-algorithm}
+
+帮助页 Details 与源码一致，写成步骤是：
+
+1. 对当前节点的样本子集，用 `policy_tree(depth = search.depth)` 做一次精确搜索；
+2. 如果这棵子树的根就是叶子（即不切分最好），当前节点成为叶子，停止；
+3. 如果"当前层数 + `search.depth` = `depth`"，把整棵子树挂在当前节点下，停止；
+4. 否则**只保留子树的根切分**，把样本分到左右两个子节点，对它们重复第 1 步。
+
+以默认的 `depth = 3, search.depth = 2` 为例：根节点的切分来自一棵在全样本上找到的
+最优深度 2 树（但只用它的第一刀）；两个子节点各自在自己的样本上再找一棵最优深度 2 树，
+整棵挂上去，总深度 3。每一刀都是"看两步再决定"，所以它比逐层贪心的 CART 更不容易被
+交互结构骗到，但也不再保证全局最优。
+
+## 与精确深度 3 对比 {#sec-compare}
+
+下面的效应是一个"异或"结构：$\tau(x) = \operatorname{sign}(x_1 x_2)/2$，
+$X_1$、$X_2$ 同号时处理有益。单看 $X_1$ 或 $X_2$，平均效应都是 0。
+处理分配无混杂（倾向得分只依赖 $X_3$）。另生成一个两万人的测试集，
+用真值计算每棵树的真实增益：
+
+```{r}
+#| label: data
+sim <- function(n) {
+  X <- round(matrix(rnorm(n * 5), n, 5), 1)
+  colnames(X) <- paste0("X", 1:5)
+  tau <- sign(X[, 1] * X[, 2]) / 2
+  W <- rbinom(n, 1, plogis(0.5 * X[, 3]))
+  Y <- X[, 3] + W * tau + rnorm(n)
+  list(X = X, W = W, Y = Y, tau = tau)
+}
+tr <- sim(1000)
+te <- sim(20000)
+cf    <- causal_forest(tr$X, tr$Y, tr$W, num.trees = 1000, seed = 1)
+Gamma <- double_robust_scores(cf)
+```
+
+```{r}
+#| label: compare
+fit <- list(
+  exact_d2  = function() policy_tree(tr$X, Gamma, depth = 2, verbose = FALSE),
+  exact_d3  = function() policy_tree(tr$X, Gamma, depth = 3, verbose = FALSE),
+  hybrid_d3 = function() hybrid_policy_tree(tr$X, Gamma, depth = 3, search.depth = 2, verbose = FALSE),
+  hybrid_d4 = function() hybrid_policy_tree(tr$X, Gamma, depth = 4, search.depth = 2, verbose = FALSE)
+)
+res <- t(sapply(fit, function(f) {
+  sec  <- system.time(t <- f())["elapsed"]
+  a_tr <- predict(t, tr$X)
+  a_te <- predict(t, te$X)
+  c(seconds          = unname(sec),
+    in_sample_reward = sum(Gamma[cbind(seq_len(nrow(Gamma)), a_tr)]),
+    n_leaves         = sum(sapply(t$nodes, `[[`, "is_leaf")),
+    true_gain_test   = mean(te$tau * (a_te == 2)))
+}))
+round(res, 3)
+c(oracle_gain = mean(pmax(te$tau, 0)))
+```
+
+几点读法：
+
+- **耗时**：混合搜索的深度 3、深度 4 与精确深度 2 在同一量级（都在零点几秒以内），
+  精确深度 3 要 `r round(res["exact_d3", "seconds"], 1)` 秒，慢了约两个数量级；
+- **样本内奖励**：精确深度 3 按定义是深度 $\le 3$ 的树里最大的，
+  混合深度 3 比它低 `r round(100 * (1 - res["hybrid_d3", "in_sample_reward"] / res["exact_d3", "in_sample_reward"]))`%；
+  混合深度 4 允许更深，样本内奖励反而超过了精确深度 3；
+- **测试集真实增益**：才是真正该看的数，而它的排序与样本内奖励**正好相反**——
+  深度 2 最好（`r round(res["exact_d2", "true_gain_test"], 3)`，理论上限 `r round(mean(pmax(te$tau, 0)), 3)`），
+  深度 3 的两种树相近，深度 4 最差。异或结构用深度 2 就足以表达，
+  多出来的切分全在拟合 1000 个样本里的噪声。**更深的树在样本内总是更好看，这一点本身不说明任何问题。**
+
+## 纯贪心会被交互结构骗到 {#sec-greedy}
+
+`search.depth = 1` 退化为逐层贪心（会收到"建议取 2 或 3"的警告）。在异或结构上，
+单独一刀切 $X_1$ 或 $X_2$ 平均没有收益，贪心的第一刀只能靠噪声来选：
+
+```{r}
+#| label: greedy
+t_greedy <- withCallingHandlers(
+  hybrid_policy_tree(tr$X, Gamma, depth = 2, search.depth = 1),
+  warning = function(w) { message("警告：", conditionMessage(w)); invokeRestart("muffleWarning") })
+t_greedy
+t_exact2 <- policy_tree(tr$X, Gamma, depth = 2, verbose = FALSE)
+t_exact2
+c(greedy = mean(te$tau * (predict(t_greedy, te$X) == 2)),
+  exact  = mean(te$tau * (predict(t_exact2, te$X) == 2)))
+```
+
+贪心树的根切在 $X_2 \le 0.4$ 而不是 0，左子树又切在与效应无关的 $X_5$ 上，
+真实增益不到精确深度 2 的一半；精确搜索则把两刀都放在了 0 附近。
+这正是 `policytree` 坚持精确搜索的理由：浅层树的每一刀都需要"知道后面还能怎么切"。
+`search.depth` 至少取 2。
+
+## 参数校验 {#sec-checks}
+
+```{r}
+#| label: checks
+try(hybrid_policy_tree(tr$X, Gamma, depth = 2, search.depth = 2))
+try(hybrid_policy_tree(tr$X, Gamma, depth = 21))
+```
+
+`depth > 20` 被拒绝，是因为内部要分配 $2^{\text{depth}+1} - 1$ 行的节点数组。
+`X` 与 `Gamma` 的类型、行数检查与 `policy_tree()` 相同。
+
+## 什么时候用 {#sec-when}
+
+- 需要深度 3 以上、而精确深度 3 在当前 $(n, p)$ 下跑不动时。
+  前提是深度 `search.depth` 的精确搜索本身跑得动——混合搜索要在根节点和每个子节点上各跑一次。
+- 深树的每片叶子更小，更容易拟合噪声。`min.node.size` 在这里比在浅树上更重要，
+  而且树越深，越需要在留出样本上核对真实收益（[第 6 页](06-evaluation.qmd)）。
+- 深度 4 以上的树已经很难算"可解释"。如果目的只是最大化价值、不在乎规则可读，
+  直接按 $\hat\tau(x)$ 的符号分配往往更好，树的意义在于给出可以落地的规则。
