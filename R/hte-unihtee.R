@@ -535,13 +535,29 @@ get_hte_unihtee <- function(data,
 #'   `0.05`. Candidates below it are red (positive) or blue (negative) and, in
 #'   the volcano plot, labelled; the volcano's dashed line marks the largest
 #'   raw p-value that passes it.
-#' @param dr_args Named list for `type = "dep"` only:
+#' @param dr_args Named list for `type = "dep"` only; partial overrides keep
+#'   the other defaults:
 #'   \describe{
 #'     \item{`spline_df`}{Finite whole number of at least 1, default `2`, as
 #'       in [plt_hte_dep()]: degrees of freedom of the natural spline drawn
 #'       beside the line of a continuous candidate with more than 5 distinct
 #'       values.}
+#'     \item{`bins`}{`0` (default, none) or a whole number from 2 to 50: cut
+#'       a continuous candidate at that many quantiles and add the mean
+#'       pseudo-outcome of each bin with its confidence interval (grey), a
+#'       check of the line that assumes no shape. Tied quantiles merge
+#'       bins.}
 #'   }
+#' @param axis_arg Named list with `share_y`, only used by `type = "dep"`:
+#'   `"all"` (default) for one y range across panels, covering the lines and
+#'   bin means but not the intervals, as in [plt_hte_dep()]; `"none"` for a
+#'   range per panel that also covers its intervals.
+#' @param var_names Display labels keyed by candidate name, a named list or
+#'   character vector such as `c(bmi = "Body mass index")`, as in
+#'   [get_bal()]: merged into `RegR::name_map_seer` (the default), your labels
+#'   winning; a candidate in neither keeps its column name. `NULL` keeps every
+#'   column name. Two candidates may not share a label. The default needs
+#'   RegR.
 #' @param title Plot title, or `NULL` (default).
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
@@ -557,9 +573,9 @@ get_hte_unihtee <- function(data,
 #' grey dashed curve is a natural spline of the same pseudo-outcome, the
 #' `"dr"` layer of [plt_hte_dep()]; where it bends away from the line the
 #' slope summarises the modification poorly, and a U shape can hide behind a
-#' flat line. The dashed horizontal line is the mean pseudo-outcome, the
-#' doubly robust ATE for `"diff"`. All panels share one y range, which covers
-#' the lines but not the bands.
+#' flat line; `dr_args$bins` adds quantile-bin means as a second such
+#' check. The dashed horizontal line is the mean pseudo-outcome, the doubly
+#' robust ATE for `"diff"`.
 #'
 #' @return A `ggplot`, or for `"dep"` with several candidates a patchwork
 #'   with one panel per candidate, three per row. The pinned size is in
@@ -580,7 +596,13 @@ get_hte_unihtee <- function(data,
 #'
 #' plt_hte_unihtee(res)                      # signed estimates with CIs
 #' plt_hte_unihtee(res, type = "volcano")
-#' plt_hte_unihtee(res, type = "dep", x_var = c("w3", "sex", "w2"))
+#' plt_hte_unihtee(res, type = "dep", x_var = c("w3", "sex", "w2"),
+#'                 var_names = NULL)
+#'
+#' # Quantile-bin means as a shape check, one y range per panel, own labels
+#' plt_hte_unihtee(res, type = "dep", x_var = c("w3", "sex"),
+#'                 dr_args = list(bins = 5), axis_arg = list(share_y = "none"),
+#'                 var_names = c(w3 = "Biomarker", sex = "Sex"))
 #'
 #' @export
 plt_hte_unihtee <- function(x,
@@ -588,7 +610,9 @@ plt_hte_unihtee <- function(x,
                             x_var     = NULL,
                             measure   = NULL,
                             sig_level = 0.05,
-                            dr_args   = list(spline_df = 2),
+                            dr_args   = list(spline_df = 2, bins = 0),
+                            axis_arg  = list(share_y = "all"),
+                            var_names = RegR::name_map_seer,
                             title     = NULL,
                             save      = list()) {
 
@@ -597,14 +621,28 @@ plt_hte_unihtee <- function(x,
       is.null(a$candidate_levels))
     stop("`x` must be the list returned by get_hte_unihtee().", call. = FALSE)
   type <- match.arg(type)
-  if (type != "dep" && !missing(dr_args))
-    stop("`dr_args` only applies to type = \"dep\".", call. = FALSE)
-  dr_args <- .merge_named_arg(dr_args, list(spline_df = 2), "dr_args")
+  if (type != "dep") {
+    used <- c(dr_args = !missing(dr_args), axis_arg = !missing(axis_arg))
+    if (any(used))
+      stop(sprintf("%s only applies to type = \"dep\".",
+                   paste0("`", names(used)[used], "`", collapse = ", ")),
+           call. = FALSE)
+  }
+  dr_args <- .merge_named_arg(dr_args, list(spline_df = 2, bins = 0), "dr_args")
   if (!is.numeric(dr_args$spline_df) || length(dr_args$spline_df) != 1L ||
       !is.finite(dr_args$spline_df) || dr_args$spline_df < 1 ||
       dr_args$spline_df != floor(dr_args$spline_df))
     stop("`dr_args$spline_df` must be a finite whole number of at least 1.",
          call. = FALSE)
+  nb <- dr_args$bins
+  if (!is.numeric(nb) || length(nb) != 1L || !is.finite(nb) || nb != floor(nb) ||
+      !(nb == 0 || (nb >= 2 && nb <= 50)))
+    stop("`dr_args$bins` must be 0 (no bins) or a whole number from 2 to 50.",
+         call. = FALSE)
+  axis_arg <- .merge_named_arg(axis_arg, list(share_y = "all"), "axis_arg")
+  if (!is.character(axis_arg$share_y) || length(axis_arg$share_y) != 1L ||
+      !axis_arg$share_y %in% c("all", "none"))
+    stop("`axis_arg$share_y` must be \"all\" or \"none\".", call. = FALSE)
   if (is.null(measure)) measure <- a$measure[1L]
   if (!is.character(measure) || length(measure) != 1L ||
       !measure %in% a$measure)
@@ -631,6 +669,29 @@ plt_hte_unihtee <- function(x,
   v   <- v[match(vars, v$variable), , drop = FALSE]
   rel <- measure != "diff"
 
+  # var_names as in get_bal(): the caller's labels first, then
+  # RegR::name_map_seer; a candidate in neither keeps its column name.
+  disp <- stats::setNames(v$variable, v$variable)
+  if (!is.null(var_names)) {
+    one_lab <- function(s) is.character(s) && length(s) == 1L && !is.na(s)
+    if (!(is.list(var_names) || is.character(var_names)) ||
+        (length(var_names) &&
+         (is.null(names(var_names)) || any(!nzchar(names(var_names))) ||
+          anyDuplicated(names(var_names)) ||
+          !all(vapply(var_names, one_lab, logical(1L))))))
+      stop("`var_names` must be NULL or a named list or character vector of single labels with unique names.",
+           call. = FALSE)
+    vn <- c(as.list(var_names),
+            if (requireNamespace("RegR", quietly = TRUE)) RegR::name_map_seer)
+    vn <- unlist(vn[!duplicated(names(vn)) & names(vn) %in% v$variable])
+    if (length(vn)) disp[names(vn)] <- vn
+  }
+  clash <- disp %in% disp[duplicated(disp)]
+  if (any(clash))
+    stop(sprintf("`var_names` gives candidates the same display label: %s. Give them distinct labels.",
+                 paste(sprintf("`%s` -> \"%s\"", names(disp)[clash], disp[clash]),
+                       collapse = ", ")), call. = FALSE)
+
   # the measures as get_hte() names them
   ref   <- setdiff(levels(factor(x$data[[a$cat_var]])), a$treated)[1L]
   scale <- switch(
@@ -655,8 +716,8 @@ plt_hte_unihtee <- function(x,
     ok <- is.finite(v$estimate)
     if (!any(ok))
       stop("No candidate of `x` has an estimate for this measure.", call. = FALSE)
-    pd <- data.frame(variable = v$variable,
-                     label = paste0(v$variable, " (", v$contrast, ")"),
+    pd <- data.frame(variable = v$variable, display = unname(disp[v$variable]),
+                     label = paste0(disp[v$variable], " (", v$contrast, ")"),
                      estimate = v$estimate, conf.low = v$conf.low,
                      conf.high = v$conf.high, neglog10p = -log10(v$p.value),
                      sig = sig, stringsAsFactors = FALSE)[ok, , drop = FALSE]
@@ -693,7 +754,7 @@ plt_hte_unihtee <- function(x,
                                                     colour = sig), size = 2.5) +
         ggplot2::geom_text(data = pd[pd$sig != "n.s.", , drop = FALSE],
                            ggplot2::aes(x = estimate, y = neglog10p,
-                                        label = variable),
+                                        label = display),
                            vjust = -0.8, size = 3.2) +
         ggplot2::scale_colour_manual(values = cols, name = NULL) +
         # room above the top point for its label
@@ -728,7 +789,7 @@ plt_hte_unihtee <- function(x,
                           else sprintf("= %.3f", p)
     dd     <- d
     dd$.dr_score <- phi
-    has_spline <- FALSE
+    has_spline <- has_bins <- FALSE
 
     panel <- function(j) {
       vn    <- vars[j]
@@ -737,12 +798,14 @@ plt_hte_unihtee <- function(x,
       xv    <- d[[vn]]
       if (!cont) xv <- match(as.character(xv), lv) - 1L
       pr    <- .uni_project(xv, phi, W, wt, a$clusters, beyond, cont)
-      label <- sprintf("%s: %s %s, p.adj %s", vn, v$contrast[j],
+      # two strip lines, so a long display label is not cut off
+      label <- sprintf("%s:\n%s %s, p.adj %s", disp[[vn]], v$contrast[j],
                        format(signif(v$estimate[j], 3)), fmt_p(v$p.adj[j]))
       q  <- ggplot2::ggplot(data.frame(panel = label)) +
         ggplot2::geom_hline(yintercept = 0, colour = "grey75") +
         ggplot2::geom_hline(yintercept = mid, linetype = 2)
-      yv <- c(0, mid)
+      yv  <- c(0, mid)
+      yci <- numeric(0)
       if (is.null(pr$why)) {
         g   <- if (cont) seq(pr$range[1L], pr$range[2L], length.out = 100L) else 0:1
         M   <- cbind(1, g)
@@ -752,6 +815,7 @@ plt_hte_unihtee <- function(x,
                           estimate = est, conf.low = est - z * se,
                           conf.high = est + z * se, panel = label)
         yv  <- c(yv, est)
+        yci <- c(ln$conf.low, ln$conf.high)
         q <- q + if (cont) list(
           ggplot2::geom_ribbon(data = ln, ggplot2::aes(x = x, ymin = conf.low,
                                                        ymax = conf.high),
@@ -774,21 +838,57 @@ plt_hte_unihtee <- function(x,
             has_spline <<- TRUE
           }
         }
+        # Quantile bins of the rows the line uses, their weighted means and
+        # joint covariance as get_hte()'s subgroup rows compute them.
+        if (cont && nb > 0) {
+          xi <- xv[pr$i]
+          br <- unique(stats::quantile(xi, seq(0, 1, length.out = nb + 1L),
+                                       names = FALSE))
+          if (length(br) > 2L) {
+            grp <- split(pr$i, cut(xi, br, include.lowest = TRUE))
+            grp <- grp[lengths(grp) > 1L]
+            sm  <- .hte_score_summary(phi, grp, wt,
+                                      if (length(a$clusters)) a$clusters
+                                      else seq_along(phi))
+            bse <- sqrt(diag(sm$vcov))
+            bn  <- data.frame(
+              x = vapply(grp, function(i) stats::weighted.mean(xv[i], wt[i]),
+                         numeric(1L)),
+              estimate = sm$estimate, conf.low = sm$estimate - z * bse,
+              conf.high = sm$estimate + z * bse, bin = seq_along(grp),
+              panel = label, row.names = NULL)
+            q <- q + ggplot2::geom_pointrange(
+              data = bn, ggplot2::aes(x = x, y = estimate, ymin = conf.low,
+                                      ymax = conf.high),
+              colour = "grey20", size = 0.3)
+            yv  <- c(yv, bn$estimate)
+            yci <- c(yci, bn$conf.low, bn$conf.high)
+            has_bins <<- TRUE
+          }
+        }
       }
       q <- q + ggplot2::facet_wrap(~panel) +
-        ggplot2::labs(x = vn, y = ylab) +
+        ggplot2::labs(x = disp[[vn]], y = ylab) +
         UtilsR::theme_my(base_rect_size = 1.5)
-      list(plot = q, yv = yv)
+      list(plot = q, yv = yv, yci = yci)
     }
 
     built <- lapply(seq_along(vars), panel)
-    rng   <- range(unlist(lapply(built, `[[`, "yv")), na.rm = TRUE)
-    plots <- lapply(built, function(b) b$plot + ggplot2::coord_cartesian(ylim = rng))
+    rng <- if (axis_arg$share_y == "all") {
+      rep(list(range(unlist(lapply(built, `[[`, "yv")), na.rm = TRUE)),
+          length(built))
+    } else {
+      lapply(built, function(b) range(c(b$yv, b$yci), na.rm = TRUE))
+    }
+    plots <- Map(function(b, r) b$plot + ggplot2::coord_cartesian(ylim = r),
+                 built, rng)
     caption <- paste(c(
       sprintf("red: projection on the candidate with %g%% CI (level means for a binary one)",
               conf),
       if (has_spline) sprintf("grey dashed: natural spline, df = %d",
                               as.integer(dr_args$spline_df)),
+      if (has_bins) sprintf("grey points: pseudo-outcome mean per quantile bin with %g%% CI",
+                            conf),
       sprintf("dashed: mean pseudo-outcome%s", if (rel) "" else " (ATE)")),
       collapse = "; ")
     caption <- paste0(toupper(substr(caption, 1L, 1L)), substring(caption, 2L))

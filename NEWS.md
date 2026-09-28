@@ -11,6 +11,11 @@
   `method`s, every measure (ratio and OR on a log axis) and survival
   outcomes, with no forest refitted. `get_hte_unihtee()` and the plot share
   one projection, so every drawn line matches its table row.
+  `dr_args$bins` (default `0`, off) adds quantile-bin means of the
+  pseudo-outcome as a second shape check, `axis_arg = list(share_y =
+  "none")` gives each panel its own y range, as in `plt_hte_dep()`, and
+  `var_names` relabels the candidates as in `get_bal()` (default
+  `RegR::name_map_seer`).
 
 * New `get_hte_unihtee()` screens candidate effect modifiers with the
   treatment effect modifier variable importance parameter (TEM-VIP) of

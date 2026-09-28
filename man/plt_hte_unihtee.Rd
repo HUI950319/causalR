@@ -10,7 +10,9 @@ plt_hte_unihtee(
   x_var = NULL,
   measure = NULL,
   sig_level = 0.05,
-  dr_args = list(spline_df = 2),
+  dr_args = list(spline_df = 2, bins = 0),
+  axis_arg = list(share_y = "all"),
+  var_names = RegR::name_map_seer,
   title = NULL,
   save = list()
 )
@@ -33,13 +35,31 @@ takes the first.}
 the volcano plot, labelled; the volcano's dashed line marks the largest
 raw p-value that passes it.}
 
-\item{dr_args}{Named list for \code{type = "dep"} only:
+\item{dr_args}{Named list for \code{type = "dep"} only; partial overrides keep
+the other defaults:
 \describe{
 \item{\code{spline_df}}{Finite whole number of at least 1, default \code{2}, as
 in \code{\link[=plt_hte_dep]{plt_hte_dep()}}: degrees of freedom of the natural spline drawn
 beside the line of a continuous candidate with more than 5 distinct
 values.}
+\item{\code{bins}}{\code{0} (default, none) or a whole number from 2 to 50: cut
+a continuous candidate at that many quantiles and add the mean
+pseudo-outcome of each bin with its confidence interval (grey), a
+check of the line that assumes no shape. Tied quantiles merge
+bins.}
 }}
+
+\item{axis_arg}{Named list with \code{share_y}, only used by \code{type = "dep"}:
+\code{"all"} (default) for one y range across panels, covering the lines and
+bin means but not the intervals, as in \code{\link[=plt_hte_dep]{plt_hte_dep()}}; \code{"none"} for a
+range per panel that also covers its intervals.}
+
+\item{var_names}{Display labels keyed by candidate name, a named list or
+character vector such as \code{c(bmi = "Body mass index")}, as in
+\code{\link[=get_bal]{get_bal()}}: merged into \code{RegR::name_map_seer} (the default), your labels
+winning; a candidate in neither keeps its column name. \code{NULL} keeps every
+column name. Two candidates may not share a label. The default needs
+RegR.}
 
 \item{title}{Plot title, or \code{NULL} (default).}
 
@@ -72,9 +92,9 @@ fitted mean of each level instead, whose difference is the estimate. The
 grey dashed curve is a natural spline of the same pseudo-outcome, the
 \code{"dr"} layer of \code{\link[=plt_hte_dep]{plt_hte_dep()}}; where it bends away from the line the
 slope summarises the modification poorly, and a U shape can hide behind a
-flat line. The dashed horizontal line is the mean pseudo-outcome, the
-doubly robust ATE for \code{"diff"}. All panels share one y range, which covers
-the lines but not the bands.
+flat line; \code{dr_args$bins} adds quantile-bin means as a second such
+check. The dashed horizontal line is the mean pseudo-outcome, the doubly
+robust ATE for \code{"diff"}.
 }
 
 \examples{
@@ -90,7 +110,13 @@ res <- get_hte_unihtee(d, cat_var = "a", adj_var = c("w1", "w2", "w3", "sex"),
 
 plt_hte_unihtee(res)                      # signed estimates with CIs
 plt_hte_unihtee(res, type = "volcano")
-plt_hte_unihtee(res, type = "dep", x_var = c("w3", "sex", "w2"))
+plt_hte_unihtee(res, type = "dep", x_var = c("w3", "sex", "w2"),
+                var_names = NULL)
+
+# Quantile-bin means as a shape check, one y range per panel, own labels
+plt_hte_unihtee(res, type = "dep", x_var = c("w3", "sex"),
+                dr_args = list(bins = 5), axis_arg = list(share_y = "none"),
+                var_names = c(w3 = "Biomarker", sex = "Sex"))
 \dontshow{\}) # examplesIf}
 }
 \seealso{

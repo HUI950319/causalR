@@ -116,6 +116,7 @@ test_that("survival outcomes run through the forest on both scales", {
   expect_equal(res$vip$contrast[res$vip$variable == "grp"], rep("TRUE vs FALSE", 2))
   expect_true(all(c(".score_diff", ".score_ratio") %in% names(res$data)))
   skip_if_not_installed("patchwork")
+  skip_if_not_installed("RegR")  # the default var_names
   p <- plt_hte_unihtee(res, type = "dep", x_var = c("x2", "grp"), measure = "ratio")
   expect_s3_class(p, "patchwork")
   expect_no_warning(for (q in c(p$patches$plots, list(p))) ggplot2::ggplot_build(q))
@@ -163,6 +164,7 @@ uni_plot_res <- local({
   cache <- NULL
   function() {
     skip_if_not_installed("sandwich")
+    skip_if_not_installed("RegR")  # the default var_names
     if (is.null(cache))
       cache <<- get_hte_unihtee(uni_cont_data(), cat_var = "a",
                                 adj_var = c("w1", "w2", "w3", "w4", "sex"),
@@ -224,6 +226,7 @@ test_that("dep draws the TEM-VIP line, a spline check and the binary contrast", 
 
 test_that("relative measures draw on the log scale", {
   skip_if_not_installed("sandwich")
+  skip_if_not_installed("RegR")
   res <- get_hte_unihtee(uni_bin_data(), cat_var = "a", adj_var = c("w1", "w2", "sex"),
                          surv = "y", method = "glm", measure = c("diff", "ratio"))
   p <- plt_hte_unihtee(res, measure = "ratio")
@@ -255,4 +258,53 @@ test_that("save writes one PDF and returns the plot unchanged", {
   p <- plt_hte_unihtee(res, type = "volcano", save = list(filename = f))
   expect_true(file.exists(f))
   expect_s3_class(p, "ggplot")
+})
+
+test_that("dr_args$bins adds quantile-bin means of the pseudo-outcome", {
+  res <- uni_plot_res()
+  d   <- res$data
+  q   <- plt_hte_unihtee(res, type = "dep", x_var = "w3", dr_args = list(bins = 4))
+  bn  <- uni_layer(q, "GeomPointrange", "bin")
+  expect_equal(bn$estimate, unname(c(tapply(
+    d$.score_diff, cut(d$w3, stats::quantile(d$w3, 0:4 / 4), include.lowest = TRUE),
+    mean))))
+  expect_null(uni_layer(plt_hte_unihtee(res, type = "dep", x_var = "w3"),
+                        "GeomPointrange", "bin"))
+  expect_error(plt_hte_unihtee(res, type = "dep", dr_args = list(bins = 1)), "bins")
+})
+
+test_that("axis_arg$share_y = 'none' gives each dep panel its own range", {
+  skip_if_not_installed("patchwork")
+  res <- uni_plot_res()
+  lim <- function(p) lapply(c(p$patches$plots, list(p)),
+                            function(q) q$coordinates$limits$y)
+  shared <- lim(plt_hte_unihtee(res, type = "dep", x_var = c("w3", "sex")))
+  expect_equal(shared[[1]], shared[[2]])
+  own <- lim(plt_hte_unihtee(res, type = "dep", x_var = c("w3", "sex"),
+                             axis_arg = list(share_y = "none")))
+  expect_false(isTRUE(all.equal(own[[1]], own[[2]])))
+  expect_error(plt_hte_unihtee(res, axis_arg = list(share_y = "none")), "type = \"dep\"")
+  expect_error(plt_hte_unihtee(res, type = "dep", axis_arg = list(share_y = "x")),
+               "share_y")
+  expect_identical(tail(names(formals(plt_hte_unihtee)), 4L),
+                   c("axis_arg", "var_names", "title", "save"))
+})
+
+test_that("var_names relabels every type and rejects clashing labels", {
+  res <- uni_plot_res()
+  b <- uni_layer(plt_hte_unihtee(res, var_names = c(w3 = "Weight", sex = "Sex")),
+                 "GeomCol", "estimate")
+  expect_true(all(c("Weight (+1 SD)", "Sex (M vs F)", "w1 (+1 SD)") %in%
+                    as.character(b$label)))
+  b0 <- uni_layer(plt_hte_unihtee(res, var_names = NULL), "GeomCol", "estimate")
+  expect_true("w3 (+1 SD)" %in% as.character(b0$label))
+  txt <- uni_layer(plt_hte_unihtee(res, type = "volcano", var_names = c(w3 = "Weight")),
+                   "GeomText", "display")
+  expect_true("Weight" %in% txt$display)
+  q <- plt_hte_unihtee(res, type = "dep", x_var = "w3", var_names = c(w3 = "Weight"))
+  expect_match(uni_layer(q, "GeomLine", "estimate")$panel[1], "^Weight:")
+  expect_identical(ggplot2::get_labs(q)$x, "Weight")
+  expect_error(plt_hte_unihtee(res, var_names = c(w3 = "A", w4 = "A")),
+               "same display label")
+  expect_error(plt_hte_unihtee(res, var_names = list(w3 = 1)), "var_names")
 })
