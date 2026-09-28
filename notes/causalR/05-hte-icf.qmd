@@ -1,0 +1,396 @@
+---
+title: "5. 亚组规则发现：get_hte_icf()"
+subtitle: "causalR 包函数手册"
+lang: zh
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(causalR)
+f2 <- function(x) sprintf("%.2f", x)
+pct <- function(k, n) sprintf("%d/%d", k, n)
+sim    <- read.csv(here::here("data/hte_icf_sim.csv"), stringsAsFactors = FALSE)
+timing <- read.csv(here::here("data/hte_icf_timing.csv"), stringsAsFactors = FALSE)
+```
+
+[第 1 页](01-hte.qmd)的 `plt_hte_sub()` 回答"**事先划定的**亚组各自效应多大"。
+`get_hte_icf()` 回答的是前一个问题：**亚组该怎么划**——不预设交互项，直接从数据里
+找出 `X3 = 1 & X1 = 1` 这样的规则，再在**没参与寻找**的另一半患者上估计每条规则的
+双稳健效应。算法按 Wang 等（2024）的迭代因果森林（iterative causal forest, iCF）
+重写，做了几处有模拟依据的改动（见 @sec-icf-algo）。
+
+```text
+data ──split_frac──┬─ 发现集 ─┬─ 5 折交叉验证：每折重跑下面整套，选深度（含 0 = 不分亚组）
+                   │          └─ 全发现集：get_hte() → 筛变量 → 20 个因果森林
+                   │               → 每棵树截断到候选深度、诚实剪枝 → 每个森林投一票
+                   │             校准检验 p > gate 时一律判为"不分亚组"
+                   └─ 估计集 ──► 按规则分组 → get_hte() 双稳健效应 → plt_hte_sub()
+```
+
+| | `get_hte_icf()` | `get_hte()` + `plt_hte_sub()` | [`get_hte_select()`](02-hte-select.qmd) |
+|---|---|---|---|
+| 亚组从哪来 | 从数据里**找**出规则 | 你事先划定 | 不给亚组，只给变量排序 |
+| 推断 | 诚实：找规则与估计效应用不同患者 | 诚实（亚组事先定） | 训练集得分摘要，非效应估计 |
+| 代价 | 估计集只有一半患者，区间更宽 | 亚组要有先验 | 需要已算好的倾向得分 |
+| 输出 | `hte_icf`，其中 `$est` 是 `hte_res` | `hte_res` / ggplot | 普通列表 |
+
+## 安装与核对环境 {#sec-icf-env}
+
+```r
+remotes::install_github("HUI950319/causalR")
+install.packages(c("grf", "forestplot", "ggplotify"))   # 森林；画亚组图
+```
+
+本页核对于 **2026 年 9 月 28 日**。示例的代码块**由本站渲染时真实执行**；
+模拟与耗时两节读取事先跑好的结果文件（脚本见 @sec-icf-script），因为完整重跑要一个多小时。
+
+| 项目 | 值 |
+|---|---|
+| causalR | `r packageVersion("causalR")`（GitHub `main`，提交 `a89dd81`） |
+| grf | `r packageVersion("grf")` |
+| R | Windows `r paste(R.version$major, R.version$minor, sep = ".")` |
+| 机器 | Intel Core Ultra 9 275HX（24 核）、128 GB 内存 |
+
+## 示例：只有 X1、X3 同时为 1 的人获益 {#sec-icf-example}
+
+2000 名患者、6 个协变量（`X1`、`X3`、`X6` 二分类，`X2`、`X4`、`X5` 正态）。
+治疗分配受 `X1`、`X2` 影响（有混杂），`X2` 同时影响结局；
+**真实效应只在 `X1 = X3 = 1` 的约四分之一患者身上为 2，其余人为 0**：
+
+```{r}
+#| label: data
+set.seed(20260928)
+n <- 2000
+d <- data.frame(X1 = rbinom(n, 1, 0.5), X2 = rnorm(n),
+                X3 = rbinom(n, 1, 0.5), X4 = rnorm(n),
+                X5 = rnorm(n), X6 = rbinom(n, 1, 0.3))
+d$z   <- rbinom(n, 1, plogis(0.4 * d$X1 - 0.3 * d$X2))
+d$tau <- 2 * d$X1 * d$X3                 # 真值，只用来核对
+d$y   <- d$X2 + d$z * d$tau + rnorm(n)
+```
+
+默认设置（20 个森林 × 200 棵树 × 5 折）调用一次：
+
+```{r}
+#| label: fit
+t0  <- Sys.time()
+res <- get_hte_icf(d, cat_var = "z", adj_var = paste0("X", 1:6), surv = "y")
+t_fit <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+res
+```
+
+本机这次调用用了 **`r round(t_fit)` 秒**。打印结果从上到下：
+
+- 发现集与估计集各 1000 人；筛变量后留下的协变量；发现集森林的**校准检验** p 值
+  （@sec-icf-gate 的闸门看的就是它）。
+- **交叉验证损失**：用训练折找出的划分，预测留出折患者的 AIPW 得分，
+  均方误差最小的深度胜出；深度 0 就是"不分亚组"。深度 3 与深度 2 找到的是同一个划分时，
+  报告较浅的那个。
+- **规则**：每条规则在估计集上的双稳健效应（均值差）与 95% 区间，
+  以及"各规则效应相等"的检验 P for interaction。
+
+和真值对照——估计集上每条规则的真实平均效应：
+
+```{r}
+#| label: truth
+truth <- tapply(res$est$data$tau, res$est$data$.rule, mean)
+data.frame(rule = res$rules$rule, truth = f2(truth[res$rules$rule]),
+           estimate = f2(res$rules$estimate),
+           ci = paste0("(", f2(res$rules$conf.low), ", ",
+                       f2(res$rules$conf.high), ")"))
+```
+
+`$est` 是估计集上的 `get_hte()` 结果，`.rule` 列就是每个人的规则，
+所以亚组森林图直接交给 `plt_hte_sub()`。`.rule` 不是森林协变量，函数会提示这一点；
+这里它是协变量的函数，估计成立。`label_column_list` 改掉 `.rule` 这个行名：
+
+```{r}
+#| label: plot
+#| message: false
+#| fig-width: 6.5
+#| fig-height: 2.9
+plt_hte_sub(res$est, sub_var = ".rule",
+            label_column_list = c(.rule = "Discovered subgroup"),
+            xlim = c(-0.5, 2.5), ticks_at = seq(-0.5, 2, 0.5))
+```
+
+## 读输出 {#sec-icf-value}
+
+```{r}
+#| label: value
+res$vote
+res$importance
+```
+
+| 元素 | 内容 |
+|---|---|
+| `$rules` | 选中深度的每条规则：`rule`、发现集人数 `n_disc`，以及估计集上的 `n`、`n_treat`、`estimate`、`std.error`、`conf.low`、`conf.high`、`p.value`、`p_inter`（与 `get_hte()$subgroup` 同口径，95% Wald 区间） |
+| `$cv` | 每个深度（含 0）一行：全发现集上找到的划分有几组 `n_leaf`、交叉验证损失 `cv_loss` 及其标准误、`selected` |
+| `$vote` | 每个候选深度一行：胜出划分的**得票率** `share`（20 个森林里有几成投给它，即稳定性）与划分本身 |
+| `$importance` | 发现集 `get_hte()` 的变量重要性与 `p_het`，`screened` 标出投票森林实际用了哪些变量 |
+| `$est` | 估计集上的 `hte_res`，可交给全部 `plt_hte_*()` |
+
+`attr(res, "analysis")` 里另有发现集的行号（`discovery`）、全部设置、
+校准 p 值 `calibration_p` 与闸门是否关上 `gated`。
+
+## 算法与相对 iCF 代码的改动 {#sec-icf-algo}
+
+一次"发现"在某组患者上这样做：
+
+1. `get_hte()` 拟合一次因果森林，得到袋外的结局与倾向得分估计、每人的 AIPW 得分、
+   变量重要性。
+2. **筛变量**（iCF 的做法）：留下重要性不低于均值的协变量，至少 4 个。
+3. 复用第 1 步的估计，在留下的变量上种 `n_forest` 个因果森林。
+4. 每棵树**截断**到每个候选深度，自下而上**剪枝**：一个分裂要保留，两个子节点须各有
+   至少 `min_leaf`（5%）的患者、每臂至少 2 人，并且 AIPW 得分的叶内平方误差
+   （按 \(m^2/(m-1)^2\) 放大，同 iCF 代码）下降超过 3.84 倍方差——约等于检验
+   两个子节点差异的 5% 水平。**评估只用这棵树没拿来选切点的患者**
+   （grf 诚实样本的一半加上它没抽到的人，约四分之三）。
+5. 每个森林里损失下降最多的那棵树投一票；按**划分**计票（忽略连续变量切点的具体值），
+   得票最多的划分胜出，切点取该划分下最常见树形的中位数。
+
+深度由发现集内的 5 折交叉验证决定：每折在其余四折上**从第 1 步重跑**
+（辅助模型也重估），用那四折的叶内平均 AIPW 得分预测留出折的得分。
+
+| | iCF 代码 | `get_hte_icf()` | 为什么 |
+|---|---|---|---|
+| 损失 | R-loss | AIPW 得分的平方误差 | 生存结局也能用 |
+| 控制深度 | 为每个深度手调 `min.node.size` 分母 | 截断同一批树 | 一套森林服务所有深度 |
+| 评估每棵树 | 各树自己的叶内样本（人数各不相同） | 没用来选切点的患者 | 见下 |
+| 剪枝门槛 | 只有 \(m^2/(m-1)^2\) 放大 | 另加 3.84 倍方差 | 见下 |
+| 投票 | 按树形 | 按划分 | 先切 X1 还是先切 X3 算同一票 |
+| 交叉验证 | 各折实际用全样本种树（已实测） | 各折只用训练折 | 不泄漏 |
+| "无异质性"闸门 | README 示例的 `P_threshold = 1` 把它关了 | 校准检验 p ≤ 0.1 才报亚组 | 见 @sec-icf-gate |
+| 效应估计 | 发现规则的同一批人上 IPTW 回归 | 另一半患者上的双稳健估计 | 诚实推断 |
+
+后三条改动都是开发时被模拟逼出来的（`X1`–`X6` 设计，τ = 2·X1·X3，n = 1600）：
+
+- **每棵树在全部发现集上评估**时，每个森林的最优树都在"没有效应的那一枝"多切一刀
+  （5 个森林全是同一刀 `X4 ≤ 0.75`）——选切点用过的患者让噪声切分显得有收益。
+- **诚实评估但不加门槛**时，12 个数据集里仍有 5 个留下假切分：每棵树约有一成多的噪声
+  切分能过 iCF 的剪枝规则，再从 200 棵里挑增益最大的，恰好挑中"真结构 + 一刀噪声"。
+  加 3.84 倍门槛后 12/12 干净；README 设定下效应较弱的结果逐条不变。
+- 闸门见 @sec-icf-gate。
+
+## 参数 {#sec-icf-args}
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `data`、`cat_var`、`surv`、`time` | — | 同 `get_hte()`；`surv = TRUE` 读 `time` / `DSS` 两列 |
+| `adj_var` | — | 森林的协变量，也是写规则用的变量；**不能有缺失**（规则说不清缺失值该归哪组） |
+| `depth` | `1:3` | 候选深度，最多 8 组；深度 0 总在候选里 |
+| `factor_encoding` | `"onehot"` | 同 `get_hte()`；两种编码写出的规则一样（如 `grp = c`、`grp != c`） |
+| `split_frac` | `0.5` | 每臂内用于发现的比例，其余为估计集 |
+| `rule_args` | 见下 | 发现设置的命名列表，可局部覆盖 |
+| `grf_args` | `list()` | 传给每次 `get_hte()`，以及（除 `num.trees`、`seed` 外）投票森林；不收逐行字段（`W.hat`、`Y.hat`、`sample.weights`、`clusters`） |
+| `seed` | `123` | 抽发现集与分折；`get_hte()` 的种子（除非 `grf_args` 自带）；第 b 个投票森林用 `seed + b`；调用结束恢复原随机数状态 |
+| `verbose` | `FALSE` | 报告拆分、筛选结果与选中的深度 |
+
+`rule_args` 的字段：
+
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| `n_forest` | `20` | 每次发现种几个森林，每个投一票 |
+| `num_trees` | `200` | 每个投票森林的树数 |
+| `n_folds` | `5` | 发现集内交叉验证的折数 |
+| `min_leaf` | `0.05` | 最小亚组占比（占找规则那组患者），另需每臂 2 人 |
+| `screen` | `TRUE` | 按重要性筛变量（不低于均值、至少 4 个）；`FALSE` 用全部 `adj_var` |
+| `gate` | `0.1` | 校准检验 p 的闸门；`1` 表示只靠交叉验证 |
+
+## 模拟：找得准不准 {#sec-icf-sim}
+
+全部用默认设置，每个数据集一次调用。四个场景：
+
+| 场景 | 设计 | 真正的修饰 | 次数 |
+|---|---|---|---|
+| 交互 | 上面示例的设计，n = 1600 | τ = 2·X1·X3 | 20 |
+| 无异质性 | 同上，τ = 0.5 | 无 | 20 |
+| iCF README | iCF 仓库自带的模拟，10 个协变量 | τ = −0.4 + 0.3·X1 + 0.4·X3 + 0.4·X1·X3 | n = 3000、10000 各 10 |
+| 生存 | 示例的协变量；治疗把 X1 = X3 = 1 者的风险乘以 e^−1.2^，其余人无效应；删失率 0.02，t = 12 | X1·X3 | n = 3000，筛变量开/关各 10 |
+
+```{r}
+#| label: sim-summary
+#| echo: false
+lab <- c(inter = "交互", null = "无异质性", readme = "iCF README", surv = "生存")
+key <- paste(sim$scenario, sim$n, sim$screen)
+s <- do.call(rbind, lapply(split(sim, factor(key, unique(key))), function(x) {
+  data.frame(
+    场景 = lab[x$scenario[1]], n = x$n[1],
+    筛变量 = ifelse(x$screen[1], "开", "关"),
+    次数 = nrow(x),
+    `报出亚组` = pct(sum(x$depth > 0), nrow(x)),
+    `恰为 X1+X3` = if (x$scenario[1] == "null") "—" else pct(sum(x$vars == "X1+X3"), nrow(x)),
+    `只有 X1 或 X3` = if (x$scenario[1] == "null") "—" else pct(sum(x$vars %in% c("X1", "X3")), nrow(x)),
+    `含其他变量` = pct(sum(grepl("X[^13+]|X1[0-9]", x$vars)), nrow(x)),
+    `区间覆盖真值` = pct(sum(x$n_cover), sum(x$n_leaf)),
+    check.names = FALSE)
+}))
+rownames(s) <- NULL
+knitr::kable(s, align = "lrcrcccc")
+```
+
+"含其他变量"数的是规则里出现 X1、X3 以外变量的次数；"区间覆盖真值"把所有次模拟里
+每条规则的 95% 区间与估计集上该组的真实平均效应比对。
+
+```{r}
+#| label: sim-numbers
+#| include: false
+at <- function(sc, n = NULL, screen = TRUE)
+  sim[sim$scenario == sc & (is.null(n) | sim$n %in% n) & sim$screen == screen, ]
+null_hit  <- at("null")[at("null")$depth > 0, ]
+surv_on   <- at("surv"); surv_off <- at("surv", screen = FALSE)
+```
+
+- **交互**：`r pct(sum(at("inter")$vars == "X1+X3"), nrow(at("inter")))` 次恰好只切
+  X1、X3，全部是三组划分（`X1 = 0`、`X1 = 1 & X3 = 0`、`X1 = 1 & X3 = 1`，或先切 X3 的
+  对称写法）——没有效应的两组没有被再切开。
+- **无异质性**：`r pct(nrow(null_hit), nrow(at("null")))` 次报出了亚组（按
+  `r null_hit$vars` 切一刀，那次发现集的校准 p = `r signif(null_hit$calib_p, 2)`，
+  刚好过了 0.1 的闸门）。估计集上它的 P for interaction =
+  `r signif(null_hit$p_inter, 2)`：**诚实估计本身就不支持这个亚组**，
+  这正是拆样本的意义。
+- **iCF README**：真效应在 X3 = 0 为 −0.4 与 −0.1、X3 = 1 为 0 与 0.7，X3 一刀就解释了
+  大部分差异。n = 10000 时 `r pct(sum(at("readme", 10000)$vars == "X1+X3"), 10)` 次切出
+  X1、X3；n = 3000（发现集 1500 人）时次次报出亚组，但
+  `r pct(sum(at("readme", 3000)$vars == "X3"), 10)` 次只切 X3——X1 那一刀在样本小时不稳。
+- **生存**：最难。筛变量开着时 `r pct(sum(surv_on$depth > 0), 10)` 次报出亚组，
+  **一次都没同时切出 X1、X3**，还有 `r sum(!surv_on$vars %in% c("", "X3", "X1", "X1+X3"))`
+  次带进了噪声变量；关掉筛选（`rule_args = list(screen = FALSE)`）后
+  `r pct(sum(surv_off$vars == "X1+X3"), 10)` 次恰为 X1、X3。原因在筛选：
+  生存森林的变量重要性偏爱取值多的连续变量，"不低于均值、至少 4 个"的名额被
+  X2、X4、X5 占走，二分类的 X3 或 X1 就进不了投票森林（开发时的单次调用里，
+  n = 2000 和 4000 两次都是 X3 被筛掉）。
+- **区间**：全部 `r sum(sim$n_leaf)` 条规则里，`r sum(sim$n_cover)` 条
+  （`r round(100 * sum(sim$n_cover) / sum(sim$n_leaf))`%）的 95% 区间覆盖了
+  估计集上该组的真实平均效应。
+
+### 校准检验闸门 {#sec-icf-gate}
+
+同一批模拟里，把闸门关掉（`rule_args = list(gate = 1)`，只看交叉验证）会怎样——
+结果对象里存着每个深度的交叉验证损失，关掉闸门时的选择可以直接算出来：
+
+```{r}
+#| label: sim-gate
+#| echo: false
+g <- do.call(rbind, lapply(split(sim, factor(key, unique(key))), function(x)
+  data.frame(场景 = lab[x$scenario[1]], n = x$n[1],
+             筛变量 = ifelse(x$screen[1], "开", "关"),
+             `只靠交叉验证：报出亚组` = pct(sum(x$depth_cv > 0), nrow(x)),
+             `加闸门：报出亚组` = pct(sum(x$depth > 0), nrow(x)),
+             `闸门拦下` = pct(sum(x$gated & x$depth_cv > 0), nrow(x)),
+             `校准 p 最大值` = signif(max(x$calib_p), 2),
+             check.names = FALSE)))
+rownames(g) <- NULL
+knitr::kable(g, align = "lrcccccr")
+```
+
+闸门是论文原有的一步：发现集上原始森林的校准检验（`get_hte()$calibration` 里
+`differential.forest.prediction` 那一行，单侧）p ≤ 0.1 才去报亚组。
+无异质性时它把只靠交叉验证的 `r pct(sum(at("null")$depth_cv > 0), 20)` 次误报
+压到 `r pct(sum(at("null")$depth > 0), 20)`；连续结局有真实修饰时，校准 p 最大也只有
+`r signif(max(sim$calib_p[sim$scenario %in% c("inter", "readme")]), 2)`，
+闸门一次也没挡。生存结局的校准检验功效低得多（p 最大到
+`r signif(max(sim$calib_p[sim$scenario == "surv"]), 2)`），闸门也会挡掉真信号——
+想只靠交叉验证判断时用 `rule_args = list(gate = 1)`。
+
+## 耗时 {#sec-icf-time}
+
+默认设置、一次调用、本机单独运行（没有其他计算任务）。连续结局用示例的设计，
+生存结局用上面生存场景的设计：
+
+```{r}
+#| label: timing
+#| echo: false
+tt <- data.frame(结局 = ifelse(timing$scenario == "surv", "生存", "连续"),
+                 n = format(timing$n, big.mark = ","),
+                 发现集 = format(timing$n / 2, big.mark = ","),
+                 `耗时（秒）` = round(timing$secs), `耗时（分）` = round(timing$secs / 60, 1),
+                 选中深度 = timing$depth, 规则 = timing$rules, check.names = FALSE)
+knitr::kable(tt, align = "lrrrrcl")
+```
+
+```{r}
+#| label: timing-plot
+#| echo: false
+#| fig-width: 5.5
+#| fig-height: 3.4
+library(ggplot2)
+ggplot(timing, aes(n, secs / 60,
+                   colour = ifelse(scenario == "surv", "Survival", "Continuous"))) +
+  geom_line() + geom_point() +
+  scale_x_log10(labels = scales::label_comma()) + scale_y_log10() +
+  labs(x = "Patients (log scale)", y = "Minutes (log scale)", colour = NULL) +
+  theme_bw() + theme(legend.position = "top")
+```
+
+```{r}
+#| label: timing-numbers
+#| include: false
+tsec <- function(sc, n) timing$secs[timing$scenario == sc & timing$n == n]
+fmin <- function(s) if (s < 90) sprintf("%.0f 秒", s) else sprintf("%.1f 分钟", s / 60)
+```
+
+- **连续结局**：1000 例 `r fmin(tsec("inter", 1000))`，5000 例 `r fmin(tsec("inter", 5000))`，
+  2 万例 `r fmin(tsec("inter", 20000))`，5 万例 `r fmin(tsec("inter", 50000))`。
+  小样本时的"底价"来自固定开销：一次调用要做 7 次 `get_hte()`（全发现集、5 个训练折、
+  估计集）和 120 个投票森林（20 个 × 6 次发现），逐树的截断与剪枝是 R 单线程代码，
+  24 核里平均只用上两三个。发现集超过 1 万人（总样本 2 万以上）时 `get_hte()` 自动改种
+  200 棵树，所以 5 万例并没有按比例变慢。
+- **生存结局**贵得多：`causal_survival_forest()` 每种一个投票森林都要重估生存与删失曲线。
+  1000 例 `r fmin(tsec("surv", 1000))`，1 万例 `r fmin(tsec("surv", 10000))`，
+  2 万例 `r fmin(tsec("surv", 20000))`。
+  事件数超过样本 10% 时 grf 会反复提示改用更粗的时间网格；单次实测 1 万例传
+  `grf_args = list(failure.times = seq(0, 12, by = 0.5))` 从 298 秒降到 118 秒，
+  但那一次只找出了 X1（不加网格时是 X1、X3），网格对识别的影响没有做成批模拟。
+
+想更快，按影响从大到小：减 `rule_args` 的 `n_forest`（投票数，默认 20）和 `n_folds`
+（默认 5，每少一折少一次完整发现）；给 `get_hte()` 的森林减树（`grf_args = list(num.trees = 500)`）；
+生存结局加 `failure.times` 网格。帮助页 `?get_hte_icf` 的示例用
+`rule_args = list(n_forest = 5, num_trees = 100, n_folds = 3)`，1600 例连续结局
+约 6 秒，也找对了规则，但得票率只有 5 档，稳定性读数很粗。
+
+## 读结果的规矩 {#sec-icf-rules}
+
+1. **效应看 `$rules`，别在全样本上对着规则重估。** 规则是在发现集上"找"出来的，
+   同一批人既找规则又估计，效应和 P 值都会偏乐观；`$rules` 与 `$est` 只用了估计集。
+2. **"不分亚组"是正常答案，但不等于没有异质性。** 闸门和交叉验证都可能给出深度 0，
+   生存结局尤其如此（本页生存场景有 4–6 成是深度 0）。
+3. **看得票率。** `$vote$share` 低于一半说明 20 个森林意见不一，换 `seed` 结果可能变；
+   重要结论可以换几个种子看是否复现。
+4. **连续变量的切点由数据决定。** 取胜出树形的中位数、显示 4 位有效数字；
+   报告时写明是数据驱动的切点，而不是临床界值。
+5. **变量不多时考虑关掉筛选。** 默认按 iCF 筛到重要性不低于均值、至少 4 个；
+   本页生存场景里它漏掉了二分类的真修饰变量，`screen = FALSE` 明显更好。
+6. **拆样本的代价是区间更宽。** 估计集只有一半患者；样本不大时可以调
+   `split_frac`，但发现集变小，找到真规则的次数也会少。
+7. **协变量不能缺失**，先插补或删行；多水平因子写成 `grp = c`、`grp != c`、
+   `grp in {a, b}`，两种 `factor_encoding` 写法一致。
+
+## 模拟脚本 {#sec-icf-script}
+
+上面两节的结果由 `notes/causalR/05-hte-icf-sim.R` 生成，写入 `data/hte_icf_sim.csv`
+与 `data/hte_icf_timing.csv`：
+
+```{r}
+#| label: sim-script
+#| eval: false
+#| file: 05-hte-icf-sim.R
+```
+
+## 参考文献 {#sec-icf-refs}
+
+- Wang T, Keil AP, Kim S, Wyss R, Htoo PT, Funk MJ, Buse JB, Kosorok MR, Stürmer T
+  (2024). Iterative causal forest: a novel algorithm for subgroup identification.
+  *American Journal of Epidemiology* 193(5):764–776.
+- Wang T, Pate V, Wyss R, Buse JB, Kosorok MR, Stürmer T (2024). High-dimensional
+  iterative causal forest (hdiCF): a novel algorithm for subgroup identification in
+  claims data. *American Journal of Epidemiology*, kwae322.
+- Athey S, Imbens G (2016). Recursive partitioning for heterogeneous causal effects.
+  *Proceedings of the National Academy of Sciences* 113(27):7353–7360.
+- Athey S, Tibshirani J, Wager S (2019). Generalized random forests.
+  *The Annals of Statistics* 47(2):1148–1178.
+
+完整说明见包内帮助页 `?get_hte_icf`。观察性研究里找效应修饰变量的其他方法，
+见本站[效应修饰变量识别](../sources/effect-modifier-discovery.qmd)。
