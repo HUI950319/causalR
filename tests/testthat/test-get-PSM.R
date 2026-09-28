@@ -116,6 +116,22 @@ test_that("unmatched units keep their row with weight 0 and no subclass", {
 })
 
 
+test_that("the documented outcome-model recipe runs on the matched rows", {
+  skip_if_not_installed("sandwich")
+  d   <- psm_data()
+  d$y <- d$x1 + 0.5 * d$z + stats::rnorm(nrow(d))
+  res <- get_PSM(d, treat = "z", adj_var = psm_adj, balance = FALSE)
+  # the recipe only matters when some rows have no subclass
+  expect_true(anyNA(res$data$s_nearest))
+
+  m   <- subset(res$data, w_nearest > 0)
+  fit <- stats::lm(y ~ z, data = m, weights = w_nearest)
+  V   <- sandwich::vcovCL(fit, cluster = m$s_nearest)
+  expect_identical(nrow(m), res$stats$n)
+  expect_true(all(is.finite(diag(V))))
+})
+
+
 test_that("matchit objects carry a readable call, not the data", {
   # do.call() would inline the matchit() body and a data snapshot into each
   # $call, so summary() printed the whole data frame and the object was mostly

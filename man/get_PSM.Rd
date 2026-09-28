@@ -141,11 +141,18 @@ time.
 }
 \details{
 \code{get_PSM()} constructs and diagnoses matched cohorts; it does not estimate
-a treatment effect. Feed \code{result$data} with the weight column of your
-choice to an outcome model, clustering on the matching subclass, as in
-\code{lm(y ~ z, data = res$data, weights = w_nearest)} with
-\code{sandwich::vcovCL(cluster = res$data$s_nearest)} for matching without
-replacement. With replacement, use \code{\link[MatchIt:match_data]{MatchIt::get_matches()}} on the
+a treatment effect. Feed the matched rows of \code{result$data} with the weight
+column of your choice to an outcome model, clustering on the matching
+subclass. \code{result$data} keeps every input row and an unmatched unit has no
+subclass (\code{NA}), which \code{\link[sandwich:vcovCL]{sandwich::vcovCL()}} refuses, so subset first. For
+matching without replacement:
+
+\if{html}{\out{<div class="sourceCode">}}\preformatted{m   <- subset(res$data, w_nearest > 0)
+fit <- lm(y ~ z, data = m, weights = w_nearest)
+sandwich::vcovCL(fit, cluster = m$s_nearest)
+}\if{html}{\out{</div>}}
+
+With replacement, use \code{\link[MatchIt:match_data]{MatchIt::get_matches()}} on the
 corresponding \code{result$fit} entry to expand reused units into their
 matching sets; account for both set membership and repeated unit IDs in
 subsequent inference.

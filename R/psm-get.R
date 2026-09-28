@@ -186,11 +186,19 @@
 #' time.
 #'
 #' `get_PSM()` constructs and diagnoses matched cohorts; it does not estimate
-#' a treatment effect. Feed `result$data` with the weight column of your
-#' choice to an outcome model, clustering on the matching subclass, as in
-#' `lm(y ~ z, data = res$data, weights = w_nearest)` with
-#' `sandwich::vcovCL(cluster = res$data$s_nearest)` for matching without
-#' replacement. With replacement, use [MatchIt::get_matches()] on the
+#' a treatment effect. Feed the matched rows of `result$data` with the weight
+#' column of your choice to an outcome model, clustering on the matching
+#' subclass. `result$data` keeps every input row and an unmatched unit has no
+#' subclass (`NA`), which [sandwich::vcovCL()] refuses, so subset first. For
+#' matching without replacement:
+#'
+#' ```
+#' m   <- subset(res$data, w_nearest > 0)
+#' fit <- lm(y ~ z, data = m, weights = w_nearest)
+#' sandwich::vcovCL(fit, cluster = m$s_nearest)
+#' ```
+#'
+#' With replacement, use [MatchIt::get_matches()] on the
 #' corresponding `result$fit` entry to expand reused units into their
 #' matching sets; account for both set membership and repeated unit IDs in
 #' subsequent inference.
