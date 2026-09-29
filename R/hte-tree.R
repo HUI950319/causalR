@@ -521,6 +521,16 @@
 #'   discovery. Default `0.5`; the rest are the estimation part. `1` grows and
 #'   estimates the tree on the same patients, so the intervals are no longer
 #'   honest.
+#' @param estimator How the estimation part estimates the effect of every
+#'   node: `"aipw"` (default), grf's augmented inverse-propensity weighting,
+#'   the mean of the doubly robust scores in the node; or `"tmle"`, grf's
+#'   targeted maximum likelihood estimation
+#'   ([grf::average_treatment_effect()] with `method = "TMLE"`), which fits
+#'   the correction as a regression of each arm's residuals on its inverse
+#'   propensity instead of averaging the weighted residuals. `"tmle"` needs a
+#'   continuous or binary outcome, since grf's causal survival forest
+#'   estimates by AIPW only. The tree itself does not change, and `$est`
+#'   stays the AIPW [get_hte()] result.
 #' @param tree_args Named list of settings of the chosen `method`; partial
 #'   overrides keep the other defaults, and a field of another method is an
 #'   error.
@@ -558,7 +568,7 @@
 #' @param grf_args Named list forwarded to both [get_hte()] fits, as in
 #'   [get_hte_icf()]. Per-row fields (`W.hat`, `Y.hat`, `sample.weights`,
 #'   `clusters`) are not accepted, because each fit sees a different part of
-#'   the rows.
+#'   the rows; a single known propensity `W.hat`, as in a trial, is.
 #' @param seed Nonnegative whole number, default `123`. It draws the split,
 #'   the bootstrap multipliers and rpart's folds, and seeds the [get_hte()]
 #'   fits unless `grf_args` sets `seed`. The caller's random-number state is
@@ -635,7 +645,8 @@
 #'       `tree`), `rule`, `n_disc` (discovery patients), and from the
 #'       estimation part `n`, `n_treat`, `estimate`, `std.error`, `conf.low`,
 #'       `conf.high`, `p.value` and `p_inter`, the doubly robust ATE
-#'       difference with 95% Wald intervals, as in [get_hte()]'s `$subgroup`.
+#'       difference with 95% Wald intervals, as in [get_hte()]'s `$subgroup`
+#'       (by TMLE with `estimator = "tmle"`).
 #'       `method = "policy"` adds `action`, `"Treated"` or `"Control"`.}
 #'     \item{`nodes`}{Tibble with one row per node, in `tree`'s order: `node`,
 #'       `parent`, `depth`, `terminal`, `rule` (leaves), `variable` and
@@ -719,6 +730,7 @@ get_hte_tree <- function(data,
                          min_leaf   = 0.05,
                          factor_encoding = c("onehot", "integer"),
                          split_frac = 0.5,
+                         estimator  = c("aipw", "tmle"),
                          tree_args  = list(),
                          grf_args   = list(),
                          seed       = 123,
@@ -734,6 +746,7 @@ get_hte_tree <- function(data,
   model_based <- !is.null(node_scale)
   rlearner <- endsWith(method, "_r")
   factor_encoding <- match.arg(factor_encoding)
+  estimator <- match.arg(estimator)
   for (pkg in c("grf", "partykit",
                 switch(engine, rpart = "rpart", policy = "policytree")))
     if (!requireNamespace(pkg, quietly = TRUE))
@@ -766,6 +779,9 @@ get_hte_tree <- function(data,
       stop(sprintf("`method = \"%s\"` splits on the log-OR or log-HR scale, which a continuous outcome lacks; use `method = \"%s\"`.",
                    method, sub("_rel$", "_abs", method)), call. = FALSE)
   }
+  if (is_surv && estimator == "tmle")
+    stop("`estimator = \"tmle\"` needs a continuous or binary outcome: grf's causal survival forest estimates by AIPW only.",
+         call. = FALSE)
   if (identical(node_scale, "aft")) {
     if (!is_surv)
       stop("AFT methods require `surv = TRUE` (columns `time` / `DSS`).",
@@ -855,8 +871,10 @@ get_hte_tree <- function(data,
     stop("`grf_args` must be a named list.", call. = FALSE)
   fixed <- intersect(names(grf_args), c("X", "Y", "W", "D", "horizon", "W.hat",
                                         "Y.hat", "sample.weights", "clusters"))
+  if (is.numeric(grf_args[["W.hat"]]) && length(grf_args[["W.hat"]]) == 1L)
+    fixed <- setdiff(fixed, "W.hat")
   if (length(fixed))
-    stop(sprintf("`grf_args` cannot set %s in get_hte_tree(): the data columns set X, Y, W, D and horizon, and per-row fields cannot follow the split.",
+    stop(sprintf("`grf_args` cannot set %s in get_hte_tree(): the data columns set X, Y, W, D and horizon, and per-row fields cannot follow the split (a single known `W.hat` can).",
                  paste0("`", fixed, "`", collapse = ", ")), call. = FALSE)
 
   # ---- Rows and design matrix -----------------------------------------------
@@ -1027,7 +1045,7 @@ get_hte_tree <- function(data,
   z    <- stats::qnorm(0.975)
   beyond <- .hte_beyond(est)
   sub <- .hte_muffle_ps(.hte_subgroup(est$fit, s, est$data, ".rule", grid,
-                                      risk, z, beyond))
+                                      risk, z, beyond, estimator))
   m <- match(leaves$rule, sub$level)
 
   # Nodes depth first, as partykit numbers them
@@ -1051,7 +1069,7 @@ get_hte_tree <- function(data,
     }
     .hte_muffle_ps(.hte_estimate(est$fit, s, startsWith(pe, p), grid, risk, z,
                                  if (nzchar(p)) sprintf("Node %d", match(p, paths))
-                                 else "All patients", beyond))[
+                                 else "All patients", beyond, estimator))[
       c("estimate", "std.error", "conf.low", "conf.high", "p.value")]
   }))
   st <- match(paths, grown$stats$path)
@@ -1125,7 +1143,8 @@ get_hte_tree <- function(data,
              else if (identical(ea$outcome_type, "binary")) "lm (risk difference)"
              else "lm (mean difference)"),
       max_depth = max_depth, alpha = if (tested) alpha else NA_real_,
-      min_leaf = min_leaf, split_frac = split_frac, tree_args = ta,
+      min_leaf = min_leaf, split_frac = split_frac, estimator = estimator,
+      tree_args = ta,
       seed = seed, cols = cols, discovery = which(keep)[d_idx],
       scores_left_out = sum(!ok),
       splits_dropped = nrow(grown$tree) - nrow(tree),
@@ -1210,9 +1229,10 @@ print.hte_tree <- function(x, ...) {
              if (!all(is.na(x$nodes$split_p))) "split_p", "n", "estimate",
              "conf.low", "conf.high")
   print(as.data.frame(x$nodes[shown]), row.names = FALSE, digits = 3)
-  cat(sprintf("\nRules, estimated on %s (ATE difference, 95%% CI):\n",
+  cat(sprintf("\nRules, estimated on %s (ATE difference%s, 95%% CI):\n",
               if (same) "the patients they were found on (not honest)"
-              else "the estimation part"))
+              else "the estimation part",
+              if (identical(a$estimator, "tmle")) " by TMLE" else ""))
   print(as.data.frame(x$rules[c("rule", if (!same) "n_disc", "n", "estimate",
                                 "conf.low", "conf.high", "p.value",
                                 if (a$method == "policy") "action")]),

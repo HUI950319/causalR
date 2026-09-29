@@ -484,6 +484,9 @@ test_that("get_hte_tree() validates its input and restores the RNG", {
                             grf_args = list(W.hat = rep(0.5, 300))), "W.hat")
   expect_error(get_hte_tree(d, "z", "X1", surv = FALSE), "competing")
   expect_error(get_hte_tree(d, "z", "X1", surv = "y", time = 5), "time")
+  expect_error(tree_call(d, estimator = "iptw"), "should be one of")
+  expect_error(get_hte_tree(transform(d, time = 1, DSS = 1L), "z", "X1",
+                            estimator = "tmle"), "AIPW only")
   d$X2[1] <- NA
   expect_error(tree_call(d), "complete split variables")
   set.seed(5)
@@ -491,4 +494,41 @@ test_that("get_hte_tree() validates its input and restores the RNG", {
   res <- tree_call(tree_data(n = 400L), max_depth = 1,
                    tree_args = list(n_boot = 50L))
   expect_identical(.Random.seed, before)
+})
+
+test_that("estimator = \"tmle\" estimates the same tree's nodes by grf's TMLE", {
+  skip_if_not_installed("grf")
+  d <- tree_data()
+  aipw <- tree_call(d, method = "mob_dr", max_depth = 1)
+  tmle <- tree_call(d, method = "mob_dr", max_depth = 1, estimator = "tmle")
+  expect_identical(tmle$rules$rule, aipw$rules$rule)
+  f <- tmle$est$fit
+  for (i in seq_len(nrow(tmle$rules))) {
+    a <- grf::average_treatment_effect(
+      f, method = "TMLE", subset = which(tmle$est$data$.rule == tmle$rules$rule[i]))
+    expect_equal(tmle$rules$estimate[i], a[["estimate"]])
+    expect_equal(tmle$rules$std.error[i], a[["std.err"]])
+  }
+  expect_equal(tmle$nodes$estimate[1L],
+               grf::average_treatment_effect(f, method = "TMLE")[["estimate"]])
+  expect_false(isTRUE(all.equal(tmle$rules$estimate, aipw$rules$estimate)))
+  expect_identical(attr(tmle, "analysis")$estimator, "tmle")
+  expect_identical(attr(aipw, "analysis")$estimator, "aipw")
+  expect_output(print(tmle), "ATE difference by TMLE, 95% CI", fixed = TRUE)
+  expect_output(print(aipw), "(ATE difference, 95% CI)", fixed = TRUE)
+})
+
+test_that("a single known propensity in grf_args reaches the forests", {
+  skip_if_not_installed("grf")
+  d <- tree_data(n = 800L)
+  withr::local_seed(3)
+  d$z <- rbinom(nrow(d), 1, 0.5)
+  d$y <- d$X2 + d$z * (0.5 + 1.5 * (d$X3 > 0.6)) + rnorm(nrow(d))
+  res <- get_hte_tree(d, "z", c("X1", "X2", "X3"), surv = "y",
+                      method = "rpart_dr", max_depth = 1,
+                      grf_args = list(num.trees = 200L, W.hat = 0.5))
+  expect_identical(res$nodes$variable[1L], "X3")
+  expect_equal(res$est$fit$W.hat, rep(0.5, nrow(res$est$data)))
+  expect_error(get_hte_tree(d, "z", "X1", surv = "y",
+                            grf_args = list(W.hat = c(0.4, 0.6))), "W.hat")
 })

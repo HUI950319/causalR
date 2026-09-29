@@ -1,5 +1,15 @@
 # causalR (development version)
 
+* `get_hte_tree()` gains `estimator`: `"aipw"` (default, unchanged) or
+  `"tmle"`, grf's targeted maximum likelihood estimate of every node and leaf
+  (`grf::average_treatment_effect(method = "TMLE")`) for continuous and binary
+  outcomes. The tree itself does not change; survival outcomes stay AIPW,
+  the only estimator grf's causal survival forest has.
+
+* `get_hte_tree()` and `get_hte_icf()` accept a single known propensity in
+  `grf_args` (`W.hat = 0.5`, as in a trial), which every forest then uses.
+  A per-row `W.hat` is still refused, since it cannot follow the split.
+
 * `get_hte_tree()` adds the R-learner methods `"mob_r"`, `"ctree_r"` and
   `"rpart_r"`. They split on the forest's out-of-bag residuals
   (`Y - Y.hat` and `W - W.hat`), minimising the R-loss as grf's causal

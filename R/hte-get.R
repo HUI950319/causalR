@@ -168,7 +168,8 @@
 }
 
 # `diff` is grf's own average_treatment_effect(), which also honours clusters
-# and sample weights. `ratio` and `OR` average the arm scores and take a Wald
+# and sample weights; `estimator = "tmle"` (get_hte_tree() only) asks it for
+# TMLE instead of AIPW. `ratio` and `OR` average the arm scores and take a Wald
 # interval on the log scale, the standard error coming from the influence
 # function (delta method). `event_risk` turns S(t) into the event risk
 # 1 - S(t) first, so a ratio below 1 favours treatment as a hazard ratio does.
@@ -177,7 +178,7 @@
 #' @keywords internal
 #' @noRd
 .hte_estimate <- function(fit, s, idx, grid, event_risk, z, label,
-                          beyond = NULL) {
+                          beyond = NULL, estimator = "aipw") {
   w <- fit$W.orig[idx]
   one <- function(estimand, measure) {
     if (estimand != "ATO" && any(!is.finite(s$g1[idx] - s$g0[idx]))) {
@@ -187,7 +188,8 @@
     }
     if (measure == "diff") {
       a  <- grf::average_treatment_effect(
-        fit, target.sample = .HTE_ESTIMANDS[[estimand]], subset = which(idx))
+        fit, target.sample = .HTE_ESTIMANDS[[estimand]],
+        method = toupper(estimator), subset = which(idx))
       est <- a[["estimate"]]
       se  <- a[["std.err"]]
       return(c(est, se, est - z * se, est + z * se,
@@ -284,7 +286,7 @@
 #' @keywords internal
 #' @noRd
 .hte_subgroup <- function(fit, s, data, sub_var, grid, event_risk, z,
-                          beyond = NULL) {
+                          beyond = NULL, estimator = "aipw") {
   W <- fit$W.orig
   # Plug-in weights matching each estimand, for the descriptive cate_mean.
   h <- list(ATE = rep(1, length(W)), ATT = W, ATC = 1 - W,
@@ -296,7 +298,7 @@
     rows <- do.call(rbind, lapply(levels(g), function(lv) {
       idx <- g %in% lv                 # FALSE where `v` is missing
       est <- .hte_estimate(fit, s, idx, grid, event_risk, z,
-                           sprintf("%s = %s", v, lv), beyond)
+                           sprintf("%s = %s", v, lv), beyond, estimator)
       cate_mean <- vapply(seq_len(nrow(est)), function(i) {
         if (est$measure[i] != "diff") return(NA_real_)
         wt <- h[[est$estimand[i]]][idx]

@@ -19,6 +19,7 @@ get_hte_tree(
   min_leaf = 0.05,
   factor_encoding = c("onehot", "integer"),
   split_frac = 0.5,
+  estimator = c("aipw", "tmle"),
   tree_args = list(),
   grf_args = list(),
   seed = 123,
@@ -137,6 +138,17 @@ discovery. Default \code{0.5}; the rest are the estimation part. \code{1} grows 
 estimates the tree on the same patients, so the intervals are no longer
 honest.}
 
+\item{estimator}{How the estimation part estimates the effect of every
+node: \code{"aipw"} (default), grf's augmented inverse-propensity weighting,
+the mean of the doubly robust scores in the node; or \code{"tmle"}, grf's
+targeted maximum likelihood estimation
+(\code{\link[grf:average_treatment_effect]{grf::average_treatment_effect()}} with \code{method = "TMLE"}), which fits
+the correction as a regression of each arm's residuals on its inverse
+propensity instead of averaging the weighted residuals. \code{"tmle"} needs a
+continuous or binary outcome, since grf's causal survival forest
+estimates by AIPW only. The tree itself does not change, and \verb{$est}
+stays the AIPW \code{\link[=get_hte]{get_hte()}} result.}
+
 \item{tree_args}{Named list of settings of the chosen \code{method}; partial
 overrides keep the other defaults, and a field of another method is an
 error.
@@ -175,7 +187,7 @@ the distinct values.}
 \item{grf_args}{Named list forwarded to both \code{\link[=get_hte]{get_hte()}} fits, as in
 \code{\link[=get_hte_icf]{get_hte_icf()}}. Per-row fields (\code{W.hat}, \code{Y.hat}, \code{sample.weights},
 \code{clusters}) are not accepted, because each fit sees a different part of
-the rows.}
+the rows; a single known propensity \code{W.hat}, as in a trial, is.}
 
 \item{seed}{Nonnegative whole number, default \code{123}. It draws the split,
 the bootstrap multipliers and rpart's folds, and seeds the \code{\link[=get_hte]{get_hte()}}
@@ -193,7 +205,8 @@ An object of class \code{hte_tree}: a list of
 \code{tree}), \code{rule}, \code{n_disc} (discovery patients), and from the
 estimation part \code{n}, \code{n_treat}, \code{estimate}, \code{std.error}, \code{conf.low},
 \code{conf.high}, \code{p.value} and \code{p_inter}, the doubly robust ATE
-difference with 95\% Wald intervals, as in \code{\link[=get_hte]{get_hte()}}'s \verb{$subgroup}.
+difference with 95\% Wald intervals, as in \code{\link[=get_hte]{get_hte()}}'s \verb{$subgroup}
+(by TMLE with \code{estimator = "tmle"}).
 \code{method = "policy"} adds \code{action}, \code{"Treated"} or \code{"Control"}.}
 \item{\code{nodes}}{Tibble with one row per node, in \code{tree}'s order: \code{node},
 \code{parent}, \code{depth}, \code{terminal}, \code{rule} (leaves), \code{variable} and

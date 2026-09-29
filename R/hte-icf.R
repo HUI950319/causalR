@@ -535,7 +535,8 @@
 #'   [grf::causal_forest()] or [grf::causal_survival_forest()]) and, except
 #'   `num.trees` and `seed`, to the voting forests. Per-row fields (`W.hat`,
 #'   `Y.hat`, `sample.weights`, `clusters`) are not accepted, because every
-#'   fit sees a different part of the rows.
+#'   fit sees a different part of the rows; a single known propensity
+#'   `W.hat`, as in a trial, is.
 #' @param seed Nonnegative whole number, default `123`. It draws the split and
 #'   the folds, seeds the [get_hte()] fits unless `grf_args` sets `seed`, and
 #'   seeds voting forest b with `seed + b`. The caller's random-number state is
@@ -793,8 +794,10 @@ get_hte_icf <- function(data,
     stop("`grf_args` must be a named list.", call. = FALSE)
   fixed <- intersect(names(grf_args), c("X", "Y", "W", "D", "horizon", "W.hat",
                                         "Y.hat", "sample.weights", "clusters"))
+  if (is.numeric(grf_args[["W.hat"]]) && length(grf_args[["W.hat"]]) == 1L)
+    fixed <- setdiff(fixed, "W.hat")
   if (length(fixed))
-    stop(sprintf("`grf_args` cannot set %s in get_hte_icf(): the data columns set X, Y, W, D and horizon, and per-row fields cannot follow the split.",
+    stop(sprintf("`grf_args` cannot set %s in get_hte_icf(): the data columns set X, Y, W, D and horizon, and per-row fields cannot follow the split (a single known `W.hat` can).",
                  paste0("`", fixed, "`", collapse = ", ")), call. = FALSE)
 
   # ---- Rows and design matrix -----------------------------------------------
@@ -848,8 +851,9 @@ get_hte_icf <- function(data,
   # ---- Discovery runs ------------------------------------------------------------
   ga <- grf_args
   if (is.null(ga$seed)) ga$seed <- seed
+  # A known W.hat reaches the voting forests as the fit's W.hat
   forest_args <- grf_args[setdiff(names(grf_args),
-                                  c("num.trees", "seed", "target"))]
+                                  c("num.trees", "seed", "target", "W.hat"))]
   hte <- function(rows) do.call(get_hte, c(
     list(data = rows, cat_var = cat_var, adj_var = adj_var, surv = surv,
          factor_encoding = factor_encoding, grf_args = ga),

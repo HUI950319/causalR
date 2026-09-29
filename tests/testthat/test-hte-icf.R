@@ -92,6 +92,8 @@ test_that("get_hte_icf() validates its input and restores the RNG", {
                            rule_args = list(gate = 0)), "gate")
   expect_error(get_hte_icf(d, "z", "X1", surv = "y",
                            grf_args = list(W.hat = rep(0.5, 200))), "W.hat")
+  expect_error(get_hte_icf(d, "z", "X1", surv = "y",
+                           grf_args = list(W.hat = "0.5")), "W.hat")
   expect_error(get_hte_icf(d, "z", "X1", surv = "y", depth = 0), "depth")
   expect_error(get_hte_icf(d, "z", "X1", surv = "y", split_frac = 1.5), "split_frac")
   d$X2[1] <- NA
@@ -103,6 +105,16 @@ test_that("get_hte_icf() validates its input and restores the RNG", {
                                                  n_folds = 2L),
                      grf_args = list(num.trees = 100L))
   expect_identical(.Random.seed, before)
+})
+
+test_that("get_hte_icf() takes a single known propensity in grf_args", {
+  skip_if_not_installed("grf")
+  res <- get_hte_icf(icf_data(n = 400L), "z", c("X1", "X3"), surv = "y",
+                     rule_args = list(n_forest = 2L, num_trees = 50L,
+                                      n_folds = 2L),
+                     grf_args = list(num.trees = 100L, W.hat = 0.5))
+  expect_s3_class(res, "hte_icf")
+  expect_equal(res$est$fit$W.hat, rep(0.5, nrow(res$est$data)))
 })
 
 test_that("style = \"icf\" switches every step to the iCF code", {

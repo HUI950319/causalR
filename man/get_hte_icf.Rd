@@ -144,7 +144,8 @@ model's interval, and no \code{p_inter}. Default \code{"aipw"} / \code{"iptw"}.}
 \code{\link[grf:causal_forest]{grf::causal_forest()}} or \code{\link[grf:causal_survival_forest]{grf::causal_survival_forest()}}) and, except
 \code{num.trees} and \code{seed}, to the voting forests. Per-row fields (\code{W.hat},
 \code{Y.hat}, \code{sample.weights}, \code{clusters}) are not accepted, because every
-fit sees a different part of the rows.}
+fit sees a different part of the rows; a single known propensity
+\code{W.hat}, as in a trial, is.}
 
 \item{seed}{Nonnegative whole number, default \code{123}. It draws the split and
 the folds, seeds the \code{\link[=get_hte]{get_hte()}} fits unless \code{grf_args} sets \code{seed}, and
