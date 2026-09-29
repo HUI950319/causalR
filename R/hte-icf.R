@@ -13,6 +13,7 @@
 #   L2  .icf_party()      the selected tree as a partykit party ($tree)
 #   L1  plt_hte_icf()     that tree drawn with ggparty, a panel of each leaf
 #                         (effect, AIPW scores, box, bar or KM) beneath it
+#   L2  .hte_draw_tree()  the drawing, shared with plt_hte_tree()
 #   L3  print.hte_icf()
 #
 # The algorithm follows Wang et al. (2024). The iCF repository carries no
@@ -316,8 +317,10 @@
     i <- which(!is.na(j))
     if (!length(i)) return(path)
     j <- j[i]
-    path[i] <- paste0(path[i], ifelse(X[cbind(i, tree$col[j])] <= tree$value[j],
-                                      "L", "R"))
+    x <- X[cbind(i, tree$col[j])]
+    right <- if ("right" %in% names(tree)) tree$right[j] else TRUE
+    left <- (right & x <= tree$value[j]) | (!right & x < tree$value[j])
+    path[i] <- paste0(path[i], ifelse(left, "L", "R"))
   }
 }
 
@@ -381,7 +384,8 @@
               c("rule", "n", "estimate", "conf.low", "conf.high", "p.value")])))
     kids <- list(build(paste0(path, "L")), build(paste0(path, "R")))
     partykit::partynode(me, kids = kids, split = partykit::partysplit(
-      tree$col[j], breaks = tree$value[j]))
+      tree$col[j], breaks = tree$value[j],
+      right = if ("right" %in% names(tree)) tree$right[j] else TRUE))
   }
   node <- build("")
   xd <- as.data.frame(unname(X))
@@ -795,29 +799,9 @@ get_hte_icf <- function(data,
   W <- .psw_treat(data[[cat_var]], cat_var, arg = "cat_var")$z
 
   # The columns get_hte() builds, and what each means in a rule
-  xdat <- data[adj_var]
-  fac  <- adj_var[!vapply(xdat, is.numeric, logical(1L))]
-  lv   <- lapply(xdat[fac], function(x) levels(droplevels(as.factor(x))))
-  xdat[fac] <- lapply(xdat[fac], function(x) {
-    x <- droplevels(as.factor(x))
-    if (factor_encoding == "integer") as.integer(x)
-    else if (nlevels(x) == 1L) rep(1, length(x)) else x
-  })
-  X    <- .sens_model_matrix(xdat, adj_var, one_hot = TRUE)
-  src  <- adj_var[attr(X, "assign")]
-  bin  <- vapply(xdat, function(x) is.numeric(x) && all(x %in% c(0, 1)),
-                 logical(1L))
-  type <- ifelse(src %in% fac,
-                 if (factor_encoding == "integer") "code" else "level",
-                 ifelse(bin[src], "bin", "num"))
-  level <- rep(NA_character_, length(src))
-  for (v in fac) if (factor_encoding == "onehot" && length(lv[[v]]) > 1L)
-    level[src == v] <- lv[[v]]
-  cols <- data.frame(var = src, type = type, level = level,
-                     stringsAsFactors = FALSE)
-  cols$type[cols$var %in% fac & vapply(lv[cols$var], length, 1L) == 1L] <- "num"
-  attr(cols, "levels") <- c(lv, stats::setNames(rep(list(c("0", "1")),
-                                                    sum(bin)), names(bin)[bin]))
+  des  <- .tree_design(data[adj_var], factor_encoding)
+  X    <- des$X
+  cols <- des$cols
 
   # ---- Split and folds ---------------------------------------------------------
   genv <- globalenv()
@@ -1110,18 +1094,28 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
                         save = list()) {
   if (!inherits(x, "hte_icf"))
     stop("`x` must be a get_hte_icf() result.", call. = FALSE)
-  type <- match.arg(type)
+  .hte_draw_tree(x, match.arg(type), save, "plt_hte_icf", "get_hte_icf")
+}
+
+# The drawing of plt_hte_icf() and plt_hte_tree(). `x$tree` is a party from
+# .icf_party() and attr(x, "analysis") gives the design columns and the
+# outcome; `fn` and `fit_fn` name the plotting and fitting functions in the
+# messages. An inner node's `split_p` and a leaf's `action`, where its info
+# holds them (get_hte_tree()), join its label.
+#' @keywords internal
+#' @noRd
+.hte_draw_tree <- function(x, type, save, fn, fit_fn) {
   for (pkg in c("partykit", "ggparty"))
     if (!requireNamespace(pkg, quietly = TRUE))
-      stop(sprintf("Package '%s' is required for plt_hte_icf().", pkg),
+      stop(sprintf("Package '%s' is required for %s().", pkg, fn),
            call. = FALSE)
   if (!is.null(save) && !is.list(save))
     stop("`save` must be `NULL` or a list.", call. = FALSE)
   a    <- attr(x, "analysis")
   cols <- a$cols
   if (is.null(x$tree))
-    stop("`x$tree` is missing: install partykit and refit with get_hte_icf().",
-         call. = FALSE)
+    stop(sprintf("`x$tree` is missing: install partykit and refit with %s().",
+                 fit_fn), call. = FALSE)
   if (partykit::width(x$tree) < 2L)
     stop("`x` found no subgroups (depth 0), so there is no tree to draw.",
          call. = FALSE)
@@ -1149,6 +1143,8 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
       i <- partykit::info_node(nd)
       leaf[id] <<- sprintf(paste0("n = %d\n", num_f, " (", num_f, ", ", num_f, ")"),
                            i$n, i$estimate, i$conf.low, i$conf.high)
+      if (length(i$action) == 1L && !is.na(i$action))
+        leaf[id] <<- paste0(leaf[id], "\n", i$action)
       return(invisible())
     }
     s    <- partykit::split_node(nd)
@@ -1160,7 +1156,10 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
     side <- gsub("!=", ne, gsub("<=", le, side, fixed = TRUE), fixed = TRUE)
     kids <- partykit::kids_node(nd)
     edge[as.character(vapply(kids, partykit::id_node, integer(1L)))] <<- side
-    inner[id] <<- v
+    sp <- partykit::info_node(nd)$split_p
+    inner[id] <<- if (length(sp) == 1L && !is.na(sp))
+      paste0(v, "\n", if (sp < 0.001) "p < 0.001" else sprintf("p = %.3f", sp))
+    else v
     for (k in kids) walk(k)
   }
   walk(partykit::node_party(x$tree))

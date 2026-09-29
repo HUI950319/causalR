@@ -1,5 +1,29 @@
 # causalR (development version)
 
+* New `get_hte_tree()` grows one subgroup tree on the AIPW scores of
+  `get_hte()` (continuous, binary or survival outcomes, as `surv` selects)
+  and estimates every node on the other half of the patients. `method`
+  chooses the partitioning: `"maxt"` (default), a heteroskedasticity-robust
+  test at every node -- the Welch t of the two sides' mean scores maximised
+  over the cuts, a Rademacher multiplier bootstrap and a Westfall-Young
+  min-P over the variables; `"mob_dr"`, `"ctree_dr"` (partykit on the
+  scores); `"mob_cate"`, `"ctree_cate"` (the same on the forest's CATE
+  predictions, the two-stage approach, for comparison); `"mob_abs"`,
+  `"mob_rel"`, `"ctree_abs"`, `"ctree_rel"` (MOB and model4you-style ctree
+  on the scores of a node model of the outcome -- lm, or Kaplan-Meier
+  pseudo-values for survival, on the difference scale; logistic or Cox
+  regression on the ratio scale -- adjusted for `adj_var` and testing the
+  treatment coefficient only, both switchable in `tree_args`); `"rpart"`
+  (pruned by cross-validation) or `"policy"` (policytree, with the
+  recommended arm per leaf). `max_depth`, `alpha` and `min_leaf` stop the
+  recursion. `$tree` is a partykit `party` whose node `info` holds the split
+  test and the honest effect of each node, for ggparty. rpart and
+  policytree join Suggests.
+
+* New `plt_hte_tree()` draws that tree as `plt_hte_icf()` does, with the
+  p-value of each split test at the inner nodes and a policy tree's
+  recommended arm at the leaves; the two share one drawing.
+
 * `get_hte_icf()` returns the selected tree as `$tree`, a partykit `party`
   on the estimation patients (design columns, outcome, `.arm`, `.dr_score`,
   `.rule`; each leaf's `info` holds its row of `$rules`), which

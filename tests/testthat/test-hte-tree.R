@@ -1,0 +1,328 @@
+tree_data <- function(n = 1600L, tau = function(d) 0.5 + 1.5 * (d$X3 > 0.6),
+                      seed = 7) {
+  withr::local_seed(seed)
+  d <- data.frame(X1 = rbinom(n, 1, 0.5), X2 = rnorm(n), X3 = runif(n),
+                  grp = factor(sample(c("a", "b", "c"), n, replace = TRUE)))
+  d$z <- rbinom(n, 1, plogis(0.5 * d$X2))
+  d$y <- d$X2 + d$z * tau(d) + rnorm(n)
+  d
+}
+
+tree_call <- function(d, ..., adj_var = c("X1", "X2", "X3", "grp"))
+  get_hte_tree(d, "z", adj_var, surv = "y", grf_args = list(num.trees = 500L),
+               ...)
+
+test_that("the max-t tree finds a threshold and estimates it on the other half", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("partykit")
+  d <- tree_data()
+  res <- tree_call(d, tree_args = list(n_boot = 300L))
+  expect_s3_class(res, "hte_tree")
+  expect_named(res, c("rules", "nodes", "tree", "est"))
+  expect_identical(res$nodes$variable[1L], "X3")
+  cut <- as.numeric(sub("^X3 <= ", "", res$nodes$split[1L]))
+  expect_lt(abs(cut - 0.6), 0.05)
+  expect_lt(res$nodes$split_p[1L], 0.01)
+  expect_identical(nrow(res$rules), 2L)
+  expect_lt(abs(res$rules$estimate[1L] - 0.5), 0.3)
+  expect_lt(abs(res$rules$estimate[2L] - 2), 0.3)
+  # Honest: the estimation half is disjoint from the discovery half
+  expect_identical(res$nodes$n_disc[1L] + nrow(res$est$data), nrow(d))
+  expect_identical(sum(res$rules$n), nrow(res$est$data))
+  expect_true(is.factor(res$est$data$.rule))
+  expect_equal(res$nodes$estimate[res$rules$node], res$rules$estimate)
+  # The party carries each node's row of $nodes
+  expect_s3_class(res$tree, "party")
+  expect_equal(partykit::width(res$tree), nrow(res$rules))
+  info <- partykit::nodeapply(res$tree, partykit::nodeids(res$tree),
+                              partykit::info_node)
+  expect_equal(unname(vapply(info, function(i) i$estimate, numeric(1L))),
+               res$nodes$estimate)
+  expect_output(print(res), "max-t test tree")
+  p <- suppressMessages(plt_hte_sub(res$est, sub_var = ".rule",
+                                    fixed_size = FALSE))
+  expect_s3_class(p, "ggplot")
+})
+
+test_that("ggparty reads the node info of the tree", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("ggparty")
+  res <- tree_call(tree_data(), max_depth = 1, tree_args = list(n_boot = 200L))
+  g <- ggparty::ggparty(res$tree, add_vars = list(
+    est = "$node$info$estimate", p = "$node$info$split_p"))
+  expect_s3_class(g, "ggplot")
+  expect_equal(g$data$est[order(g$data$id)], res$nodes$estimate)
+  expect_equal(g$data$p[order(g$data$id)], res$nodes$split_p)
+})
+
+test_that("plt_hte_tree() draws the tree with its split p-values", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("ggparty")
+  d <- tree_data()
+  labels <- function(p) unlist(lapply(p$layers, function(l)
+    if (is.data.frame(l$data)) l$data$label))
+  res <- tree_call(d, max_depth = 2, tree_args = list(n_boot = 200L))
+  p <- plt_hte_tree(res)
+  expect_s3_class(p, "ggplot")
+  expect_named(attr(p, "plot_size"), c("width", "height"))
+  expect_true(any(grepl("^X3\np ", labels(p))))
+  expect_s3_class(plt_hte_tree(res, type = "dr"), "ggplot")
+  expect_s3_class(plt_hte_tree(res, type = "box"), "ggplot")
+  expect_error(plt_hte_tree(res, type = "km"), "survival")
+  expect_error(plt_hte_tree(res$rules), "get_hte_tree")
+  pol <- tree_call(d, method = "policy", max_depth = 1,
+                   tree_args = list(cost = 1))
+  expect_true(any(grepl("\nTreated$", labels(plt_hte_tree(pol)))))
+  flat <- tree_call(tree_data(tau = function(d) rep(0.5, nrow(d))),
+                    tree_args = list(n_boot = 300L))
+  expect_error(plt_hte_tree(flat), "no subgroups")
+})
+
+test_that("a constant effect keeps every patient together unless alpha = 1", {
+  skip_if_not_installed("grf")
+  d <- tree_data(tau = function(d) rep(0.5, nrow(d)))
+  res <- tree_call(d, tree_args = list(n_boot = 300L))
+  expect_identical(res$rules$rule, "All patients")
+  expect_gt(res$nodes$split_p[1L], 0.05)
+  full <- tree_call(d, alpha = 1, max_depth = 2, tree_args = list(n_boot = 0L))
+  expect_identical(nrow(full$rules), 4L)
+  expect_true(all(is.na(full$nodes$split_p)))
+})
+
+test_that("every method grows on the scores within max_depth", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("rpart")
+  skip_if_not_installed("policytree")
+  d <- tree_data()
+  args <- list(maxt = list(n_boot = 200L), mob_dr = list(), mob_cate = list(),
+               mob_abs = list(), ctree_dr = list(), ctree_cate = list(),
+               ctree_abs = list(), rpart = list(), policy = list(cost = 1))
+  for (m in names(args)) {
+    one <- tree_call(d, method = m, max_depth = 1, tree_args = args[[m]])
+    expect_identical(one$nodes$variable[1L], "X3", info = m)
+    expect_identical(nrow(one$rules), 2L, info = m)
+    two <- tree_call(d, method = m, max_depth = 2, tree_args = args[[m]])
+    expect_lte(max(two$nodes$depth), 2L)
+    expect_identical(attr(two, "analysis")$method, m)
+  }
+  # ctree and mob report their split p-values, rpart and policy none
+  expect_false(anyNA(tree_call(d, method = "ctree_dr", max_depth = 1)$nodes$split_p[1L]))
+  expect_true(all(is.na(tree_call(d, method = "rpart", max_depth = 1)$nodes$split_p)))
+  # The _cate methods grow on the forest's predictions, not on the scores
+  cate <- tree_call(d, method = "mob_cate", max_depth = 1)
+  expect_output(print(cate), "mob tree on out-of-bag CATE predictions")
+  expect_output(print(tree_call(d, method = "mob_dr", max_depth = 1)),
+                "mob tree on doubly robust scores")
+})
+
+model_data <- function(n = 2400L, seed = 7) {
+  withr::local_seed(seed)
+  d <- data.frame(x1 = rnorm(n), x2 = rnorm(n), x3 = rbinom(n, 1, 0.5),
+                  x4 = rnorm(n))
+  d$w <- rbinom(n, 1, plogis(0.8 * d$x1))
+  d$y <- 1.5 * d$x2 + d$x1 + d$w * (0.5 + d$x3) + rnorm(n)
+  d
+}
+
+test_that("node-model trees test the treatment coefficient, adjusted for adj_var", {
+  skip_if_not_installed("grf")
+  d  <- model_data()
+  av <- c("x1", "x2", "x3", "x4")
+  for (m in c("mob_abs", "ctree_abs")) {
+    res <- get_hte_tree(d, "w", av, surv = "y", method = m, max_depth = 2,
+                        grf_args = list(num.trees = 500L))
+    expect_identical(unique(stats::na.omit(res$nodes$variable)), "x3", info = m)
+    expect_identical(attr(res, "analysis")$node_model, "lm (mean difference)")
+    # The packages' default also splits on the prognostic x2 or confounder x1
+    pkg <- get_hte_tree(d, "w", av, surv = "y", method = m, max_depth = 2,
+                        tree_args = list(adjust = FALSE, parm = "all"),
+                        grf_args = list(num.trees = 500L))
+    expect_true(any(c("x1", "x2") %in% pkg$nodes$variable), info = m)
+  }
+  expect_output(print(res), "ctree tree on the scores of lm")
+  expect_error(get_hte_tree(d, "w", av, surv = "y", method = "mob_rel"),
+               "log-OR")
+  expect_error(get_hte_tree(d, "w", av, surv = "y", method = "mob_abs",
+                            tree_args = list(parm = "none")), "parm")
+  expect_error(get_hte_tree(d, "w", av, surv = "y", method = "mob_dr",
+                            tree_args = list(adjust = FALSE)), "unknown field")
+  d$x4[1] <- NA
+  expect_error(get_hte_tree(d, "w", av, candidate_var = "x3", surv = "y",
+                            method = "mob_abs"), "adjust = FALSE")
+})
+
+test_that("node-model trees fit logit and Cox models, or pseudo-values", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("survival")
+  skip_on_cran()
+  d  <- model_data(n = 3000L)
+  av <- c("x1", "x2", "x3", "x4")
+  withr::local_seed(3)
+  d$yb <- rbinom(nrow(d), 1, plogis(-0.5 + 0.8 * d$x2 + 0.5 * d$x1 +
+                                      d$w * (0.2 + 1.2 * d$x3)))
+  for (m in c("mob_rel", "ctree_rel")) {
+    rb <- get_hte_tree(d, "w", av, surv = "yb", method = m, max_depth = 1,
+                       grf_args = list(num.trees = 500L))
+    expect_identical(rb$nodes$variable[1L], "x3", info = m)
+    expect_identical(attr(rb, "analysis")$node_model, "logit (log-OR)")
+  }
+  ev <- rexp(nrow(d), 0.05 * exp(0.6 * d$x2 + 0.3 * d$x1 - d$w * (0.2 + d$x3)))
+  cens <- rexp(nrow(d), 0.02)
+  d$time <- pmin(ev, cens)
+  d$DSS <- as.integer(ev <= cens)
+  rs <- get_hte_tree(d, "w", av, time = 12, method = "mob_rel", max_depth = 1,
+                     grf_args = list(num.trees = 500L))
+  expect_identical(rs$nodes$variable[1L], "x3")
+  expect_identical(attr(rs, "analysis")$node_model, "Cox (log-HR)")
+  ra <- get_hte_tree(d, "w", av, time = 12, method = "ctree_abs",
+                     max_depth = 1, grf_args = list(num.trees = 500L))
+  expect_identical(ra$nodes$variable[1L], "x3")
+  expect_identical(attr(ra, "analysis")$node_model, "lm on S(t) pseudo-values")
+})
+
+test_that("policy trees recommend the arm by cost and direction", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("policytree")
+  d <- tree_data()
+  pol <- tree_call(d, method = "policy", max_depth = 1,
+                   tree_args = list(cost = 1))
+  expect_identical(pol$rules$action, c("Control", "Treated"))
+  expect_identical(pol$nodes$action[pol$rules$node], pol$rules$action)
+  low <- tree_call(d, method = "policy", max_depth = 1,
+                   tree_args = list(cost = -1, better = "lower"))
+  expect_identical(low$rules$action, c("Treated", "Control"))
+  # Everyone gains more than no cost: nothing to split
+  flat <- tree_call(d, method = "policy", max_depth = 1)
+  expect_identical(flat$rules$rule, "All patients")
+  expect_output(print(pol), "action")
+})
+
+test_that("engine trees read back the partitions their packages make", {
+  skip_if_not_installed("partykit")
+  skip_if_not_installed("rpart")
+  skip_if_not_installed("policytree")
+  withr::local_seed(2)
+  n <- 600L
+  X <- cbind(a = rnorm(n), b = rbinom(n, 1, 0.5), c = round(runif(n), 1))
+  g <- 2 * X[, "b"] + 1.5 * (X[, "c"] > 0.5) + rnorm(n)
+  ctrl <- list(max_depth = 2, alpha = 0.05, min_n = 30L,
+               testtype = "Bonferroni", trim = 0.1, xval = 0L,
+               cp_rule = "min", cost = 1, better = "higher", split_step = 1L)
+  same_partition <- function(a, b)
+    nrow(unique(data.frame(a, b))) == length(unique(a)) &&
+      length(unique(a)) == length(unique(b))
+  d <- data.frame(.g = g, x1 = X[, 1L], x2 = X[, 2L], x3 = X[, 3L])
+  ours <- function(m) .icf_assign(.tree_engine(m, g, X, ctrl)$tree, X)
+  ct <- partykit::ctree(.g ~ ., data = d, control = partykit::ctree_control(
+    maxdepth = 2, minbucket = 30L, minsplit = 60L))
+  expect_true(same_partition(ours("ctree"), predict(ct, type = "node")))
+  rp <- rpart::rpart(.g ~ ., data = d, control = rpart::rpart.control(
+    maxdepth = 2, cp = 0, minbucket = 30L, minsplit = 60L, xval = 0L))
+  expect_true(same_partition(ours("rpart"), rp$where))
+  pt <- policytree::policy_tree(unname(X), cbind(0, g - 1), depth = 2,
+                                min.node.size = 30L)
+  expect_true(same_partition(ours("policy"),
+                             predict(pt, unname(X), type = "node.id")))
+})
+
+test_that("engine cut-points keep their strictness for held-out values", {
+  skip_if_not_installed("partykit")
+  skip_if_not_installed("rpart")
+  X <- matrix(c(rep(0, 40), rep(10, 40)), ncol = 1L,
+              dimnames = list(NULL, "x"))
+  g <- c(rep(0, 40), rep(10, 40))
+  ctrl <- list(max_depth = 1, alpha = 0.05, min_n = 10L,
+               testtype = "Bonferroni", trim = 0.1, xval = 0L,
+               cp_rule = "min", cost = 1, better = "higher", split_step = 1L)
+  tree <- .tree_engine("rpart", g, X, ctrl)$tree
+  held_out <- matrix(c(0, 2, 4, 5, 6, 10), ncol = 1L,
+                     dimnames = list(NULL, "x"))
+  expect_identical(.icf_assign(tree, held_out),
+                   c("L", "L", "L", "R", "R", "R"))
+  expect_false(tree$right[1L])
+})
+
+test_that("splits whose children lack an arm are dropped", {
+  X <- cbind(a = 1:10, b = rep(0:1, 5))
+  W <- rep(c(1, 0), each = 5)
+  by_a <- data.frame(path = "", col = 1L, value = 5, stringsAsFactors = FALSE)
+  expect_identical(nrow(.tree_prune(by_a, X, W, 2L)), 0L)
+  by_b <- data.frame(path = "", col = 2L, value = 0, stringsAsFactors = FALSE)
+  expect_identical(nrow(.tree_prune(by_b, X, W, 2L)), 1L)
+})
+
+test_that("candidate_var names the split variables; factor rules keep levels", {
+  skip_if_not_installed("grf")
+  d <- tree_data(tau = function(d) 0.5 + 1.5 * (d$grp == "c"))
+  for (enc in c("onehot", "integer")) {
+    res <- tree_call(d, adj_var = c("X1", "X2", "X3"), candidate_var = "grp",
+                     factor_encoding = enc, tree_args = list(n_boot = 200L))
+    expect_setequal(res$rules$rule, c("grp != c", "grp = c"))
+    a <- attr(res, "analysis")
+    expect_setequal(a$adj_var, c("X1", "X2", "X3", "grp"))
+    expect_identical(a$split_var, "grp")
+  }
+  expect_error(tree_call(d, candidate_var = "y"), "candidate_var")
+})
+
+test_that("binary and survival outcomes are split on their difference scale", {
+  skip_if_not_installed("grf")
+  skip_on_cran()
+  d <- tree_data()
+  withr::local_seed(3)
+  d$yb <- rbinom(nrow(d), 1, plogis(-0.5 + 0.5 * d$X2 +
+                                      d$z * 2 * (d$X3 > 0.6)))
+  rb <- get_hte_tree(d, "z", c("X1", "X2", "X3"), surv = "yb", max_depth = 1,
+                     tree_args = list(n_boot = 200L),
+                     grf_args = list(num.trees = 500L))
+  expect_identical(attr(rb, "analysis")$outcome_type, "binary")
+  expect_identical(rb$nodes$variable[1L], "X3")
+  expect_true(all(abs(rb$rules$estimate) <= 1))
+
+  ev <- rexp(nrow(d), 0.05 * exp(0.3 * d$X2 - d$z * 2 * (d$X3 > 0.6)))
+  cens <- rexp(nrow(d), 0.02)
+  d$time <- pmin(ev, cens)
+  d$DSS <- as.integer(ev <= cens)
+  rs <- get_hte_tree(d, "z", c("X1", "X2", "X3"), time = 12, max_depth = 1,
+                     tree_args = list(n_boot = 200L),
+                     grf_args = list(num.trees = 500L))
+  expect_s3_class(rs$est$fit, "causal_survival_forest")
+  expect_true(all(c("time", "DSS", ".arm", ".dr_score", ".rule") %in%
+                    names(partykit::data_party(rs$tree))))
+})
+
+test_that("split_frac = 1 grows and estimates on every patient", {
+  skip_if_not_installed("grf")
+  d <- tree_data(n = 800L)
+  res <- tree_call(d, split_frac = 1, max_depth = 1,
+                   tree_args = list(n_boot = 100L))
+  expect_identical(nrow(res$est$data), nrow(d))
+  expect_identical(res$nodes$n_disc, res$nodes$n)
+  expect_output(print(res), "not honest")
+})
+
+test_that("get_hte_tree() validates its input and restores the RNG", {
+  skip_if_not_installed("grf")
+  d <- tree_data(n = 300L)
+  expect_error(tree_call(d, tree_args = list(xval = 5)), "unknown field")
+  expect_error(tree_call(d, method = "rpart", alpha = 0.1), "alpha")
+  expect_error(tree_call(d, method = "policy", max_depth = Inf), "finite")
+  expect_error(tree_call(d, max_depth = 0), "max_depth")
+  expect_error(tree_call(d, min_leaf = 0.5), "min_leaf")
+  expect_error(tree_call(d, split_frac = 0), "split_frac")
+  expect_error(tree_call(d, tree_args = list(n_boot = 0L)), "alpha = 1")
+  expect_error(tree_call(d, method = "ctree_dr",
+                         tree_args = list(testtype = "none")), "testtype")
+  expect_error(tree_call(d, method = "ctree"), "should be one of")
+  expect_error(get_hte_tree(d, "z", "X1", surv = "y",
+                            grf_args = list(W.hat = rep(0.5, 300))), "W.hat")
+  expect_error(get_hte_tree(d, "z", "X1", surv = FALSE), "competing")
+  expect_error(get_hte_tree(d, "z", "X1", surv = "y", time = 5), "time")
+  d$X2[1] <- NA
+  expect_error(tree_call(d), "complete split variables")
+  set.seed(5)
+  before <- .Random.seed
+  res <- tree_call(tree_data(n = 400L), max_depth = 1,
+                   tree_args = list(n_boot = 50L))
+  expect_identical(.Random.seed, before)
+})
