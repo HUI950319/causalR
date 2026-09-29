@@ -13,7 +13,7 @@ get_hte_tree(
   time = 120,
   method = c("maxt", "mob_dr", "mob_cate", "mob_abs", "mob_rel", "ctree_dr",
     "ctree_cate", "ctree_abs", "ctree_rel", "rpart_dr", "policy", "rpart_cate",
-    "mob_aft", "ctree_aft"),
+    "mob_aft", "ctree_aft", "mob_r", "ctree_r", "rpart_r"),
   max_depth = 3,
   alpha = 0.05,
   min_leaf = 0.05,
@@ -95,6 +95,17 @@ or ctree permutation tests of the treatment score. Only for
 \code{surv = TRUE}, with strictly positive times and right censoring.
 Splits target the log-time ratio; reported effects remain DR
 survival-probability or RMST differences.}
+\item{\code{"mob_r"}, \code{"ctree_r"}, \code{"rpart_r"}}{the R-learner: the tree
+splits on the forest's out-of-bag residuals \eqn{\tilde Y = Y -
+      \hat m(X)} and \eqn{\tilde W = W - \hat e(X)}, minimising the R-loss
+\eqn{\sum (\tilde Y - \tau \tilde W)^2} as grf's own trees and the
+iCF do. \code{"mob_r"} and \code{"ctree_r"} test the score
+\eqn{\tilde W (\tilde Y - \tilde W \tau)} of the node's
+residual-on-residual slope; \code{"rpart_r"} grows CART on
+\eqn{\tilde Y / \tilde W} weighted by \eqn{\tilde W^2}, pruned by
+cross-validation. Survival outcomes use the censoring-adjusted
+numerator and denominator of \code{\link[grf:causal_survival_forest]{grf::causal_survival_forest()}}. See
+Details.}
 \item{\code{"policy"}}{\code{\link[policytree:policy_tree]{policytree::policy_tree()}} (depth up to 2) or
 \code{\link[policytree:hybrid_policy_tree]{policytree::hybrid_policy_tree()}} (deeper): the tree of exactly
 \code{max_depth} levels whose treat-or-not choice per leaf maximises the
@@ -108,8 +119,8 @@ depth.}
 \item{alpha}{Significance level of the split tests of \code{"maxt"} and the
 mob and ctree methods, in (0, 1]. Default \code{0.05}. \code{1} splits every node the
 depth and leaf sizes allow, so the tree grows to \code{max_depth}. Not
-accepted by \code{"rpart_dr"} or \code{"rpart_cate"}, which prune by cross-validation,
-or \code{"policy"}.}
+accepted by the rpart methods, which prune by cross-validation, or
+\code{"policy"}.}
 
 \item{min_leaf}{Smallest leaf, as a share of the discovery patients, in
 [0, 0.5). Default \code{0.05}. Every child also needs two patients of each
@@ -148,7 +159,7 @@ StratifiedMedicine and model4you.}
 trimmed from the
 ends of a numeric split variable in the instability tests, default
 \code{0.1}.}
-\item{\code{"rpart_dr"}, \code{"rpart_cate"}}{\code{xval}, cross-validation folds, default \code{10} (\code{0}
+\item{the rpart methods}{\code{xval}, cross-validation folds, default \code{10} (\code{0}
 keeps the tree grown to \code{max_depth} unpruned); \code{cp_rule}, \code{"min"}
 (default) prunes at the smallest cross-validated error, \code{"1se"} to
 the smallest tree within one standard error of it.}
@@ -211,7 +222,8 @@ The data are split in two. On the discovery part, \code{\link[=get_hte]{get_hte(
 patient an AIPW score -- a doubly robust, confounding-adjusted effect
 whose mean in any subgroup is that subgroup's effect -- and the tree
 partitions the scores (the \verb{_cate} methods: the forest's predicted
-effects; the \verb{_abs}, \verb{_rel} and \verb{_aft} methods: the outcome, through a model
+effects; the \verb{_r} methods: the forest's residuals, as grf's own trees do;
+the \verb{_abs}, \verb{_rel} and \verb{_aft} methods: the outcome, through a model
 refitted in every node). On the estimation part, which played no role in
 finding the tree, \code{\link[=get_hte]{get_hte()}} estimates the effect of every node. The
 tree is returned as a partykit \code{party} object for ggparty. Arguments
@@ -229,6 +241,18 @@ than the scores, but their errors follow the covariates -- where one arm
 is rare the forest extrapolates. The \code{"mob_cate"} and \code{"ctree_cate"}
 tests treat them as independent observations, so their p-values are
 optimistic. \code{"rpart_cate"} reports no split p-values.
+
+The \verb{_r} methods grow on the same out-of-bag residuals the forest was
+fitted with. Within a node the effect is the residual-on-residual slope
+\eqn{\sum \tilde W \tilde Y / \sum \tilde W^2} (Robinson's transformation,
+the R-learner of Nie and Wager 2021), and a split is chosen to maximise
+\eqn{\sum_c (\sum_{i \in c} \tilde W_i \tilde Y_i)^2 / \sum_{i \in c}
+\tilde W_i^2}, the criterion grf's causal trees approximate. The
+residuals involve no inverse propensity, so extreme propensities inflate
+them far less than the AIPW scores. The slope weights each patient by
+\eqn{\tilde W^2}, whose mean is \eqn{e(1 - e)}: the splits follow
+overlap-weighted effects, while the reported effects stay the doubly
+robust ATE differences of the estimation part.
 
 The \verb{_abs}, \verb{_rel} and \verb{_aft} methods use neither: every node fits a model of the
 outcome on the treatment and \code{adj_var} and tests the score of the
@@ -300,6 +324,12 @@ Graphical Statistics} 15(3):651-674.
 
 Athey S, Wager S (2021). Policy learning with observational data.
 \emph{Econometrica} 89(1):133-161.
+
+Nie X, Wager S (2021). Quasi-oracle estimation of heterogeneous treatment
+effects. \emph{Biometrika} 108(2):299-319.
+
+Athey S, Tibshirani J, Wager S (2019). Generalized random forests.
+\emph{Annals of Statistics} 47(2):1148-1178.
 }
 \seealso{
 \code{\link[=plt_hte_tree]{plt_hte_tree()}} to draw the tree; \code{\link[=get_hte_icf]{get_hte_icf()}} finds rules

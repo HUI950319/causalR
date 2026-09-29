@@ -15,6 +15,7 @@ tree_call <- function(d, ..., adj_var = c("X1", "X2", "X3", "grp"))
 test_that("CART methods explicitly name their discovery target", {
   methods <- eval(formals(get_hte_tree)$method)
   expect_true("rpart_dr" %in% methods)
+  expect_true(all(c("mob_r", "ctree_r", "rpart_r") %in% methods))
   expect_false("rpart" %in% methods)
   expect_identical(methods[1L], "maxt")
 })
@@ -32,6 +33,43 @@ test_that("rpart_cate distils CATE predictions with CART controls", {
   expect_output(print(res), "rpart tree on out-of-bag CATE predictions")
   expect_error(tree_call(tree_data(), method = "rpart_cate", alpha = 0.1),
                "alpha.*cross-validation")
+})
+
+test_that("the R-learner node model is the residual-on-residual slope", {
+  withr::local_seed(1)
+  wt <- rnorm(300)
+  yt <- 0.7 * wt + rnorm(300)
+  f <- .tree_nodefit("r")(yt * wt, cbind(.den = wt^2), estfun = TRUE)
+  expect_equal(unname(f$coefficients), unname(stats::coef(stats::lm(yt ~ 0 + wt))))
+  expect_equal(drop(f$estfun), wt * (yt - wt * unname(f$coefficients)))
+  expect_equal(f$objfun, -sum(yt * wt)^2 / sum(wt^2))
+})
+
+test_that("_r trees split on the forest's residuals for every outcome", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("rpart")
+  d <- tree_data()
+  for (m in c("mob_r", "ctree_r", "rpart_r")) {
+    res <- tree_call(d, method = m, max_depth = 1)
+    expect_identical(res$nodes$variable[1L], "X3", info = m)
+    expect_identical(is.na(res$nodes$split_p[1L]), m == "rpart_r", info = m)
+    expect_identical(sum(res$rules$n), nrow(res$est$data))
+  }
+  expect_output(print(res), "rpart tree on R-learner residuals")
+  expect_error(tree_call(d, method = "rpart_r", alpha = 0.1), "cross-validation")
+  expect_error(tree_call(d, method = "mob_r", tree_args = list(adjust = FALSE)),
+               "unknown field")
+
+  skip_on_cran()
+  withr::local_seed(3)
+  ev <- rexp(nrow(d), 0.05 * exp(0.3 * d$X2 - d$z * 2 * (d$X3 > 0.6)))
+  cens <- rexp(nrow(d), 0.02)
+  d$time <- pmin(ev, cens)
+  d$DSS <- as.integer(ev <= cens)
+  rs <- get_hte_tree(d, "z", c("X1", "X2", "X3"), time = 12, method = "mob_r",
+                     max_depth = 1, grf_args = list(num.trees = 500L))
+  expect_s3_class(rs$est$fit, "causal_survival_forest")
+  expect_identical(rs$nodes$variable[1L], "X3")
 })
 
 test_that("AFT trees find time-ratio modifiers and retain DR leaf estimates", {
@@ -198,7 +236,8 @@ test_that("every method grows on the scores within max_depth", {
   d <- tree_data()
   args <- list(maxt = list(n_boot = 200L), mob_dr = list(), mob_cate = list(),
                mob_abs = list(), ctree_dr = list(), ctree_cate = list(),
-               ctree_abs = list(), rpart_dr = list(), policy = list(cost = 1))
+               ctree_abs = list(), rpart_dr = list(), policy = list(cost = 1),
+               mob_r = list(), ctree_r = list(), rpart_r = list())
   for (m in names(args)) {
     one <- tree_call(d, method = m, max_depth = 1, tree_args = args[[m]])
     expect_identical(one$nodes$variable[1L], "X3", info = m)

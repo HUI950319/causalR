@@ -171,7 +171,8 @@
   list(tree = tree, stats = stats)
 }
 
-# The node model of the "_abs", "_rel" and "_aft" trees, as partykit::mob()
+# The node model of the "_abs", "_rel" and "_aft" trees, and the R-learner
+# equation of "mob_r" / "ctree_r" ("r"), as partykit::mob()
 # calls a fitting function: the coefficients, the objective it minimises (the
 # residual sum of squares, or minus the log-likelihood) and each row's score.
 # "lm" serves a continuous outcome, a 0/1 outcome on the risk scale and
@@ -218,6 +219,17 @@
       cf <- stats::coef(m)
       sc <- if (estfun) as.matrix(stats::residuals(m, type = "score"))
       obj <- -m$loglik[2L]
+    } else if (model == "r") {
+      # R-learner: `y` holds each row's numerator and the single column of
+      # `x` its denominator, (W - e)(Y - m) and (W - e)^2 for grf's causal
+      # forest; the effect solves sum(y - x * tau) = 0, the residual-on-
+      # residual slope. Minus (sum y)^2 / sum x is the R-loss up to a term the
+      # split does not change, so a split maximises grf's own criterion.
+      m   <- NULL
+      tau <- sum(w * y) / sum(w * x[, 1L])
+      cf  <- stats::setNames(tau, parameter_names[1L])
+      sc  <- if (estfun) cbind(w * (y - x[, 1L] * tau))
+      obj <- -sum(w * y)^2 / sum(w * x[, 1L])
     } else {
       m <- suppressWarnings(if (model == "logit")
         stats::glm.fit(x, y, weights = w, family = stats::binomial())
@@ -249,10 +261,11 @@
 # "mob_model" and "ctree_model" split on the scores of the node model in
 # `node` (outcome `y`, regressors `R`, `model`, and `parm`, the columns
 # tested, NULL for all) instead of on `g`: MOB, and ctree with the scores as
-# its transformed response, as model4you's pmtree() does.
+# its transformed response, as model4you's pmtree() does. `weights` are
+# rpart's case weights (the R-learner's denominators).
 #' @keywords internal
 #' @noRd
-.tree_engine <- function(method, g, X, ctrl, node = NULL) {
+.tree_engine <- function(method, g, X, ctrl, node = NULL, weights = NULL) {
   tree  <- data.frame(path = character(), col = integer(), value = numeric(),
                       right = logical(), stringsAsFactors = FALSE)
   stats <- data.frame(path = character(), statistic = numeric(),
@@ -325,8 +338,9 @@
                            maxdepth = ctrl$max_depth + 1, minsize = ctrl$min_n,
                            trim = ctrl$trim),
     rpart = {
-      rp <- rpart::rpart(.g ~ ., data = d, method = "anova", model = TRUE,
-                         control = rpart::rpart.control(
+      rw <- if (is.null(weights)) rep(1, nrow(d)) else weights
+      rp <- rpart::rpart(.g ~ ., data = d, weights = rw, method = "anova",
+                         model = TRUE, control = rpart::rpart.control(
                            maxdepth = min(ctrl$max_depth, 30), cp = 0,
                            minbucket = ctrl$min_n, minsplit = 2L * ctrl$min_n,
                            xval = ctrl$xval, maxcompete = 0L,
@@ -401,7 +415,8 @@
 #' patient an AIPW score -- a doubly robust, confounding-adjusted effect
 #' whose mean in any subgroup is that subgroup's effect -- and the tree
 #' partitions the scores (the `_cate` methods: the forest's predicted
-#' effects; the `_abs`, `_rel` and `_aft` methods: the outcome, through a model
+#' effects; the `_r` methods: the forest's residuals, as grf's own trees do;
+#' the `_abs`, `_rel` and `_aft` methods: the outcome, through a model
 #' refitted in every node). On the estimation part, which played no role in
 #' finding the tree, [get_hte()] estimates the effect of every node. The
 #' tree is returned as a partykit `party` object for ggparty. Arguments
@@ -470,6 +485,17 @@
 #'       `surv = TRUE`, with strictly positive times and right censoring.
 #'       Splits target the log-time ratio; reported effects remain DR
 #'       survival-probability or RMST differences.}
+#'     \item{`"mob_r"`, `"ctree_r"`, `"rpart_r"`}{the R-learner: the tree
+#'       splits on the forest's out-of-bag residuals \eqn{\tilde Y = Y -
+#'       \hat m(X)} and \eqn{\tilde W = W - \hat e(X)}, minimising the R-loss
+#'       \eqn{\sum (\tilde Y - \tau \tilde W)^2} as grf's own trees and the
+#'       iCF do. `"mob_r"` and `"ctree_r"` test the score
+#'       \eqn{\tilde W (\tilde Y - \tilde W \tau)} of the node's
+#'       residual-on-residual slope; `"rpart_r"` grows CART on
+#'       \eqn{\tilde Y / \tilde W} weighted by \eqn{\tilde W^2}, pruned by
+#'       cross-validation. Survival outcomes use the censoring-adjusted
+#'       numerator and denominator of [grf::causal_survival_forest()]. See
+#'       Details.}
 #'     \item{`"policy"`}{[policytree::policy_tree()] (depth up to 2) or
 #'       [policytree::hybrid_policy_tree()] (deeper): the tree of exactly
 #'       `max_depth` levels whose treat-or-not choice per leaf maximises the
@@ -481,8 +507,8 @@
 #' @param alpha Significance level of the split tests of `"maxt"` and the
 #'   mob and ctree methods, in (0, 1]. Default `0.05`. `1` splits every node the
 #'   depth and leaf sizes allow, so the tree grows to `max_depth`. Not
-#'   accepted by `"rpart_dr"` or `"rpart_cate"`, which prune by cross-validation,
-#'   or `"policy"`.
+#'   accepted by the rpart methods, which prune by cross-validation, or
+#'   `"policy"`.
 #' @param min_leaf Smallest leaf, as a share of the discovery patients, in
 #'   [0, 0.5). Default `0.05`. Every child also needs two patients of each
 #'   arm; a split of another method than `"maxt"` without them is dropped.
@@ -517,7 +543,7 @@
 #'       trimmed from the
 #'       ends of a numeric split variable in the instability tests, default
 #'       `0.1`.}
-#'     \item{`"rpart_dr"`, `"rpart_cate"`}{`xval`, cross-validation folds, default `10` (`0`
+#'     \item{the rpart methods}{`xval`, cross-validation folds, default `10` (`0`
 #'       keeps the tree grown to `max_depth` unpruned); `cp_rule`, `"min"`
 #'       (default) prunes at the smallest cross-validated error, `"1se"` to
 #'       the smallest tree within one standard error of it.}
@@ -553,6 +579,18 @@
 #' is rare the forest extrapolates. The `"mob_cate"` and `"ctree_cate"`
 #' tests treat them as independent observations, so their p-values are
 #' optimistic. `"rpart_cate"` reports no split p-values.
+#'
+#' The `_r` methods grow on the same out-of-bag residuals the forest was
+#' fitted with. Within a node the effect is the residual-on-residual slope
+#' \eqn{\sum \tilde W \tilde Y / \sum \tilde W^2} (Robinson's transformation,
+#' the R-learner of Nie and Wager 2021), and a split is chosen to maximise
+#' \eqn{\sum_c (\sum_{i \in c} \tilde W_i \tilde Y_i)^2 / \sum_{i \in c}
+#' \tilde W_i^2}, the criterion grf's causal trees approximate. The
+#' residuals involve no inverse propensity, so extreme propensities inflate
+#' them far less than the AIPW scores. The slope weights each patient by
+#' \eqn{\tilde W^2}, whose mean is \eqn{e(1 - e)}: the splits follow
+#' overlap-weighted effects, while the reported effects stay the doubly
+#' robust ATE differences of the estimation part.
 #'
 #' The `_abs`, `_rel` and `_aft` methods use neither: every node fits a model of the
 #' outcome on the treatment and `adj_var` and tests the score of the
@@ -634,6 +672,12 @@
 #' Athey S, Wager S (2021). Policy learning with observational data.
 #' \emph{Econometrica} 89(1):133-161.
 #'
+#' Nie X, Wager S (2021). Quasi-oracle estimation of heterogeneous treatment
+#' effects. \emph{Biometrika} 108(2):299-319.
+#'
+#' Athey S, Tibshirani J, Wager S (2019). Generalized random forests.
+#' \emph{Annals of Statistics} 47(2):1148-1178.
+#'
 #' @seealso [plt_hte_tree()] to draw the tree; [get_hte_icf()] finds rules
 #'   by voting over causal-forest trees; [get_hte()] for the forest and the
 #'   scores; [plt_hte_sub()] to draw the leaves as a forest plot.
@@ -668,7 +712,8 @@ get_hte_tree <- function(data,
                                         "mob_rel", "ctree_dr", "ctree_cate",
                                         "ctree_abs", "ctree_rel", "rpart_dr",
                                         "policy", "rpart_cate", "mob_aft",
-                                        "ctree_aft"),
+                                        "ctree_aft", "mob_r", "ctree_r",
+                                        "rpart_r"),
                          max_depth  = 3,
                          alpha      = 0.05,
                          min_leaf   = 0.05,
@@ -681,11 +726,13 @@ get_hte_tree <- function(data,
 
   method <- match.arg(method)
   # The mob and ctree methods grow on the AIPW scores (_dr), on the CATE
-  # predictions (_cate) or on the scores of a node model of the outcome on
-  # the difference (_abs), ratio (_rel) or accelerated-time (_aft) scale
-  engine <- sub("_(dr|cate|abs|rel|aft)$", "", method)
+  # predictions (_cate), on the forest's residuals (_r, the R-learner) or on
+  # the scores of a node model of the outcome on the difference (_abs),
+  # ratio (_rel) or accelerated-time (_aft) scale
+  engine <- sub("_(dr|cate|abs|rel|aft|r)$", "", method)
   node_scale <- if (grepl("_(abs|rel|aft)$", method)) sub("^.*_", "", method)
   model_based <- !is.null(node_scale)
+  rlearner <- endsWith(method, "_r")
   factor_encoding <- match.arg(factor_encoding)
   for (pkg in c("grf", "partykit",
                 switch(engine, rpart = "rpart", policy = "policytree")))
@@ -917,6 +964,24 @@ get_hte_tree <- function(data,
                  parm = if (ta$parm == "treatment") match(".a", colnames(R)))
     ok <- rep(TRUE, length(d_idx))
     gd <- NULL
+  } else if (rlearner) {
+    # The forest's out-of-bag residuals: numerator (W - e)(Y - m) and
+    # denominator (W - e)^2, or a survival forest's own censoring-adjusted
+    # pair. rpart grows on num / den weighted by den (the R-loss as weighted
+    # least squares); mob and ctree test the estimating equation num - den tau.
+    f <- fit_d$fit
+    if (inherits(f, "causal_survival_forest")) {
+      num <- f[["_psi"]]$numerator
+      den <- f[["_psi"]]$denominator
+    } else {
+      wc  <- f$W.orig - f$W.hat
+      num <- wc * (f$Y.orig - f$Y.hat)
+      den <- wc^2
+    }
+    ok   <- is.finite(num) & is.finite(den) & den > 0
+    gd   <- num[ok] / den[ok]
+    node <- list(y = num[ok], R = cbind(.den = den[ok]), model = "r",
+                 parm = 1L)
   } else {
     g  <- fit_d$data[[if (endsWith(method, "_cate")) ".cate" else ".dr_score"]]
     ok <- is.finite(g)
@@ -930,8 +995,10 @@ get_hte_tree <- function(data,
                              if (model_based)
                                10L * (ncol(node$R) + (node$model == "aft")))), ta)
   grown <- if (method == "maxt") .tree_maxt(gd, Xd, Wd, cols$var, ctrl)
-           else .tree_engine(if (model_based) paste0(engine, "_model") else engine,
-                             gd, Xd, ctrl, node)
+           else .tree_engine(
+             if (model_based || (rlearner && engine != "rpart"))
+               paste0(engine, "_model") else engine,
+             gd, Xd, ctrl, node, weights = if (rlearner) node$R[, 1L])
   tree <- .tree_prune(grown$tree, Xd, Wd, ctrl$min_arm)
   if (verbose)
     cli::cli_inform(c("i" = paste(
@@ -1127,6 +1194,7 @@ print.hte_tree <- function(x, ...) {
               if (!is.null(a$node_model))
                 sprintf("the scores of %s node models", a$node_model)
               else if (endsWith(a$method, "_cate")) "out-of-bag CATE predictions"
+              else if (endsWith(a$method, "_r")) "R-learner residuals"
               else "doubly robust scores", a$forest, a$backend_version))
   cat(sprintf("  %s\n", if (same)
     sprintf("n = %d, tree grown and estimated on the same patients",

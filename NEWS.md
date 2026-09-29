@@ -1,5 +1,16 @@
 # causalR (development version)
 
+* `get_hte_tree()` adds the R-learner methods `"mob_r"`, `"ctree_r"` and
+  `"rpart_r"`. They split on the forest's out-of-bag residuals
+  (`Y - Y.hat` and `W - W.hat`), minimising the R-loss as grf's causal
+  trees and the iCF do: MOB and ctree test the score of the node's
+  residual-on-residual slope, and CART grows on
+  `(Y - Y.hat) / (W - W.hat)` weighted by `(W - W.hat)^2` with
+  cross-validation pruning. Survival outcomes use the censoring-adjusted
+  numerator and denominator of the causal survival forest. With no inverse
+  propensity in the residuals, extreme propensities inflate them far less
+  than the AIPW scores; leaf effects stay the doubly robust ATE differences.
+
 * `get_hte_tree()` renames `method = "rpart"` to `"rpart_dr"` to explicitly
   distinguish CART on DR scores from `"rpart_cate"`. Update existing calls
   to the new name; the fitting and pruning behavior is unchanged.
