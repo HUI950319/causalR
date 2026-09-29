@@ -18,6 +18,11 @@
 # critical-value line. Redrawing them would mean reimplementing three published
 # methods, so they are wrapped rather than reproduced. The two Cox plots have
 # no upstream figure at all and are drawn natively.
+#
+# The native figures take UtilsR::theme_my(base_rect_size = 1.5), the theme of
+# MLR::plt_bar_per() and of the plt_hte_* figures. `colors` reaches them and
+# the DML contour, whose upstream plot takes col.contour / col.thr.line; the
+# IV contour and the extreme plot hard-code theirs, so it is refused there.
 # =============================================================================
 
 .SENS_CONTOUR_DEFAULTS <- list(
@@ -63,7 +68,7 @@
 
 #' @keywords internal
 #' @noRd
-.sens_contour_lm <- function(x, threshold, lim, ca, alpha) {
+.sens_contour_lm <- function(x, threshold, lim, ca, alpha, colors) {
   st <- x$sens$sensitivity_stats
   n  <- max(20L, as.integer(ca$grid_n))
   xs <- seq(0, lim[1L], length.out = n)
@@ -133,11 +138,12 @@
   if (!is.null(paths))
     p <- p + ggplot2::geom_path(data = paths,
                                 ggplot2::aes(x = x, y = y, group = id),
-                                colour = "grey40", linewidth = 0.4)
+                                colour = colors[1L], linewidth = 0.4)
   if (!is.null(red))
     p <- p + ggplot2::geom_path(data = red,
                                 ggplot2::aes(x = x, y = y, group = id),
-                                colour = "red", linetype = 2, linewidth = 0.9)
+                                colour = colors[2L], linetype = 2,
+                                linewidth = 0.9)
   if (!is.null(labs))
     p <- p + ggplot2::geom_label(data = labs,
                                  ggplot2::aes(x = x, y = y, label = label),
@@ -150,23 +156,27 @@
                        size = 3, hjust = -0.1, vjust = -0.3) +
     (if (is.null(bnd)) NULL else list(
       ggplot2::geom_point(data = bnd, ggplot2::aes(x = x, y = y),
-                          shape = 18, size = 3.4, colour = "red"),
+                          shape = 18, size = 3.4, colour = colors[2L]),
       ggplot2::geom_text(data = bnd,
                          ggplot2::aes(x = x, y = y, label = label),
                          size = 3, hjust = -0.1, vjust = -0.3))) +
     ggplot2::coord_cartesian(xlim = c(0, lim[1L]), ylim = c(0, lim[2L])) +
+    # plotmath ignores the theme's bold face, so the axis titles ask for it,
+    # and the title breaks before it outgrows the 7-inch width at that size.
     ggplot2::labs(
-      x = expression(paste("Partial ", R^2, " of confounder(s) with the treatment")),
-      y = expression(paste("Partial ", R^2, " of confounder(s) with the outcome")),
-      title = sprintf("Sensitivity of the %s to unmeasured confounding", ylab))
+      x = expression(bold(paste("Partial ", R^2, " of confounder(s) with the treatment"))),
+      y = expression(bold(paste("Partial ", R^2, " of confounder(s) with the outcome"))),
+      title = sprintf("Sensitivity of the %s\nto unmeasured confounding", ylab)) +
+    UtilsR::theme_my(base_rect_size = 1.5)
 }
 
 #' @keywords internal
 #' @noRd
-.sens_plt_contour <- function(x, estimand, threshold, lim, contour_args) {
+.sens_plt_contour <- function(x, estimand, threshold, lim, contour_args,
+                              colors) {
   a <- attr(x, "analysis")
   if (identical(a$method, "lm"))
-    return(.sens_contour_lm(x, threshold, lim, contour_args, a$alpha))
+    return(.sens_contour_lm(x, threshold, lim, contour_args, a$alpha, colors))
   so <- contour_args$sensitivity_of
   draw <- switch(
     a$method,
@@ -182,7 +192,8 @@
         bound.label = a$bench_args$bound_label,
         lim.x = lim[1L], lim.y = lim[2L],
         nlevels = contour_args$n_levels, grid.number = contour_args$grid_n,
-        round = contour_args$round)
+        round = contour_args$round,
+        col.contour = colors[1L], col.thr.line = colors[2L])
     },
     # iv.sensemakr takes no window arguments of its own, but forwards `...`
     # to the plotter underneath, and its default 0.4 window squeezes a typical
@@ -238,7 +249,7 @@
 
 #' @keywords internal
 #' @noRd
-.sens_plt_tip <- function(x, lim, title) {
+.sens_plt_tip <- function(x, lim, title, colors) {
   a  <- attr(x, "analysis")
   ea <- a$evalue_args
   st <- x$stats
@@ -276,18 +287,20 @@
     ggplot2::annotate("text", x = st$tip_effect, y = Inf,
                       label = sprintf("tipping point %.3f", st$tip_effect),
                       hjust = -0.05, vjust = 1.6, size = 3.2) +
+    ggplot2::scale_colour_manual(values = stats::setNames(colors,
+                                                          levels(d$which))) +
     ggplot2::labs(
       x = lab,
       y = sprintf("Adjusted effect (risk-ratio scale, rare = %s)",
                   isTRUE(ea$rare)),
       colour = NULL, linetype = NULL,
       title = if (is.null(title)) sprintf("Tipping point for %s", a$treat) else title) +
-    ggplot2::theme(legend.position = "bottom")
+    UtilsR::theme_my(base_rect_size = 1.5, legend.position = "bottom")
 }
 
 #' @keywords internal
 #' @noRd
-.sens_plt_evalue <- function(x, lim, title) {
+.sens_plt_evalue <- function(x, lim, title, colors) {
   a  <- attr(x, "analysis")
   st <- x$stats
   rr <- .sens_hr_to_rr(st$estimate, a$evalue_args$rare)
@@ -331,6 +344,8 @@
                         ggplot2::aes(x = e, y = e, colour = which),
                         size = 2.6, show.legend = FALSE) +
     ggplot2::coord_cartesian(xlim = c(1, top), ylim = c(1, top)) +
+    ggplot2::scale_colour_manual(values = stats::setNames(colors,
+                                                          levels(d$which))) +
     ggplot2::labs(
       x = "Confounder-exposure risk ratio",
       y = "Confounder-outcome risk ratio",
@@ -338,7 +353,7 @@
       title = if (is.null(title)) sprintf(
         "E-value %.2f (interval %.2f) for %s",
         st$evalue_point, st$evalue_ci, a$treat) else title) +
-    ggplot2::theme(legend.position = "bottom")
+    UtilsR::theme_my(base_rect_size = 1.5, legend.position = "bottom")
 }
 
 
@@ -380,6 +395,14 @@
 #'   }
 #' @param title Plot title, or `NULL` (default) for a generated one. Used by
 #'   `"tip"` and `"evalue"` only; the wrapped upstream plots carry their own.
+#' @param colors `NULL` (default) or a length-2 character vector of colours
+#'   `c(main, highlight)`. For `"contour"` they colour the contour lines and
+#'   the critical line (plus the benchmark bounds on the `"lm"` contour),
+#'   `NULL` meaning `c("grey40", "red")`; for `"tip"` and `"evalue"` they
+#'   colour the point-estimate and confidence-limit curves, `NULL` meaning
+#'   `c("firebrick", "steelblue")`. The IV contour and the `"extreme"` plot
+#'   hard-code their colours upstream, so a non-`NULL` value is an error
+#'   there.
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
 #'   list naming only the file is completed with this figure's pinned size.
@@ -437,6 +460,7 @@ plt_sens <- function(x,
                                          grid_n         = 70L,
                                          round          = 3L),
                      title        = NULL,
+                     colors       = NULL,
                      save         = list()) {
 
   if (!inherits(x, "sens_res"))
@@ -459,6 +483,17 @@ plt_sens <- function(x,
   if (is.null(lim)) lim <- spec$lim
   if (!is.numeric(threshold) || length(threshold) != 1L || is.na(threshold))
     stop("`threshold` must be a single number.", call. = FALSE)
+  if (!is.null(colors) &&
+      (!is.character(colors) || length(colors) != 2L || anyNA(colors)))
+    stop("`colors` must be `NULL` or two colours.", call. = FALSE)
+  if (!is.null(colors) && (identical(type, "extreme") ||
+                           identical(a$method, "iv")))
+    stop(sprintf("`colors` does not apply to the %s: the upstream figure fixes its colours.",
+                 if (identical(type, "extreme")) "extreme plot" else "IV contour"),
+         call. = FALSE)
+  if (is.null(colors))
+    colors <- if (type %in% c("tip", "evalue")) c("firebrick", "steelblue")
+              else c("grey40", "red")
 
   contour_args <- .merge_named_arg(contour_args, .SENS_CONTOUR_DEFAULTS,
                                    "contour_args")
@@ -493,10 +528,11 @@ plt_sens <- function(x,
 
   p <- switch(
     type,
-    contour = .sens_plt_contour(x, estimand, threshold, lim, contour_args),
+    contour = .sens_plt_contour(x, estimand, threshold, lim, contour_args,
+                                colors),
     extreme = .sens_plt_extreme(x, threshold, extreme_r2),
-    tip     = .sens_plt_tip(x, lim, title),
-    evalue  = .sens_plt_evalue(x, lim, title),
+    tip     = .sens_plt_tip(x, lim, title, colors),
+    evalue  = .sens_plt_evalue(x, lim, title, colors),
     stop(sprintf("Unsupported type: '%s'", type), call. = FALSE))
 
   plot_size <- if (type %in% c("contour", "extreme")) c(7, 6) else c(7.5, 5.5)

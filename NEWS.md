@@ -1,5 +1,13 @@
 # causalR (development version)
 
+* `plt_sens()` draws its native figures (the `"lm"` contour, `"tip"` and
+  `"evalue"`) with `UtilsR::theme_my(base_rect_size = 1.5)`, the theme of
+  `MLR::plt_bar_per()`, and gains `colors = c(main, highlight)`: the contour
+  lines and critical line, or the point-estimate and confidence-limit
+  curves. The DML contour takes it as the upstream `col.contour` /
+  `col.thr.line`; the IV contour and `"extreme"` refuse it, as upstream fixes
+  their colours. The Cox curves now default to firebrick and steelblue.
+
 * `get_hte()` and `get_hte_tree()` now default to
   `factor_encoding = "integer"`, as `get_hte_icf()` already did: a factor
   enters the forest (and the tree) as one column of level codes. Pass

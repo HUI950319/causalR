@@ -14,6 +14,7 @@ plt_sens(
   contour_args = list(sensitivity_of = c("auto", "estimate", "t-value", "lwr", "upr"),
     n_levels = 10L, grid_n = 70L, round = 3L),
   title = NULL,
+  colors = NULL,
   save = list()
 )
 }
@@ -55,6 +56,15 @@ supports: \code{"lm"} takes all four, \code{"dml"} only \code{"lwr"}/\code{"upr"
 
 \item{title}{Plot title, or \code{NULL} (default) for a generated one. Used by
 \code{"tip"} and \code{"evalue"} only; the wrapped upstream plots carry their own.}
+
+\item{colors}{\code{NULL} (default) or a length-2 character vector of colours
+\code{c(main, highlight)}. For \code{"contour"} they colour the contour lines and
+the critical line (plus the benchmark bounds on the \code{"lm"} contour),
+\code{NULL} meaning \code{c("grey40", "red")}; for \code{"tip"} and \code{"evalue"} they
+colour the point-estimate and confidence-limit curves, \code{NULL} meaning
+\code{c("firebrick", "steelblue")}. The IV contour and the \code{"extreme"} plot
+hard-code their colours upstream, so a non-\code{NULL} value is an error
+there.}
 
 \item{save}{\code{NULL} or a list with \code{filename}, \code{width} and \code{height}, passed
 to \code{RegR::save_plt()} for PDF output. \code{list()} and \code{NULL} skip saving; a

@@ -232,3 +232,69 @@ test_that("plt_sens honours the binary-confounder parameterisation", {
   p <- plt_sens(res, type = "tip")
   expect_match(p$labels$x, "prevalence 0.5 vs 0.2")
 })
+
+test_that("native figures take the theme of MLR::plt_bar_per()", {
+  plt_test_deps("sensemakr", "survival", "tipr")
+  res <- plt_cox_res()
+  for (p in list(plt_sens(plt_lm_res()), plt_sens(res, type = "tip"),
+                 plt_sens(res, type = "evalue")))
+    expect_equal(p$theme$rect$linewidth, 1.5)
+})
+
+test_that("colors recolours the lm contour, its critical line and bounds", {
+  plt_test_deps("sensemakr")
+  d <- ggplot2::ggplot_build(plt_sens(plt_lm_res(),
+                                      colors = c("navy", "orange")))$data
+  cols <- unique(unlist(lapply(d, `[[`, "colour")))
+  expect_true(all(c("navy", "orange") %in% cols))
+  expect_false(any(c("grey40", "red") %in% cols))
+})
+
+test_that("colors sets the two Cox curves, firebrick and steelblue by default", {
+  plt_test_deps("survival", "tipr")
+  res <- plt_cox_res()
+  # layer 2 is the curve pair; group 1 is the point estimate
+  curve_cols <- function(p) {
+    l <- ggplot2::ggplot_build(p)$data[[2L]]
+    c(unique(l$colour[l$group == 1L]), unique(l$colour[l$group == 2L]))
+  }
+  for (type in c("tip", "evalue")) {
+    expect_identical(curve_cols(plt_sens(res, type = type)),
+                     c("firebrick", "steelblue"))
+    expect_identical(curve_cols(plt_sens(res, type = type,
+                                         colors = c("navy", "orange"))),
+                     c("navy", "orange"))
+  }
+})
+
+test_that("DML contours receive colors as the upstream contour colours", {
+  plt_test_deps("dml.sensemakr", "ggplotify")
+  set.seed(927)
+  d <- data.frame(x = rnorm(150), x2 = rnorm(150))
+  d$trt <- 0.5 * d$x + rnorm(150)
+  d$y <- 2 * d$trt + d$x + rnorm(150)
+  res <- get_sens(d, "trt", "y", adj_var = c("x", "x2"), method = "dml",
+                  dml_args = list(reg = "lm", cf_folds = 2L, cf_seed = 42L,
+                                  dirty_tuning = FALSE))
+  received <- NULL
+  local_mocked_bindings(ovb_contour_plot = function(model, ...) {
+    received <<- list(...)
+    graphics::plot.new()
+  }, .package = "dml.sensemakr")
+  expect_s3_class(plt_sens(res), "ggplot")
+  expect_identical(c(received$col.contour, received$col.thr.line),
+                   c("grey40", "red"))
+  plt_sens(res, colors = c("navy", "orange"))
+  expect_identical(c(received$col.contour, received$col.thr.line),
+                   c("navy", "orange"))
+})
+
+test_that("colors is validated and refused where upstream fixes the colours", {
+  plt_test_deps("sensemakr", "ggplotify", "survival", "tipr", "iv.sensemakr")
+  expect_error(plt_sens(plt_cox_res(), colors = "red"), "two colours")
+  expect_error(plt_sens(plt_cox_res(), colors = c("red", NA)), "two colours")
+  expect_error(plt_sens(plt_lm_res(), type = "extreme",
+                        colors = c("navy", "orange")), "fixes its colours")
+  expect_error(plt_sens(plt_iv_res(), colors = c("navy", "orange")),
+               "fixes its colours")
+})
