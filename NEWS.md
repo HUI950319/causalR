@@ -14,7 +14,8 @@
   below the panel when none is. The E-value points and the tipping point
   carry `ggrepel` labels of their values; the tipping point's replaces the
   text atop its line, which now rises from the axis only to the point, and
-  the point takes the confidence-limit colour.
+  the point takes the confidence-limit colour. The tip plot's curves,
+  reference lines, point and label are drawn larger.
   causalR now imports ggrepel (already required through UtilsR) and needs
   ggplot2 >= 3.5.0 for inside legends.
 

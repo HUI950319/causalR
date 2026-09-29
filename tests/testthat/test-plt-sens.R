@@ -322,6 +322,19 @@ test_that("the tipping point carries a repelled label in the limit's colour", {
                c(rep(res$stats$tip_effect, 2L), 1))
 })
 
+test_that("the tip plot draws its lines, point and label at the larger sizes", {
+  plt_test_deps("survival", "tipr", "ggrepel")
+  p <- plt_sens(plt_cox_res(), type = "tip")
+  b <- ggplot2::ggplot_build(p)$data
+  cls <- vapply(p$layers, function(l) class(l$geom)[1L], character(1))
+  size_of <- function(geom, aes) unique(b[[which(cls == geom)]][[aes]])
+  expect_equal(size_of("GeomLine", "linewidth"), 1.3)
+  expect_equal(size_of("GeomHline", "linewidth"), 0.8)
+  expect_equal(size_of("GeomSegment", "linewidth"), 0.8)
+  expect_equal(size_of("GeomPoint", "size"), 3.4)
+  expect_equal(size_of("GeomLabelRepel", "size"), 4.5)
+})
+
 test_that("legend_position puts the Cox legends inside the panel by default", {
   plt_test_deps("survival", "tipr")
   res <- plt_cox_res()
