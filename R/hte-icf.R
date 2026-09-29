@@ -10,8 +10,9 @@
 #                         best pruned tree per depth, vote
 #   L2  .icf_leaves()     readable rule and voting key of every leaf
 #   L2  .icf_assign()     leaf of each row under a partition
-#   L1  plt_hte_icf()     the selected tree drawn with ggparty, each leaf's
-#                         effect and interval beneath it
+#   L2  .icf_party()      the selected tree as a partykit party ($tree)
+#   L1  plt_hte_icf()     that tree drawn with ggparty, a panel of each leaf
+#                         (effect, AIPW scores, box, bar or KM) beneath it
 #   L3  print.hte_icf()
 #
 # The algorithm follows Wang et al. (2024). The iCF repository carries no
@@ -360,6 +361,39 @@
 }
 
 
+# The selected tree (paths / X columns / cut-offs) as a partykit party on the
+# estimation patients: the design columns first, so a split's varid is its
+# column of X, then `extra` (outcome, arm, AIPW score, rule). Nodes are
+# numbered depth first; each leaf's info holds its row of `rules`.
+#' @keywords internal
+#' @noRd
+.icf_party <- function(tree, cols, X, extra, rules, leaves) {
+  id  <- 0L
+  ids <- integer()
+  build <- function(path) {
+    id <<- id + 1L
+    me <- id
+    ids[paste0(".", path)] <<- me
+    j <- match(path, tree$path)
+    if (is.na(j))
+      return(partykit::partynode(me, info = as.list(
+        rules[match(path, leaves$path),
+              c("rule", "n", "estimate", "conf.low", "conf.high", "p.value")])))
+    kids <- list(build(paste0(path, "L")), build(paste0(path, "R")))
+    partykit::partynode(me, kids = kids, split = partykit::partysplit(
+      tree$col[j], breaks = tree$value[j]))
+  }
+  node <- build("")
+  xd <- as.data.frame(unname(X))
+  names(xd) <- make.unique(if (is.null(colnames(X))) cols$var else colnames(X))
+  pd <- cbind(xd, extra)
+  names(pd) <- make.unique(names(pd))
+  partykit::party(node, data = pd, fitted = data.frame(
+    `(fitted)` = unname(ids[paste0(".", .icf_assign(tree, X))]),
+    check.names = FALSE))
+}
+
+
 # ---- L1 public function ------------------------------------------------------
 
 #' Subgroup rules from an iterative causal forest
@@ -569,13 +603,20 @@
 #'     \item{`est`}{The `hte_res` from [get_hte()] on the estimation part,
 #'       whose `$data` has the rule of every patient in the factor `.rule`:
 #'       `plt_hte_sub(res$est, sub_var = ".rule")` draws the subgroups.}
+#'     \item{`tree`}{The selected tree as a [partykit::party()] on the
+#'       patients of `est`: its data are the forests' design columns (a
+#'       split's variable is its column), the outcome, `.arm`, `.dr_score` and
+#'       `.rule`, and each leaf's `info` holds its `rule`, `n`, `estimate`,
+#'       `conf.low`, `conf.high` and `p.value`. Draw it with [plt_hte_icf()],
+#'       or with `ggparty::ggparty()` or `plot()`. `NULL` without the partykit
+#'       package.}
 #'   }
 #'   Analysis metadata is attached as `attr(x, "analysis")`, including the row
 #'   numbers of `data` in the discovery part (`discovery`), the settings, the
 #'   discovery part's calibration p-value (`calibration_p`), whether it
 #'   closed the gate (`gated`), with `cv_rules = "folds"` the folds that
-#'   agreed on each depth's partition (`fold_agree`), and the selected tree
-#'   (`tree`, `cols`) that [plt_hte_icf()] draws.
+#'   agreed on each depth's partition (`fold_agree`), and what each column of
+#'   the tree's design means (`cols`).
 #'
 #' @references
 #' Wang T, Keil AP, Kim S, Wyss R, Htoo PT, Funk MJ, Buse JB, Kosorok MR,
@@ -973,9 +1014,16 @@ get_hte_icf <- function(data,
   importance <- full$fit$importance
   importance$screened <- importance$variable %in% full$screened
 
+  # The selected tree as a partykit party on the estimation patients
+  tree <- if (requireNamespace("partykit", quietly = TRUE))
+    .icf_party(chosen$tree, cols, X[e_idx, , drop = FALSE], data.frame(
+      est$data[outcome], .arm = factor(W[e_idx], 0:1, c("Control", "Treated")),
+      .dr_score = est$data$.dr_score, .rule = est$data$.rule,
+      check.names = FALSE), rules, leaves)
+
   structure(
     list(rules = rules, cv = cv, vote = vote, importance = importance,
-         est = est),
+         est = est, tree = tree),
     class = c("hte_icf", "list"),
     analysis = list(
       backend_version = ea$backend_version, forest = ea$forest,
@@ -983,7 +1031,7 @@ get_hte_icf <- function(data,
       surv = surv, outcome = outcome, time = ea$time, target = ea$target,
       adj_var = adj_var, candidate_var = candidate_var,
       factor_encoding = factor_encoding, depth = depth,
-      depth_selected = cv$depth[sel], tree = chosen$tree, cols = cols,
+      depth_selected = cv$depth[sel], cols = cols,
       style = style, split_frac = split_frac,
       rule_args = ra, seed = seed, screened = full$screened,
       fold_agree = if (by_folds) stats::setNames(
@@ -998,24 +1046,41 @@ get_hte_icf <- function(data,
 
 #' Draw the subgroup tree of get_hte_icf()
 #'
-#' Draws the tree [get_hte_icf()] selected, with ggparty: the split variable at
-#' every inner node, the condition on every edge and, beneath each leaf, its
-#' patients and its effect with the 95% interval from `x$rules`, on one effect
-#' axis shared by all leaves.
+#' Draws `x$tree`, the tree [get_hte_icf()] selected, with ggparty: the split
+#' variable at every inner node, the condition on every edge and, above each
+#' leaf, its patients and its effect with the 95% interval from `x$rules`.
+#' Beneath each leaf a panel chosen by `type` shows that subgroup.
 #'
 #' @param x A [get_hte_icf()] result with at least one split.
+#' @param type Panel beneath each leaf, on one axis shared by all leaves:
+#'   \describe{
+#'     \item{`"effect"`}{(default) the effect and its 95% interval from
+#'       `x$rules`; red above zero, blue below, grey across.}
+#'     \item{`"dr"`}{box plot of the patients' AIPW scores, the doubly
+#'       robust effect of each patient, with their mean (the leaf's doubly
+#'       robust effect) as a point. Adjusted for confounding; any outcome.}
+#'     \item{`"box"`}{box plots of the outcome in each arm. Continuous
+#'       outcomes only.}
+#'     \item{`"bar"`}{the mean outcome, or the share with the event for a
+#'       binary outcome, in each arm with its 95% interval. Binary or
+#'       continuous outcomes.}
+#'     \item{`"km"`}{Kaplan-Meier curves of each arm up to `time`, marked by
+#'       a dashed line. Survival outcomes only.}
+#'   }
+#'   `"box"`, `"bar"` and `"km"` compare the arms without adjustment, so
+#'   their differences need not equal the effects in the labels.
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
 #'   list naming only the file is completed with this figure's pinned size.
 #'   Do not include the `plot` argument; it is supplied internally.
 #'
-#' @details The leaf effects are those of `x$rules`: doubly robust (or IPTW,
-#' with `rule_args$estimate = "iptw"`) on the estimation part, or on the
-#' discovery patients themselves when `split_frac = 1`. An interval above zero
-#' is red, one below zero blue, one crossing zero grey. The edges carry the
-#' conditions of the rules, so `X1 = 1` for a binary covariate and the level
-#' names for a factor; a continuous cut-off shows 4 significant digits. Needs
-#' the partykit and ggparty packages.
+#' @details The panels show the patients the effects were estimated on: the
+#' estimation part, or with `split_frac = 1` every patient. The leaf effects
+#' are those of `x$rules`: doubly robust, or IPTW with
+#' `rule_args$estimate = "iptw"`. The edges carry the conditions of the rules,
+#' so `= 1` for a binary covariate and level names for a factor; a
+#' continuous cut-off shows 4 significant digits. Needs the partykit and
+#' ggparty packages.
 #'
 #' @return A ggplot built by ggparty, with the size it was laid out for in
 #'   `attr(, "plot_size")` (inches). When `save` is non-empty, the plot is
@@ -1037,12 +1102,15 @@ get_hte_icf <- function(data,
 #'                    surv = "y", depth = 2,
 #'                    rule_args = list(n_forest = 5, num_trees = 100))
 #' plt_hte_icf(res)
+#' plt_hte_icf(res, type = "box")
 #' }
 #'
 #' @export
-plt_hte_icf <- function(x, save = list()) {
+plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
+                        save = list()) {
   if (!inherits(x, "hte_icf"))
     stop("`x` must be a get_hte_icf() result.", call. = FALSE)
+  type <- match.arg(type)
   for (pkg in c("partykit", "ggparty"))
     if (!requireNamespace(pkg, quietly = TRUE))
       stop(sprintf("Package '%s' is required for plt_hte_icf().", pkg),
@@ -1050,78 +1118,160 @@ plt_hte_icf <- function(x, save = list()) {
   if (!is.null(save) && !is.list(save))
     stop("`save` must be `NULL` or a list.", call. = FALSE)
   a    <- attr(x, "analysis")
-  tree <- a$tree
   cols <- a$cols
-  if (is.null(tree))
-    stop("`x` holds no tree; refit it with this version of get_hte_icf().",
+  if (is.null(x$tree))
+    stop("`x$tree` is missing: install partykit and refit with get_hte_icf().",
          call. = FALSE)
-  if (!nrow(tree))
+  if (partykit::width(x$tree) < 2L)
     stop("`x` found no subgroups (depth 0), so there is no tree to draw.",
          call. = FALSE)
+  scale <- if (identical(a$outcome_type, "survival")) {
+    if (identical(a$target, "RMST")) "RMST" else "S"
+  } else a$outcome_type
+  ok <- switch(type, box = scale == "continuous",
+               bar = scale %in% c("binary", "continuous"),
+               km = scale %in% c("S", "RMST"), TRUE)
+  if (!ok)
+    stop(sprintf("`type = \"%s\"` needs %s outcome.", type,
+                 switch(type, box = "a continuous", bar = "a binary or continuous",
+                        km = "a survival")), call. = FALSE)
 
-  # Kept splits -> partynode; node ids in depth-first order, keyed by path
-  id  <- 0L
-  ids <- integer()
-  build <- function(path) {
-    id <<- id + 1L
-    me <- id
-    ids[paste0(".", path)] <<- me
-    j <- match(path, tree$path)
-    if (is.na(j)) return(partykit::partynode(me))
-    kids <- list(build(paste0(path, "L")), build(paste0(path, "R")))
-    partykit::partynode(me, kids = kids, split = partykit::partysplit(
-      tree$col[j], breaks = tree$value[j]))
-  }
-  node <- build("")
-
-  # Edge and inner-node text, in the words of the rules
+  # Edge and inner-node text in the words of the rules; leaf text from info
   le <- intToUtf8(0x2264L)
   ne <- intToUtf8(0x2260L)
   edge  <- character()
   inner <- character()
-  for (j in seq_len(nrow(tree))) {
-    v    <- cols$var[tree$col[j]]
-    side <- .icf_leaves(data.frame(path = "", col = tree$col[j],
-                                   value = tree$value[j]), cols)$rule
+  leaf  <- character()
+  num_f <- paste0("%.", if (scale %in% c("S", "binary")) 3 else 2, "f")
+  walk <- function(nd) {
+    id <- as.character(partykit::id_node(nd))
+    if (partykit::is.terminal(nd)) {
+      i <- partykit::info_node(nd)
+      leaf[id] <<- sprintf(paste0("n = %d\n", num_f, " (", num_f, ", ", num_f, ")"),
+                           i$n, i$estimate, i$conf.low, i$conf.high)
+      return(invisible())
+    }
+    s    <- partykit::split_node(nd)
+    col  <- partykit::varid_split(s)
+    v    <- cols$var[col]
+    side <- .icf_leaves(data.frame(path = "", col = col,
+                                   value = partykit::breaks_split(s)), cols)$rule
     side <- substring(side, nchar(v) + 2L)
     side <- gsub("!=", ne, gsub("<=", le, side, fixed = TRUE), fixed = TRUE)
-    kid  <- ids[paste0(".", tree$path[j], c("L", "R"))]
-    edge[as.character(kid)] <- side
-    inner[as.character(ids[paste0(".", tree$path[j])])] <- v
+    kids <- partykit::kids_node(nd)
+    edge[as.character(vapply(kids, partykit::id_node, integer(1L)))] <<- side
+    inner[id] <<- v
+    for (k in kids) walk(k)
   }
+  walk(partykit::node_party(x$tree))
 
-  # One row per leaf, in the order of x$rules; the placeholder covariate
-  # columns only give the splits their variables
-  lv   <- .icf_leaves(tree, cols)
-  r    <- x$rules
-  leaf <- unname(ids[paste0(".", lv$path)])
-  dat  <- as.data.frame(matrix(0, length(leaf), nrow(cols),
-                               dimnames = list(NULL, make.unique(cols$var))))
-  dat$estimate  <- r$estimate
-  dat$conf.low  <- r$conf.low
-  dat$conf.high <- r$conf.high
-  dat$sig <- factor(ifelse(!is.na(r$conf.low) & r$conf.low > 0, "above",
-                    ifelse(!is.na(r$conf.high) & r$conf.high < 0, "below",
-                           "zero")), c("above", "below", "zero"))
-  py <- partykit::party(node, data = dat, fitted = data.frame(
-    `(fitted)` = leaf, check.names = FALSE))
+  # A party for drawing, on the same nodes: one row per leaf for "effect",
+  # one per patient otherwise; the design columns keep their places
+  td  <- partykit::data_party(x$tree)
+  fit <- td[["(fitted)"]]
+  p_x <- nrow(cols)
+  if (type == "effect") {
+    lid <- as.integer(names(leaf))
+    inf <- lapply(partykit::nodeapply(x$tree, lid, partykit::info_node),
+                  as.data.frame)
+    pd  <- data.frame(td[match(lid, fit), seq_len(p_x), drop = FALSE],
+                      do.call(rbind, inf)[c("estimate", "conf.low", "conf.high")],
+                      check.names = FALSE)
+    pd$sig <- factor(ifelse(!is.na(pd$conf.low) & pd$conf.low > 0, "above",
+                     ifelse(!is.na(pd$conf.high) & pd$conf.high < 0, "below",
+                            "zero")), c("above", "below", "zero"))
+    fit <- lid
+  } else {
+    pd <- td[seq_len(p_x)]
+    pd$arm   <- td$.arm
+    pd$score <- td$.dr_score
+    if (scale %in% c("S", "RMST")) {
+      # Each patient carries the Kaplan-Meier survival of their leaf and arm
+      # at their own time, so the steps through those points are the curves
+      ev <- as.integer(td$DSS)
+      pd$time <- td$time
+      pd$surv <- NA_real_
+      for (g in split(seq_len(nrow(td)), list(fit, td$.arm), drop = TRUE)) {
+        tt <- td$time[g]
+        e1 <- ev[g] == 1L
+        ut <- sort(unique(tt[e1]))
+        s  <- cumprod(1 - vapply(ut, function(u) sum(tt == u & e1), numeric(1L)) /
+                        vapply(ut, function(u) sum(tt >= u), numeric(1L)))
+        k  <- findInterval(tt, ut)
+        pd$surv[g] <- ifelse(k == 0L, 1, s[pmax(k, 1L)])
+      }
+      pd$surv[pd$time > a$time] <- NA
+    } else pd$yval <- td[[a$outcome]]
+  }
+  py <- partykit::party(partykit::node_party(x$tree), data = pd,
+                        fitted = data.frame(`(fitted)` = fit, check.names = FALSE))
 
-  scale <- if (identical(a$outcome_type, "survival")) {
-    if (identical(a$target, "RMST")) "RMST" else "S"
-  } else a$outcome_type
   lab <- switch(scale,
     S = sprintf("St(%s-year) difference", format(a$time / 12)),
     RMST = sprintf("RMST(%s) difference", format(a$time)),
     binary = "Risk difference", "Mean difference")
-  num_f <- paste0("%.", if (scale %in% c("S", "binary")) 3 else 2, "f")
-  leaf_txt <- sprintf(paste0("n = %d\n", num_f, " (", num_f, ", ", num_f, ")"),
-                      r$n, r$estimate, r$conf.low, r$conf.high)
-  lim <- range(c(0, r$conf.low, r$conf.high), na.rm = TRUE)
-  lim <- lim + c(-1, 1) * 0.06 * diff(lim)
+  arm_col <- c(Control = "#4393C3", Treated = "#D6604D")
+  theme_panel <- list(
+    UtilsR::theme_my(base_size = 9),
+    ggplot2::theme(legend.position = "none"))
+  flat_y <- ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                           axis.ticks.y = ggplot2::element_blank(),
+                           panel.grid.major.y = ggplot2::element_blank(),
+                           panel.grid.minor.y = ggplot2::element_blank())
+
+  gg <- switch(type,
+    effect = {
+      lim <- range(c(0, pd$conf.low, pd$conf.high), na.rm = TRUE)
+      list(ggplot2::geom_vline(xintercept = 0, linetype = 2, colour = "grey50"),
+           ggplot2::geom_pointrange(ggplot2::aes(x = estimate, y = 0,
+                                                 xmin = conf.low, xmax = conf.high,
+                                                 colour = sig), na.rm = TRUE),
+           ggplot2::scale_colour_manual(values = c(above = "#D6604D",
+                                                   below = "#4393C3",
+                                                   zero = "grey35"),
+                                        drop = FALSE, guide = "none"),
+           ggplot2::scale_x_continuous(limits = lim + c(-1, 1) * 0.06 * diff(lim)),
+           ggplot2::labs(x = lab, y = NULL), theme_panel, flat_y)
+    },
+    dr = list(
+      ggplot2::geom_vline(xintercept = 0, linetype = 2, colour = "grey50"),
+      ggplot2::geom_boxplot(ggplot2::aes(x = score, y = 0), width = 0.5,
+                            outlier.size = 0.3, orientation = "y"),
+      ggplot2::stat_summary(ggplot2::aes(x = score, y = 0), fun = mean,
+                            geom = "point", orientation = "y",
+                            colour = "#D6604D", size = 2),
+      ggplot2::labs(x = paste(lab, "(AIPW scores)"), y = NULL), theme_panel,
+      flat_y),
+    box = list(
+      ggplot2::geom_boxplot(ggplot2::aes(x = arm, y = yval, fill = arm),
+                            width = 0.6, outlier.size = 0.3),
+      ggplot2::scale_fill_manual(values = arm_col),
+      ggplot2::labs(x = NULL, y = a$outcome), theme_panel),
+    bar = list(
+      ggplot2::stat_summary(ggplot2::aes(x = arm, y = yval, fill = arm),
+                            fun = mean, geom = "col", width = 0.6),
+      ggplot2::stat_summary(ggplot2::aes(x = arm, y = yval),
+                            fun.data = ggplot2::mean_se,
+                            fun.args = list(mult = stats::qnorm(0.975)),
+                            geom = "errorbar", width = 0.2),
+      ggplot2::scale_fill_manual(values = arm_col),
+      ggplot2::labs(x = NULL, y = if (scale == "binary")
+        paste("Share with", a$outcome) else paste("Mean", a$outcome)),
+      theme_panel),
+    km = list(
+      ggplot2::geom_step(ggplot2::aes(x = time, y = surv, colour = arm),
+                         na.rm = TRUE),
+      ggplot2::geom_vline(xintercept = a$time, linetype = 2, colour = "grey50"),
+      ggplot2::scale_colour_manual(values = arm_col),
+      ggplot2::scale_x_continuous(breaks = pretty(c(0, a$time), n = 3),
+                                  limits = c(0, a$time)),
+      ggplot2::labs(x = "Time", y = "Survival", colour = NULL),
+      theme_panel))
 
   # Labels at ggparty's own layout: inner nodes, edge midpoints, leaves
-  p  <- ggparty::ggparty(py, terminal_space = 0.25)
-  L  <- p$data
+  tall <- type %in% c("box", "bar", "km")
+  p <- ggparty::ggparty(py, terminal_space = if (tall) 0.4 else 0.25)
+  L <- p$data
   nodes <- L[L$kids > 0, c("id", "x", "y")]
   nodes$label <- inner[as.character(nodes$id)]
   edges <- L[!is.na(L$parent), c("id", "x", "y", "x_parent", "y_parent")]
@@ -1129,41 +1279,35 @@ plt_hte_icf <- function(x, save = list()) {
   edges$y <- (edges$y + edges$y_parent) / 2
   edges$label <- edge[as.character(edges$id)]
   leaves <- L[L$kids == 0, c("id", "x", "y")]
-  leaves$label <- leaf_txt[match(leaves$id, leaf)]
+  leaves$label <- leaf[as.character(leaves$id)]
 
-  n_leaf <- length(leaf)
-  depth  <- max(nchar(lv$path))
+  n_leaf <- nrow(leaves)
+  depth  <- max(L$level)
   p <- p +
     ggparty::geom_edge(colour = "grey45") +
     ggplot2::geom_label(data = edges, ggplot2::aes(x = x, y = y, label = label),
-                        size = 3, fill = "white",
-                        inherit.aes = FALSE) +
+                        size = 3, fill = "white", inherit.aes = FALSE) +
     ggplot2::geom_label(data = nodes, ggplot2::aes(x = x, y = y, label = label),
                         size = 3.6, fontface = "bold", fill = "white",
                         inherit.aes = FALSE) +
     ggplot2::geom_label(data = leaves, ggplot2::aes(x = x, y = y, label = label),
                         size = 3, vjust = 0, lineheight = 0.95,
                         fill = "white", inherit.aes = FALSE) +
-    ggparty::geom_node_plot(
-      gglist = list(
-        ggplot2::geom_vline(xintercept = 0, linetype = 2, colour = "grey50"),
-        ggplot2::geom_pointrange(ggplot2::aes(x = estimate, y = 0,
-                                              xmin = conf.low, xmax = conf.high,
-                                              colour = sig), na.rm = TRUE),
-        ggplot2::scale_colour_manual(values = c(above = "#D6604D",
-                                                below = "#4393C3",
-                                                zero = "grey35"),
-                                     drop = FALSE, guide = "none"),
-        ggplot2::scale_x_continuous(limits = lim),
-        ggplot2::labs(x = lab, y = NULL),
-        UtilsR::theme_my(base_size = 9),
-        ggplot2::theme(axis.text.y = ggplot2::element_blank(),
-                       axis.ticks.y = ggplot2::element_blank(),
-                       panel.grid.major.y = ggplot2::element_blank(),
-                       panel.grid.minor.y = ggplot2::element_blank())),
-      shared_axis_labels = TRUE, height = 0.8, nudge_y = -0.01)
+    ggparty::geom_node_plot(gglist = gg, shared_axis_labels = TRUE,
+                            shared_legend = FALSE,
+                            height = if (tall) 0.9 else 0.8, nudge_y = -0.01)
+  # ggparty's shared legend does not come through, so the arms of the curves
+  # get a legend of their own on the tree
+  if (type == "km")
+    p <- p +
+      ggplot2::geom_line(data = data.frame(x = NA_real_, y = NA_real_,
+                                           arm = factor(names(arm_col))),
+                         ggplot2::aes(x = x, y = y, colour = arm),
+                         na.rm = TRUE, inherit.aes = FALSE) +
+      ggplot2::scale_colour_manual(values = arm_col, name = NULL) +
+      ggplot2::theme(legend.position = "top")
 
-  size <- c(max(6, 1.7 * n_leaf), 2.2 + 1.2 * depth)
+  size <- c(max(6, 1.7 * n_leaf), 2.2 + 1.2 * depth + if (tall) 1 else 0)
   attr(p, "plot_size") <- stats::setNames(size, c("width", "height"))
   if (!is.null(save) && length(save) > 0L) {
     if (!requireNamespace("RegR", quietly = TRUE))

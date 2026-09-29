@@ -20,7 +20,7 @@ test_that("get_hte_icf() finds an interaction and estimates it on the other half
   d <- icf_data()
   res <- icf_call(d)
   expect_s3_class(res, "hte_icf")
-  expect_named(res, c("rules", "cv", "vote", "importance", "est"))
+  expect_named(res, c("rules", "cv", "vote", "importance", "est", "tree"))
   expect_identical(res$cv$depth[res$cv$selected], 2L)
   expect_true(all(grepl("^(X1|X3) = [01]( & (X1|X3) = [01])?$", res$rules$rule)))
   both <- grepl("X1 = 1", res$rules$rule) & grepl("X3 = 1", res$rules$rule)
@@ -216,7 +216,14 @@ test_that("plt_hte_icf() draws the selected tree with each leaf's effect", {
   res <- get_hte_icf(d, "z", c("X1", "X2", "X3", "X4"), surv = "y", depth = 2,
                      rule_args = list(n_forest = 5L, num_trees = 100L),
                      grf_args = list(num.trees = 500L))
-  expect_true(nrow(attr(res, "analysis")$tree) > 0L)
+  # $tree: a party on the estimation patients whose leaves are the rules
+  expect_s3_class(res$tree, "party")
+  leaves <- partykit::nodeids(res$tree, terminal = TRUE)
+  info <- partykit::nodeapply(res$tree, leaves, partykit::info_node)
+  expect_setequal(vapply(info, function(i) i$rule, ""), res$rules$rule)
+  n_fit <- table(factor(partykit::data_party(res$tree)[["(fitted)"]], leaves))
+  expect_identical(as.integer(n_fit),
+                   unname(vapply(info, function(i) as.integer(i$n), 1L)))
   p <- plt_hte_icf(res)
   expect_s3_class(p, "ggplot")
   expect_named(attr(p, "plot_size"), c("width", "height"))
@@ -230,10 +237,11 @@ test_that("plt_hte_icf() draws the selected tree with each leaf's effect", {
 
   expect_error(plt_hte_icf(res$rules), "get_hte_icf")
   expect_error(plt_hte_icf(res, save = "tree.pdf"), "save")
+  for (ty in c("dr", "box", "bar"))
+    expect_s3_class(plt_hte_icf(res, type = ty), "ggplot")
+  expect_error(plt_hte_icf(res, type = "km"), "survival")
   flat <- res
-  a <- attr(flat, "analysis")
-  a$tree <- a$tree[0, ]
-  attr(flat, "analysis") <- a
+  flat$tree <- partykit::party(partykit::partynode(1L), data = res$tree$data)
   expect_error(plt_hte_icf(flat), "no subgroups")
 
   skip_if_not_installed("RegR")
@@ -274,4 +282,9 @@ test_that("get_hte_icf() runs on a survival outcome", {
   expect_s3_class(res, "hte_icf")
   expect_s3_class(res$est$fit, "causal_survival_forest")
   expect_true(all(c(0L, 1L) %in% res$cv$depth))
+  skip_if_not_installed("ggparty")
+  if (partykit::width(res$tree) > 1L) {
+    expect_s3_class(plt_hte_icf(res, type = "km"), "ggplot")
+    expect_error(plt_hte_icf(res, type = "box"), "continuous")
+  }
 })

@@ -4,10 +4,28 @@
 \alias{plt_hte_icf}
 \title{Draw the subgroup tree of get_hte_icf()}
 \usage{
-plt_hte_icf(x, save = list())
+plt_hte_icf(x, type = c("effect", "dr", "box", "bar", "km"), save = list())
 }
 \arguments{
 \item{x}{A \code{\link[=get_hte_icf]{get_hte_icf()}} result with at least one split.}
+
+\item{type}{Panel beneath each leaf, on one axis shared by all leaves:
+\describe{
+\item{\code{"effect"}}{(default) the effect and its 95\% interval from
+\code{x$rules}; red above zero, blue below, grey across.}
+\item{\code{"dr"}}{box plot of the patients' AIPW scores, the doubly
+robust effect of each patient, with their mean (the leaf's doubly
+robust effect) as a point. Adjusted for confounding; any outcome.}
+\item{\code{"box"}}{box plots of the outcome in each arm. Continuous
+outcomes only.}
+\item{\code{"bar"}}{the mean outcome, or the share with the event for a
+binary outcome, in each arm with its 95\% interval. Binary or
+continuous outcomes.}
+\item{\code{"km"}}{Kaplan-Meier curves of each arm up to \code{time}, marked by
+a dashed line. Survival outcomes only.}
+}
+\code{"box"}, \code{"bar"} and \code{"km"} compare the arms without adjustment, so
+their differences need not equal the effects in the labels.}
 
 \item{save}{\code{NULL} or a list with \code{filename}, \code{width} and \code{height}, passed
 to \code{RegR::save_plt()} for PDF output. \code{list()} and \code{NULL} skip saving; a
@@ -20,19 +38,19 @@ A ggplot built by ggparty, with the size it was laid out for in
 also written to PDF through \code{RegR::save_plt()}.
 }
 \description{
-Draws the tree \code{\link[=get_hte_icf]{get_hte_icf()}} selected, with ggparty: the split variable at
-every inner node, the condition on every edge and, beneath each leaf, its
-patients and its effect with the 95\% interval from \code{x$rules}, on one effect
-axis shared by all leaves.
+Draws \code{x$tree}, the tree \code{\link[=get_hte_icf]{get_hte_icf()}} selected, with ggparty: the split
+variable at every inner node, the condition on every edge and, above each
+leaf, its patients and its effect with the 95\% interval from \code{x$rules}.
+Beneath each leaf a panel chosen by \code{type} shows that subgroup.
 }
 \details{
-The leaf effects are those of \code{x$rules}: doubly robust (or IPTW,
-with \code{rule_args$estimate = "iptw"}) on the estimation part, or on the
-discovery patients themselves when \code{split_frac = 1}. An interval above zero
-is red, one below zero blue, one crossing zero grey. The edges carry the
-conditions of the rules, so \code{X1 = 1} for a binary covariate and the level
-names for a factor; a continuous cut-off shows 4 significant digits. Needs
-the partykit and ggparty packages.
+The panels show the patients the effects were estimated on: the
+estimation part, or with \code{split_frac = 1} every patient. The leaf effects
+are those of \code{x$rules}: doubly robust, or IPTW with
+\code{rule_args$estimate = "iptw"}. The edges carry the conditions of the rules,
+so \verb{= 1} for a binary covariate and level names for a factor; a
+continuous cut-off shows 4 significant digits. Needs the partykit and
+ggparty packages.
 }
 \examples{
 \dontshow{if (requireNamespace("grf", quietly = TRUE) && requireNamespace("ggparty", quietly = TRUE)) withAutoprint(\{ # examplesIf}
@@ -48,6 +66,7 @@ res <- get_hte_icf(d, cat_var = "z", adj_var = c("X1", "X2", "X3", "X4"),
                    surv = "y", depth = 2,
                    rule_args = list(n_forest = 5, num_trees = 100))
 plt_hte_icf(res)
+plt_hte_icf(res, type = "box")
 }
 \dontshow{\}) # examplesIf}
 }

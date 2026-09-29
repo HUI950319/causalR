@@ -46,5 +46,9 @@ utils::globalVariables(c(
   # hte-select.R (reuses variable above)
   "score_sd", "n_vars", "value", "statistic", "position", "curve_x",
   # hte-icf.R (reuses x / y / label / estimate / conf.low / conf.high above)
-  "sig"        # plt_hte_icf:       side of zero a leaf's interval lies on
+  "sig",       # plt_hte_icf:       side of zero a leaf's interval lies on
+  "score",     # plt_hte_icf:       a patient's AIPW score
+  "yval",      # plt_hte_icf:       outcome, or its mean in an arm
+  "surv",      # plt_hte_icf:       Kaplan-Meier survival of an arm
+  "time"       # plt_hte_icf:       time axis of those curves
 ))

@@ -177,13 +177,20 @@ its rules.}
 \item{\code{est}}{The \code{hte_res} from \code{\link[=get_hte]{get_hte()}} on the estimation part,
 whose \verb{$data} has the rule of every patient in the factor \code{.rule}:
 \code{plt_hte_sub(res$est, sub_var = ".rule")} draws the subgroups.}
+\item{\code{tree}}{The selected tree as a \code{\link[partykit:party]{partykit::party()}} on the
+patients of \code{est}: its data are the forests' design columns (a
+split's variable is its column), the outcome, \code{.arm}, \code{.dr_score} and
+\code{.rule}, and each leaf's \code{info} holds its \code{rule}, \code{n}, \code{estimate},
+\code{conf.low}, \code{conf.high} and \code{p.value}. Draw it with \code{\link[=plt_hte_icf]{plt_hte_icf()}},
+or with \code{ggparty::ggparty()} or \code{plot()}. \code{NULL} without the partykit
+package.}
 }
 Analysis metadata is attached as \code{attr(x, "analysis")}, including the row
 numbers of \code{data} in the discovery part (\code{discovery}), the settings, the
 discovery part's calibration p-value (\code{calibration_p}), whether it
 closed the gate (\code{gated}), with \code{cv_rules = "folds"} the folds that
-agreed on each depth's partition (\code{fold_agree}), and the selected tree
-(\code{tree}, \code{cols}) that \code{\link[=plt_hte_icf]{plt_hte_icf()}} draws.
+agreed on each depth's partition (\code{fold_agree}), and what each column of
+the tree's design means (\code{cols}).
 }
 \description{
 Looks for subgroups with different treatment effects without naming them in
