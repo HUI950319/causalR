@@ -193,7 +193,10 @@ the distinct values.}
 \item{grf_args}{Named list forwarded to both \code{\link[=get_hte]{get_hte()}} fits, as in
 \code{\link[=get_hte_icf]{get_hte_icf()}}. Per-row fields (\code{W.hat}, \code{Y.hat}, \code{sample.weights},
 \code{clusters}) are not accepted, because each fit sees a different part of
-the rows; a single known propensity \code{W.hat}, as in a trial, is.}
+the rows; a single known propensity \code{W.hat}, as in a trial, is.
+Without \code{num.trees}, each fit grows 500 trees, or 200 above 10,000 rows
+as in \code{\link[=get_hte]{get_hte()}}: grf's default 2000 gave the same trees and leaf
+effects within 0.005 in simulations, at up to four times the time.}
 
 \item{seed}{Nonnegative whole number, default \code{123}. It draws the split,
 the bootstrap multipliers and rpart's folds, and seeds the \code{\link[=get_hte]{get_hte()}}

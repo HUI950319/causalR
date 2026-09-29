@@ -452,6 +452,19 @@ test_that("tree_args$max_cuts caps mob cut-points at 100 by default", {
   expect_error(fit(tree_args = list(max_cuts = 0)), "max_cuts")
 })
 
+test_that("both forests grow 500 trees unless grf_args sets num.trees", {
+  withr::local_seed(5)
+  n <- 600L
+  d <- data.frame(x = runif(n), w = rnorm(n))
+  d$z <- rbinom(n, 1, 0.5)
+  d$y <- d$z * (d$x > 0.5) + rnorm(n)
+  fit <- function(...) get_hte_tree(d, "z", c("x", "w"), surv = "y",
+                                    method = "rpart_dr", ...)
+  ntree <- function(res) res$est$fit[["_num_trees"]]
+  expect_identical(ntree(fit()), 500)
+  expect_identical(ntree(fit(grf_args = list(num.trees = 60))), 60)
+})
+
 test_that("numeric rules retain enough cut-point precision", {
   des <- .tree_design(data.frame(x = c(10000.1, 10000.2, 10000.3)),
                       "onehot")

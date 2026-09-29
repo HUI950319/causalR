@@ -19,6 +19,12 @@
   causalR now imports ggrepel (already required through UtilsR) and needs
   ggplot2 >= 3.5.0 for inside legends.
 
+* `get_hte_tree()` grows 500 trees in each of its two forests unless
+  `grf_args` sets `num.trees` (above 10,000 rows `get_hte()` still grows
+  200). The forests take most of the time; at 20,000 patients a continuous
+  `"maxt"` tree falls from 11 to 4 s with the same rules and leaf effects
+  within 0.005. Pass `grf_args = list(num.trees = 2000)` for grf's default.
+
 * The mob methods of `get_hte_tree()` accept `tree_args$max_cuts`, the most
   cut-points tried per split variable, as `"maxt"` does. MOB refits the node
   model at every distinct value, so its split search grew with the square
