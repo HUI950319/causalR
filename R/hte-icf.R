@@ -165,11 +165,13 @@
   }
 
   # Plurality vote on the partition, split values ignored; the winning
-  # partition keeps its most frequent tree shape, at median split values.
+  # partition keeps its most frequent tree shape, at median split values. The
+  # leaf keys are sorted, as the leaves of X1-then-X3 and X3-then-X1 trees
+  # come in different orders.
   parts <- lapply(seq_along(depth), function(j) {
     trees <- best[[j]]
     keys  <- vapply(trees, function(tr)
-      paste(.icf_leaves(tr, cols)$key, collapse = " | "), character(1L))
+      paste(sort(.icf_leaves(tr, cols)$key), collapse = " | "), character(1L))
     u     <- unique(keys)
     win   <- u[which.max(tabulate(match(keys, u)))]
     wins  <- which(keys == win)

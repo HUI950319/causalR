@@ -36,6 +36,24 @@ test_that("get_hte_icf() finds an interaction and estimates it on the other half
   expect_s3_class(p, "ggplot")
 })
 
+test_that("trees splitting X1 and X3 in either order vote for one partition", {
+  skip_if_not_installed("grf")
+  withr::local_seed(1)
+  n <- 1600L
+  d <- data.frame(X1 = rbinom(n, 1, 0.5), X2 = rnorm(n),
+                  X3 = rbinom(n, 1, 0.5), X4 = rnorm(n))
+  d$z <- rbinom(n, 1, plogis(0.4 * d$X1 - 0.3 * d$X2))
+  d$y <- d$X2 + d$z * (2 * d$X1 + 2 * d$X3) + rnorm(n)
+  res <- get_hte_icf(d, "z", c("X1", "X2", "X3", "X4"), surv = "y", depth = 2,
+                     rule_args = list(n_forest = 10L, num_trees = 100L,
+                                      n_folds = 2L),
+                     grf_args = list(num.trees = 500L), seed = 1)
+  expect_identical(res$vote$n_leaf, 4L)
+  # Before the leaf keys were sorted, 2 of these 10 trees split X1 first and
+  # voted apart from the 8 that split X3 first
+  expect_identical(res$vote$share, 1)
+})
+
 test_that("get_hte_icf() keeps every patient together when the effect is constant", {
   skip_if_not_installed("grf")
   d <- icf_data(tau = function(d) rep(0.5, nrow(d)))
