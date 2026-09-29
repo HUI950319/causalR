@@ -843,8 +843,23 @@ get_hte_tree <- function(data,
           survival::Surv(.(dd$time), .(as.numeric(dd$DSS))) ~ 1))),
         times = time,
         type = if (identical(grf_args$target, "RMST")) "rmst" else "surv")
-    R <- cbind(`(Intercept)` = 1, .a = W[d_idx], if (ta$adjust)
-      stats::model.matrix(~ ., dd[adj_var])[, -1L, drop = FALSE])
+    adj <- NULL
+    if (ta$adjust) {
+      # A constant adjustment has no information in this discovery sample.
+      # Drop it before model.matrix(): a one-level character/factor column
+      # otherwise fails in contrasts(), and a constant numeric column only
+      # creates a redundant coefficient.
+      usable <- vapply(dd[adj_var], function(x) {
+        if (is.factor(x)) x <- droplevels(x)
+        length(unique(x)) > 1L
+      }, logical(1L))
+      if (any(usable)) {
+        ad <- dd[adj_var[usable]]
+        ad[] <- lapply(ad, function(x) if (is.factor(x)) droplevels(x) else x)
+        adj <- stats::model.matrix(~ ., data = ad)[, -1L, drop = FALSE]
+      }
+    }
+    R <- cbind(`(Intercept)` = 1, .a = W[d_idx], adj)
     if (model == "cox") R <- R[, -1L, drop = FALSE]
     node <- list(y = y, R = R, model = model,
                  parm = if (ta$parm == "treatment") match(".a", colnames(R)))

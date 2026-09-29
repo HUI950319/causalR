@@ -151,6 +151,20 @@ test_that("node-model trees test the treatment coefficient, adjusted for adj_var
                             method = "mob_abs"), "adjust = FALSE")
 })
 
+test_that("node-model trees tolerate constant adjustment columns", {
+  skip_if_not_installed("grf")
+  d <- model_data(n = 1600L)
+  d$one_level <- "only"
+  d$constant <- 1
+  av <- c("x1", "x2", "x3", "x4", "one_level", "constant")
+  for (m in c("mob_abs", "ctree_abs")) {
+    res <- get_hte_tree(d, "w", av, surv = "y", method = m, max_depth = 1,
+                        grf_args = list(num.trees = 300L))
+    expect_s3_class(res, "hte_tree")
+    expect_setequal(attr(res, "analysis")$adj_var, av)
+  }
+})
+
 test_that("node-model trees fit logit and Cox models, or pseudo-values", {
   skip_if_not_installed("grf")
   skip_if_not_installed("survival")
