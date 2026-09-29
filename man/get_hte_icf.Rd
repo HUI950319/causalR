@@ -41,7 +41,11 @@ outcome column.}
 \item{depth}{Candidate tree depths, positive whole numbers. Default \code{1:3},
 up to 8 subgroups. Depth 0 -- one group of every patient -- is always a
 candidate as well, so "no subgroups" is a possible answer. With
-\code{style = "icf"} and \code{depth} not given, \code{2:5}, the iCF code's D2-D5.}
+\code{style = "icf"} and \code{depth} not given, \code{2:5}, the iCF code's D2-D5.
+A single value fixes the depth: its voted partition is reported without
+cross-validation or calibration gate (pruning may still leave fewer
+subgroups, or none), \code{n_folds} is unused and, unless \code{split_frac} is
+given, the rules are found and estimated on every patient.}
 
 \item{style}{\code{"causalR"} (default) or \code{"icf"}, which changes the defaults
 of \code{depth} and \code{split_frac} (to \code{1}, no split) when they are not given
@@ -59,9 +63,10 @@ so any set of levels can form a subgroup. The rules are written in the
 original levels either way.}
 
 \item{split_frac}{Share of the patients, within each arm, used for
-discovery. Default \code{0.5}; the rest are the estimation part. \code{1} finds
-and estimates the rules on the same patients, as the iCF code does, so
-the intervals are no longer honest.}
+discovery. Default \code{0.5} (\code{1} for a single \code{depth} or \code{style = "icf"});
+the rest are the estimation part. \code{1} finds and estimates the rules on
+the same patients, as the iCF code does, so the intervals are no longer
+honest.}
 
 \item{rule_args}{Named list of discovery settings; partial overrides keep
 the other defaults. Defaults are given as \code{style = "causalR"} /
@@ -154,7 +159,8 @@ model-based interval, \code{p_inter} \code{NA}). With \code{split_frac = 1}, the
 estimation part is the discovery part.}
 \item{\code{cv}}{Tibble with one row per depth, 0 included: \code{depth},
 \code{n_leaf} of the partition found on the whole discovery part,
-\code{cv_loss}, \code{std.error} and \code{selected}.}
+\code{cv_loss}, \code{std.error} and \code{selected}; \code{cv_loss} and \code{std.error}
+are \code{NA} for a single \code{depth}.}
 \item{\code{vote}}{Tibble with one row per candidate depth: \code{depth},
 \code{n_leaf}, \code{share} of the votes won by the partition, and \code{partition},
 its rules.}

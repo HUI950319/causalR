@@ -148,6 +148,40 @@ test_that("style = \"icf\" switches every step to the iCF code", {
   expect_null(attr(mixed, "analysis")$fold_agree)
 })
 
+test_that("a single depth is fixed: no cross-validation, no gate, all patients", {
+  skip_if_not_installed("grf")
+  d <- icf_data()
+  res <- get_hte_icf(d, "z", c("X1", "X2", "X3", "X4"), surv = "y", depth = 2,
+                     rule_args = list(n_forest = 5L, num_trees = 100L),
+                     grf_args = list(num.trees = 500L))
+  expect_identical(res$cv$depth, c(0L, 2L))
+  expect_true(all(is.na(res$cv$cv_loss)))
+  expect_identical(attr(res, "analysis")$split_frac, 1)
+  expect_identical(sum(res$rules$n), nrow(d))
+  expect_identical(attr(res, "analysis")$depth_selected, 2L)
+  expect_true(all(grepl("^(X1|X3) = [01]( & (X1|X3) = [01])?$", res$rules$rule)))
+  expect_identical(sum(grepl("X1 = 1", res$rules$rule) &
+                         grepl("X3 = 1", res$rules$rule)), 1L)
+  expect_output(print(res), "Depth fixed at 2")
+
+  # The gate that closes on a constant effect (see above) is not applied
+  flat <- get_hte_icf(icf_data(tau = function(d) rep(0.5, nrow(d))), "z",
+                      c("X1", "X2", "X3", "X4"), surv = "y", depth = 1,
+                      rule_args = list(n_forest = 5L, num_trees = 100L,
+                                       penalty = 0),
+                      grf_args = list(num.trees = 500L))
+  expect_false(attr(flat, "analysis")$gated)
+  expect_gt(attr(flat, "analysis")$calibration_p, 0.1)
+  expect_identical(attr(flat, "analysis")$depth_selected, 1L)
+
+  # split_frac still splits when given
+  half <- get_hte_icf(d, "z", c("X1", "X2", "X3", "X4"), surv = "y", depth = 2,
+                      split_frac = 0.5,
+                      rule_args = list(n_forest = 5L, num_trees = 100L),
+                      grf_args = list(num.trees = 500L))
+  expect_identical(sum(half$rules$n_disc) + nrow(half$est$data), nrow(d))
+})
+
 test_that("the iCF settings are checked", {
   skip_if_not_installed("grf")
   d <- icf_data(n = 200L)

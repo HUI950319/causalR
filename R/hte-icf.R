@@ -383,6 +383,10 @@
 #'   up to 8 subgroups. Depth 0 -- one group of every patient -- is always a
 #'   candidate as well, so "no subgroups" is a possible answer. With
 #'   `style = "icf"` and `depth` not given, `2:5`, the iCF code's D2-D5.
+#'   A single value fixes the depth: its voted partition is reported without
+#'   cross-validation or calibration gate (pruning may still leave fewer
+#'   subgroups, or none), `n_folds` is unused and, unless `split_frac` is
+#'   given, the rules are found and estimated on every patient.
 #' @param style `"causalR"` (default) or `"icf"`, which changes the defaults
 #'   of `depth` and `split_frac` (to `1`, no split) when they are not given
 #'   and of every `rule_args` field, so that each step follows the iCF code
@@ -397,9 +401,10 @@
 #'   so any set of levels can form a subgroup. The rules are written in the
 #'   original levels either way.
 #' @param split_frac Share of the patients, within each arm, used for
-#'   discovery. Default `0.5`; the rest are the estimation part. `1` finds
-#'   and estimates the rules on the same patients, as the iCF code does, so
-#'   the intervals are no longer honest.
+#'   discovery. Default `0.5` (`1` for a single `depth` or `style = "icf"`);
+#'   the rest are the estimation part. `1` finds and estimates the rules on
+#'   the same patients, as the iCF code does, so the intervals are no longer
+#'   honest.
 #' @param rule_args Named list of discovery settings; partial overrides keep
 #'   the other defaults. Defaults are given as `style = "causalR"` /
 #'   `style = "icf"` where they differ:
@@ -543,7 +548,8 @@
 #'       estimation part is the discovery part.}
 #'     \item{`cv`}{Tibble with one row per depth, 0 included: `depth`,
 #'       `n_leaf` of the partition found on the whole discovery part,
-#'       `cv_loss`, `std.error` and `selected`.}
+#'       `cv_loss`, `std.error` and `selected`; `cv_loss` and `std.error`
+#'       are `NA` for a single `depth`.}
 #'     \item{`vote`}{Tibble with one row per candidate depth: `depth`,
 #'       `n_leaf`, `share` of the votes won by the partition, and `partition`,
 #'       its rules.}
@@ -639,6 +645,10 @@ get_hte_icf <- function(data,
     stop("`depth` must hold positive whole numbers; depth 0 is always a candidate.",
          call. = FALSE)
   depth <- sort(unique(as.integer(depth)))
+  # One depth is a fixed depth: no cross-validation, no gate, and by default
+  # the rules are found and estimated on every patient
+  one_depth <- length(depth) == 1L
+  if (one_depth && missing(split_frac)) split_frac <- 1
   if (!is.numeric(split_frac) || length(split_frac) != 1L ||
       is.na(split_frac) || split_frac <= 0 || split_frac > 1)
     stop("`split_frac` must be a single number in (0, 1].", call. = FALSE)
@@ -763,7 +773,7 @@ get_hte_icf <- function(data,
     disc[i[sample.int(length(i), round(split_frac * length(i)))]] <- TRUE
   }
   same <- split_frac == 1
-  if (any(table(factor(W[disc], 0:1)) < 2L * ra$n_folds) ||
+  if (any(table(factor(W[disc], 0:1)) < 2L * (if (one_depth) 1L else ra$n_folds)) ||
       (!same && any(table(factor(W[!disc], 0:1)) < 2L)))
     stop("Too few patients per arm for this `split_frac` and `rule_args$n_folds`.",
          call. = FALSE)
@@ -794,7 +804,7 @@ get_hte_icf <- function(data,
     },
     message = function(m) invokeRestart("muffleMessage"))
 
-  by_folds <- ra$cv_rules == "folds"
+  by_folds <- ra$cv_rules == "folds" && !one_depth
   full <- run(d_idx, vote = !by_folds)
   gD   <- full$g
   Xd   <- X[d_idx, , drop = FALSE]
@@ -821,7 +831,7 @@ get_hte_icf <- function(data,
   }
   loss <- matrix(NA_real_, length(d_idx), length(depth) + 1L)
   fold_parts <- vector("list", ra$n_folds)
-  for (k in seq_len(ra$n_folds)) {
+  for (k in seq_len(if (one_depth) 0L else ra$n_folds)) {
     te   <- which(fold == k)
     trp  <- which(fold != k)
     tr   <- d_idx[trp]
@@ -877,14 +887,15 @@ get_hte_icf <- function(data,
     stats::sd(l) / sqrt(length(l))
   }, numeric(1L))
   ok  <- n_leaf > 1L | (seq_along(n_leaf) == 1L & ra$cv_zero)
-  sel <- if (any(ok)) which.min(ifelse(ok, cv_loss, Inf)) else 1L
+  sel <- if (one_depth) 1L + (n_leaf[2L] > 1L)
+    else if (any(ok)) which.min(ifelse(ok, cv_loss, Inf)) else 1L
   # A deeper depth whose partition equals a shallower one's is reported as
   # the shallower depth.
   part_text <- c("", vapply(parts, function(p)
     paste(p$leaves$rule, collapse = " | "), character(1L)))
   sel <- match(part_text[sel], part_text)
   calib_p <- full$fit$calibration$p.value[2L]
-  gated <- isTRUE(calib_p > ra$gate)
+  gated <- !one_depth && isTRUE(calib_p > ra$gate)
   if (gated) sel <- 1L
   cv <- tibble::tibble(depth = c(0L, depth), n_leaf = n_leaf,
                        cv_loss = cv_loss, std.error = cv_se,
@@ -970,12 +981,14 @@ print.hte_icf <- function(x, ...) {
   cat(sprintf("<hte_icf> iterative causal forest (%s, grf %s)%s\n",
               a$forest, a$backend_version,
               if (identical(a$style, "icf")) "; style = \"icf\"" else ""))
-  cat(sprintf("  %s; %d-fold CV; %d forests x %d trees per %s\n",
+  cat(sprintf("  %s; %s; %d forests x %d trees per %s\n",
               if (same) sprintf("n = %d, rules found and estimated on the same patients",
                                 nrow(x$est$data))
               else sprintf("discovery n = %d, estimation n = %d",
                            sum(x$rules$n_disc), nrow(x$est$data)),
-              ra$n_folds, ra$n_forest, ra$num_trees,
+              if (length(a$depth) == 1L) "no CV"
+              else sprintf("%d-fold CV", ra$n_folds),
+              ra$n_forest, ra$num_trees,
               if (is.numeric(ra$grow)) "depth" else "run"))
   cat(sprintf("  screened: %s; discovery calibration p = %s\n",
               paste(a$screened, collapse = ", "),
@@ -989,8 +1002,13 @@ print.hte_icf <- function(x, ...) {
                 sprintf(" (no subgroups: calibration p above gate = %s)",
                         format(ra$gate))
               else " (no subgroups)"))
-  cat("\nCross-validated loss:\n")
-  print(as.data.frame(x$cv), row.names = FALSE, digits = 4)
+  if (length(a$depth) == 1L)
+    cat(sprintf("\nDepth fixed at %d: no cross-validation and no calibration gate.\n",
+                a$depth))
+  else {
+    cat("\nCross-validated loss:\n")
+    print(as.data.frame(x$cv), row.names = FALSE, digits = 4)
+  }
   cat(sprintf("\nRules, estimated on %s (%sATE difference, 95%% CI):\n",
               if (same) "the patients they were found on (not honest)"
               else "the estimation part",

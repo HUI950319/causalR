@@ -1,5 +1,12 @@
 # causalR (development version)
 
+* `get_hte_icf(depth = )` with a single value now fixes the depth: that
+  depth's voted partition is reported without cross-validation or
+  calibration gate, and, unless `split_frac` is given, the rules are found
+  and estimated on every patient. Previously a single depth was
+  cross-validated against depth 0 on half the patients. At 1,600 patients
+  `depth = 2` takes 6 s instead of 23 s for `depth = 1:3`.
+
 * `get_hte_icf()` defaults to `factor_encoding = "integer"`, as the iCF code
   codes its categorical covariates: the levels of a factor, character or
   logical covariate are numbered in level order and a split keeps
