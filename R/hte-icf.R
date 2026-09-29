@@ -10,6 +10,8 @@
 #                         best pruned tree per depth, vote
 #   L2  .icf_leaves()     readable rule and voting key of every leaf
 #   L2  .icf_assign()     leaf of each row under a partition
+#   L1  plt_hte_icf()     the selected tree drawn with ggparty, each leaf's
+#                         effect and interval beneath it
 #   L3  print.hte_icf()
 #
 # The algorithm follows Wang et al. (2024). The iCF repository carries no
@@ -571,8 +573,9 @@
 #'   Analysis metadata is attached as `attr(x, "analysis")`, including the row
 #'   numbers of `data` in the discovery part (`discovery`), the settings, the
 #'   discovery part's calibration p-value (`calibration_p`), whether it
-#'   closed the gate (`gated`) and, with `cv_rules = "folds"`, the folds that
-#'   agreed on each depth's partition (`fold_agree`).
+#'   closed the gate (`gated`), with `cv_rules = "folds"` the folds that
+#'   agreed on each depth's partition (`fold_agree`), and the selected tree
+#'   (`tree`, `cols`) that [plt_hte_icf()] draws.
 #'
 #' @references
 #' Wang T, Keil AP, Kim S, Wyss R, Htoo PT, Funk MJ, Buse JB, Kosorok MR,
@@ -980,13 +983,196 @@ get_hte_icf <- function(data,
       surv = surv, outcome = outcome, time = ea$time, target = ea$target,
       adj_var = adj_var, candidate_var = candidate_var,
       factor_encoding = factor_encoding, depth = depth,
-      depth_selected = cv$depth[sel], style = style, split_frac = split_frac,
+      depth_selected = cv$depth[sel], tree = chosen$tree, cols = cols,
+      style = style, split_frac = split_frac,
       rule_args = ra, seed = seed, screened = full$screened,
       fold_agree = if (by_folds) stats::setNames(
         lapply(parts, function(p) p$folds), depth),
       discovery = which(keep)[d_idx],
       calibration_p = calib_p, gated = gated,
       call = match.call()))
+}
+
+
+# ---- L1 plot -----------------------------------------------------------------
+
+#' Draw the subgroup tree of get_hte_icf()
+#'
+#' Draws the tree [get_hte_icf()] selected, with ggparty: the split variable at
+#' every inner node, the condition on every edge and, beneath each leaf, its
+#' patients and its effect with the 95% interval from `x$rules`, on one effect
+#' axis shared by all leaves.
+#'
+#' @param x A [get_hte_icf()] result with at least one split.
+#' @param save `NULL` or a list with `filename`, `width` and `height`, passed
+#'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
+#'   list naming only the file is completed with this figure's pinned size.
+#'   Do not include the `plot` argument; it is supplied internally.
+#'
+#' @details The leaf effects are those of `x$rules`: doubly robust (or IPTW,
+#' with `rule_args$estimate = "iptw"`) on the estimation part, or on the
+#' discovery patients themselves when `split_frac = 1`. An interval above zero
+#' is red, one below zero blue, one crossing zero grey. The edges carry the
+#' conditions of the rules, so `X1 = 1` for a binary covariate and the level
+#' names for a factor; a continuous cut-off shows 4 significant digits. Needs
+#' the partykit and ggparty packages.
+#'
+#' @return A ggplot built by ggparty, with the size it was laid out for in
+#'   `attr(, "plot_size")` (inches). When `save` is non-empty, the plot is
+#'   also written to PDF through `RegR::save_plt()`.
+#'
+#' @seealso [get_hte_icf()]; [plt_hte_sub()] draws the same effects as a
+#'   forest plot: `plt_hte_sub(x$est, sub_var = ".rule")`.
+#'
+#' @examplesIf requireNamespace("grf", quietly = TRUE) && requireNamespace("ggparty", quietly = TRUE)
+#' \donttest{
+#' set.seed(20260928)
+#' n <- 1600
+#' d <- data.frame(X1 = rbinom(n, 1, 0.5), X2 = rnorm(n),
+#'                 X3 = rbinom(n, 1, 0.5), X4 = rnorm(n))
+#' d$z <- rbinom(n, 1, plogis(0.4 * d$X1 - 0.3 * d$X2))
+#' d$y <- d$X2 + d$z * 2 * d$X1 * d$X3 + rnorm(n)
+#'
+#' res <- get_hte_icf(d, cat_var = "z", adj_var = c("X1", "X2", "X3", "X4"),
+#'                    surv = "y", depth = 2,
+#'                    rule_args = list(n_forest = 5, num_trees = 100))
+#' plt_hte_icf(res)
+#' }
+#'
+#' @export
+plt_hte_icf <- function(x, save = list()) {
+  if (!inherits(x, "hte_icf"))
+    stop("`x` must be a get_hte_icf() result.", call. = FALSE)
+  for (pkg in c("partykit", "ggparty"))
+    if (!requireNamespace(pkg, quietly = TRUE))
+      stop(sprintf("Package '%s' is required for plt_hte_icf().", pkg),
+           call. = FALSE)
+  if (!is.null(save) && !is.list(save))
+    stop("`save` must be `NULL` or a list.", call. = FALSE)
+  a    <- attr(x, "analysis")
+  tree <- a$tree
+  cols <- a$cols
+  if (is.null(tree))
+    stop("`x` holds no tree; refit it with this version of get_hte_icf().",
+         call. = FALSE)
+  if (!nrow(tree))
+    stop("`x` found no subgroups (depth 0), so there is no tree to draw.",
+         call. = FALSE)
+
+  # Kept splits -> partynode; node ids in depth-first order, keyed by path
+  id  <- 0L
+  ids <- integer()
+  build <- function(path) {
+    id <<- id + 1L
+    me <- id
+    ids[paste0(".", path)] <<- me
+    j <- match(path, tree$path)
+    if (is.na(j)) return(partykit::partynode(me))
+    kids <- list(build(paste0(path, "L")), build(paste0(path, "R")))
+    partykit::partynode(me, kids = kids, split = partykit::partysplit(
+      tree$col[j], breaks = tree$value[j]))
+  }
+  node <- build("")
+
+  # Edge and inner-node text, in the words of the rules
+  le <- intToUtf8(0x2264L)
+  ne <- intToUtf8(0x2260L)
+  edge  <- character()
+  inner <- character()
+  for (j in seq_len(nrow(tree))) {
+    v    <- cols$var[tree$col[j]]
+    side <- .icf_leaves(data.frame(path = "", col = tree$col[j],
+                                   value = tree$value[j]), cols)$rule
+    side <- substring(side, nchar(v) + 2L)
+    side <- gsub("!=", ne, gsub("<=", le, side, fixed = TRUE), fixed = TRUE)
+    kid  <- ids[paste0(".", tree$path[j], c("L", "R"))]
+    edge[as.character(kid)] <- side
+    inner[as.character(ids[paste0(".", tree$path[j])])] <- v
+  }
+
+  # One row per leaf, in the order of x$rules; the placeholder covariate
+  # columns only give the splits their variables
+  lv   <- .icf_leaves(tree, cols)
+  r    <- x$rules
+  leaf <- unname(ids[paste0(".", lv$path)])
+  dat  <- as.data.frame(matrix(0, length(leaf), nrow(cols),
+                               dimnames = list(NULL, make.unique(cols$var))))
+  dat$estimate  <- r$estimate
+  dat$conf.low  <- r$conf.low
+  dat$conf.high <- r$conf.high
+  dat$sig <- factor(ifelse(!is.na(r$conf.low) & r$conf.low > 0, "above",
+                    ifelse(!is.na(r$conf.high) & r$conf.high < 0, "below",
+                           "zero")), c("above", "below", "zero"))
+  py <- partykit::party(node, data = dat, fitted = data.frame(
+    `(fitted)` = leaf, check.names = FALSE))
+
+  scale <- if (identical(a$outcome_type, "survival")) {
+    if (identical(a$target, "RMST")) "RMST" else "S"
+  } else a$outcome_type
+  lab <- switch(scale,
+    S = sprintf("St(%s-year) difference", format(a$time / 12)),
+    RMST = sprintf("RMST(%s) difference", format(a$time)),
+    binary = "Risk difference", "Mean difference")
+  num_f <- paste0("%.", if (scale %in% c("S", "binary")) 3 else 2, "f")
+  leaf_txt <- sprintf(paste0("n = %d\n", num_f, " (", num_f, ", ", num_f, ")"),
+                      r$n, r$estimate, r$conf.low, r$conf.high)
+  lim <- range(c(0, r$conf.low, r$conf.high), na.rm = TRUE)
+  lim <- lim + c(-1, 1) * 0.06 * diff(lim)
+
+  # Labels at ggparty's own layout: inner nodes, edge midpoints, leaves
+  p  <- ggparty::ggparty(py, terminal_space = 0.25)
+  L  <- p$data
+  nodes <- L[L$kids > 0, c("id", "x", "y")]
+  nodes$label <- inner[as.character(nodes$id)]
+  edges <- L[!is.na(L$parent), c("id", "x", "y", "x_parent", "y_parent")]
+  edges$x <- (edges$x + edges$x_parent) / 2
+  edges$y <- (edges$y + edges$y_parent) / 2
+  edges$label <- edge[as.character(edges$id)]
+  leaves <- L[L$kids == 0, c("id", "x", "y")]
+  leaves$label <- leaf_txt[match(leaves$id, leaf)]
+
+  n_leaf <- length(leaf)
+  depth  <- max(nchar(lv$path))
+  p <- p +
+    ggparty::geom_edge(colour = "grey45") +
+    ggplot2::geom_label(data = edges, ggplot2::aes(x = x, y = y, label = label),
+                        size = 3, fill = "white",
+                        inherit.aes = FALSE) +
+    ggplot2::geom_label(data = nodes, ggplot2::aes(x = x, y = y, label = label),
+                        size = 3.6, fontface = "bold", fill = "white",
+                        inherit.aes = FALSE) +
+    ggplot2::geom_label(data = leaves, ggplot2::aes(x = x, y = y, label = label),
+                        size = 3, vjust = 0, lineheight = 0.95,
+                        fill = "white", inherit.aes = FALSE) +
+    ggparty::geom_node_plot(
+      gglist = list(
+        ggplot2::geom_vline(xintercept = 0, linetype = 2, colour = "grey50"),
+        ggplot2::geom_pointrange(ggplot2::aes(x = estimate, y = 0,
+                                              xmin = conf.low, xmax = conf.high,
+                                              colour = sig), na.rm = TRUE),
+        ggplot2::scale_colour_manual(values = c(above = "#D6604D",
+                                                below = "#4393C3",
+                                                zero = "grey35"),
+                                     drop = FALSE, guide = "none"),
+        ggplot2::scale_x_continuous(limits = lim),
+        ggplot2::labs(x = lab, y = NULL),
+        UtilsR::theme_my(base_size = 9),
+        ggplot2::theme(axis.text.y = ggplot2::element_blank(),
+                       axis.ticks.y = ggplot2::element_blank(),
+                       panel.grid.major.y = ggplot2::element_blank(),
+                       panel.grid.minor.y = ggplot2::element_blank())),
+      shared_axis_labels = TRUE, height = 0.8, nudge_y = -0.01)
+
+  size <- c(max(6, 1.7 * n_leaf), 2.2 + 1.2 * depth)
+  attr(p, "plot_size") <- stats::setNames(size, c("width", "height"))
+  if (!is.null(save) && length(save) > 0L) {
+    if (!requireNamespace("RegR", quietly = TRUE))
+      stop("Package 'RegR' is required for a non-empty `save`.", call. = FALSE)
+    if (is.null(save$width))  save$width  <- size[1L]
+    if (is.null(save$height)) save$height <- size[2L]
+    do.call(RegR::save_plt, c(list(plot = p), save))
+  }
+  p
 }
 
 

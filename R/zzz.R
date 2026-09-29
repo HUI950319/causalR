@@ -44,5 +44,7 @@ utils::globalVariables(c(
   "q_to",      # plt_hte_rate:      end of a GATES group's share
   "cate_mean", # plt_hte_rate:      mean forest CATE of a GATES group
   # hte-select.R (reuses variable above)
-  "score_sd", "n_vars", "value", "statistic", "position", "curve_x"
+  "score_sd", "n_vars", "value", "statistic", "position", "curve_x",
+  # hte-icf.R (reuses x / y / label / estimate / conf.low / conf.high above)
+  "sig"        # plt_hte_icf:       side of zero a leaf's interval lies on
 ))

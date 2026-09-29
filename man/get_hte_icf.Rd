@@ -181,8 +181,9 @@ whose \verb{$data} has the rule of every patient in the factor \code{.rule}:
 Analysis metadata is attached as \code{attr(x, "analysis")}, including the row
 numbers of \code{data} in the discovery part (\code{discovery}), the settings, the
 discovery part's calibration p-value (\code{calibration_p}), whether it
-closed the gate (\code{gated}) and, with \code{cv_rules = "folds"}, the folds that
-agreed on each depth's partition (\code{fold_agree}).
+closed the gate (\code{gated}), with \code{cv_rules = "folds"} the folds that
+agreed on each depth's partition (\code{fold_agree}), and the selected tree
+(\code{tree}, \code{cols}) that \code{\link[=plt_hte_icf]{plt_hte_icf()}} draws.
 }
 \description{
 Looks for subgroups with different treatment effects without naming them in

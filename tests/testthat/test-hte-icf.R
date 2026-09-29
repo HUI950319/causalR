@@ -208,6 +208,41 @@ test_that("candidate_var sets the only split variables and joins adj_var", {
                "candidate_var")
 })
 
+test_that("plt_hte_icf() draws the selected tree with each leaf's effect", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("partykit")
+  skip_if_not_installed("ggparty")
+  d <- icf_data()
+  res <- get_hte_icf(d, "z", c("X1", "X2", "X3", "X4"), surv = "y", depth = 2,
+                     rule_args = list(n_forest = 5L, num_trees = 100L),
+                     grf_args = list(num.trees = 500L))
+  expect_true(nrow(attr(res, "analysis")$tree) > 0L)
+  p <- plt_hte_icf(res)
+  expect_s3_class(p, "ggplot")
+  expect_named(attr(p, "plot_size"), c("width", "height"))
+  labs <- unlist(lapply(p$layers, function(l)
+    if (is.data.frame(l$data)) l$data$label))
+  # one label per leaf with its n and estimate; edges in the rules' words
+  for (i in seq_len(nrow(res$rules)))
+    expect_true(any(grepl(sprintf("n = %d\n%.2f", res$rules$n[i],
+                                  res$rules$estimate[i]), labs, fixed = TRUE)))
+  expect_true(all(c("= 0", "= 1") %in% labs))
+
+  expect_error(plt_hte_icf(res$rules), "get_hte_icf")
+  expect_error(plt_hte_icf(res, save = "tree.pdf"), "save")
+  flat <- res
+  a <- attr(flat, "analysis")
+  a$tree <- a$tree[0, ]
+  attr(flat, "analysis") <- a
+  expect_error(plt_hte_icf(flat), "no subgroups")
+
+  skip_if_not_installed("RegR")
+  f <- withr::local_tempfile(fileext = ".pdf")
+  q <- plt_hte_icf(res, save = list(filename = f))
+  expect_true(file.exists(f))
+  expect_s3_class(q, "ggplot")
+})
+
 test_that("the iCF settings are checked", {
   skip_if_not_installed("grf")
   d <- icf_data(n = 200L)

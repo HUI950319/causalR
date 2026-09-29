@@ -1,5 +1,12 @@
 # causalR (development version)
 
+* New `plt_hte_icf()` draws the tree `get_hte_icf()` selected with ggparty:
+  the split variable at every inner node, the conditions of the rules on the
+  edges (`= 1`, `<= 0.4647`, `!= c`) and, beneath each leaf, its patients
+  and its effect with the 95% interval from `$rules` on one effect axis,
+  red above zero and blue below. `get_hte_icf()` now keeps the selected
+  tree in `attr(, "analysis")$tree`. partykit and ggparty join Suggests.
+
 * New `get_hte_icf(candidate_var = )` names the only covariates the rules
   may split on: the voting forests are grown on them in place of the
   importance screening, while the outcome and propensity estimates and the
