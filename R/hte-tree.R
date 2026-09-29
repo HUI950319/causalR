@@ -1052,7 +1052,7 @@ plt_hte_tree <- function(x, type = c("effect", "dr", "box", "bar", "km"),
 #' @noRd
 print.hte_tree <- function(x, ...) {
   a    <- attr(x, "analysis")
-  same <- identical(a$split_frac, 1)
+  same <- isTRUE(a$split_frac == 1)
   what <- if (a$method == "maxt") "max-t test" else sub("_.*$", "", a$method)
   cat(sprintf("<hte_tree> %s tree on %s (%s, grf %s)\n", what,
               if (!is.null(a$node_model))

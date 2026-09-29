@@ -294,7 +294,7 @@ test_that("binary and survival outcomes are split on their difference scale", {
 test_that("split_frac = 1 grows and estimates on every patient", {
   skip_if_not_installed("grf")
   d <- tree_data(n = 800L)
-  res <- tree_call(d, split_frac = 1, max_depth = 1,
+  res <- tree_call(d, split_frac = 1L, max_depth = 1,
                    tree_args = list(n_boot = 100L))
   expect_identical(nrow(res$est$data), nrow(d))
   expect_identical(res$nodes$n_disc, res$nodes$n)
