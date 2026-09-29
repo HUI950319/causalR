@@ -1,5 +1,11 @@
 # causalR (development version)
 
+* `get_hte_tree()` adds `"mob_aft"` and `"ctree_aft"`: Weibull AFT node
+  models for positive, right-censored survival times. They test treatment
+  effects on the log-time-ratio scale while retaining DR survival or RMST
+  differences for leaf estimates. Node fits handle aliased adjustments and
+  include the estimated log-scale in the nuisance scores.
+
 * `get_hte_tree(method = "rpart_cate")` now fits and cross-validates a CART
   approximation of the forest's out-of-bag CATE predictions. It retains
   independent leaf effect estimation and uses the existing CART controls.

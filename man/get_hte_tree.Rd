@@ -12,7 +12,8 @@ get_hte_tree(
   surv = TRUE,
   time = 120,
   method = c("maxt", "mob_dr", "mob_cate", "mob_abs", "mob_rel", "ctree_dr",
-    "ctree_cate", "ctree_abs", "ctree_rel", "rpart", "policy", "rpart_cate"),
+    "ctree_cate", "ctree_abs", "ctree_rel", "rpart", "policy", "rpart_cate",
+    "mob_aft", "ctree_aft"),
   max_depth = 3,
   alpha = 0.05,
   min_leaf = 0.05,
@@ -42,7 +43,7 @@ missing value goes.}
 
 \item{surv}{Outcome selector, as in \code{\link[=get_hte]{get_hte()}}: \code{TRUE} (default) for the
 survival columns \code{time} and \code{DSS}, or a single binary (0/1) or continuous
-outcome column. The scores, and so the splits (but those of the \verb{_rel}
+outcome column. The scores, and so the splits (but those of the \verb{_rel} or \verb{_aft}
 methods) and every estimate, are on the difference scale: mean, risk, or
 \eqn{S(t)} difference (RMST difference with
 \code{grf_args = list(target = "RMST")}).}
@@ -88,6 +89,12 @@ and pruned by cross-validation; no tests.}
 \item{\code{"rpart_cate"}}{the same CART fit and pruning on the forest's
 out-of-bag CATE predictions; an explanatory approximation of the
 forest, with no split tests.}
+\item{\code{"mob_aft"}, \code{"ctree_aft"}}{Weibull accelerated failure time
+node models via \code{\link[survival:survreg]{survival::survreg()}}, using MOB instability tests
+or ctree permutation tests of the treatment score. Only for
+\code{surv = TRUE}, with strictly positive times and right censoring.
+Splits target the log-time ratio; reported effects remain DR
+survival-probability or RMST differences.}
 \item{\code{"policy"}}{\code{\link[policytree:policy_tree]{policytree::policy_tree()}} (depth up to 2) or
 \code{\link[policytree:hybrid_policy_tree]{policytree::hybrid_policy_tree()}} (deeper): the tree of exactly
 \code{max_depth} levels whose treat-or-not choice per leaf maximises the
@@ -130,10 +137,11 @@ admissible ones, default \code{100}.}
 \item{the ctree methods}{\code{testtype}, \code{"Bonferroni"} (default),
 \code{"Univariate"} or \code{"MonteCarlo"}, as in
 \code{\link[partykit:ctree_control]{partykit::ctree_control()}}.}
-\item{the \verb{_abs} and \verb{_rel} methods}{also \code{adjust}, \code{TRUE} (default)
+\item{the \verb{_abs}, \verb{_rel} and \verb{_aft} methods}{also \code{adjust}, \code{TRUE} (default)
 for a node model adjusted for \code{adj_var} or \code{FALSE} for the outcome
 on the treatment alone; and \code{parm}, \code{"treatment"} (default) to test
-the treatment coefficient only or \code{"all"} to test every coefficient.
+the treatment coefficient only or \code{"all"} to test every coefficient
+(including log-scale for AFT).
 \verb{adjust = FALSE, parm = "all"} is the default of partykit,
 StratifiedMedicine and model4you.}
 \item{the mob methods}{\code{trim}, the share of observations
@@ -203,7 +211,7 @@ The data are split in two. On the discovery part, \code{\link[=get_hte]{get_hte(
 patient an AIPW score -- a doubly robust, confounding-adjusted effect
 whose mean in any subgroup is that subgroup's effect -- and the tree
 partitions the scores (the \verb{_cate} methods: the forest's predicted
-effects; the \verb{_abs} and \verb{_rel} methods: the outcome, through a model
+effects; the \verb{_abs}, \verb{_rel} and \verb{_aft} methods: the outcome, through a model
 refitted in every node). On the estimation part, which played no role in
 finding the tree, \code{\link[=get_hte]{get_hte()}} estimates the effect of every node. The
 tree is returned as a partykit \code{party} object for ggparty. Arguments
@@ -218,10 +226,11 @@ at a propensity of 0 or 1 are undefined and left out of the growing.
 The \verb{_cate} methods grow on the predictions all the same, as two-stage
 methods do, for comparison: the predictions are smooth and far less noisy
 than the scores, but their errors follow the covariates -- where one arm
-is rare the forest extrapolates -- and the tests treat them as independent
-observations, so their p-values are optimistic.
+is rare the forest extrapolates. The \code{"mob_cate"} and \code{"ctree_cate"}
+tests treat them as independent observations, so their p-values are
+optimistic. \code{"rpart_cate"} reports no split p-values.
 
-The \verb{_abs} and \verb{_rel} methods use neither: every node fits a model of the
+The \verb{_abs}, \verb{_rel} and \verb{_aft} methods use neither: every node fits a model of the
 outcome on the treatment and \code{adj_var} and tests the score of the
 treatment coefficient (MOB first whitens the scores by their outer
 product, as \code{mob(parm = )} does). A purely prognostic variable moves the
@@ -235,6 +244,11 @@ model needs about 10 patients per coefficient, which sets a floor on the
 leaves. The \verb{_rel} trees split on the log-OR or log-HR scale while every
 reported effect is a difference; effect modification depends on the
 scale, so the two can disagree.
+The \verb{_aft} methods assume a Weibull AFT model and conditionally independent
+censoring. The estimated log-scale is a nuisance parameter in the MOB
+score whitening and is also tested when \code{parm = "all"}. AFT splits need
+not agree with heterogeneity on the final difference scale. No discovery
+forest is needed unless \code{split_frac = 1}.
 
 The scores are heteroskedastic -- their variance grows where the
 propensity nears 0 or 1 and with the outcome's variance -- which the

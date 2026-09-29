@@ -171,7 +171,7 @@
   list(tree = tree, stats = stats)
 }
 
-# The node model of the "_abs" and "_rel" trees, in the form partykit::mob()
+# The node model of the "_abs", "_rel" and "_aft" trees, as partykit::mob()
 # calls a fitting function: the coefficients, the objective it minimises (the
 # residual sum of squares, or minus the log-likelihood) and each row's score.
 # "lm" serves a continuous outcome, a 0/1 outcome on the risk scale and
@@ -190,7 +190,30 @@
   function(y, x, start = NULL, weights = NULL, offset = NULL, ...,
            estfun = FALSE, object = FALSE) {
     w <- if (length(weights)) weights else rep(1, NROW(x))
-    if (model == "cox") {
+    parameter_names <- colnames(x)
+    if (model == "aft") {
+      # Drop columns aliased within this node, retaining their original slots
+      # so `keep` still selects the treatment after an adjustment is constant.
+      q <- qr(x * sqrt(w))
+      active <- sort(q$pivot[seq_len(q$rank)])
+      xx <- x[, active, drop = FALSE]
+      m <- withCallingHandlers(
+        survival::survreg(y ~ xx - 1, weights = w, dist = "weibull",
+                          x = TRUE, y = TRUE),
+        warning = function(w) stop(conditionMessage(w), call. = FALSE))
+      if (any(!is.finite(stats::coef(m))) || !is.finite(m$scale) ||
+          m$scale <= 0 || !is.finite(m$loglik[2L]))
+        stop("The Weibull AFT node model did not converge.", call. = FALSE)
+      parameter_names <- c(parameter_names, "Log(scale)")
+      cf <- stats::setNames(rep(NA_real_, ncol(x) + 1L), parameter_names)
+      cf[active] <- stats::coef(m)
+      cf[length(cf)] <- log(m$scale)
+      if (estfun) {
+        r <- stats::residuals(m, type = "matrix")
+        sc <- cbind(x * (w * r[, "dg"]), w * r[, "ds"])
+      }
+      obj <- -m$loglik[2L]
+    } else if (model == "cox") {
       m  <- suppressWarnings(survival::coxph(y ~ x, weights = w))
       cf <- stats::coef(m)
       sc <- if (estfun) as.matrix(stats::residuals(m, type = "score"))
@@ -211,8 +234,8 @@
       k  <- e$values > max(e$values) * 1e-10
       sc <- s %*% (e$vectors[, k, drop = FALSE] %*%
                      (t(e$vectors[, k, drop = FALSE]) / sqrt(e$values[k])))
-      colnames(sc) <- colnames(x)[ok]
-      keep <- match(colnames(x)[keep], colnames(sc))
+      colnames(sc) <- parameter_names[ok]
+      keep <- match(parameter_names[keep], colnames(sc))
     }
     list(coefficients = cf, objfun = obj,
          estfun = if (estfun) sc[, if (is.null(keep)) ok else keep, drop = FALSE],
@@ -378,7 +401,7 @@
 #' patient an AIPW score -- a doubly robust, confounding-adjusted effect
 #' whose mean in any subgroup is that subgroup's effect -- and the tree
 #' partitions the scores (the `_cate` methods: the forest's predicted
-#' effects; the `_abs` and `_rel` methods: the outcome, through a model
+#' effects; the `_abs`, `_rel` and `_aft` methods: the outcome, through a model
 #' refitted in every node). On the estimation part, which played no role in
 #' finding the tree, [get_hte()] estimates the effect of every node. The
 #' tree is returned as a partykit `party` object for ggparty. Arguments
@@ -397,7 +420,7 @@
 #'   missing value goes.
 #' @param surv Outcome selector, as in [get_hte()]: `TRUE` (default) for the
 #'   survival columns `time` and `DSS`, or a single binary (0/1) or continuous
-#'   outcome column. The scores, and so the splits (but those of the `_rel`
+#'   outcome column. The scores, and so the splits (but those of the `_rel` or `_aft`
 #'   methods) and every estimate, are on the difference scale: mean, risk, or
 #'   \eqn{S(t)} difference (RMST difference with
 #'   `grf_args = list(target = "RMST")`).
@@ -441,6 +464,12 @@
 #'     \item{`"rpart_cate"`}{the same CART fit and pruning on the forest's
 #'       out-of-bag CATE predictions; an explanatory approximation of the
 #'       forest, with no split tests.}
+#'     \item{`"mob_aft"`, `"ctree_aft"`}{Weibull accelerated failure time
+#'       node models via [survival::survreg()], using MOB instability tests
+#'       or ctree permutation tests of the treatment score. Only for
+#'       `surv = TRUE`, with strictly positive times and right censoring.
+#'       Splits target the log-time ratio; reported effects remain DR
+#'       survival-probability or RMST differences.}
 #'     \item{`"policy"`}{[policytree::policy_tree()] (depth up to 2) or
 #'       [policytree::hybrid_policy_tree()] (deeper): the tree of exactly
 #'       `max_depth` levels whose treat-or-not choice per leaf maximises the
@@ -477,10 +506,11 @@
 #'     \item{the ctree methods}{`testtype`, `"Bonferroni"` (default),
 #'       `"Univariate"` or `"MonteCarlo"`, as in
 #'       [partykit::ctree_control()].}
-#'     \item{the `_abs` and `_rel` methods}{also `adjust`, `TRUE` (default)
+#'     \item{the `_abs`, `_rel` and `_aft` methods}{also `adjust`, `TRUE` (default)
 #'       for a node model adjusted for `adj_var` or `FALSE` for the outcome
 #'       on the treatment alone; and `parm`, `"treatment"` (default) to test
-#'       the treatment coefficient only or `"all"` to test every coefficient.
+#'       the treatment coefficient only or `"all"` to test every coefficient
+#'       (including log-scale for AFT).
 #'       `adjust = FALSE, parm = "all"` is the default of partykit,
 #'       StratifiedMedicine and model4you.}
 #'     \item{the mob methods}{`trim`, the share of observations
@@ -520,10 +550,11 @@
 #' The `_cate` methods grow on the predictions all the same, as two-stage
 #' methods do, for comparison: the predictions are smooth and far less noisy
 #' than the scores, but their errors follow the covariates -- where one arm
-#' is rare the forest extrapolates -- and the tests treat them as independent
-#' observations, so their p-values are optimistic.
+#' is rare the forest extrapolates. The `"mob_cate"` and `"ctree_cate"`
+#' tests treat them as independent observations, so their p-values are
+#' optimistic. `"rpart_cate"` reports no split p-values.
 #'
-#' The `_abs` and `_rel` methods use neither: every node fits a model of the
+#' The `_abs`, `_rel` and `_aft` methods use neither: every node fits a model of the
 #' outcome on the treatment and `adj_var` and tests the score of the
 #' treatment coefficient (MOB first whitens the scores by their outer
 #' product, as `mob(parm = )` does). A purely prognostic variable moves the
@@ -538,6 +569,11 @@
 #' leaves. The `_rel` trees split on the log-OR or log-HR scale while every
 #' reported effect is a difference; effect modification depends on the
 #' scale, so the two can disagree.
+#' The `_aft` methods assume a Weibull AFT model and conditionally independent
+#' censoring. The estimated log-scale is a nuisance parameter in the MOB
+#' score whitening and is also tested when `parm = "all"`. AFT splits need
+#' not agree with heterogeneity on the final difference scale. No discovery
+#' forest is needed unless `split_frac = 1`.
 #'
 #' The scores are heteroskedastic -- their variance grows where the
 #' propensity nears 0 or 1 and with the outcome's variance -- which the
@@ -631,7 +667,8 @@ get_hte_tree <- function(data,
                          method     = c("maxt", "mob_dr", "mob_cate", "mob_abs",
                                         "mob_rel", "ctree_dr", "ctree_cate",
                                         "ctree_abs", "ctree_rel", "rpart",
-                                        "policy", "rpart_cate"),
+                                        "policy", "rpart_cate", "mob_aft",
+                                        "ctree_aft"),
                          max_depth  = 3,
                          alpha      = 0.05,
                          min_leaf   = 0.05,
@@ -645,9 +682,9 @@ get_hte_tree <- function(data,
   method <- match.arg(method)
   # The mob and ctree methods grow on the AIPW scores (_dr), on the CATE
   # predictions (_cate) or on the scores of a node model of the outcome on
-  # the difference (_abs) or ratio (_rel) scale
-  engine <- sub("_(dr|cate|abs|rel)$", "", method)
-  node_scale <- if (grepl("_(abs|rel)$", method)) sub("^.*_", "", method)
+  # the difference (_abs), ratio (_rel) or accelerated-time (_aft) scale
+  engine <- sub("_(dr|cate|abs|rel|aft)$", "", method)
+  node_scale <- if (grepl("_(abs|rel|aft)$", method)) sub("^.*_", "", method)
   model_based <- !is.null(node_scale)
   factor_encoding <- match.arg(factor_encoding)
   for (pkg in c("grf", "partykit",
@@ -681,6 +718,15 @@ get_hte_tree <- function(data,
     if (identical(node_scale, "rel") && !all(y0 %in% c(0, 1)))
       stop(sprintf("`method = \"%s\"` splits on the log-OR or log-HR scale, which a continuous outcome lacks; use `method = \"%s\"`.",
                    method, sub("_rel$", "_abs", method)), call. = FALSE)
+  }
+  if (identical(node_scale, "aft")) {
+    if (!is_surv)
+      stop("AFT methods require `surv = TRUE` (columns `time` / `DSS`).",
+           call. = FALSE)
+    tt <- data$time[!is.na(data$time)]
+    if (!is.numeric(tt) || any(!is.finite(tt) | tt <= 0))
+      stop("AFT methods require finite, strictly positive survival times.",
+           call. = FALSE)
   }
   if (model_based && is_surv && !requireNamespace("survival", quietly = TRUE))
     stop(sprintf("Package 'survival' is required for get_hte_tree(method = \"%s\") with a survival outcome.",
@@ -835,11 +881,13 @@ get_hte_tree <- function(data,
   if (model_based) {
     # Node model of the outcome on the treatment (and adj_var): lm on a
     # continuous or 0/1 outcome or on survival pseudo-values at `time`
-    # (difference scales), logit or Cox (ratio scales)
+    # (difference scales), logit or Cox (ratio scales), or Weibull AFT
     dd <- data[d_idx, , drop = FALSE]
-    model <- if (node_scale == "abs") "lm" else if (is_surv) "cox" else "logit"
+    model <- if (node_scale == "aft") "aft" else if (node_scale == "abs") "lm"
+             else if (is_surv) "cox" else "logit"
     y <- if (!is_surv) dd[[outcome]]
-      else if (model == "cox") survival::Surv(dd$time, as.numeric(dd$DSS))
+      else if (model %in% c("cox", "aft"))
+        survival::Surv(dd$time, as.numeric(dd$DSS))
       # the times and events are written into the call, which pseudo()
       # evaluates again elsewhere
       else survival::pseudo(
@@ -879,7 +927,8 @@ get_hte_tree <- function(data,
   # A node model needs about 10 patients per coefficient
   ctrl <- c(list(max_depth = max_depth, alpha = alpha, min_arm = 2L,
                  min_n = max(2L, ceiling(min_leaf * sum(ok)),
-                             if (model_based) 10L * ncol(node$R))), ta)
+                             if (model_based)
+                               10L * (ncol(node$R) + (node$model == "aft")))), ta)
   grown <- if (method == "maxt") .tree_maxt(gd, Xd, Wd, cols$var, ctrl)
            else .tree_engine(if (model_based) paste0(engine, "_model") else engine,
                              gd, Xd, ctrl, node)
@@ -1003,6 +1052,7 @@ get_hte_tree <- function(data,
       factor_encoding = factor_encoding, method = method,
       node_model = if (model_based) switch(node$model,
         cox = "Cox (log-HR)", logit = "logit (log-OR)",
+        aft = "Weibull AFT (log-time ratio)",
         lm = if (is_surv) sprintf("lm on %s pseudo-values",
                                   if (identical(ea$target, "RMST")) "RMST" else "S(t)")
              else if (identical(ea$outcome_type, "binary")) "lm (risk difference)"

@@ -27,6 +27,86 @@ test_that("rpart_cate distils CATE predictions with CART controls", {
                "alpha.*cross-validation")
 })
 
+test_that("AFT trees find time-ratio modifiers and retain DR leaf estimates", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("survival")
+  withr::local_seed(82)
+  n <- 1600L
+  d <- data.frame(x = rep(0:1, each = n / 2), z = rbinom(n, 1, 0.5),
+                   prognostic = rnorm(n))
+  ev <- rweibull(n, shape = 2, scale = exp(2 + 0.3 * d$prognostic +
+                                           d$z * (0.1 + 1.5 * d$x)))
+  cens <- rexp(n, 0.025)
+  d$time <- pmin(ev, cens)
+  d$DSS <- as.integer(ev <= cens)
+  for (m in c("mob_aft", "ctree_aft")) {
+    res <- get_hte_tree(d, "z", c("x", "prognostic"), method = m,
+                        time = 8, max_depth = 2,
+                        grf_args = list(num.trees = 300L, num.threads = 2L))
+    expect_identical(res$nodes$variable[1L], "x", info = m)
+    expect_identical(attr(res, "analysis")$node_model,
+                     "Weibull AFT (log-time ratio)")
+    expect_true(all(is.finite(res$rules$estimate)))
+    expect_true(all(abs(res$rules$estimate) <= 1))
+    expect_identical(sum(res$rules$n), nrow(res$est$data))
+    expect_output(print(res), "Weibull AFT")
+    expect_error(tree_call(tree_data(), method = m), "surv = TRUE")
+    bad <- d
+    bad$time[1L] <- 0
+    expect_error(get_hte_tree(bad, "z", "x", method = m), "positive")
+  }
+  rmst <- get_hte_tree(d, "z", "x", method = "ctree_aft", time = 8,
+                       max_depth = 1, tree_args = list(adjust = FALSE, parm = "all"),
+                       grf_args = list(target = "RMST", num.trees = 300L,
+                                       num.threads = 2L))
+  expect_identical(attr(rmst, "analysis")$target, "RMST")
+  expect_identical(rmst$nodes$variable[1L], "x")
+  expect_true(all(is.finite(rmst$rules$estimate)))
+  for (outcome in list("DSS", TRUE)) {
+    args <- list(data = d, cat_var = "z", adj_var = c("x", "prognostic"),
+                 surv = outcome, method = "rpart_cate", max_depth = 1,
+                 tree_args = list(xval = 0L),
+                 grf_args = list(num.trees = 300L, num.threads = 2L))
+    if (isTRUE(outcome)) args$time <- 8
+    cart <- do.call(get_hte_tree, args)
+    expect_s3_class(cart, "hte_tree")
+    expect_true(all(is.finite(cart$rules$estimate)))
+  }
+})
+
+test_that("AFT node scores match the weighted Weibull likelihood", {
+  skip_if_not_installed("survival")
+  withr::local_seed(15)
+  n <- 200L
+  x <- cbind(`(Intercept)` = 1, treatment = rbinom(n, 1, 0.5),
+              constant = 1, covariate = rnorm(n))
+  ev <- rweibull(n, 1.8, exp(1 + 0.4 * x[, 2] + 0.2 * x[, 4]))
+  cens <- rexp(n, 0.1)
+  y <- survival::Surv(pmin(ev, cens), as.integer(ev <= cens))
+  w <- rep(c(1, 2), length.out = n)
+  f <- .tree_nodefit("aft")(y, x, weights = w, estfun = TRUE, object = TRUE)
+  expect_true(is.na(f$coefficients[3L]))
+  active <- c(1L, 2L, 4L)
+  theta <- c(f$coefficients[active], log(f$object$scale))
+  ll <- function(b) {
+    shape <- exp(-b[4L])
+    scale <- exp(drop(x[, active] %*% b[1:3]))
+    w * ifelse(y[, 2] == 1,
+               dweibull(y[, 1], shape, scale, log = TRUE),
+               pweibull(y[, 1], shape, scale, lower.tail = FALSE, log.p = TRUE))
+  }
+  numeric_scores <- sapply(seq_along(theta), function(j) {
+    step <- rep(0, length(theta)); step[j] <- 1e-5
+    (ll(theta + step) - ll(theta - step)) / 2e-5
+  })
+  expect_equal(unname(f$estfun), unname(numeric_scores), tolerance = 1e-6)
+  expect_equal(f$objfun, -sum(ll(theta)), tolerance = 1e-7)
+  tr <- .tree_nodefit("aft", keep = 2L, decorrelate = TRUE)(
+    y, x, weights = w, estfun = TRUE)
+  expect_identical(dim(tr$estfun), c(n, 1L))
+  expect_true(all(is.finite(tr$estfun)))
+})
+
 test_that("the max-t tree finds a threshold and estimates it on the other half", {
   skip_if_not_installed("grf")
   skip_if_not_installed("partykit")
