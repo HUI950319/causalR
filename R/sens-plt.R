@@ -293,8 +293,9 @@
             format(ea$smd))
   }
 
-  # Where the null line, the tipping-point line and the point's label fall
-  # moves with the direction of the effect, so no corner is free every time.
+  # Where the null line, the tipping-point line -- which rises from the axis
+  # only to the point -- and the point's label fall moves with the direction
+  # of the effect, so no corner is free every time.
   # Each corner a legend of about 44% x 20% of the pinned 7.5-inch panel would
   # cover is checked against points along all of them, and with none free it
   # goes below the panel. The confidence-limit curve falls through the point,
@@ -309,7 +310,7 @@
                      y = ty + seq(0, 0.12, length.out = 8L))
   occ <- data.frame(
     x = c((d$gamma - xr[1L]) / diff(xr), s, rep(tx, 60L), lb$x),
-    y = c((d$adjusted - yr[1L]) / diff(yr), rep(ty, 60L), s, lb$y))
+    y = c((d$adjusted - yr[1L]) / diff(yr), rep(ty, 60L), ty * s, lb$y))
   corners <- list(c(0.98, 0.98), c(0.02, 0.02), c(0.02, 0.98), c(0.98, 0.02))
   free <- vapply(corners, function(k) !any(abs(occ$x - k[1L]) < 0.44 &
                                              abs(occ$y - k[2L]) < 0.2),
@@ -322,7 +323,8 @@
                        linewidth = 0.9) +
     # The point lies on the confidence-limit curve and takes its colour.
     ggplot2::geom_point(data = tip, size = 2.6, colour = colors[2L]) +
-    ggplot2::geom_vline(xintercept = st$tip_effect, linetype = 3) +
+    ggplot2::annotate("segment", x = st$tip_effect, xend = st$tip_effect,
+                      y = -Inf, yend = 1, linetype = 3) +
     ggrepel::geom_label_repel(
       data = tip, ggplot2::aes(label = sprintf("%.3f", gamma)),
       nudge_x = 0.06 * diff(xr), nudge_y = 0.08 * diff(yr),

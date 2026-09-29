@@ -313,8 +313,13 @@ test_that("the tipping point carries a repelled label in the limit's colour", {
   expect_identical(rep[[1L]]$label, sprintf("%.3f", res$stats$tip_effect))
   expect_identical(rep[[1L]]$colour, "orange")
   expect_identical(b[geom_is("GeomPoint")][[1L]]$colour, "orange")
-  # the value is no longer repeated atop the tipping-point line
+  # the value is no longer repeated atop the tipping-point line, which rises
+  # from the axis only to the point
   expect_false(any(geom_is("GeomText")))
+  expect_false(any(geom_is("GeomVline")))
+  seg <- b[geom_is("GeomSegment")][[1L]]
+  expect_equal(c(seg$x, seg$xend, seg$yend),
+               c(rep(res$stats$tip_effect, 2L), 1))
 })
 
 test_that("legend_position puts the Cox legends inside the panel by default", {
@@ -327,8 +332,8 @@ test_that("legend_position puts the Cox legends inside the panel by default", {
   th <- plt_sens(res, type = "tip")$theme
   expect_identical(th$legend.position, "inside")
   expect_equal(th$legend.position.inside, c(0.98, 0.98))
-  # HR > 1 puts the null line across the bottom and the tip line right, so
-  # no corner is free and the legend goes below the panel
+  # HR > 1 puts the null line across the bottom and the tip right; the tip
+  # line stops at the point, so the top-right corner stays free
   d <- stats::na.omit(survival::lung[, c("time", "status", "sex", "age")])
   d$status <- d$status - 1L
   d$sex <- factor(d$sex, labels = c("male", "female"))
@@ -336,8 +341,9 @@ test_that("legend_position puts the Cox legends inside the panel by default", {
   rev <- get_sens(d, treat = "sex", outcome = "status", time = "time",
                   adj_var = "age", method = "cox")
   expect_gt(rev$stats$estimate, 1)
-  expect_identical(plt_sens(rev, type = "tip")$theme$legend.position,
-                   "bottom")
+  th <- plt_sens(rev, type = "tip")$theme
+  expect_identical(th$legend.position, "inside")
+  expect_equal(th$legend.position.inside, c(0.98, 0.98))
   th <- plt_sens(res, type = "tip", legend_position = c(0.5, 0.9))$theme
   expect_equal(th$legend.position.inside, c(0.5, 0.9))
   expect_equal(th$legend.justification.inside, c(0.5, 0.9))
