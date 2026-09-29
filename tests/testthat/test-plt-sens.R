@@ -289,6 +289,58 @@ test_that("DML contours receive colors as the upstream contour colours", {
                    c("navy", "orange"))
 })
 
+test_that("E-value points carry repelled labels with their values", {
+  plt_test_deps("survival", "tipr", "ggrepel")
+  res <- plt_cox_res()
+  p <- plt_sens(res, type = "evalue")
+  rep <- Filter(function(l) inherits(l$geom, "GeomLabelRepel"), p$layers)
+  expect_length(rep, 1L)
+  lab <- ggplot2::ggplot_build(p)$data[[which(vapply(p$layers, function(l)
+    inherits(l$geom, "GeomLabelRepel"), logical(1)))]]$label
+  expect_setequal(lab, sprintf("%.2f", c(res$stats$evalue_point,
+                                         res$stats$evalue_ci)))
+})
+
+test_that("legend_position puts the Cox legends inside the panel by default", {
+  plt_test_deps("survival", "tipr")
+  res <- plt_cox_res()
+  th <- plt_sens(res, type = "evalue")$theme
+  expect_identical(th$legend.position, "inside")
+  expect_equal(th$legend.position.inside, c(0.98, 0.98))
+  # HR < 1 here: the tip label and line sit left, the null line near the top
+  th <- plt_sens(res, type = "tip")$theme
+  expect_identical(th$legend.position, "inside")
+  expect_equal(th$legend.position.inside, c(0.98, 0.98))
+  # HR > 1 puts the null line across the bottom and the tip line right, so
+  # no corner is free and the legend goes below the panel
+  d <- stats::na.omit(survival::lung[, c("time", "status", "sex", "age")])
+  d$status <- d$status - 1L
+  d$sex <- factor(d$sex, labels = c("male", "female"))
+  d$sex <- stats::relevel(d$sex, "female")
+  rev <- get_sens(d, treat = "sex", outcome = "status", time = "time",
+                  adj_var = "age", method = "cox")
+  expect_gt(rev$stats$estimate, 1)
+  expect_identical(plt_sens(rev, type = "tip")$theme$legend.position,
+                   "bottom")
+  th <- plt_sens(res, type = "tip", legend_position = c(0.5, 0.9))$theme
+  expect_equal(th$legend.position.inside, c(0.5, 0.9))
+  expect_equal(th$legend.justification.inside, c(0.5, 0.9))
+  expect_identical(plt_sens(res, type = "evalue",
+                            legend_position = "bottom")$theme$legend.position,
+                   "bottom")
+})
+
+test_that("legend_position is validated and limited to the Cox figures", {
+  plt_test_deps("sensemakr", "survival", "tipr")
+  res <- plt_cox_res()
+  msg <- "`legend_position` must be"
+  expect_error(plt_sens(res, legend_position = "middle"), msg, fixed = TRUE)
+  expect_error(plt_sens(res, legend_position = c(0.5, 2)), msg, fixed = TRUE)
+  expect_error(plt_sens(res, legend_position = 0.5), msg, fixed = TRUE)
+  expect_error(plt_sens(plt_lm_res(), legend_position = "bottom"),
+               "only applies to")
+})
+
 test_that("colors is validated and refused where upstream fixes the colours", {
   plt_test_deps("sensemakr", "ggplotify", "survival", "tipr", "iv.sensemakr")
   expect_error(plt_sens(plt_cox_res(), colors = "red"), "two colours")

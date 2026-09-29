@@ -15,6 +15,7 @@ plt_sens(
     n_levels = 10L, grid_n = 70L, round = 3L),
   title = NULL,
   colors = NULL,
+  legend_position = NULL,
   save = list()
 )
 }
@@ -65,6 +66,16 @@ colour the point-estimate and confidence-limit curves, \code{NULL} meaning
 \code{c("firebrick", "steelblue")}. The IV contour and the \code{"extreme"} plot
 hard-code their colours upstream, so a non-\code{NULL} value is an error
 there.}
+
+\item{legend_position}{Where the legend of \code{"tip"} and \code{"evalue"} goes.
+\code{NULL} (default) puts it inside the panel: top right for \code{"evalue"},
+and for \code{"tip"} the first corner the curves, the null line and the
+tipping-point line and label leave free, or below the panel when none
+is. Otherwise one of \code{"bottom"}, \code{"top"}, \code{"left"}, \code{"right"},
+\code{"none"}, or a length-2 numeric \code{c(x, y)} in \verb{[0, 1]} placing the legend
+inside the panel, justified at the same point, so \code{c(1, 1)} sits in the
+top-right corner. The other figures have no legend, so a non-\code{NULL}
+value is an error there.}
 
 \item{save}{\code{NULL} or a list with \code{filename}, \code{width} and \code{height}, passed
 to \code{RegR::save_plt()} for PDF output. \code{list()} and \code{NULL} skip saving; a

@@ -23,6 +23,8 @@
 # MLR::plt_bar_per() and of the plt_hte_* figures. `colors` reaches them and
 # the DML contour, whose upstream plot takes col.contour / col.thr.line; the
 # IV contour and the extreme plot hard-code theirs, so it is refused there.
+# `legend_position` places the legend of the two Cox figures, inside the panel
+# by default, and the E-value points carry ggrepel labels of their values.
 # =============================================================================
 
 .SENS_CONTOUR_DEFAULTS <- list(
@@ -231,6 +233,19 @@
   })
 }
 
+# A legend inside the panel, justified at its own position, gets a translucent
+# fill so the reference lines it covers do not show through its text.
+#' @keywords internal
+#' @noRd
+.sens_legend_theme <- function(lp) {
+  if (!is.numeric(lp)) return(ggplot2::theme(legend.position = lp))
+  ggplot2::theme(
+    legend.position = "inside", legend.position.inside = lp,
+    legend.justification.inside = lp,
+    legend.background = ggplot2::element_rect(
+      fill = grDevices::adjustcolor("white", 0.85), colour = NA))
+}
+
 # tipr rejects a vectorised confounder-outcome effect (`check_gamma` coerces it
 # to a single logical), so the curve is built one grid point at a time.
 #' @keywords internal
@@ -278,6 +293,25 @@
             format(ea$smd))
   }
 
+  # Where the null line, the tipping-point line and its label fall moves with
+  # the direction of the effect, so no corner is free every time. Each corner
+  # a legend of about 44% x 20% of the pinned 7.5-inch panel would cover is
+  # checked against points along all of them -- the label, a fixed 19
+  # characters, spans some 18% -- and with none free it goes below the panel.
+  xr  <- range(d$gamma)
+  yr  <- range(c(d$adjusted, 1))
+  s   <- seq(0, 1, length.out = 60L)
+  tx  <- (st$tip_effect - xr[1L]) / diff(xr)
+  occ <- data.frame(
+    x = c((d$gamma - xr[1L]) / diff(xr), s, rep(tx, 60L), tx + 0.18 * s),
+    y = c((d$adjusted - yr[1L]) / diff(yr),
+          rep((1 - yr[1L]) / diff(yr), 60L), s, rep(0.95, 60L)))
+  corners <- list(c(0.98, 0.98), c(0.02, 0.02), c(0.02, 0.98), c(0.98, 0.02))
+  free <- vapply(corners, function(k) !any(abs(occ$x - k[1L]) < 0.44 &
+                                             abs(occ$y - k[2L]) < 0.2),
+                 logical(1))
+  legend <- if (any(free)) corners[[which(free)[1L]]] else "bottom"
+
   ggplot2::ggplot(d, ggplot2::aes(x = gamma, y = adjusted)) +
     ggplot2::geom_hline(yintercept = 1, linetype = 2) +
     ggplot2::geom_line(ggplot2::aes(colour = which, linetype = which),
@@ -295,7 +329,8 @@
                   isTRUE(ea$rare)),
       colour = NULL, linetype = NULL,
       title = if (is.null(title)) sprintf("Tipping point for %s", a$treat) else title) +
-    UtilsR::theme_my(base_rect_size = 1.5, legend.position = "bottom")
+    UtilsR::theme_my(base_rect_size = 1.5) +
+    .sens_legend_theme(legend)
 }
 
 #' @keywords internal
@@ -343,6 +378,13 @@
     ggplot2::geom_point(data = marks,
                         ggplot2::aes(x = e, y = e, colour = which),
                         size = 2.6, show.legend = FALSE) +
+    # Nudged right, into the wedge between the diagonal and the curve that
+    # meet at each point.
+    ggrepel::geom_label_repel(
+      data = marks,
+      ggplot2::aes(x = e, y = e, label = sprintf("%.2f", e), colour = which),
+      nudge_x = 0.08 * (top - 1), fill = "white", size = 3.5,
+      min.segment.length = 0, seed = 1, show.legend = FALSE) +
     ggplot2::coord_cartesian(xlim = c(1, top), ylim = c(1, top)) +
     ggplot2::scale_colour_manual(values = stats::setNames(colors,
                                                           levels(d$which))) +
@@ -353,7 +395,9 @@
       title = if (is.null(title)) sprintf(
         "E-value %.2f (interval %.2f) for %s",
         st$evalue_point, st$evalue_ci, a$treat) else title) +
-    UtilsR::theme_my(base_rect_size = 1.5, legend.position = "bottom")
+    UtilsR::theme_my(base_rect_size = 1.5) +
+    # The curves hug the axes, so only the diagonal's end is under this corner.
+    .sens_legend_theme(c(0.98, 0.98))
 }
 
 
@@ -403,6 +447,15 @@
 #'   `c("firebrick", "steelblue")`. The IV contour and the `"extreme"` plot
 #'   hard-code their colours upstream, so a non-`NULL` value is an error
 #'   there.
+#' @param legend_position Where the legend of `"tip"` and `"evalue"` goes.
+#'   `NULL` (default) puts it inside the panel: top right for `"evalue"`,
+#'   and for `"tip"` the first corner the curves, the null line and the
+#'   tipping-point line and label leave free, or below the panel when none
+#'   is. Otherwise one of `"bottom"`, `"top"`, `"left"`, `"right"`,
+#'   `"none"`, or a length-2 numeric `c(x, y)` in `[0, 1]` placing the legend
+#'   inside the panel, justified at the same point, so `c(1, 1)` sits in the
+#'   top-right corner. The other figures have no legend, so a non-`NULL`
+#'   value is an error there.
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
 #'   list naming only the file is completed with this figure's pinned size.
@@ -461,6 +514,7 @@ plt_sens <- function(x,
                                          round          = 3L),
                      title        = NULL,
                      colors       = NULL,
+                     legend_position = NULL,
                      save         = list()) {
 
   if (!inherits(x, "sens_res"))
@@ -494,6 +548,17 @@ plt_sens <- function(x,
   if (is.null(colors))
     colors <- if (type %in% c("tip", "evalue")) c("firebrick", "steelblue")
               else c("grey40", "red")
+  lp <- legend_position
+  if (!is.null(lp) &&
+      !(is.character(lp) && length(lp) == 1L &&
+        lp %in% c("bottom", "top", "left", "right", "none")) &&
+      !(is.numeric(lp) && length(lp) == 2L && !anyNA(lp) &&
+        all(lp >= 0 & lp <= 1)))
+    stop("`legend_position` must be `NULL`, one of \"bottom\", \"top\", \"left\", \"right\", \"none\", or two numbers in [0, 1].",
+         call. = FALSE)
+  if (!is.null(lp) && !type %in% c("tip", "evalue"))
+    stop("`legend_position` only applies to type = \"tip\" and \"evalue\"; the other figures have no legend.",
+         call. = FALSE)
 
   contour_args <- .merge_named_arg(contour_args, .SENS_CONTOUR_DEFAULTS,
                                    "contour_args")
@@ -534,6 +599,8 @@ plt_sens <- function(x,
     tip     = .sens_plt_tip(x, lim, title, colors),
     evalue  = .sens_plt_evalue(x, lim, title, colors),
     stop(sprintf("Unsupported type: '%s'", type), call. = FALSE))
+
+  if (!is.null(lp)) p <- p + .sens_legend_theme(lp)
 
   plot_size <- if (type %in% c("contour", "extreme")) c(7, 6) else c(7.5, 5.5)
   attr(p, "plot_size") <- stats::setNames(plot_size, c("width", "height"))
