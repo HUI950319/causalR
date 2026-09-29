@@ -301,6 +301,22 @@ test_that("E-value points carry repelled labels with their values", {
                                          res$stats$evalue_ci)))
 })
 
+test_that("the tipping point carries a repelled label in the limit's colour", {
+  plt_test_deps("survival", "tipr", "ggrepel")
+  res <- plt_cox_res()
+  p <- plt_sens(res, type = "tip", colors = c("navy", "orange"))
+  b <- ggplot2::ggplot_build(p)$data
+  geom_is <- function(cls) vapply(p$layers, function(l)
+    inherits(l$geom, cls), logical(1))
+  rep <- b[geom_is("GeomLabelRepel")]
+  expect_length(rep, 1L)
+  expect_identical(rep[[1L]]$label, sprintf("%.3f", res$stats$tip_effect))
+  expect_identical(rep[[1L]]$colour, "orange")
+  expect_identical(b[geom_is("GeomPoint")][[1L]]$colour, "orange")
+  # the value is no longer repeated atop the tipping-point line
+  expect_false(any(geom_is("GeomText")))
+})
+
 test_that("legend_position puts the Cox legends inside the panel by default", {
   plt_test_deps("survival", "tipr")
   res <- plt_cox_res()

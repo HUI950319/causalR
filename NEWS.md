@@ -11,9 +11,11 @@
 * `plt_sens()` gains `legend_position`. The tip and E-value legends now sit
   inside the panel by default -- top right for `"evalue"`; for `"tip"` the
   first corner the curves, null line and tipping-point line leave free, or
-  below the panel when none is -- and the E-value points carry `ggrepel`
-  labels of their values. causalR now imports ggrepel (already required
-  through UtilsR) and needs ggplot2 >= 3.5.0 for inside legends.
+  below the panel when none is. The E-value points and the tipping point
+  carry `ggrepel` labels of their values; the tipping point's replaces the
+  text atop its line, and the point takes the confidence-limit colour.
+  causalR now imports ggrepel (already required through UtilsR) and needs
+  ggplot2 >= 3.5.0 for inside legends.
 
 * `get_hte()` and `get_hte_tree()` now default to
   `factor_encoding = "integer"`, as `get_hte_icf()` already did: a factor
