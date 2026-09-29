@@ -1,5 +1,25 @@
 # causalR (development version)
 
+* `get_hte_icf()` gains `style = c("causalR", "icf")`. `"icf"` sets every
+  step where it departs from the iCF code back to that code: the R-loss
+  judged on each tree's leaf samples, no pruning margin, the unpruned best
+  tree, forests grown per depth with `min.node.size = n / 25, 45, 65, 85`
+  for D2-D5, a vote on tree shape with averaged split values, the
+  cross-validated MSE of `lm(Y* ~ W + G + W:G + X)` on the IPW-transformed
+  outcome with depth 0 left to the gate, each depth's rules from the fold
+  majority, and IPTW effects (a lasso propensity score within each subgroup)
+  on the same patients (`split_frac = 1`, now allowed). Each step is also a
+  `rule_args` field (`loss`, `eval`, `penalty`, `prune`, `vote`, `grow`,
+  `cv_loss`, `cv_zero`, `cv_rules`, `estimate`, and `screen = "icf"`), so
+  one can be switched on its own. The folds still grow their forests on
+  their training folds only, where the iCF code grows them on every patient.
+  Needs a binary or continuous outcome; glmnet joins Suggests. The default
+  results are unchanged.
+
+* `get_hte_icf()` counts a partition split on X1 first and the same
+  partition split on X3 first as one vote, as its help page said; they were
+  counted apart.
+
 * New `plt_hte_unihtee()` draws a `get_hte_unihtee()` screen for one
   measure: `type = "bar"` (default) the signed estimates with their
   intervals, `"volcano"` estimate against -log10(p) with the BH-significant

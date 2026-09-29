@@ -11,6 +11,7 @@ get_hte_icf(
   surv = TRUE,
   time = 120,
   depth = 1:3,
+  style = c("causalR", "icf"),
   factor_encoding = c("onehot", "integer"),
   split_frac = 0.5,
   rule_args = list(),
@@ -39,34 +40,86 @@ outcome column.}
 
 \item{depth}{Candidate tree depths, positive whole numbers. Default \code{1:3},
 up to 8 subgroups. Depth 0 -- one group of every patient -- is always a
-candidate as well, so "no subgroups" is a possible answer.}
+candidate as well, so "no subgroups" is a possible answer. With
+\code{style = "icf"} and \code{depth} not given, \code{2:5}, the iCF code's D2-D5.}
+
+\item{style}{\code{"causalR"} (default) or \code{"icf"}, which changes the defaults
+of \code{depth} and \code{split_frac} (to \code{1}, no split) when they are not given
+and of every \code{rule_args} field, so that each step follows the iCF code
+of Wang et al. (2024) instead; any single field can still be set. See
+Details. \code{"icf"} needs a binary or continuous outcome.}
 
 \item{factor_encoding}{How factor, character and logical covariates enter
 the forests, as in \code{\link[=get_hte]{get_hte()}}: \code{"onehot"} (default) or \code{"integer"}. The
 rules are written in the original levels either way.}
 
 \item{split_frac}{Share of the patients, within each arm, used for
-discovery. Default \code{0.5}; the rest are the estimation part.}
+discovery. Default \code{0.5}; the rest are the estimation part. \code{1} finds
+and estimates the rules on the same patients, as the iCF code does, so
+the intervals are no longer honest.}
 
 \item{rule_args}{Named list of discovery settings; partial overrides keep
-the other defaults:
+the other defaults. Defaults are given as \code{style = "causalR"} /
+\code{style = "icf"} where they differ:
 \describe{
-\item{\code{n_forest}}{Forests grown per discovery run, each voting once.
-Default \code{20}.}
-\item{\code{num_trees}}{Trees per forest. Default \code{200}.}
+\item{\code{n_forest}}{Forests grown per discovery run (per depth when
+\code{grow} is numeric), each voting once. Default \code{20} / \code{10}.}
+\item{\code{num_trees}}{Trees per forest. Default \code{200} / \code{100}.}
 \item{\code{n_folds}}{Cross-validation folds within the discovery part.
 Default \code{5}.}
-\item{\code{min_leaf}}{Smallest subgroup, as a share of the patients the
-rule is found on; each also needs two patients per arm. Default
-\code{0.05}.}
-\item{\code{screen}}{\code{TRUE} (default) grows the voting forests on the
-covariates whose \code{\link[=get_hte]{get_hte()}} importance is at least the mean, and on
-at least four; \code{FALSE} uses all of \code{adj_var}.}
+\item{\code{min_leaf}}{Smallest subgroup, as a share of the patients a tree
+is judged on; each also needs two patients per arm. Default \code{0.05} /
+\code{0}.}
+\item{\code{screen}}{\code{TRUE} grows the voting forests on the covariates whose
+\code{\link[=get_hte]{get_hte()}} importance is at least the mean, and on at least four;
+\code{"icf"} on those strictly above the mean, falling back to above the
+upper quartile, the median and the lower quartile, then to all, while
+fewer than four pass; \code{FALSE} uses all of \code{adj_var}. Default \code{TRUE} /
+\code{"icf"}.}
 \item{\code{gate}}{Largest one-sided p-value of the discovery part's
 calibration test (\code{differential.forest.prediction}, see \code{\link[=get_hte]{get_hte()}})
 at which subgroups are reported; above it the answer is depth 0.
 Default \code{0.1}, as in Wang et al. (2024); \code{1} leaves the choice to the
 cross-validation alone.}
+\item{\code{loss}}{The tree loss: \code{"aipw"}, the squared error of the AIPW
+scores, or \code{"rloss"}, the R-loss
+\eqn{\sum [(Y - \hat m) - (W - \hat e)\bar\tau]^2} with
+\eqn{\bar\tau} the forest's mean out-of-bag CATE in the node. Either
+is inflated by \eqn{m^2/(m-1)^2}. Default \code{"aipw"} / \code{"rloss"}.}
+\item{\code{eval}}{The patients a tree is judged on: \code{"held_out"}, those it
+did not choose its splits on, or \code{"leaf"}, its honest leaf samples;
+with \code{"leaf"} the tree with the smallest pruned loss wins, otherwise
+the largest drop per patient. Default \code{"held_out"} / \code{"leaf"}.}
+\item{\code{penalty}}{Least drop in the loss a kept split must buy, in
+residual variances. Default \code{qchisq(0.95, 1)} (3.84) / \code{0}.}
+\item{\code{prune}}{\code{TRUE} votes with the pruned tree; \code{FALSE} uses the
+pruned loss only to pick the tree and keeps it whole (within the
+depth). Default \code{TRUE} / \code{FALSE}.}
+\item{\code{vote}}{\code{"partition"} counts the subgroups a tree defines, whatever
+the split order, and takes the median split values; \code{"shape"} counts
+identical tree shapes (split variables node by node) and averages the
+split values. Default \code{"partition"} / \code{"shape"}.}
+\item{\code{grow}}{\code{"truncate"} cuts one set of forests at every depth;
+leaf-size denominators named by depth grow \code{n_forest} forests per
+depth with \code{min.node.size = round(n / grow[depth])}, not cut. Default
+\code{"truncate"} / \code{c("2" = 25, "3" = 45, "4" = 65, "5" = 85)}, the
+iCF README's values.}
+\item{\code{cv_loss}}{\code{"aipw"} predicts held-out AIPW scores by the training
+folds' subgroup means; \code{"ipw_lm"} fits
+\code{lm(Y* ~ W + G + W:G + X)} on the training folds, with
+\eqn{Y^* = WY/\hat e - (1-W)Y/(1-\hat e)}, subgroups \code{G} and every
+covariate, and scores held-out \verb{Y*}. Default \code{"aipw"} / \code{"ipw_lm"}.}
+\item{\code{cv_zero}}{Whether depth 0 competes in the cross-validation;
+otherwise only the gate gives it. Default \code{TRUE} / \code{FALSE}.}
+\item{\code{cv_rules}}{\code{"full"} takes each depth's rules from a run on the
+whole discovery part; \code{"folds"} takes the partition most training
+folds found (the one with the largest vote share if all differ) and
+averages its loss over those folds. Default \code{"full"} / \code{"folds"}.}
+\item{\code{estimate}}{\code{"aipw"} gives each rule \code{\link[=get_hte]{get_hte()}}'s doubly robust
+effect; \code{"iptw"} a weighted gaussian glm of the outcome on treatment
+within the subgroup, with stabilised weights from a lasso logistic
+propensity score (\code{\link[glmnet:cv.glmnet]{glmnet::cv.glmnet()}}, \code{lambda.min}) and the
+model's interval, and no \code{p_inter}. Default \code{"aipw"} / \code{"iptw"}.}
 }}
 
 \item{grf_args}{Named list forwarded to every \code{\link[=get_hte]{get_hte()}} fit (and so to
@@ -90,7 +143,10 @@ An object of class \code{hte_icf}: a list of
 \code{leaf}, \code{rule}, \code{n_disc} (discovery patients), and from the
 estimation part \code{n}, \code{n_treat}, \code{estimate}, \code{std.error}, \code{conf.low},
 \code{conf.high}, \code{p.value} and \code{p_inter}, the doubly robust ATE
-difference with 95\% Wald intervals, as in \code{\link[=get_hte]{get_hte()}}'s \verb{$subgroup}.}
+difference with 95\% Wald intervals, as in \code{\link[=get_hte]{get_hte()}}'s \verb{$subgroup}
+(with \code{rule_args$estimate = "iptw"}, the IPTW estimate and its
+model-based interval, \code{p_inter} \code{NA}). With \code{split_frac = 1}, the
+estimation part is the discovery part.}
 \item{\code{cv}}{Tibble with one row per depth, 0 included: \code{depth},
 \code{n_leaf} of the partition found on the whole discovery part,
 \code{cv_loss}, \code{std.error} and \code{selected}.}
@@ -105,8 +161,9 @@ whose \verb{$data} has the rule of every patient in the factor \code{.rule}:
 }
 Analysis metadata is attached as \code{attr(x, "analysis")}, including the row
 numbers of \code{data} in the discovery part (\code{discovery}), the settings, the
-discovery part's calibration p-value (\code{calibration_p}) and whether it
-closed the gate (\code{gated}).
+discovery part's calibration p-value (\code{calibration_p}), whether it
+closed the gate (\code{gated}) and, with \code{cv_rules = "folds"}, the folds that
+agreed on each depth's partition (\code{fold_agree}).
 }
 \description{
 Looks for subgroups with different treatment effects without naming them in
@@ -161,6 +218,17 @@ cross-validation fold refits all nuisance estimates and forests on its
 training folds only; depth 0 competes in the cross-validation besides the
 calibration gate (the iCF README's \code{P_threshold = 1} turns that gate off);
 and effects are estimated on patients not used to find the rules.
+
+\code{style = "icf"} sets every one of those steps back to the iCF code (see
+\code{rule_args}), with 10 forests of 100 trees per depth as in its README,
+except where the code is in error: each cross-validation fold still grows
+its forests on its training folds only (the iCF code grows every fold's on
+all patients, so the folds agree trivially), the held-out propensity
+scores are the discovery part's out-of-bag ones, and the gate compares the
+p-value unrounded. The results do not match the iCF code number for
+number, as its random numbers are drawn differently. With \code{split_frac = 1}
+the rules are estimated on the patients they were found on, and their
+intervals are optimistic.
 }
 \examples{
 \dontshow{if (requireNamespace("grf", quietly = TRUE)) withAutoprint(\{ # examplesIf}

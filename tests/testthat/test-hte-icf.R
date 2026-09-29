@@ -90,7 +90,7 @@ test_that("get_hte_icf() validates its input and restores the RNG", {
   expect_error(get_hte_icf(d, "z", "X1", surv = "y",
                            grf_args = list(W.hat = rep(0.5, 200))), "W.hat")
   expect_error(get_hte_icf(d, "z", "X1", surv = "y", depth = 0), "depth")
-  expect_error(get_hte_icf(d, "z", "X1", surv = "y", split_frac = 1), "split_frac")
+  expect_error(get_hte_icf(d, "z", "X1", surv = "y", split_frac = 1.5), "split_frac")
   d$X2[1] <- NA
   expect_error(get_hte_icf(d, "z", c("X1", "X2"), surv = "y"), "complete covariates")
   set.seed(5)
@@ -100,6 +100,64 @@ test_that("get_hte_icf() validates its input and restores the RNG", {
                                                  n_folds = 2L),
                      grf_args = list(num.trees = 100L))
   expect_identical(.Random.seed, before)
+})
+
+test_that("style = \"icf\" switches every step to the iCF code", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("glmnet")
+  d <- icf_data()
+  res <- get_hte_icf(d, "z", c("X1", "X2", "X3", "X4"), surv = "y",
+                     style = "icf",
+                     rule_args = list(n_forest = 3L, num_trees = 50L,
+                                      n_folds = 2L),
+                     grf_args = list(num.trees = 500L))
+  a <- attr(res, "analysis")
+  expect_identical(a$style, "icf")
+  expect_identical(a$depth, 2:5)
+  expect_identical(a$split_frac, 1)
+  expect_identical(a$rule_args[c("loss", "eval", "penalty", "prune", "vote",
+                                 "cv_loss", "cv_zero", "cv_rules", "estimate")],
+                   list(loss = "rloss", eval = "leaf", penalty = 0,
+                        prune = FALSE, vote = "shape", cv_loss = "ipw_lm",
+                        cv_zero = FALSE, cv_rules = "folds",
+                        estimate = "iptw"))
+  expect_named(a$fold_agree, as.character(2:5))
+  # Found and estimated on every patient, by IPTW, without p_inter
+  expect_identical(sum(res$rules$n), nrow(d))
+  expect_identical(nrow(res$est$data), nrow(d))
+  expect_true(all(is.na(res$rules$p_inter)))
+  expect_gt(res$cv$depth[res$cv$selected], 0L)
+  both <- grepl("X1 = 1", res$rules$rule) & grepl("X3 = 1", res$rules$rule)
+  expect_true(any(both))
+  expect_true(all(res$rules$estimate[both] > 1.2))
+  expect_output(print(res), "style = \"icf\"")
+  expect_output(print(res), "not honest")
+
+  # A single field goes back to the causalR step
+  mixed <- get_hte_icf(d, "z", c("X1", "X2", "X3", "X4"), surv = "y",
+                       style = "icf", depth = 2:3, split_frac = 0.5,
+                       rule_args = list(n_forest = 3L, num_trees = 50L,
+                                        n_folds = 2L, estimate = "aipw",
+                                        cv_rules = "full"),
+                       grf_args = list(num.trees = 500L))
+  expect_identical(nrow(mixed$est$data) + sum(mixed$rules$n_disc), nrow(d))
+  expect_false(anyNA(mixed$rules$p_inter))
+  expect_null(attr(mixed, "analysis")$fold_agree)
+})
+
+test_that("the iCF settings are checked", {
+  skip_if_not_installed("grf")
+  d <- icf_data(n = 200L)
+  expect_error(get_hte_icf(d, "z", "X1", surv = "y",
+                           rule_args = list(loss = "mse")), "loss")
+  expect_error(get_hte_icf(d, "z", "X1", surv = "y", depth = 1:2,
+                           rule_args = list(grow = c(`1` = 10))), "grow")
+  expect_error(get_hte_icf(d, "z", "X1", surv = "y",
+                           rule_args = list(screen = "median")), "screen")
+  d$time <- rexp(200)
+  d$DSS <- rbinom(200, 1, 0.5)
+  expect_error(get_hte_icf(d, "z", "X1", time = 1, style = "icf"),
+               "survival")
 })
 
 test_that("get_hte_icf() runs on a survival outcome", {
