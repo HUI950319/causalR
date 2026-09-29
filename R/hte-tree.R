@@ -513,9 +513,9 @@
 #'   [0, 0.5). Default `0.05`. Every child also needs two patients of each
 #'   arm; a split of another method than `"maxt"` without them is dropped.
 #' @param factor_encoding How factor, character and logical split variables
-#'   enter the design, as in [get_hte()]: `"onehot"` (default) lets a split
-#'   take one level off the rest; `"integer"` cuts the level codes in the
-#'   order of the levels. Also passed to the forests. The rules are written
+#'   enter the design, as in [get_hte()]: `"integer"` (default) cuts the
+#'   level codes in the order of the levels; `"onehot"` lets a split take one
+#'   level off the rest. Also passed to the forests. The rules are written
 #'   in the original levels either way.
 #' @param split_frac Share of the patients, within each arm, used for
 #'   discovery. Default `0.5`; the rest are the estimation part. `1` grows and
@@ -728,7 +728,7 @@ get_hte_tree <- function(data,
                          max_depth  = 3,
                          alpha      = 0.05,
                          min_leaf   = 0.05,
-                         factor_encoding = c("onehot", "integer"),
+                         factor_encoding = c("integer", "onehot"),
                          split_frac = 0.5,
                          estimator  = c("aipw", "tmle"),
                          tree_args  = list(),

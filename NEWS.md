@@ -1,5 +1,11 @@
 # causalR (development version)
 
+* `get_hte()` and `get_hte_tree()` now default to
+  `factor_encoding = "integer"`, as `get_hte_icf()` already did: a factor
+  enters the forest (and the tree) as one column of level codes. Pass
+  `factor_encoding = "onehot"` for the previous one-column-per-level design;
+  results with multi-level factors change under the new default.
+
 * `get_hte_tree()` gains `estimator`: `"aipw"` (default, unchanged) or
   `"tmle"`, grf's targeted maximum likelihood estimate of every node and leaf
   (`grf::average_treatment_effect(method = "TMLE")`) for continuous and binary

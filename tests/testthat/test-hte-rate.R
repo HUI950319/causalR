@@ -387,9 +387,10 @@ test_that("GATES of the forest CATE are estimated on the held-out half", {
                                 num.trees = 300, seed = 7)
   prio <- stats::predict(refit(train), X[ev, ])$predictions
   fit  <- refit(ev)
-  grp  <- cut(-prio, stats::quantile(-prio, (0:5) / 5), include.lowest = TRUE,
-              labels = FALSE)
-  # fifths of the 400 held-out patients; tied patients share a group
+  # fifths by rank, tied patients sharing their average rank
+  grp  <- ceiling(5 * rank(-prio, ties.method = "average") / length(prio))
+  grp  <- match(grp, sort(unique(grp)))
+  # fifths of the 400 held-out patients
   expect_identical(g$n, c(tabulate(grp, 5L), sum(grp %in% c(1L, 5L))))
   for (k in 1:5) {
     want <- grf::average_treatment_effect(fit, subset = which(grp == k))

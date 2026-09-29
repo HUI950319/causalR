@@ -18,7 +18,8 @@ dep_res <- function() {
     # sex is added to the covariates with a message
     dep_cache$res <- suppressMessages(get_hte(
       d, cat_var = "z", sub_var = "sex", adj_var = c("age", "stage"),
-      surv = "y", grf_args = list(num.trees = 300, seed = 1)))
+      surv = "y", factor_encoding = "onehot",
+      grf_args = list(num.trees = 300, seed = 1)))
   }
   dep_cache$res
 }

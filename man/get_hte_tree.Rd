@@ -17,7 +17,7 @@ get_hte_tree(
   max_depth = 3,
   alpha = 0.05,
   min_leaf = 0.05,
-  factor_encoding = c("onehot", "integer"),
+  factor_encoding = c("integer", "onehot"),
   split_frac = 0.5,
   estimator = c("aipw", "tmle"),
   tree_args = list(),
@@ -128,9 +128,9 @@ accepted by the rpart methods, which prune by cross-validation, or
 arm; a split of another method than \code{"maxt"} without them is dropped.}
 
 \item{factor_encoding}{How factor, character and logical split variables
-enter the design, as in \code{\link[=get_hte]{get_hte()}}: \code{"onehot"} (default) lets a split
-take one level off the rest; \code{"integer"} cuts the level codes in the
-order of the levels. Also passed to the forests. The rules are written
+enter the design, as in \code{\link[=get_hte]{get_hte()}}: \code{"integer"} (default) cuts the
+level codes in the order of the levels; \code{"onehot"} lets a split take one
+level off the rest. Also passed to the forests. The rules are written
 in the original levels either way.}
 
 \item{split_frac}{Share of the patients, within each arm, used for

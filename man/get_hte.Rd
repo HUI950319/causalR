@@ -11,7 +11,7 @@ get_hte(
   adj_var = NULL,
   surv = TRUE,
   method = "grf",
-  factor_encoding = c("onehot", "integer"),
+  factor_encoding = c("integer", "onehot"),
   estimand = "ATE",
   measure = "diff",
   conf_level = 0.95,
@@ -65,14 +65,14 @@ competing-risk forest.
 \item{factor_encoding}{How factor, character and logical covariates enter
 the forest:
 \describe{
-\item{\code{"onehot"} (default)}{One indicator column per level, with no
-reference level dropped, so a tree can split any single level off
-from the rest.}
-\item{\code{"integer"}}{One column of level codes 1, ..., K in the order of
-the levels -- the factor's own order, alphabetical for character,
-\code{FALSE} before \code{TRUE} -- so trees split on thresholds of that order.
-It keeps the order of an ordered factor such as stage, but imposes an
-arbitrary one on a nominal factor.}
+\item{\code{"integer"} (default)}{One column of level codes 1, ..., K in the
+order of the levels -- the factor's own order, alphabetical for
+character, \code{FALSE} before \code{TRUE} -- so trees split on thresholds of
+that order. It keeps the order of an ordered factor such as stage, but
+imposes an arbitrary one on a nominal factor.}
+\item{\code{"onehot"}}{One indicator column per level, with no reference
+level dropped, so a tree can split any single level off from the
+rest.}
 }
 Numeric covariates are unaffected. \verb{$subgroup}, \code{p_het} and
 \code{\link[=plt_hte_dep]{plt_hte_dep()}} use the original levels either way; only the forest and

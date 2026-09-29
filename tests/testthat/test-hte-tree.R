@@ -18,6 +18,8 @@ test_that("CART methods explicitly name their discovery target", {
   expect_true(all(c("mob_r", "ctree_r", "rpart_r") %in% methods))
   expect_false("rpart" %in% methods)
   expect_identical(methods[1L], "maxt")
+  expect_identical(eval(formals(get_hte_tree)$factor_encoding),
+                   c("integer", "onehot"))
 })
 
 test_that("rpart_cate distils CATE predictions with CART controls", {

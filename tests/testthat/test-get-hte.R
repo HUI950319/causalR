@@ -37,7 +37,8 @@ hte_bin <- function() {
     hte_cache$bin <- suppressMessages(get_hte(
       hte_bin_data(), cat_var = "z", adj_var = c("age", "x2", "sex", "stage"),
       surv = "y", estimand = c("ATE", "ATT", "ATC", "ATO"),
-      measure = c("diff", "ratio", "OR"), grf_args = hte_args))
+      measure = c("diff", "ratio", "OR"), factor_encoding = "onehot",
+      grf_args = hte_args))
   hte_cache$bin
 }
 
@@ -94,6 +95,7 @@ test_that("every factor enters the forest with one column per level", {
 test_that("factor_encoding = 'integer' codes each factor as one column of level codes", {
   skip_if_not_installed("grf")
   expect_identical(names(formals(get_hte))[6:7], c("method", "factor_encoding"))
+  expect_identical(eval(formals(get_hte)$factor_encoding), c("integer", "onehot"))
   d <- hte_bin_data()
   d$stage <- factor(d$stage, levels = c("III", "II", "I"))  # codes follow the levels
   d$grp   <- sample(c("b", "a"), nrow(d), replace = TRUE)    # character: alphabetical
@@ -392,6 +394,7 @@ test_that("missing covariates go to grf; only cat_var and the outcome drop rows"
 
   res <- suppressMessages(get_hte(d, "z", sub_var = "grade",
                                   adj_var = c("age", "x2", "sex"), surv = "y",
+                                  factor_encoding = "onehot",
                                   grf_args = hte_args))
   expect_identical(res$stats$n, nrow(d) - 10L)
   expect_identical(nrow(res$data), nrow(d) - 10L)
