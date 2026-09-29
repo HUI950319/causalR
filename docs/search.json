@@ -18293,5 +18293,159 @@
       "partykit 包教程",
       "<span class='chapter-number'>201</span>  <span class='chapter-title'>10. 函数详解：常用入口与方法</span>"
     ]
+  },
+  {
+    "objectID": "notes/causalR/07-hte-tree.html",
+    "href": "notes/causalR/07-hte-tree.html",
+    "title": "7. 亚组树：get_hte_tree() 与 plt_hte_tree()",
+    "section": "",
+    "text": "安装与核对环境\nget_hte_tree() 和第 5 页的 get_hte_icf() 回答同一个问题： 亚组该怎么划。区别在做法：iCF 让 20 个因果森林投票，get_hte_tree() 只种一棵树， 每个节点用一个显式的检验决定切不切，p 值直接写在树上。树的生长方式由 method 选择，共 17 种，覆盖 ctree、MOB、CART、policytree 以及本包自己写的 \"maxt\"（默认）。 不论选哪种，找树和估计效应都用不同的患者（诚实估计）。 plt_hte_tree() 用 ggparty 把树画出来，叶子下方画每个亚组的效应。\nrpart 只在 rpart 系列方法、policytree 只在 \"policy\" 时需要。 本页核对于 2026 年 9 月 29 日，代码块由本站渲染时真实执行：",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>257</span>  <span class='chapter-title'>7. 亚组树（get_hte_tree / plt_hte_tree）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/07-hte-tree.html#sec-tree-env",
+    "href": "notes/causalR/07-hte-tree.html#sec-tree-env",
+    "title": "7. 亚组树：get_hte_tree() 与 plt_hte_tree()",
+    "section": "",
+    "text": "remotes::install_github(\"HUI950319/causalR\")\ninstall.packages(c(\"grf\", \"partykit\", \"ggparty\", \"rpart\", \"policytree\"))\n\n\n\n\n项目\n值\n\n\n\n\ncausalR\n0.0.0.9000（GitHub main）\n\n\ngrf / partykit / ggparty\n2.6.1 / 1.3.1 / 1.0.0.1",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>257</span>  <span class='chapter-title'>7. 亚组树（get_hte_tree / plt_hte_tree）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/07-hte-tree.html#sec-tree-data",
+    "href": "notes/causalR/07-hte-tree.html#sec-tree-data",
+    "title": "7. 亚组树：get_hte_tree() 与 plt_hte_tree()",
+    "section": "示例数据：两个修饰变量、有混杂",
+    "text": "示例数据：两个修饰变量、有混杂\n\nset.seed(20260930)\nn &lt;- 2000\nd &lt;- data.frame(\n  age    = round(rnorm(n, 60, 10)),                            # 混杂 + 预后 + 修饰\n  marker = round(runif(n), 3),                                 # 修饰\n  frail  = round(rnorm(n), 2),                                 # 混杂 + 预后\n  stage  = factor(sample(c(\"I\", \"II\", \"III\"), n, replace = TRUE)),  # 噪声\n  smoke  = rbinom(n, 1, 0.3))                                  # 噪声\nd$z &lt;- rbinom(n, 1, plogis(0.04 * (d$age - 60) + 0.5 * d$frail))\ntau &lt;- 0.3 + 1.5 * (d$marker &gt; 0.6) - 0.8 * (d$age &gt;= 65)\nd$y &lt;- round(0.05 * (d$age - 60) + d$frail + d$z * tau + rnorm(n), 3)\nadj &lt;- c(\"age\", \"marker\", \"frail\", \"stage\", \"smoke\")\n\n年龄大、衰弱的患者更常接受治疗，二者又影响结局，所以直接比较两组是有偏的。 真实效应由两个阈值决定，四个格子的真值为：\n\n\n\n\nage &lt; 65\nage &gt;= 65\n\n\n\n\nmarker &lt;= 0.6\n0.3\n−0.5\n\n\nmarker &gt; 0.6\n1.8\n1.0\n\n\n\nfrail 只影响结局与分组、不修饰效应——一个只看结局的树会去切它。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>257</span>  <span class='chapter-title'>7. 亚组树（get_hte_tree / plt_hte_tree）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/07-hte-tree.html#sec-get-tree",
+    "href": "notes/causalR/07-hte-tree.html#sec-get-tree",
+    "title": "7. 亚组树：get_hte_tree() 与 plt_hte_tree()",
+    "section": "get_hte_tree()：默认的 max-t 树",
+    "text": "get_hte_tree()：默认的 max-t 树\n\nres &lt;- get_hte_tree(d, cat_var = \"z\", adj_var = adj, surv = \"y\")\nres\n#&gt; &lt;hte_tree&gt; max-t test tree on doubly robust scores (causal_forest, grf 2.6.1)\n#&gt;   discovery n = 1000, estimation n = 1000\n#&gt;   max_depth = 3, alpha = 0.05, min_leaf = 0.05; split on: age, marker, frail, stage, smoke\n#&gt; \n#&gt; Nodes (split tests on the discovery part, effects on the estimation part):\n#&gt;  node parent           split  split_p    n estimate conf.low conf.high\n#&gt;     1     NA marker &lt;= 0.602 0.000999 1000   0.7248   0.5835     0.866\n#&gt;     2      1       age &lt;= 64 0.000999  609   0.2479   0.0746     0.421\n#&gt;     3      2            &lt;NA&gt; 0.983017  419   0.3955   0.1830     0.608\n#&gt;     4      2            &lt;NA&gt; 0.779221  190  -0.0775  -0.3716     0.217\n#&gt;     5      1            &lt;NA&gt; 0.177822  391   1.4674   1.2464     1.688\n#&gt; \n#&gt; Rules, estimated on the estimation part (ATE difference, 95% CI):\n#&gt;                         rule n_disc   n estimate conf.low conf.high  p.value\n#&gt;  marker &lt;= 0.602 & age &lt;= 64    434 419   0.3955    0.183     0.608 2.65e-04\n#&gt;   marker &lt;= 0.602 & age &gt; 64    191 190  -0.0775   -0.372     0.217 6.05e-01\n#&gt;               marker &gt; 0.602    375 391   1.4674    1.246     1.688 1.01e-38\n#&gt; P for interaction = 2.49e-18\n\n打印结果从上到下：\n\n表头：生长方式（max-t test）、在什么上种树（双稳健得分）、发现集与估计集的人数、 max_depth / alpha / min_leaf 与允许切分的变量。\n节点表：每个节点一行。split 是送往左子节点的条件，split_p 是发现集上该节点 检验的 p 值（叶子也有——那是没通过的检验），n 到 conf.high 是估计集上该节点的 双稳健 ATE。split_p 的最小值是 \\(1/(1 + 1000)\\)，由自助法次数 n_boot = 1000 决定。\n规则表：每片叶子一条规则，估计集上的效应、区间和 p 值；最后一行 P for interaction 检验”各叶子效应相等”。\n\n树先按 marker 切，再在 marker 低的一侧按 age 切，两个阈值都落在真值附近。 marker 高的一侧（真值 1.8 与 1.0 混在一起）没有再切：它的检验 p 值是 0.18，1000 人的发现集里分出的约 400 人 不够看清 0.8 的差别。这是树法的常态——没有切不等于没有差别。\n\n返回对象\n返回 hte_tree 类的列表：\n\n\n\n\n\n\n\n元素\n内容\n\n\n\n\n$rules\n每片叶子一行：leaf、node、rule、发现集人数 n_disc，估计集上的 n、n_treat、estimate、std.error、conf.low、conf.high、p.value、p_inter，口径同 get_hte()$subgroup；\"policy\" 另有推荐的 action\n\n\n$nodes\n每个节点一行：node、parent、depth、terminal、rule（叶子）、variable 与 split（内部节点）、statistic 与 split_p（检验），以及估计集上的效应\n\n\n$tree\n估计集上的 partykit::party 对象，每个节点的 info 就是 $nodes 的一行，可直接交给 ggparty\n\n\n$est\n估计集上的 get_hte() 结果（hte_res），$data$.rule 是每人所在的规则\n\n\nattr(, \"analysis\")\n全部设置、发现集行号 discovery、设计矩阵列的含义 cols、被丢掉的得分数与切分数\n\n\n\n和真值对照——估计集上每片叶子的真实平均效应：\n\ne &lt;- res$est$data\ntau_e &lt;- 0.3 + 1.5 * (e$marker &gt; 0.6) - 0.8 * (e$age &gt;= 65)\ndata.frame(rule = res$rules$rule,\n           truth = f2(tapply(tau_e, e$.rule, mean)[res$rules$rule]),\n           estimate = f2(res$rules$estimate),\n           ci = paste0(\"(\", f2(res$rules$conf.low), \", \", f2(res$rules$conf.high), \")\"))\n#&gt;                          rule truth estimate            ci\n#&gt; 1 marker &lt;= 0.602 & age &lt;= 64  0.31     0.40  (0.18, 0.61)\n#&gt; 2  marker &lt;= 0.602 & age &gt; 64 -0.49    -0.08 (-0.37, 0.22)\n#&gt; 3              marker &gt; 0.602  1.52     1.47  (1.25, 1.69)\n\n第二片叶子（190 人）的区间没有盖住真值——95% 区间本就有二十分之一的机会落空， 一次结果说明不了更多。同一设计换 40 份数据、每份换一个 seed 重跑（另行运行， 未在本站渲染时执行），138 片叶子的区间覆盖率为 0.95，平均偏差 0.01。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>257</span>  <span class='chapter-title'>7. 亚组树（get_hte_tree / plt_hte_tree）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/07-hte-tree.html#sec-tree-algo",
+    "href": "notes/causalR/07-hte-tree.html#sec-tree-algo",
+    "title": "7. 亚组树：get_hte_tree() 与 plt_hte_tree()",
+    "section": "树是怎么种出来的",
+    "text": "树是怎么种出来的\n\n第 1 步：拆样本、算得分\n每组内按 split_frac（默认 0.5）随机抽出发现集。发现集上调用一次 get_hte()， 每位患者得到一个 AIPW 得分\n\\[\n\\Gamma_i = \\hat\\mu_1(X_i) - \\hat\\mu_0(X_i)\n+ \\frac{W_i - \\hat e(X_i)}{\\hat e(X_i)\\,[1 - \\hat e(X_i)]}\\,\\bigl[Y_i - \\hat\\mu_{W_i}(X_i)\\bigr].\n\\]\n\\(\\Gamma_i\\) 在任何亚组里的均值就是该亚组的效应，倾向评分与结局模型只要一个对就成立， 所以在得分上种树，混杂已经被调整掉；在原始结局上种树的方法会被 frail 这类预后变量吸引。\n\n\n第 2 步：每个节点一次 max-t 检验\n对每个候选变量的每个可取切点（默认最多 100 个，在允许的切点里等距取）， 用 Welch t 比较两侧的平均得分，取绝对值最大者作为该变量的统计量。 零分布用 Rademacher 乘子自助法模拟：把中心化后的得分乘以随机正负号， 每次抽样同样做 Welch 标准化；节点 p 值是跨变量的 Westfall–Young min-P。 p 值小于 alpha 就在 p 值最小那个变量的最佳切点上切，然后对两个子节点递归， 直到 max_depth 层、检验不再拒绝，或叶子小于 min_leaf（发现集的比例，默认 5%， 且每组至少 2 人）。\n为什么不直接用 ctree 或 MOB：得分天然异方差——倾向评分靠近 0 或 1、结局方差大的地方， 得分的方差都更大，而 ctree 的置换检验与 MOB 的参数稳定性检验都假设同方差。 在效应恒定的模拟里（另行运行，未在本站渲染时执行），根节点的误切率：\n\n\n\n检验\n名义水平\n实测误切率\n\n\n\n\nctree 在 grf 得分上\n5%\n11.0%\n\n\nMOB（lmtree）在 grf 得分上\n5%\n17.5%\n\n\n同一设定、同方差得分，ctree / MOB\n5%\n约 4%\n\n\n\"maxt\"（自标准化 Rademacher 乘子）\n5%\n5.8%；换设定复核时 7%–8%\n\n\n\n\"maxt\" 保留了每个人自己的方差，偏差小得多，但并非精确控制在 5%—— 根节点 p 值落在 0.02–0.05 之间时要保守地读。 检验在节点之间不做多重校正（ctree、MOB 也不做），根节点的检验就是”有没有任何异质性”。\n\n\n第 3 步：在估计集上估计\n按发现集上定下的规则把估计集患者分组，对估计集再调用一次 get_hte()， 每个节点报告双稳健 ATE（estimator = \"aipw\"，默认）或 TMLE（TMLE 估计）。 估计集没有参与找树，所以这些区间是诚实的；split_frac = 1 时找树与估计用同一批人， 打印结果会注明”not honest”。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>257</span>  <span class='chapter-title'>7. 亚组树（get_hte_tree / plt_hte_tree）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/07-hte-tree.html#sec-tree-methods",
+    "href": "notes/causalR/07-hte-tree.html#sec-tree-methods",
+    "title": "7. 亚组树：get_hte_tree() 与 plt_hte_tree()",
+    "section": "17 种 method",
+    "text": "17 种 method\n后缀说明在什么上种树，前缀说明用什么引擎切：\n\n\n\n\n\n\n\n\n\n\n\n在什么上种树\nmaxt\nmob_\nctree_\nrpart_\npolicy\n\n\n\n\nAIPW 得分（_dr）\n\"maxt\"（默认）\n\"mob_dr\"\n\"ctree_dr\"\n\"rpart_dr\"\n\"policy\"\n\n\n森林的 CATE 预测（_cate）\n\n\"mob_cate\"\n\"ctree_cate\"\n\"rpart_cate\"\n\n\n\n森林的残差，R-learner（_r）\n\n\"mob_r\"\n\"ctree_r\"\n\"rpart_r\"\n\n\n\n差值尺度的节点模型（_abs）\n\n\"mob_abs\"\n\"ctree_abs\"\n\n\n\n\n比值尺度的节点模型（_rel）\n\n\"mob_rel\"\n\"ctree_rel\"\n\n\n\n\nWeibull AFT 节点模型（_aft）\n\n\"mob_aft\"\n\"ctree_aft\"\n\n\n\n\n\n\n_dr：与默认相同的得分。ctree / MOB 用各自的检验（见上表的误切率）； rpart 长到 max_depth 后按交叉验证剪枝，不给 p 值；\"policy\" 找使得分总和最大的 处理 / 不处理分配，恰好长满 max_depth 层，$rules 多一列推荐的 action。\n_cate：在森林的袋外 CATE 预测上种树，即 Virtual Twins、StratifiedMedicine 的两阶段做法。 预测很平滑、噪声小，但它的误差随协变量走（某组人少的地方森林在外推）， 而 ctree / MOB 把预测当独立观测检验，p 值偏乐观。适合当作森林的解释性近似，不宜当发现。\n_r：在森林的袋外残差 \\(\\tilde Y = Y - \\hat m(X)\\)、\\(\\tilde W = W - \\hat e(X)\\) 上种树， 节点效应是残差对残差的斜率 \\(\\sum \\tilde W \\tilde Y / \\sum \\tilde W^2\\)，切分准则就是 grf 自己的 因果树所近似的 R-loss。残差里没有倒数倾向评分，极端倾向评分的影响比 AIPW 得分小得多； 代价是切分跟随重叠加权（权重 \\(\\tilde W^2\\) 的均值为 \\(e(1-e)\\)）的效应。报告的效应仍是估计集的双稳健 ATE。\n_abs / _rel / _aft：不用得分，每个节点重新拟合一个”结局 ~ 治疗 + adj_var“的模型， 检验治疗系数在切分变量上是否稳定（MOB 的 lmtree / glmtree、model4you 的 pmtree 做法）。 _abs 用 lm（连续、0/1 结局，生存结局用 \\(S(t)\\) 的 Kaplan–Meier 伪观测）； _rel 用 logistic（log-OR）或 Cox（log-HR），不适用连续结局；_aft 用 Weibull AFT，只适用生存结局。 发现集不需要森林。它们的有效性依赖节点模型：线性调整、节点内效应恒定、Cox 的比例风险、 伪观测要求删失与协变量无关。 tree_args = list(adjust = FALSE, parm = \"all\") 回到这些包的默认做法，此时也会切预后变量。 _rel 在对数比尺度上切而报告差值，修饰依赖尺度，两者可以不一致。\n\n\n在示例上对比\n连续结局可用其中 13 种（_rel、_aft 除外）：\n\nms &lt;- c(\"maxt\", \"mob_dr\", \"ctree_dr\", \"rpart_dr\", \"policy\",\n        \"mob_cate\", \"ctree_cate\", \"rpart_cate\",\n        \"mob_r\", \"ctree_r\", \"rpart_r\", \"mob_abs\", \"ctree_abs\")\ncmp &lt;- do.call(rbind, lapply(ms, function(m) {\n  t0 &lt;- Sys.time()\n  r  &lt;- get_hte_tree(d, cat_var = \"z\", adj_var = adj, surv = \"y\", method = m)\n  data.frame(method = m, leaves = nrow(r$rules),\n             seconds = round(as.numeric(difftime(Sys.time(), t0, units = \"secs\")), 1),\n             splits = paste(na.omit(r$nodes$split), collapse = \" | \"))\n}))\ncmp\n#&gt;        method leaves seconds\n#&gt; 1        maxt      3     1.1\n#&gt; 2      mob_dr      3     0.9\n#&gt; 3    ctree_dr      3     0.8\n#&gt; 4    rpart_dr      3     0.6\n#&gt; 5      policy      8     0.8\n#&gt; 6    mob_cate      7     0.9\n#&gt; 7  ctree_cate      8     0.9\n#&gt; 8  rpart_cate      7     1.1\n#&gt; 9       mob_r      3     0.7\n#&gt; 10    ctree_r      3     0.8\n#&gt; 11    rpart_r      3     0.7\n#&gt; 12    mob_abs      3     0.5\n#&gt; 13  ctree_abs      3     0.4\n#&gt;                                                                                                      splits\n#&gt; 1                                                                               marker &lt;= 0.602 | age &lt;= 64\n#&gt; 2                                                                                 marker &lt;= 0.6 | age &lt;= 64\n#&gt; 3                                                                                 marker &lt;= 0.6 | age &lt;= 64\n#&gt; 4                                                                              marker &lt; 0.6005 | age &lt; 64.5\n#&gt; 5   marker &lt;= 0.454 | age &lt;= 53 | marker &lt;= 0.178 | age &lt;= 64 | age &lt;= 62 | marker &lt;= 0.533 | marker &lt;= 0.6\n#&gt; 6                   marker &lt;= 0.616 | age &lt;= 64 | marker &lt;= 0.547 | age &lt;= 67 | marker &lt;= 0.661 | age &lt;= 62\n#&gt; 7  marker &lt;= 0.616 | age &lt;= 64 | marker &lt;= 0.547 | age &lt;= 67 | age &lt;= 62 | frail &lt;= -0.78 | marker &lt;= 0.734\n#&gt; 8                 marker &lt; 0.6165 | age &lt; 64.5 | marker &lt; 0.5475 | age &lt; 67.5 | marker &lt; 0.662 | age &lt; 62.5\n#&gt; 9                                                                                 marker &lt;= 0.6 | age &lt;= 64\n#&gt; 10                                                                                marker &lt;= 0.6 | age &lt;= 64\n#&gt; 11                                                                             marker &lt; 0.6005 | age &lt; 64.5\n#&gt; 12                                                                                marker &lt;= 0.6 | age &lt;= 64\n#&gt; 13                                                                                marker &lt;= 0.6 | age &lt;= 64\n\n_dr、_r、_abs 三类都找到了与默认相同的两刀；_cate 三种切出 7–8 片叶子， 阈值在 0.55–0.66、62–67 之间反复横跳——它们拟合的是森林预测的锯齿，不是真实的两个阈值。 \"policy\" 按定义长满 3 层、8 片叶子；它回答的是”给谁治疗收益最大”， 不是”哪里的效应不同”，切点只需让推荐的处理不变，未必落在真阈值上。 rpart 系列把切点写成 &lt; 0.6005，其余写成 &lt;= 0.6，两者划分相同。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>257</span>  <span class='chapter-title'>7. 亚组树（get_hte_tree / plt_hte_tree）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/07-hte-tree.html#sec-tree-options",
+    "href": "notes/causalR/07-hte-tree.html#sec-tree-options",
+    "title": "7. 亚组树：get_hte_tree() 与 plt_hte_tree()",
+    "section": "常用设置",
+    "text": "常用设置\n\n深度、门槛、叶子大小\nget_hte_tree(d, \"z\", adj, surv = \"y\", max_depth = 2)     # 最多 4 片叶子\nget_hte_tree(d, \"z\", adj, surv = \"y\", alpha = 1)         # 不检验，长满 max_depth\nget_hte_tree(d, \"z\", adj, surv = \"y\", min_leaf = 0.1)    # 叶子至少占发现集 10%\nalpha 只对检验型方法（\"maxt\"、mob、ctree）有效；rpart 系列按交叉验证剪枝、 \"policy\" 总长满，给它们传 alpha 会报错。\n\n\n只允许在指定变量上切\ncandidate_var 限定切分变量，它们同时并入 adj_var（总会被调整）：\n\nrc &lt;- get_hte_tree(d, cat_var = \"z\", adj_var = adj, surv = \"y\",\n                   candidate_var = c(\"marker\", \"stage\"))\nrc$rules[, c(\"rule\", \"n\", \"estimate\", \"conf.low\", \"conf.high\")]\n#&gt; # A tibble: 2 × 5\n#&gt;   rule                n estimate conf.low conf.high\n#&gt;   &lt;chr&gt;           &lt;int&gt;    &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 marker &lt;= 0.602   609    0.248   0.0746     0.421\n#&gt; 2 marker &gt; 0.602    391    1.47    1.25       1.69\n\n事先确定的候选修饰变量（如指南里的分层因素）走这条路，比让树在全部协变量上搜更有检验力。 因子变量默认 factor_encoding = \"integer\"，按水平顺序取阈值（stage &lt;= II）； \"onehot\" 允许单独切出一个水平（stage = II 对其余）。规则都用原始水平书写。\n\n\nTMLE 估计\nestimator = \"tmle\" 只改变估计集上的效应估计，用 grf 的 TMLE （grf::average_treatment_effect(method = \"TMLE\")）代替 AIPW，树本身不变：\n\nrt &lt;- get_hte_tree(d, cat_var = \"z\", adj_var = adj, surv = \"y\", estimator = \"tmle\")\ndata.frame(rule = res$rules$rule,\n           aipw = f2(res$rules$estimate), aipw_se = f2(res$rules$std.error),\n           tmle = f2(rt$rules$estimate),  tmle_se = f2(rt$rules$std.error))\n#&gt;                          rule  aipw aipw_se  tmle tmle_se\n#&gt; 1 marker &lt;= 0.602 & age &lt;= 64  0.40    0.11  0.39    0.11\n#&gt; 2  marker &lt;= 0.602 & age &gt; 64 -0.08    0.15 -0.08    0.16\n#&gt; 3              marker &gt; 0.602  1.47    0.11  1.48    0.11\n\ngrf 的 TMLE 是线性修正（每组残差对倒数倾向评分回归），与 AIPW 通常只差第二位小数； 它不保证二分类结局的风险差落在 \\([-1, 1]\\)。只适用连续与二分类结局—— grf 的因果生存森林只有 AIPW，生存结局传 \"tmle\" 会报错。\n\n\n随机试验：已知倾向评分\n1:1 随机试验里倾向评分已知，把它作为单个数传进 grf_args，两个森林都不再估计它：\n\ndt &lt;- d\ndt$z &lt;- rbinom(n, 1, 0.5)\ndt$y &lt;- round(0.05 * (d$age - 60) + d$frail + dt$z * tau + rnorm(n), 3)\nrw &lt;- get_hte_tree(dt, cat_var = \"z\", adj_var = adj, surv = \"y\",\n                   grf_args = list(W.hat = 0.5))\nrw$rules[, c(\"rule\", \"n\", \"estimate\", \"conf.low\", \"conf.high\")]\n#&gt; # A tibble: 2 × 5\n#&gt;   rule                n estimate conf.low conf.high\n#&gt;   &lt;chr&gt;           &lt;int&gt;    &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 marker &lt;= 0.601   619   0.0169   -0.147     0.180\n#&gt; 2 marker &gt; 0.601    381   1.35      1.13      1.58\n\n$est$fit$W.hat 此时全为 0.5，得分里不再有倾向评分的估计误差。 这次只切出 marker：低的一侧 age 的两个格子（0.3 与 −0.5）混在一起， 估计值接近两者按人数加权的平均。能否再切一刀取决于这一份发现集的噪声， 已知倾向评分不保证切得更深。逐行的 W.hat、Y.hat、sample.weights、clusters 不被接受——两个森林各用一半的行， 逐行向量对不上。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>257</span>  <span class='chapter-title'>7. 亚组树（get_hte_tree / plt_hte_tree）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/07-hte-tree.html#sec-tree-null",
+    "href": "notes/causalR/07-hte-tree.html#sec-tree-null",
+    "title": "7. 亚组树：get_hte_tree() 与 plt_hte_tree()",
+    "section": "无修饰时",
+    "text": "无修饰时\n效应恒为 0.5，其余不变：\n\nd0 &lt;- d\nd0$y &lt;- round(0.05 * (d$age - 60) + d$frail + d$z * 0.5 + rnorm(n), 3)\nr0 &lt;- get_hte_tree(d0, cat_var = \"z\", adj_var = adj, surv = \"y\")\nr0$rules[, c(\"rule\", \"n\", \"estimate\", \"conf.low\", \"conf.high\")]\n#&gt; # A tibble: 1 × 5\n#&gt;   rule             n estimate conf.low conf.high\n#&gt;   &lt;chr&gt;        &lt;int&gt;    &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;\n#&gt; 1 All patients  1000    0.491    0.356     0.625\n\n根节点检验 p = 0.06，不切，只剩”全部患者”一条规则， 效应就是整体 ATE。此时 plt_hte_tree() 会报错提示没有树可画。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>257</span>  <span class='chapter-title'>7. 亚组树（get_hte_tree / plt_hte_tree）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/07-hte-tree.html#sec-tree-surv",
+    "href": "notes/causalR/07-hte-tree.html#sec-tree-surv",
+    "title": "7. 亚组树：get_hte_tree() 与 plt_hte_tree()",
+    "section": "生存结局",
+    "text": "生存结局\nsurv = TRUE（默认）读 time 与 DSS（1 = 事件），在 time 时刻的生存概率差 \\(S_1(t) - S_0(t)\\) 上种树与估计；grf_args = list(target = \"RMST\") 改为 RMST 差。\n\nds &lt;- d[, c(adj, \"z\")]\nev   &lt;- rexp(n, 0.012 * exp(0.03 * (d$age - 60) + 0.3 * d$frail -\n                              d$z * (0.1 + 0.9 * (d$marker &gt; 0.6))))\ncens &lt;- pmin(rexp(n, 0.006), 120)\nds$time &lt;- round(pmin(ev, cens), 2)\nds$DSS  &lt;- as.integer(ev &lt;= cens)\nrs &lt;- get_hte_tree(ds, cat_var = \"z\", adj_var = adj, time = 60)\nrs$rules[, c(\"rule\", \"n\", \"estimate\", \"conf.low\", \"conf.high\", \"p.value\")]\n#&gt; # A tibble: 2 × 6\n#&gt;   rule                n estimate conf.low conf.high  p.value\n#&gt;   &lt;chr&gt;           &lt;int&gt;    &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;\n#&gt; 1 marker &lt;= 0.504   501  -0.0100   -0.109    0.0889 8.43e- 1\n#&gt; 2 marker &gt; 0.504    499   0.321     0.225    0.416  4.90e-11\n\n治疗只在 marker &gt; 0.6 的人身上明显降低风险。树在 marker 上切了一刀， 切点落在 0.504，比真值 0.6 偏低—— 生存得分的噪声比连续结局大，切点的精度相应变差。 生存结局另外可用 \"mob_rel\" / \"ctree_rel\"（Cox，log-HR 尺度）与 \"mob_aft\" / \"ctree_aft\" （Weibull AFT）；报告的效应仍是生存概率差。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>257</span>  <span class='chapter-title'>7. 亚组树（get_hte_tree / plt_hte_tree）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/07-hte-tree.html#sec-plt-tree",
+    "href": "notes/causalR/07-hte-tree.html#sec-plt-tree",
+    "title": "7. 亚组树：get_hte_tree() 与 plt_hte_tree()",
+    "section": "plt_hte_tree()：画树",
+    "text": "plt_hte_tree()：画树\n\nplt_hte_tree(res)\n\n\n\n\n\n\n\n\n内部节点写着切分变量和检验 p 值，边上是切分条件；每片叶子上方是估计集人数与 效应（95% 区间），下方的面板共用一个横轴。默认 type = \"effect\" 画区间： 高于 0 为红、低于 0 为蓝、跨过 0 为灰。\"rpart_*\" 与 \"policy\" 没有检验，节点上不显示 p 值； \"policy\" 的叶子另标推荐的处理。\n其余四种面板：\n\n\n\n\n\n\n\n\ntype\n面板\n适用结局\n\n\n\n\n\"effect\"\n效应与 95% 区间（默认）\n全部\n\n\n\"dr\"\n每人 AIPW 得分的箱线图，点为均值（即该叶子的双稳健效应）\n全部\n\n\n\"box\"\n两组结局的箱线图\n连续\n\n\n\"bar\"\n两组结局均值（二分类为事件比例）与 95% 区间\n连续、二分类\n\n\n\"km\"\n两组到 time 为止的 Kaplan–Meier 曲线，虚线标出 time\n生存\n\n\n\n\"box\"、\"bar\"、\"km\" 是未调整的组间比较，差值不必等于标签上的双稳健效应—— 本例治疗组更老、更衰弱，结局本就偏高，未调整的差会被抬高：\n\nplt_hte_tree(res, type = \"box\")\n\n\n\n\n\n\n\n\n\nplt_hte_tree(rs, type = \"km\")\n\n\n\n\n\n\n\n\n面板画的是估计集患者（split_frac = 1 时为全部患者）；p 值来自发现集。 返回 ggplot，attr(p, \"plot_size\") 是排版用的宽高（英寸）。保存走统一的 save 参数 （本页不执行，以免渲染时往站点目录写文件）：\nplt_hte_tree(res, save = list(filename = \"hte_tree.pdf\"))\n叶子的效应也可以画成森林图——$est 就是估计集上的 get_hte() 结果：\n\nplt_hte_sub(res$est, sub_var = \".rule\",\n            label_column_list = c(.rule = \"Subgroup\"))",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>257</span>  <span class='chapter-title'>7. 亚组树（get_hte_tree / plt_hte_tree）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/07-hte-tree.html#sec-tree-args",
+    "href": "notes/causalR/07-hte-tree.html#sec-tree-args",
+    "title": "7. 亚组树：get_hte_tree() 与 plt_hte_tree()",
+    "section": "参数",
+    "text": "参数\n\nget_hte_tree()\n\n\n\n\n\n\n\n\n参数\n默认\n说明\n\n\n\n\ndata\n—\n数据框\n\n\ncat_var\n—\n二分类暴露列，编码同 get_hte()\n\n\nadj_var\n—\n森林调整的协变量；不给 candidate_var 时也是切分变量。缺暴露或结局的行被丢掉\n\n\ncandidate_var\nNULL\n只允许在这些变量上切，同时并入 adj_var。切分变量须为数值、因子、字符或逻辑型且无缺失\n\n\nsurv\nTRUE\nTRUE 读 time + DSS；一个列名为连续或 0/1 结局。竞争风险（FALSE）不支持\n\n\ntime\n120\n生存结局的时间点，仅 surv = TRUE\n\n\nmethod\n\"maxt\"\n17 种之一，见 17 种 method\n\n\nmax_depth\n3\n最多切几层（最多 8 片叶子），可为 Inf；\"policy\" 须有限\n\n\nalpha\n0.05\n检验型方法的切分门槛，\\((0, 1]\\)；1 为长满。rpart 系列与 \"policy\" 不接受\n\n\nmin_leaf\n0.05\n叶子占发现集的最小比例，\\([0, 0.5)\\)；另要求每组至少 2 人\n\n\nfactor_encoding\n\"integer\"\n因子按水平顺序取阈值；\"onehot\" 可单独切出一个水平。同时传给森林\n\n\nsplit_frac\n0.5\n每组内用于发现的比例；1 为找树与估计同一批人（不诚实）\n\n\nestimator\n\"aipw\"\n估计集的节点效应：\"aipw\" 或 \"tmle\"（仅连续、二分类）\n\n\ntree_args\nlist()\n所选 method 的设置，见下表；局部覆盖保留其余默认，给别的方法的字段报错\n\n\ngrf_args\nlist()\n转给两次 get_hte()；逐行字段不接受，单个已知 W.hat 可以\n\n\nseed\n123\n拆样本、自助法与 rpart 分折的种子，也是森林种子（grf_args 未给 seed 时）；结束后恢复全局随机数状态\n\n\nverbose\nFALSE\n报告拆样本人数、丢掉的得分与因缺组丢掉的切分\n\n\n\ntree_args 的字段：\n\n\n\n\n\n\n\n适用方法\n字段与默认\n\n\n\n\n\"maxt\"\nn_boot = 1000（每节点自助次数，0 不给 p 值、须配 alpha = 1）；max_cuts = 100（每列最多试几个切点）\n\n\nctree 系列\ntesttype = \"Bonferroni\"，或 \"Univariate\" / \"MonteCarlo\"\n\n\nmob 系列\ntrim = 0.1（稳定性检验两端剪掉的比例）\n\n\nrpart 系列\nxval = 10（交叉验证折数，0 不剪枝）；cp_rule = \"min\" 或 \"1se\"\n\n\n_abs / _rel / _aft\nadjust = TRUE（节点模型调整 adj_var）；parm = \"treatment\"（只检验治疗系数）或 \"all\"\n\n\n\"policy\"\ncost = 0（治疗须超过的效应）；better = \"higher\" 或 \"lower\"（不良事件）；split_step = NULL（每 1000 人跳 1 个切点）\n\n\n\n\n\nplt_hte_tree()\n\n\n\n\n\n\n\n\n参数\n默认\n说明\n\n\n\n\nx\n—\nget_hte_tree() 的结果，至少切过一次\n\n\ntype\n\"effect\"\n\"effect\" / \"dr\" / \"box\" / \"bar\" / \"km\"\n\n\nsave\nlist()\n非空时经 RegR::save_plt() 另存 PDF，缺省宽高取 attr(p, \"plot_size\")",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>257</span>  <span class='chapter-title'>7. 亚组树（get_hte_tree / plt_hte_tree）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/07-hte-tree.html#sec-tree-time",
+    "href": "notes/causalR/07-hte-tree.html#sec-tree-time",
+    "title": "7. 亚组树：get_hte_tree() 与 plt_hte_tree()",
+    "section": "耗时",
+    "text": "耗时\n本机（24 线程，grf 默认用满）上按样本量逐个 method 计时，数据结构同上（5 个协变量）， 单次运行，另行执行、未在本站渲染时运行。单位：秒。\n连续结局：\n\n\n\n\n\n\n\n\n\n\n\n\nmethod\n1 千\n5 千\n1 万\n2 万\n5 万\n10 万\n\n\n\n\n\"maxt\"\n1.7\n2.3\n3.8\n7.1\n4.9\n9.8\n\n\n\"ctree_dr\" / \"rpart_dr\" / _r（除 mob）\n0.5–0.7\n1.5–1.6\n2.3–2.8\n5.7–6.0\n2.2–2.6\n4.5–5.4\n\n\n\"policy\"\n0.5\n1.8\n3.8\n9.8\n26\n48\n\n\n\"mob_dr\"\n0.5\n2.1\n4.2\n11\n44\n130\n\n\n\"mob_r\"\n0.7\n2.0\n3.5\n9.1\n28\n121\n\n\n\"mob_abs\"\n0.3\n1.9\n5.6\n22\n109\n466\n\n\n\n生存结局：\n\n\n\n\n\n\n\n\n\n\n\nmethod\n1 千\n5 千\n1 万\n2 万\n5 万\n\n\n\n\n\"maxt\"\n2.0\n4.2\n9.1\n28\n113\n\n\n\"ctree_dr\" / \"rpart_dr\"\n0.8–0.9\n3.0–3.2\n8.0–8.3\n25\n106–109\n\n\n\"ctree_abs\" / _rel / _aft\n0.4–0.6\n1.5–1.6\n4.0–4.1\n13–14\n53–54\n\n\n\"mob_dr\"\n1.0\n3.4\n9.5\n35\n158\n\n\n\"mob_rel\"（Cox）\n0.4\n19\n92\n406\n—\n\n\n\"mob_aft\"（Weibull）\n0.3\n30\n135\n483\n—\n\n\n\n三点读法：\n\n森林占大头，树几乎不花时间——除 MOB 与 \"policy\" 外，建树都在 1 秒内 （\"maxt\" 在 10 万例时约 5 秒）。每次调用拟合两个森林（发现集、估计集各一个）， _abs / _rel / _aft 只拟合估计集那一个，所以约快一倍。\n5 万例时反而比 2 万例快：每半样本超过 1 万行时，get_hte() 自动改种 200 棵树 （grf 默认 2000），见第 1 页。要保持 2000 棵用 grf_args = list(num.trees = 2000)。\nMOB 的建树时间约按 \\(n^2\\) 增长（样本量翻倍，时间约 ×4）：partykit::mob() 在每个候选切点 两侧重新拟合节点模型，连续变量的候选切点数又与 \\(n\\) 同阶。\"mob_rel\"、\"mob_aft\" 每次重拟合是一次 Cox / Weibull 回归，2 万例已要 7–8 分钟，更大样本请改用 ctree 系列或 \"maxt\"（后者只试 max_cuts 个切点，建树近似线性）。生存森林本身在 10 万例时约 10 分钟。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>257</span>  <span class='chapter-title'>7. 亚组树（get_hte_tree / plt_hte_tree）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/07-hte-tree.html#sec-tree-rules",
+    "href": "notes/causalR/07-hte-tree.html#sec-tree-rules",
+    "title": "7. 亚组树：get_hte_tree() 与 plt_hte_tree()",
+    "section": "读结果的规矩",
+    "text": "读结果的规矩\n\n树是一次发现，不是确认。 换一个 seed 拆样本，切点乃至切分变量都可能变； 重要的结论要在独立数据上验证，或与 get_hte_icf()、get_hte_unihtee() 交叉印证。\np 值属于发现集，效应属于估计集。 节点上的 split_p 说明”这一刀是不是噪声”， 叶子的区间说明”这组效应多大”，两者用的是不同患者。\n没切不等于没有差别。 发现集只有一半患者，小于检验力的修饰会被漏掉（本例 marker 高的一侧）。\n\"maxt\" 的根节点检验略偏宽松（模拟 6%–8%），p 值刚过 0.05 的切分要保守解读； ctree / MOB 在得分上更宽松（11%–18%）。\n_cate 与 \"policy\" 的树不是效应修饰的检验。 前者描述森林预测，p 值偏乐观； 后者总是长满 max_depth，回答的是分配问题。\n修饰依赖尺度。 _rel、_aft 在比值或时间尺度上切，报告的却是差值；二分类与生存结局 可以两种都看。\n未调整面板只作描述。 \"box\"、\"bar\"、\"km\" 的组间差含混杂，效应以标签上的双稳健估计为准。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>257</span>  <span class='chapter-title'>7. 亚组树（get_hte_tree / plt_hte_tree）</span>"
+    ]
+  },
+  {
+    "objectID": "notes/causalR/07-hte-tree.html#sec-tree-refs",
+    "href": "notes/causalR/07-hte-tree.html#sec-tree-refs",
+    "title": "7. 亚组树：get_hte_tree() 与 plt_hte_tree()",
+    "section": "参考文献",
+    "text": "参考文献\n\nAthey S, Tibshirani J, Wager S (2019). Generalized random forests. Annals of Statistics 47(2):1148–1178.\nAthey S, Wager S (2021). Policy learning with observational data. Econometrica 89(1):133–161.\nHansen BE (2000). Testing for structural change in conditional models. Journal of Econometrics 97(1):93–115.\nHothorn T, Hornik K, Zeileis A (2006). Unbiased recursive partitioning: a conditional inference framework. Journal of Computational and Graphical Statistics 15(3):651–674.\nNie X, Wager S (2021). Quasi-oracle estimation of heterogeneous treatment effects. Biometrika 108(2):299–319.\nWestfall PH, Young SS (1993). Resampling-Based Multiple Testing. Wiley.\nZeileis A, Hothorn T, Hornik K (2008). Model-based recursive partitioning. Journal of Computational and Graphical Statistics 17(2):492–514.\n\n各函数的完整说明见包内帮助页：?get_hte_tree、?plt_hte_tree。",
+    "crumbs": [
+      "causalR 包函数手册",
+      "<span class='chapter-number'>257</span>  <span class='chapter-title'>7. 亚组树（get_hte_tree / plt_hte_tree）</span>"
+    ]
   }
 ]
