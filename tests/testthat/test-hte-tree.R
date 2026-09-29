@@ -256,6 +256,17 @@ test_that("engine cut-points keep their strictness for held-out values", {
   expect_false(tree$right[1L])
 })
 
+test_that("numeric rules retain enough cut-point precision", {
+  des <- .tree_design(data.frame(x = c(10000.1, 10000.2, 10000.3)),
+                      "onehot")
+  tree <- data.frame(path = c("", "R"), col = c(1L, 1L),
+                     value = c(10000.1, 10000.2), right = c(TRUE, TRUE))
+  rules <- .icf_leaves(tree, des$cols)$rule
+  expect_true(any(grepl("10000.1", rules, fixed = TRUE)))
+  expect_true(any(grepl("10000.2", rules, fixed = TRUE)))
+  expect_false(any(grepl("10000 < x <= 10000", rules, fixed = TRUE)))
+})
+
 test_that("splits whose children lack an arm are dropped", {
   X <- cbind(a = 1:10, b = rep(0:1, 5))
   W <- rep(c(1, 0), each = 5)

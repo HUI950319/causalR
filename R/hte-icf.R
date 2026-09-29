@@ -263,7 +263,7 @@
     return(data.frame(path = "", rule = "All patients", key = "",
                       stringsAsFactors = FALSE))
   lv  <- attr(cols, "levels")
-  fmt <- function(x) format(signif(x, 4L), trim = TRUE, scientific = FALSE)
+  fmt <- function(x) format(x, digits = 15L, trim = TRUE, scientific = FALSE)
   kids  <- c(paste0(tree$path, "L"), paste0(tree$path, "R"))
   paths <- sort(setdiff(kids, tree$path))
   one <- function(p) {
@@ -272,18 +272,32 @@
     dir   <- substring(p, k, k)
     col   <- tree$col[j]
     value <- tree$value[j]
+    right <- if ("right" %in% names(tree)) tree$right[j] else
+      rep(TRUE, length(j))
     vars  <- unique(cols$var[col])
     cond  <- vapply(vars, function(v) {
       h <- cols$var[col] == v
       if (cols$type[col[h][1L]] == "num") {
-        lo <- suppressWarnings(max(value[h & dir == "R"]))
-        hi <- suppressWarnings(min(value[h & dir == "L"]))
+        lower <- which(h & dir == "R")
+        upper <- which(h & dir == "L")
+        lo <- if (length(lower)) max(value[lower]) else -Inf
+        hi <- if (length(upper)) min(value[upper]) else Inf
+        lo_inc <- if (length(lower)) {
+          all(!right[lower][value[lower] == lo])
+        } else TRUE
+        hi_inc <- if (length(upper)) {
+          all(right[upper][value[upper] == hi])
+        } else TRUE
+        lo_op <- if (lo_inc) ">=" else ">"
+        hi_op <- if (hi_inc) "<=" else "<"
         text <- if (is.finite(lo) && is.finite(hi))
-          sprintf("%s < %s <= %s", fmt(lo), v, fmt(hi))
-        else if (is.finite(lo)) sprintf("%s > %s", v, fmt(lo))
-        else sprintf("%s <= %s", v, fmt(hi))
-        return(c(text, paste0(v, if (is.finite(lo)) " >",
-                              if (is.finite(hi)) " <=")))
+          sprintf("%s %s %s %s %s", fmt(lo),
+                  if (lo_inc) "<=" else "<", v,
+                  if (hi_inc) "<=" else "<", fmt(hi))
+        else if (is.finite(lo)) sprintf("%s %s %s", v, lo_op, fmt(lo))
+        else sprintf("%s %s %s", v, hi_op, fmt(hi))
+        return(c(text, paste0(v, if (is.finite(lo)) paste0(" ", lo_op),
+                              if (is.finite(hi)) paste0(" ", hi_op))))
       }
       all <- lv[[v]]
       ok  <- rep(TRUE, length(all))
@@ -1151,7 +1165,8 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
     col  <- partykit::varid_split(s)
     v    <- cols$var[col]
     side <- .icf_leaves(data.frame(path = "", col = col,
-                                   value = partykit::breaks_split(s)), cols)$rule
+                                   value = partykit::breaks_split(s),
+                                   right = partykit::right_split(s)), cols)$rule
     side <- substring(side, nchar(v) + 2L)
     side <- gsub("!=", ne, gsub("<=", le, side, fixed = TRUE), fixed = TRUE)
     kids <- partykit::kids_node(nd)
