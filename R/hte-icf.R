@@ -389,8 +389,13 @@
 #'   of Wang et al. (2024) instead; any single field can still be set. See
 #'   Details. `"icf"` needs a binary or continuous outcome.
 #' @param factor_encoding How factor, character and logical covariates enter
-#'   the forests, as in [get_hte()]: `"onehot"` (default) or `"integer"`. The
-#'   rules are written in the original levels either way.
+#'   the forests, as in [get_hte()] but with another default: `"integer"`
+#'   (default) codes the levels 1, 2, ... in their level order, so a split
+#'   keeps neighbouring levels together, as the iCF code does -- right for an
+#'   ordered factor such as age band or stage, while a nominal factor should
+#'   have its levels ordered first; `"onehot"` gives each level a 0/1 column,
+#'   so any set of levels can form a subgroup. The rules are written in the
+#'   original levels either way.
 #' @param split_frac Share of the patients, within each arm, used for
 #'   discovery. Default `0.5`; the rest are the estimation part. `1` finds
 #'   and estimates the rules on the same patients, as the iCF code does, so
@@ -592,7 +597,7 @@ get_hte_icf <- function(data,
                         time       = 120,
                         depth      = 1:3,
                         style      = c("causalR", "icf"),
-                        factor_encoding = c("onehot", "integer"),
+                        factor_encoding = c("integer", "onehot"),
                         split_frac = 0.5,
                         rule_args  = list(),
                         grf_args   = list(),

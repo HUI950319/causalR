@@ -1,5 +1,13 @@
 # causalR (development version)
 
+* `get_hte_icf()` defaults to `factor_encoding = "integer"`, as the iCF code
+  codes its categorical covariates: the levels of a factor, character or
+  logical covariate are numbered in level order and a split keeps
+  neighbouring levels together. `"onehot"`, `get_hte()`'s default and
+  previously this one's, lets any set of levels form a subgroup; pass it for
+  a nominal covariate whose levels have no order. Binary covariates give the
+  same rules either way.
+
 * `get_hte_icf()` gains `style = c("causalR", "icf")`. `"icf"` sets every
   step where it departs from the iCF code back to that code: the R-loss
   judged on each tree's leaf samples, no pruning margin, the unpruned best

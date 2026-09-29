@@ -12,7 +12,7 @@ get_hte_icf(
   time = 120,
   depth = 1:3,
   style = c("causalR", "icf"),
-  factor_encoding = c("onehot", "integer"),
+  factor_encoding = c("integer", "onehot"),
   split_frac = 0.5,
   rule_args = list(),
   grf_args = list(),
@@ -50,8 +50,13 @@ of Wang et al. (2024) instead; any single field can still be set. See
 Details. \code{"icf"} needs a binary or continuous outcome.}
 
 \item{factor_encoding}{How factor, character and logical covariates enter
-the forests, as in \code{\link[=get_hte]{get_hte()}}: \code{"onehot"} (default) or \code{"integer"}. The
-rules are written in the original levels either way.}
+the forests, as in \code{\link[=get_hte]{get_hte()}} but with another default: \code{"integer"}
+(default) codes the levels 1, 2, ... in their level order, so a split
+keeps neighbouring levels together, as the iCF code does -- right for an
+ordered factor such as age band or stage, while a nominal factor should
+have its levels ordered first; \code{"onehot"} gives each level a 0/1 column,
+so any set of levels can form a subgroup. The rules are written in the
+original levels either way.}
 
 \item{split_frac}{Share of the patients, within each arm, used for
 discovery. Default \code{0.5}; the rest are the estimation part. \code{1} finds

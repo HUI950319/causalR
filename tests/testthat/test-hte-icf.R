@@ -74,7 +74,10 @@ test_that("factor rules read the same under both encodings", {
   skip_if_not_installed("grf")
   d <- icf_data(tau = function(d) 2 * (d$grp == "c"))
   for (enc in c("onehot", "integer")) {
-    res <- icf_call(d, adj_var = c("grp", "X2", "X4"), factor_encoding = enc)
+    # "integer" is the default
+    res <- if (enc == "integer") icf_call(d, adj_var = c("grp", "X2", "X4"))
+      else icf_call(d, adj_var = c("grp", "X2", "X4"), factor_encoding = enc)
+    expect_identical(attr(res, "analysis")$factor_encoding, enc)
     expect_identical(res$cv$depth[res$cv$selected], 1L)
     expect_setequal(res$rules$rule, c("grp = c", "grp != c"))
   }
