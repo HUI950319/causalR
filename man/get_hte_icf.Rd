@@ -8,6 +8,7 @@ get_hte_icf(
   data,
   cat_var,
   adj_var,
+  candidate_var = NULL,
   surv = TRUE,
   time = 120,
   depth = 1:3,
@@ -30,6 +31,13 @@ get_hte_icf(
 the rules are written in: numeric, factor, character or logical, with no
 missing value, since a rule cannot say where a missing value goes.
 Rows missing \code{cat_var} or the outcome are dropped, as in \code{\link[=get_hte]{get_hte()}}.}
+
+\item{candidate_var}{\code{NULL} (default), or a character vector of the only
+covariates the rules may split on. The voting forests are then grown on
+these alone, in place of the importance screening (\code{rule_args$screen}
+is ignored), while the outcome and propensity estimates and the
+calibration test still use every covariate: the union of \code{adj_var} and
+\code{candidate_var}, so a candidate is always adjusted for.}
 
 \item{surv}{Outcome selector, as in \code{\link[=get_hte]{get_hte()}}: \code{TRUE} (default) for the
 survival columns \code{time} and \code{DSS}, or a single binary (0/1) or continuous

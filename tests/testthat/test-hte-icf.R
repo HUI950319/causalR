@@ -182,6 +182,32 @@ test_that("a single depth is fixed: no cross-validation, no gate, all patients",
   expect_identical(sum(half$rules$n_disc) + nrow(half$est$data), nrow(d))
 })
 
+test_that("candidate_var sets the only split variables and joins adj_var", {
+  skip_if_not_installed("grf")
+  d <- icf_data()
+  fast <- list(n_forest = 5L, num_trees = 100L)
+  # X1 and X3 are adjusted for through candidate_var alone
+  res <- get_hte_icf(d, "z", c("X2", "X4"), candidate_var = c("X1", "X3"),
+                     surv = "y", depth = 2, rule_args = fast,
+                     grf_args = list(num.trees = 500L))
+  a <- attr(res, "analysis")
+  expect_setequal(a$adj_var, c("X1", "X2", "X3", "X4"))
+  expect_setequal(a$screened, c("X1", "X3"))
+  expect_setequal(res$importance$variable[res$importance$screened], c("X1", "X3"))
+  both <- grepl("X1 = 1", res$rules$rule) & grepl("X3 = 1", res$rules$rule)
+  expect_identical(sum(both), 1L)
+  expect_output(print(res), "split on: X1, X3")
+
+  # Without X3 the rules can only use X1 and X2
+  no3 <- get_hte_icf(d, "z", c("X1", "X2", "X3", "X4"),
+                     candidate_var = c("X1", "X2"), surv = "y", depth = 2,
+                     rule_args = fast, grf_args = list(num.trees = 500L))
+  expect_false(any(grepl("X3|X4", no3$rules$rule)))
+
+  expect_error(get_hte_icf(d, "z", "X1", candidate_var = "y", surv = "y"),
+               "candidate_var")
+})
+
 test_that("the iCF settings are checked", {
   skip_if_not_installed("grf")
   d <- icf_data(n = 200L)

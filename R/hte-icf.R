@@ -44,7 +44,7 @@
 #' @keywords internal
 #' @noRd
 .icf_discover <- function(fit, X, cols, depth, ra, seed, forest_args,
-                          vote = TRUE) {
+                          vote = TRUE, candidate = NULL) {
   a   <- attr(fit, "analysis")
   f   <- fit$fit
   W   <- f$W.orig
@@ -53,10 +53,13 @@
 
   # iCF screening: covariates at or above the mean importance, at least four;
   # the iCF code's own rule is strictly above the mean, falling back to above
-  # the upper quartile, the median and the lower quartile, then to all
+  # the upper quartile, the median and the lower quartile, then to all. Named
+  # candidates replace the screening.
   screened <- imp$variable
   k <- min(4L, nrow(imp))
-  if (isTRUE(ra$screen)) {
+  if (!is.null(candidate)) {
+    screened <- candidate
+  } else if (isTRUE(ra$screen)) {
     screened <- imp$variable[imp$importance >= mean(imp$importance)]
     if (length(screened) < k) screened <- imp$variable[seq_len(k)]
   } else if (identical(ra$screen, "icf")) {
@@ -374,6 +377,12 @@
 #'   the rules are written in: numeric, factor, character or logical, with no
 #'   missing value, since a rule cannot say where a missing value goes.
 #'   Rows missing `cat_var` or the outcome are dropped, as in [get_hte()].
+#' @param candidate_var `NULL` (default), or a character vector of the only
+#'   covariates the rules may split on. The voting forests are then grown on
+#'   these alone, in place of the importance screening (`rule_args$screen`
+#'   is ignored), while the outcome and propensity estimates and the
+#'   calibration test still use every covariate: the union of `adj_var` and
+#'   `candidate_var`, so a candidate is always adjusted for.
 #' @param surv Outcome selector, as in [get_hte()]: `TRUE` (default) for the
 #'   survival columns `time` and `DSS`, or a single binary (0/1) or continuous
 #'   outcome column.
@@ -599,6 +608,7 @@
 get_hte_icf <- function(data,
                         cat_var,
                         adj_var,
+                        candidate_var = NULL,
                         surv       = TRUE,
                         time       = 120,
                         depth      = 1:3,
@@ -639,6 +649,14 @@ get_hte_icf <- function(data,
     if (!missing(time))
       stop("`time` only applies to survival outcomes (`surv = TRUE`).",
            call. = FALSE)
+  }
+  if (!is.null(candidate_var)) {
+    candidate_var <- unique(.sens_check_col(candidate_var, data, "candidate_var"))
+    bad <- intersect(candidate_var, c(cat_var, outcome))
+    if (length(bad))
+      stop(sprintf("`candidate_var` cannot hold the exposure or outcome column %s.",
+                   paste0("`", bad, "`", collapse = ", ")), call. = FALSE)
+    adj_var <- union(adj_var, candidate_var)
   }
   if (!is.numeric(depth) || !length(depth) || anyNA(depth) ||
       any(depth < 1) || any(depth != round(depth)))
@@ -797,7 +815,8 @@ get_hte_icf <- function(data,
   notes <- character()
   run <- function(idx, vote = TRUE) withCallingHandlers(
     .icf_discover(hte(data[idx, , drop = FALSE]), X[idx, , drop = FALSE],
-                  cols, depth, ra, seed, forest_args, vote = vote),
+                  cols, depth, ra, seed, forest_args, vote = vote,
+                  candidate = candidate_var),
     warning = function(w) {
       notes <<- c(notes, conditionMessage(w))
       invokeRestart("muffleWarning")
@@ -959,7 +978,8 @@ get_hte_icf <- function(data,
       backend_version = ea$backend_version, forest = ea$forest,
       outcome_type = ea$outcome_type, cat_var = cat_var, treated = ea$treated,
       surv = surv, outcome = outcome, time = ea$time, target = ea$target,
-      adj_var = adj_var, factor_encoding = factor_encoding, depth = depth,
+      adj_var = adj_var, candidate_var = candidate_var,
+      factor_encoding = factor_encoding, depth = depth,
       depth_selected = cv$depth[sel], style = style, split_frac = split_frac,
       rule_args = ra, seed = seed, screened = full$screened,
       fold_agree = if (by_folds) stats::setNames(
@@ -990,7 +1010,8 @@ print.hte_icf <- function(x, ...) {
               else sprintf("%d-fold CV", ra$n_folds),
               ra$n_forest, ra$num_trees,
               if (is.numeric(ra$grow)) "depth" else "run"))
-  cat(sprintf("  screened: %s; discovery calibration p = %s\n",
+  cat(sprintf("  %s: %s; discovery calibration p = %s\n",
+              if (is.null(a$candidate_var)) "screened" else "split on",
               paste(a$screened, collapse = ", "),
               format(signif(a$calibration_p, 3))))
   sel <- a$depth_selected

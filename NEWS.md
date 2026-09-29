@@ -1,5 +1,11 @@
 # causalR (development version)
 
+* New `get_hte_icf(candidate_var = )` names the only covariates the rules
+  may split on: the voting forests are grown on them in place of the
+  importance screening, while the outcome and propensity estimates and the
+  calibration test use the union of `adj_var` and `candidate_var`. The
+  default `NULL` keeps the screening.
+
 * `get_hte_icf(depth = )` with a single value now fixes the depth: that
   depth's voted partition is reported without cross-validation or
   calibration gate, and, unless `split_frac` is given, the rules are found
