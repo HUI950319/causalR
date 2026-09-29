@@ -12,7 +12,7 @@ get_hte_tree(
   surv = TRUE,
   time = 120,
   method = c("maxt", "mob_dr", "mob_cate", "mob_abs", "mob_rel", "ctree_dr",
-    "ctree_cate", "ctree_abs", "ctree_rel", "rpart", "policy"),
+    "ctree_cate", "ctree_abs", "ctree_rel", "rpart", "policy", "rpart_cate"),
   max_depth = 3,
   alpha = 0.05,
   min_leaf = 0.05,
@@ -85,6 +85,9 @@ tests with a Bonferroni correction over the design columns.}
 treatment coefficient, as model4you's \code{pmtree()}.}
 \item{\code{"rpart"}}{\code{\link[rpart:rpart]{rpart::rpart()}} on the scores, grown to \code{max_depth}
 and pruned by cross-validation; no tests.}
+\item{\code{"rpart_cate"}}{the same CART fit and pruning on the forest's
+out-of-bag CATE predictions; an explanatory approximation of the
+forest, with no split tests.}
 \item{\code{"policy"}}{\code{\link[policytree:policy_tree]{policytree::policy_tree()}} (depth up to 2) or
 \code{\link[policytree:hybrid_policy_tree]{policytree::hybrid_policy_tree()}} (deeper): the tree of exactly
 \code{max_depth} levels whose treat-or-not choice per leaf maximises the
@@ -98,7 +101,8 @@ depth.}
 \item{alpha}{Significance level of the split tests of \code{"maxt"} and the
 mob and ctree methods, in (0, 1]. Default \code{0.05}. \code{1} splits every node the
 depth and leaf sizes allow, so the tree grows to \code{max_depth}. Not
-accepted by \code{"rpart"}, which prunes by cross-validation, or \code{"policy"}.}
+accepted by \code{"rpart"} or \code{"rpart_cate"}, which prune by cross-validation,
+or \code{"policy"}.}
 
 \item{min_leaf}{Smallest leaf, as a share of the discovery patients, in
 [0, 0.5). Default \code{0.05}. Every child also needs two patients of each
@@ -136,7 +140,7 @@ StratifiedMedicine and model4you.}
 trimmed from the
 ends of a numeric split variable in the instability tests, default
 \code{0.1}.}
-\item{\code{"rpart"}}{\code{xval}, cross-validation folds, default \code{10} (\code{0}
+\item{\code{"rpart"}, \code{"rpart_cate"}}{\code{xval}, cross-validation folds, default \code{10} (\code{0}
 keeps the tree grown to \code{max_depth} unpruned); \code{cp_rule}, \code{"min"}
 (default) prunes at the smallest cross-validated error, \code{"1se"} to
 the smallest tree within one standard error of it.}

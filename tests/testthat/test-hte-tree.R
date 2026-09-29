@@ -12,6 +12,21 @@ tree_call <- function(d, ..., adj_var = c("X1", "X2", "X3", "grp"))
   get_hte_tree(d, "z", adj_var, surv = "y", grf_args = list(num.trees = 500L),
                ...)
 
+test_that("rpart_cate distils CATE predictions with CART controls", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("rpart")
+  res <- tree_call(tree_data(), method = "rpart_cate", max_depth = 1,
+                   tree_args = list(cp_rule = "1se"))
+  expect_s3_class(res, "hte_tree")
+  expect_identical(res$nodes$variable[1L], "X3")
+  expect_true(all(is.na(res$nodes$split_p)))
+  expect_identical(attr(res, "analysis")$tree_args$xval, 10L)
+  expect_identical(sum(res$rules$n), nrow(res$est$data))
+  expect_output(print(res), "rpart tree on out-of-bag CATE predictions")
+  expect_error(tree_call(tree_data(), method = "rpart_cate", alpha = 0.1),
+               "alpha.*cross-validation")
+})
+
 test_that("the max-t tree finds a threshold and estimates it on the other half", {
   skip_if_not_installed("grf")
   skip_if_not_installed("partykit")

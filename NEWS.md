@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte_tree(method = "rpart_cate")` now fits and cross-validates a CART
+  approximation of the forest's out-of-bag CATE predictions. It retains
+  independent leaf effect estimation and uses the existing CART controls.
+
 * New `get_hte_tree()` grows one subgroup tree on the AIPW scores of
   `get_hte()` (continuous, binary or survival outcomes, as `surv` selects)
   and estimates every node on the other half of the patients. `method`

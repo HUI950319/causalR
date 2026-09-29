@@ -438,6 +438,9 @@
 #'       treatment coefficient, as model4you's `pmtree()`.}
 #'     \item{`"rpart"`}{[rpart::rpart()] on the scores, grown to `max_depth`
 #'       and pruned by cross-validation; no tests.}
+#'     \item{`"rpart_cate"`}{the same CART fit and pruning on the forest's
+#'       out-of-bag CATE predictions; an explanatory approximation of the
+#'       forest, with no split tests.}
 #'     \item{`"policy"`}{[policytree::policy_tree()] (depth up to 2) or
 #'       [policytree::hybrid_policy_tree()] (deeper): the tree of exactly
 #'       `max_depth` levels whose treat-or-not choice per leaf maximises the
@@ -449,7 +452,8 @@
 #' @param alpha Significance level of the split tests of `"maxt"` and the
 #'   mob and ctree methods, in (0, 1]. Default `0.05`. `1` splits every node the
 #'   depth and leaf sizes allow, so the tree grows to `max_depth`. Not
-#'   accepted by `"rpart"`, which prunes by cross-validation, or `"policy"`.
+#'   accepted by `"rpart"` or `"rpart_cate"`, which prune by cross-validation,
+#'   or `"policy"`.
 #' @param min_leaf Smallest leaf, as a share of the discovery patients, in
 #'   [0, 0.5). Default `0.05`. Every child also needs two patients of each
 #'   arm; a split of another method than `"maxt"` without them is dropped.
@@ -483,7 +487,7 @@
 #'       trimmed from the
 #'       ends of a numeric split variable in the instability tests, default
 #'       `0.1`.}
-#'     \item{`"rpart"`}{`xval`, cross-validation folds, default `10` (`0`
+#'     \item{`"rpart"`, `"rpart_cate"`}{`xval`, cross-validation folds, default `10` (`0`
 #'       keeps the tree grown to `max_depth` unpruned); `cp_rule`, `"min"`
 #'       (default) prunes at the smallest cross-validated error, `"1se"` to
 #'       the smallest tree within one standard error of it.}
@@ -627,7 +631,7 @@ get_hte_tree <- function(data,
                          method     = c("maxt", "mob_dr", "mob_cate", "mob_abs",
                                         "mob_rel", "ctree_dr", "ctree_cate",
                                         "ctree_abs", "ctree_rel", "rpart",
-                                        "policy"),
+                                        "policy", "rpart_cate"),
                          max_depth  = 3,
                          alpha      = 0.05,
                          min_leaf   = 0.05,
@@ -647,7 +651,7 @@ get_hte_tree <- function(data,
   model_based <- !is.null(node_scale)
   factor_encoding <- match.arg(factor_encoding)
   for (pkg in c("grf", "partykit",
-                switch(method, rpart = "rpart", policy = "policytree")))
+                switch(engine, rpart = "rpart", policy = "policytree")))
     if (!requireNamespace(pkg, quietly = TRUE))
       stop(sprintf("Package '%s' is required for get_hte_tree(method = \"%s\").",
                    pkg, method), call. = FALSE)
@@ -697,10 +701,10 @@ get_hte_tree <- function(data,
   if (method == "policy" && !is.finite(max_depth))
     stop("`method = \"policy\"` grows exactly `max_depth` levels, so `max_depth` must be finite.",
          call. = FALSE)
-  tested <- !method %in% c("rpart", "policy")
+  tested <- !engine %in% c("rpart", "policy")
   if (!tested && !missing(alpha))
     stop(sprintf("`alpha` does not apply to `method = \"%s\"`, which %s.", method,
-                 if (method == "rpart") "prunes by cross-validation"
+                 if (engine == "rpart") "prunes by cross-validation"
                  else "grows to `max_depth`"), call. = FALSE)
   if (!is.numeric(alpha) || length(alpha) != 1L || is.na(alpha) ||
       alpha <= 0 || alpha > 1)
