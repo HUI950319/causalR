@@ -12,7 +12,7 @@ get_hte_tree(
   surv = TRUE,
   time = 120,
   method = c("maxt", "mob_dr", "mob_cate", "mob_abs", "mob_rel", "ctree_dr",
-    "ctree_cate", "ctree_abs", "ctree_rel", "rpart", "policy", "rpart_cate",
+    "ctree_cate", "ctree_abs", "ctree_rel", "rpart_dr", "policy", "rpart_cate",
     "mob_aft", "ctree_aft"),
   max_depth = 3,
   alpha = 0.05,
@@ -84,7 +84,7 @@ tests with a Bonferroni correction over the design columns.}
 \item{\code{"ctree_abs"}, \code{"ctree_rel"}}{the node models of \code{"mob_abs"} and
 \code{"mob_rel"}, with ctree's permutation tests on the score of the
 treatment coefficient, as model4you's \code{pmtree()}.}
-\item{\code{"rpart"}}{\code{\link[rpart:rpart]{rpart::rpart()}} on the scores, grown to \code{max_depth}
+\item{\code{"rpart_dr"}}{\code{\link[rpart:rpart]{rpart::rpart()}} on the scores, grown to \code{max_depth}
 and pruned by cross-validation; no tests.}
 \item{\code{"rpart_cate"}}{the same CART fit and pruning on the forest's
 out-of-bag CATE predictions; an explanatory approximation of the
@@ -108,7 +108,7 @@ depth.}
 \item{alpha}{Significance level of the split tests of \code{"maxt"} and the
 mob and ctree methods, in (0, 1]. Default \code{0.05}. \code{1} splits every node the
 depth and leaf sizes allow, so the tree grows to \code{max_depth}. Not
-accepted by \code{"rpart"} or \code{"rpart_cate"}, which prune by cross-validation,
+accepted by \code{"rpart_dr"} or \code{"rpart_cate"}, which prune by cross-validation,
 or \code{"policy"}.}
 
 \item{min_leaf}{Smallest leaf, as a share of the discovery patients, in
@@ -148,7 +148,7 @@ StratifiedMedicine and model4you.}
 trimmed from the
 ends of a numeric split variable in the instability tests, default
 \code{0.1}.}
-\item{\code{"rpart"}, \code{"rpart_cate"}}{\code{xval}, cross-validation folds, default \code{10} (\code{0}
+\item{\code{"rpart_dr"}, \code{"rpart_cate"}}{\code{xval}, cross-validation folds, default \code{10} (\code{0}
 keeps the tree grown to \code{max_depth} unpruned); \code{cp_rule}, \code{"min"}
 (default) prunes at the smallest cross-validated error, \code{"1se"} to
 the smallest tree within one standard error of it.}
@@ -283,7 +283,7 @@ if (requireNamespace("ggparty", quietly = TRUE)) plt_hte_tree(res)
 
 # the same scores, other methods
 get_hte_tree(d, "z", c("X1", "X2", "X3", "grp"), surv = "y",
-             method = "rpart")$rules
+             method = "rpart_dr")$rules
 }
 \dontshow{\}) # examplesIf}
 }

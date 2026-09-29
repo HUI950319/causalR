@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte_tree()` renames `method = "rpart"` to `"rpart_dr"` to explicitly
+  distinguish CART on DR scores from `"rpart_cate"`. Update existing calls
+  to the new name; the fitting and pruning behavior is unchanged.
+
 * `get_hte_tree()` adds `"mob_aft"` and `"ctree_aft"`: Weibull AFT node
   models for positive, right-censored survival times. They test treatment
   effects on the log-time-ratio scale while retaining DR survival or RMST
@@ -23,7 +27,7 @@
   on the scores of a node model of the outcome -- lm, or Kaplan-Meier
   pseudo-values for survival, on the difference scale; logistic or Cox
   regression on the ratio scale -- adjusted for `adj_var` and testing the
-  treatment coefficient only, both switchable in `tree_args`); `"rpart"`
+  treatment coefficient only, both switchable in `tree_args`); `"rpart_dr"`
   (pruned by cross-validation) or `"policy"` (policytree, with the
   recommended arm per leaf). `max_depth`, `alpha` and `min_leaf` stop the
   recursion. `$tree` is a partykit `party` whose node `info` holds the split

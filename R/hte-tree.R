@@ -459,7 +459,7 @@
 #'     \item{`"ctree_abs"`, `"ctree_rel"`}{the node models of `"mob_abs"` and
 #'       `"mob_rel"`, with ctree's permutation tests on the score of the
 #'       treatment coefficient, as model4you's `pmtree()`.}
-#'     \item{`"rpart"`}{[rpart::rpart()] on the scores, grown to `max_depth`
+#'     \item{`"rpart_dr"`}{[rpart::rpart()] on the scores, grown to `max_depth`
 #'       and pruned by cross-validation; no tests.}
 #'     \item{`"rpart_cate"`}{the same CART fit and pruning on the forest's
 #'       out-of-bag CATE predictions; an explanatory approximation of the
@@ -481,7 +481,7 @@
 #' @param alpha Significance level of the split tests of `"maxt"` and the
 #'   mob and ctree methods, in (0, 1]. Default `0.05`. `1` splits every node the
 #'   depth and leaf sizes allow, so the tree grows to `max_depth`. Not
-#'   accepted by `"rpart"` or `"rpart_cate"`, which prune by cross-validation,
+#'   accepted by `"rpart_dr"` or `"rpart_cate"`, which prune by cross-validation,
 #'   or `"policy"`.
 #' @param min_leaf Smallest leaf, as a share of the discovery patients, in
 #'   [0, 0.5). Default `0.05`. Every child also needs two patients of each
@@ -517,7 +517,7 @@
 #'       trimmed from the
 #'       ends of a numeric split variable in the instability tests, default
 #'       `0.1`.}
-#'     \item{`"rpart"`, `"rpart_cate"`}{`xval`, cross-validation folds, default `10` (`0`
+#'     \item{`"rpart_dr"`, `"rpart_cate"`}{`xval`, cross-validation folds, default `10` (`0`
 #'       keeps the tree grown to `max_depth` unpruned); `cp_rule`, `"min"`
 #'       (default) prunes at the smallest cross-validated error, `"1se"` to
 #'       the smallest tree within one standard error of it.}
@@ -654,7 +654,7 @@
 #'
 #' # the same scores, other methods
 #' get_hte_tree(d, "z", c("X1", "X2", "X3", "grp"), surv = "y",
-#'              method = "rpart")$rules
+#'              method = "rpart_dr")$rules
 #' }
 #'
 #' @export
@@ -666,7 +666,7 @@ get_hte_tree <- function(data,
                          time       = 120,
                          method     = c("maxt", "mob_dr", "mob_cate", "mob_abs",
                                         "mob_rel", "ctree_dr", "ctree_cate",
-                                        "ctree_abs", "ctree_rel", "rpart",
+                                        "ctree_abs", "ctree_rel", "rpart_dr",
                                         "policy", "rpart_cate", "mob_aft",
                                         "ctree_aft"),
                          max_depth  = 3,

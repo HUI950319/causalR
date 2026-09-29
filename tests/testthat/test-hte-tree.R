@@ -12,6 +12,13 @@ tree_call <- function(d, ..., adj_var = c("X1", "X2", "X3", "grp"))
   get_hte_tree(d, "z", adj_var, surv = "y", grf_args = list(num.trees = 500L),
                ...)
 
+test_that("CART methods explicitly name their discovery target", {
+  methods <- eval(formals(get_hte_tree)$method)
+  expect_true("rpart_dr" %in% methods)
+  expect_false("rpart" %in% methods)
+  expect_identical(methods[1L], "maxt")
+})
+
 test_that("rpart_cate distils CATE predictions with CART controls", {
   skip_if_not_installed("grf")
   skip_if_not_installed("rpart")
@@ -191,7 +198,7 @@ test_that("every method grows on the scores within max_depth", {
   d <- tree_data()
   args <- list(maxt = list(n_boot = 200L), mob_dr = list(), mob_cate = list(),
                mob_abs = list(), ctree_dr = list(), ctree_cate = list(),
-               ctree_abs = list(), rpart = list(), policy = list(cost = 1))
+               ctree_abs = list(), rpart_dr = list(), policy = list(cost = 1))
   for (m in names(args)) {
     one <- tree_call(d, method = m, max_depth = 1, tree_args = args[[m]])
     expect_identical(one$nodes$variable[1L], "X3", info = m)
@@ -202,7 +209,7 @@ test_that("every method grows on the scores within max_depth", {
   }
   # ctree and mob report their split p-values, rpart and policy none
   expect_false(anyNA(tree_call(d, method = "ctree_dr", max_depth = 1)$nodes$split_p[1L]))
-  expect_true(all(is.na(tree_call(d, method = "rpart", max_depth = 1)$nodes$split_p)))
+  expect_true(all(is.na(tree_call(d, method = "rpart_dr", max_depth = 1)$nodes$split_p)))
   # The _cate methods grow on the forest's predictions, not on the scores
   cate <- tree_call(d, method = "mob_cate", max_depth = 1)
   expect_output(print(cate), "mob tree on out-of-bag CATE predictions")
@@ -425,7 +432,7 @@ test_that("get_hte_tree() validates its input and restores the RNG", {
   skip_if_not_installed("grf")
   d <- tree_data(n = 300L)
   expect_error(tree_call(d, tree_args = list(xval = 5)), "unknown field")
-  expect_error(tree_call(d, method = "rpart", alpha = 0.1), "alpha")
+  expect_error(tree_call(d, method = "rpart_dr", alpha = 0.1), "alpha")
   expect_error(tree_call(d, method = "policy", max_depth = Inf), "finite")
   expect_error(tree_call(d, max_depth = 0), "max_depth")
   expect_error(tree_call(d, min_leaf = 0.5), "min_leaf")
