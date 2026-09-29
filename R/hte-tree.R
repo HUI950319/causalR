@@ -297,6 +297,18 @@
 
   xd <- as.data.frame(unname(X))
   names(xd) <- paste0("x", seq_len(ncol(X)))
+  # MOB refits the node model at every distinct value of a split variable.
+  # With `max_cuts`, only that many cut-points, evenly spaced among the
+  # distinct values as in "maxt", are kept, and every value is moved up to
+  # the next one: `x <= cut` then sends the same rows in either scale.
+  if (method %in% c("mob", "mob_model") && !is.null(ctrl$max_cuts))
+    xd[] <- lapply(xd, function(x) {
+      cuts <- sort(unique(x))
+      cuts <- cuts[-length(cuts)]
+      if (length(cuts) <= ctrl$max_cuts) return(x)
+      cuts <- cuts[unique(round(seq(1, length(cuts), length.out = ctrl$max_cuts)))]
+      c(cuts, max(x))[findInterval(x, cuts, left.open = TRUE) + 1L]
+    })
   d  <- if (!is.null(g)) cbind(.g = g, xd)
   fit <- switch(method,
     mob_model = {
@@ -552,7 +564,13 @@
 #'     \item{the mob methods}{`trim`, the share of observations
 #'       trimmed from the
 #'       ends of a numeric split variable in the instability tests, default
-#'       `0.1`.}
+#'       `0.1`; `max_cuts`, the most cut-points tried per design column,
+#'       evenly spaced among its distinct values, which are moved up to the
+#'       next cut-point before MOB sees them (the tests then see ties),
+#'       default `100`. MOB refits the node model at every cut-point, so
+#'       with every distinct value tried its time grows with the square of
+#'       the rows; a value above the number of distinct values, such as
+#'       `1e6`, tries them all.}
 #'     \item{the rpart methods}{`xval`, cross-validation folds, default `10` (`0`
 #'       keeps the tree grown to `max_depth` unpruned); `cp_rule`, `"min"`
 #'       (default) prunes at the smallest cross-validated error, `"1se"` to
@@ -828,7 +846,7 @@ get_hte_tree <- function(data,
     maxt   = list(n_boot = 1000L, max_cuts = 100L),
     ctree  = c(list(testtype = "Bonferroni"),
                if (model_based) list(adjust = TRUE, parm = "treatment")),
-    mob    = c(list(trim = 0.1),
+    mob    = c(list(trim = 0.1, max_cuts = 100L),
                if (model_based) list(adjust = TRUE, parm = "treatment")),
     rpart  = list(xval = 10L, cp_rule = "min"),
     policy = list(cost = 0, better = "higher", split_step = NULL)), "tree_args")
@@ -846,9 +864,12 @@ get_hte_tree <- function(data,
              call. = FALSE)
     },
     ctree = one_of("testtype", c("Bonferroni", "Univariate", "MonteCarlo")),
-    mob = if (!is.numeric(ta$trim) || length(ta$trim) != 1L || is.na(ta$trim) ||
-              ta$trim < 0 || ta$trim >= 0.5)
-      stop("`tree_args$trim` must be a single number in [0, 0.5).", call. = FALSE),
+    mob = {
+      if (!is.numeric(ta$trim) || length(ta$trim) != 1L || is.na(ta$trim) ||
+          ta$trim < 0 || ta$trim >= 0.5)
+        stop("`tree_args$trim` must be a single number in [0, 0.5).", call. = FALSE)
+      ta$max_cuts <- .hte_select_count(ta$max_cuts, "tree_args$max_cuts", 1, 1e6)
+    },
     rpart = {
       ta$xval <- .hte_select_count(ta$xval, "tree_args$xval", 0, 1e4)
       one_of("cp_rule", c("min", "1se"))

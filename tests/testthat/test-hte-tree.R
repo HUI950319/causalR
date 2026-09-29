@@ -399,6 +399,59 @@ test_that("engine cut-points keep their strictness for held-out values", {
   expect_false(tree$right[1L])
 })
 
+test_that("mob engines try at most max_cuts cut-points per variable", {
+  skip_if_not_installed("partykit")
+  withr::local_seed(3)
+  n <- 800L
+  X <- cbind(a = round(runif(n), 3), b = rbinom(n, 1, 0.5))
+  g <- 2 * (X[, "a"] > 0.37) + rnorm(n)
+  ctrl <- list(max_depth = 1, alpha = 0.05, min_n = 40L, trim = 0.1,
+               max_cuts = 4L)
+  cuts <- sort(unique(X[, "a"]))
+  cuts <- cuts[-length(cuts)]
+  kept <- cuts[unique(round(seq(1, length(cuts), length.out = 4L)))]
+  node <- list(y = g, R = cbind(.den = rep(1, n)), model = "r", parm = 1L)
+  for (m in c("mob", "mob_model")) {
+    tree <- .tree_engine(m, g, X, ctrl, node)$tree
+    expect_identical(tree$col, 1L)
+    expect_true(tree$value %in% kept)
+  }
+  # without max_cuts every distinct value is tried
+  ctrl$max_cuts <- NULL
+  expect_false(.tree_engine("mob", g, X, ctrl)$tree$value %in% kept)
+})
+
+test_that("tree_args$max_cuts caps mob cut-points at 100 by default", {
+  skip_if_not_installed("partykit")
+  withr::local_seed(4)
+  n <- 2000L
+  d <- data.frame(x = round(runif(n), 4), w = rnorm(n))
+  d$z <- rbinom(n, 1, 0.5)
+  d$y <- d$z * (d$x > 0.5) + rnorm(n)
+  fit <- function(...) get_hte_tree(d, "z", c("x", "w"), surv = "y",
+                                    method = "mob_abs", max_depth = 1,
+                                    grf_args = list(num.trees = 50), ...)
+  kept_cuts <- function(res, k) {
+    x_disc <- d$x[attr(res, "analysis")$discovery]
+    cuts <- sort(unique(x_disc))
+    cuts <- cuts[-length(cuts)]
+    cuts[unique(round(seq(1, length(cuts), length.out = k)))]
+  }
+  root_cut <- function(res)
+    partykit::breaks_split(partykit::split_node(partykit::node_party(res$tree)))
+  res <- fit()
+  expect_identical(attr(res, "analysis")$tree_args$max_cuts, 100L)
+  expect_identical(res$nodes$variable[1L], "x")
+  expect_true(root_cut(res) %in% kept_cuts(res, 100L))
+  res3 <- fit(tree_args = list(max_cuts = 3))
+  expect_identical(attr(res3, "analysis")$tree_args$max_cuts, 3L)
+  expect_true(root_cut(res3) %in% kept_cuts(res3, 3L))
+  # a cap above the number of distinct values tries every value
+  all <- fit(tree_args = list(max_cuts = 1e6))
+  expect_false(root_cut(all) %in% kept_cuts(all, 100L))
+  expect_error(fit(tree_args = list(max_cuts = 0)), "max_cuts")
+})
+
 test_that("numeric rules retain enough cut-point precision", {
   des <- .tree_design(data.frame(x = c(10000.1, 10000.2, 10000.3)),
                       "onehot")

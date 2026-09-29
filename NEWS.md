@@ -19,6 +19,14 @@
   causalR now imports ggrepel (already required through UtilsR) and needs
   ggplot2 >= 3.5.0 for inside legends.
 
+* The mob methods of `get_hte_tree()` accept `tree_args$max_cuts`, the most
+  cut-points tried per split variable, as `"maxt"` does. MOB refits the node
+  model at every distinct value, so its split search grew with the square
+  of the rows (a Weibull AFT tree took 8 minutes at 20,000 patients). The
+  default `100` makes it about linear; MOB cut-points now fall on one of 100
+  evenly spaced values, so earlier mob trees can move slightly. Pass
+  `tree_args = list(max_cuts = 1e6)` to try every value, as before.
+
 * `get_hte()` and `get_hte_tree()` now default to
   `factor_encoding = "integer"`, as `get_hte_icf()` already did: a factor
   enters the forest (and the tree) as one column of level codes. Pass

@@ -170,7 +170,13 @@ StratifiedMedicine and model4you.}
 \item{the mob methods}{\code{trim}, the share of observations
 trimmed from the
 ends of a numeric split variable in the instability tests, default
-\code{0.1}.}
+\code{0.1}; \code{max_cuts}, the most cut-points tried per design column,
+evenly spaced among its distinct values, which are moved up to the
+next cut-point before MOB sees them (the tests then see ties),
+default \code{100}. MOB refits the node model at every cut-point, so
+with every distinct value tried its time grows with the square of
+the rows; a value above the number of distinct values, such as
+\code{1e6}, tries them all.}
 \item{the rpart methods}{\code{xval}, cross-validation folds, default \code{10} (\code{0}
 keeps the tree grown to \code{max_depth} unpruned); \code{cp_rule}, \code{"min"}
 (default) prunes at the smallest cross-validated error, \code{"1se"} to
