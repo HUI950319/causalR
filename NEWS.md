@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte_tree(estimator = "tmle")` now keeps its stored overall and
+  subgroup results, `plt_hte_sub()` and `plt_hte_cate()` on the same TMLE
+  estimator as its node and rule tables.
+
 * `plt_sens()` draws its native figures (the `"lm"` contour, `"tip"` and
   `"evalue"`) with `UtilsR::theme_my(base_rect_size = 1.5)`, the theme of
   `MLR::plt_bar_per()`, and gains `colors = c(main, highlight)`: the contour

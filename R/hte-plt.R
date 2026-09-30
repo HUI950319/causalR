@@ -661,7 +661,9 @@ plt_hte_dep <- function(x,
 #' Every row is the doubly robust estimate within the subgroup, as in
 #' `get_hte()$subgroup`: [grf::average_treatment_effect()] with `subset` for
 #' `"diff"`, and the arm scores averaged over the subgroup for `"ratio"` and
-#' `"OR"`. The counts are patients per arm, treated first. A level with fewer
+#' `"OR"`. For `get_hte_tree()$est`, difference estimates and the overall row
+#' retain the tree's AIPW or TMLE estimator.
+#' The counts are patients per arm, treated first. A level with fewer
 #' than two patients in either arm -- or, for a survival outcome, no patient
 #' in an arm followed beyond `time` -- has no estimate: it is drawn with a
 #' dash, with a warning. For a survival probability the `"diff"` column and
@@ -828,12 +830,13 @@ plt_hte_sub <- function(x,
                      stringsAsFactors = FALSE)
   event_risk <- identical(a$target, "survival.probability")
   beyond     <- .hte_beyond(x)
+  estimator  <- if (is.null(a$estimator)) "aipw" else a$estimator
   sub <- if (length(sub_var))
     .hte_muffle_ps(.hte_subgroup(fit, s, d, sub_var, grid, event_risk, z,
-                                 beyond))
+                                 beyond, estimator))
   ov  <- if (overall)
     .hte_muffle_ps(.hte_estimate(fit, s, rep(TRUE, nrow(d)), grid, event_risk,
-                                 z, "Overall", beyond))
+                                 z, "Overall", beyond, estimator))
 
   # ---- Replaced rows ----------------------------------------------------------
   if (!is.null(effect)) {
@@ -1294,11 +1297,13 @@ plt_hte_cate <- function(x,
   grid   <- data.frame(estimand = "ATE", measure = "diff",
                        stringsAsFactors = FALSE)
   beyond <- .hte_beyond(x)
+  estimator <- if (is.null(a$estimator)) "aipw" else a$estimator
   sub <- if (length(sub_var))
-    .hte_muffle_ps(.hte_subgroup(fit, s, d, sub_var, grid, FALSE, z, beyond))
+    .hte_muffle_ps(.hte_subgroup(fit, s, d, sub_var, grid, FALSE, z,
+                                 beyond, estimator))
   ate <- if (overall)
     .hte_muffle_ps(.hte_estimate(fit, s, rep(TRUE, nrow(d)), grid, FALSE, z,
-                                 "Overall", beyond))$estimate
+                                 "Overall", beyond, estimator))$estimate
   se  <- if (show_ci)
     sqrt(as.numeric(stats::predict(fit, estimate.variance = TRUE)$variance.estimates))
 

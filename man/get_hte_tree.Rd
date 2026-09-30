@@ -238,6 +238,7 @@ patients: the design columns, then the outcome, \code{.arm}, \code{.dr_score}
 and \code{.rule}. Each node's \code{info} is its row of \code{nodes}, so
 \code{ggparty::ggparty(res$tree, add_vars = list(est = "$node$info$estimate"))} maps the effects.}
 \item{\code{est}}{The \code{hte_res} from \code{\link[=get_hte]{get_hte()}} on the estimation part,
+with overall and subgroup effects using \code{estimator},
 whose \verb{$data} has the rule of every patient in the factor \code{.rule}:
 \code{plt_hte_sub(res$est, sub_var = ".rule")} draws the leaves.}
 }

@@ -602,8 +602,25 @@ test_that("estimator = \"tmle\" estimates the same tree's nodes by grf's TMLE", 
   expect_false(isTRUE(all.equal(tmle$rules$estimate, aipw$rules$estimate)))
   expect_identical(attr(tmle, "analysis")$estimator, "tmle")
   expect_identical(attr(aipw, "analysis")$estimator, "aipw")
+  expect_identical(attr(tmle$est, "analysis")$estimator, "tmle")
+  expect_equal(tmle$est$stats$estimate, tmle$nodes$estimate[1L])
+  expect_equal(tmle$est$subgroup$estimate, tmle$rules$estimate)
   expect_output(print(tmle), "ATE difference by TMLE, 95% CI", fixed = TRUE)
   expect_output(print(aipw), "(ATE difference, 95% CI)", fixed = TRUE)
+})
+
+test_that("TMLE tree effects reach subgroup and CATE plots", {
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("RegR")
+  skip_if_not_installed("ggplotify")
+  res <- tree_call(tree_data(n = 800L), method = "rpart_dr", max_depth = 1,
+                   estimator = "tmle", tree_args = list(xval = 0L))
+  withr::local_pdf(tempfile(fileext = ".pdf"))
+  p <- suppressMessages(plt_hte_sub(res$est, sub_var = ".rule",
+                                    fixed_size = FALSE))
+  expect_equal(attr(p, "subgroup")$estimate, res$rules$estimate)
+  q <- plt_hte_cate(res$est, sub_var = ".rule", type = "density")
+  expect_equal(attr(q, "subgroup")$estimate, res$rules$estimate)
 })
 
 test_that("a single known propensity in grf_args reaches the forests", {

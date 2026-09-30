@@ -691,6 +691,7 @@
 #'       `ggparty::ggparty(res$tree, add_vars = list(est =
 #'       "$node$info$estimate"))` maps the effects.}
 #'     \item{`est`}{The `hte_res` from [get_hte()] on the estimation part,
+#'       with overall and subgroup effects using `estimator`,
 #'       whose `$data` has the rule of every patient in the factor `.rule`:
 #'       `plt_hte_sub(res$est, sub_var = ".rule")` draws the leaves.}
 #'   }
@@ -1148,6 +1149,13 @@ get_hte_tree <- function(data,
     p_inter = sub$p_inter[m])
   rules$n[is.na(m)] <- 0L
   rules$n_treat[is.na(m)] <- 0L
+  # The stored result and plots use the same estimator as the tree tables.
+  values <- c("estimate", "std.error", "conf.low", "conf.high", "p.value")
+  est$stats[values] <- nodes[1L, values]
+  est$subgroup <- sub
+  ea$sub_var <- ".rule"
+  ea$estimator <- estimator
+  attr(est, "analysis") <- ea
   if (method == "policy") {
     sgn <- if (ta$better == "higher") 1 else -1
     gain <- tapply(sgn * gd - ta$cost, factor(.icf_assign(tree, Xd),

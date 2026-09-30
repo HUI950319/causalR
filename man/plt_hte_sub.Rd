@@ -134,7 +134,9 @@ refitted and the subgroups can be chosen after the fact.
 Every row is the doubly robust estimate within the subgroup, as in
 \code{get_hte()$subgroup}: \code{\link[grf:average_treatment_effect]{grf::average_treatment_effect()}} with \code{subset} for
 \code{"diff"}, and the arm scores averaged over the subgroup for \code{"ratio"} and
-\code{"OR"}. The counts are patients per arm, treated first. A level with fewer
+\code{"OR"}. For \code{get_hte_tree()$est}, difference estimates and the overall row
+retain the tree's AIPW or TMLE estimator.
+The counts are patients per arm, treated first. A level with fewer
 than two patients in either arm -- or, for a survival outcome, no patient
 in an arm followed beyond \code{time} -- has no estimate: it is drawn with a
 dash, with a warning. For a survival probability the \code{"diff"} column and
