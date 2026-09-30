@@ -833,7 +833,8 @@ plt_hte_sub <- function(x,
   estimator  <- if (is.null(a$estimator)) "aipw" else a$estimator
   sub <- if (length(sub_var))
     .hte_muffle_ps(.hte_subgroup(fit, s, d, sub_var, grid, event_risk, z,
-                                 beyond, estimator))
+                                 beyond, estimator,
+                                 complete = isTRUE(a$complete_subgroups)))
   ov  <- if (overall)
     .hte_muffle_ps(.hte_estimate(fit, s, rep(TRUE, nrow(d)), grid, event_risk,
                                  z, "Overall", beyond, estimator))
@@ -1300,7 +1301,8 @@ plt_hte_cate <- function(x,
   estimator <- if (is.null(a$estimator)) "aipw" else a$estimator
   sub <- if (length(sub_var))
     .hte_muffle_ps(.hte_subgroup(fit, s, d, sub_var, grid, FALSE, z,
-                                 beyond, estimator))
+                                 beyond, estimator,
+                                 complete = isTRUE(a$complete_subgroups)))
   ate <- if (overall)
     .hte_muffle_ps(.hte_estimate(fit, s, rep(TRUE, nrow(d)), grid, FALSE, z,
                                  "Overall", beyond, estimator))$estimate

@@ -707,7 +707,13 @@
 #'       `conf.high`, `p.value` and `p_inter`, the doubly robust ATE
 #'       difference with 95% Wald intervals, as in [get_hte()]'s `$subgroup`
 #'       (by TMLE with `estimator = "tmle"`).
-#'       `method = "policy"` adds `action`, `"Treated"` or `"Control"`.}
+#'       `method = "policy"` adds `action`, `"Treated"` or `"Control"`.
+#'       Diagnostics include `n_control`, `n_after_treat` and
+#'       `n_after_control` (follow-up support at the survival horizon, `NA`
+#'       for other outcomes), and `status`: `"ok"`, `"empty"`,
+#'       `"insufficient_arm"`, `"insufficient_followup"` or
+#'       `"unavailable_estimate"`. The overall `p_inter` is `NA` when any
+#'       leaf is not estimable; the discovered tree is retained.}
 #'     \item{`nodes`}{Tibble with one row per node, in `tree`'s order: `node`,
 #'       `parent`, `depth`, `terminal`, `rule` (leaves), `variable` and
 #'       `split` (the condition sending patients left) of inner nodes,
@@ -1126,7 +1132,7 @@ get_hte_tree <- function(data,
   z    <- stats::qnorm(0.975)
   beyond <- .hte_beyond(est)
   sub <- .hte_muffle_ps(.hte_subgroup(est$fit, s, est$data, ".rule", grid,
-                                      risk, z, beyond, estimator))
+                                      risk, z, beyond, estimator, complete = TRUE))
   m <- match(leaves$rule, sub$level)
 
   # Nodes depth first, as partykit numbers them
@@ -1180,12 +1186,29 @@ get_hte_tree <- function(data,
     p_inter = sub$p_inter[m])
   rules$n[is.na(m)] <- 0L
   rules$n_treat[is.na(m)] <- 0L
+  nodes$n_control <- nodes$n - nodes$n_treat
+  rules$n_control <- rules$n - rules$n_treat
+  rules$n_after_treat <- rules$n_after_control <- NA_integer_
+  if (!is.null(beyond)) {
+    rules$n_after_treat <- vapply(leaves$path, function(p)
+      sum(pe == p & beyond & W[e_idx] == 1), integer(1L))
+    rules$n_after_control <- vapply(leaves$path, function(p)
+      sum(pe == p & beyond & W[e_idx] == 0), integer(1L))
+  }
+  rules$status <- ifelse(rules$n == 0, "empty",
+    ifelse(pmin(rules$n_treat, rules$n_control) < 2L, "insufficient_arm",
+      ifelse(!is.null(beyond) &
+               (rules$n_after_treat == 0 | rules$n_after_control == 0),
+             "insufficient_followup",
+             ifelse(is.finite(rules$estimate) & is.finite(rules$std.error),
+                    "ok", "unavailable_estimate"))))
   # The stored result and plots use the same estimator as the tree tables.
   values <- c("estimate", "std.error", "conf.low", "conf.high", "p.value")
   est$stats[values] <- nodes[1L, values]
   est$subgroup <- sub
   ea$sub_var <- ".rule"
   ea$estimator <- estimator
+  ea$complete_subgroups <- TRUE
   attr(est, "analysis") <- ea
   if (method == "policy") {
     sgn <- if (ta$better == "higher") 1 else -1

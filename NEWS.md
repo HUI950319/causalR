@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte_tree()` reports control counts, follow-up support and an
+  estimation status for each leaf. Its overall interaction test is now
+  omitted when any leaf cannot be estimated, including in downstream plots.
+
 * `get_hte_tree()` rejects failed logistic, Cox and non-finite node fits
   before using their scores. A failed root remains an unsplit tree;
   node-model failures are warned once and recorded in analysis metadata.

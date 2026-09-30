@@ -293,7 +293,7 @@
 #' @keywords internal
 #' @noRd
 .hte_subgroup <- function(fit, s, data, sub_var, grid, event_risk, z,
-                          beyond = NULL, estimator = "aipw") {
+                          beyond = NULL, estimator = "aipw", complete = FALSE) {
   W <- fit$W.orig
   # Plug-in weights matching each estimand, for the descriptive cate_mean.
   h <- list(ATE = rep(1, length(W)), ATT = W, ATC = 1 - W,
@@ -326,6 +326,11 @@
             else log(rows$estimate[j])
       se <- rows$std.error[j]
       ok <- is.finite(th) & is.finite(se) & se > 0
+      if (complete && (!all(ok) || nlevels(as.factor(data[[v]])) > nlevels(g))) {
+        warning(sprintf("Interaction test omitted for `%s`: not every subgroup has an estimable effect.",
+                        v), call. = FALSE)
+        next
+      }
       if (sum(ok) >= 2L) {
         groups <- lapply(rows$level[j][ok], function(lv) which(g == lv))
         V <- .hte_subgroup_vcov(fit, s, groups, rows$estimand[j[1L]], se[ok])

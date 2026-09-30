@@ -525,6 +525,38 @@ test_that("splits whose children lack an arm are dropped", {
   expect_identical(nrow(.tree_prune(by_b, X, W, 2L)), 1L)
 })
 
+test_that("incomplete estimation leaves have diagnostics and no interaction test", {
+  d <- data.frame(w = rep(0:1, 300L), x = 0)
+  withr::local_seed(123)
+  disc <- logical(nrow(d))
+  for (a in 0:1) {
+    i <- which(d$w == a)
+    disc[i[sample.int(length(i), length(i) / 2L)]] <- TRUE
+    j <- which(d$w == a & disc)
+    d$x[j] <- rep(0:2, length.out = length(j))
+  }
+  e0 <- which(!disc & d$w == 0)
+  e1 <- which(!disc & d$w == 1)
+  d$x[e0] <- c(rep(0, 40L), rep(1, 55L), rep(2, 55L))
+  d$x[e1] <- rep(1:2, each = 75L)
+  d$y <- d$w * (1 + 8 * d$x) + rnorm(nrow(d), sd = 0.1)
+  warnings <- character()
+  res <- withCallingHandlers(get_hte_tree(d, "w", "x", surv = "y",
+    method = "rpart_dr", max_depth = 2, tree_args = list(xval = 0),
+    grf_args = list(num.trees = 100L, W.hat = 0.5)), warning = function(w) {
+      warnings <<- c(warnings, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+  expect_identical(nrow(res$rules), 3L)
+  expect_equal(res$rules$n_control, c(40, 55, 55))
+  expect_identical(res$rules$status, c("insufficient_arm", "ok", "ok"))
+  expect_true(all(is.na(res$rules$p_inter)))
+  expect_true(any(grepl("Interaction test omitted", warnings)))
+  expect_true(is.na(res$rules$estimate[1L]))
+  expect_true(all(is.finite(res$rules$estimate[-1L])))
+  expect_false(any(grepl("P for interaction", capture.output(print(res)))))
+})
+
 test_that("candidate_var names the split variables; factor rules keep levels", {
   skip_if_not_installed("grf")
   d <- tree_data(tau = function(d) 0.5 + 1.5 * (d$grp == "c"))

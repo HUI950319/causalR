@@ -224,7 +224,13 @@ estimation part \code{n}, \code{n_treat}, \code{estimate}, \code{std.error}, \co
 \code{conf.high}, \code{p.value} and \code{p_inter}, the doubly robust ATE
 difference with 95\% Wald intervals, as in \code{\link[=get_hte]{get_hte()}}'s \verb{$subgroup}
 (by TMLE with \code{estimator = "tmle"}).
-\code{method = "policy"} adds \code{action}, \code{"Treated"} or \code{"Control"}.}
+\code{method = "policy"} adds \code{action}, \code{"Treated"} or \code{"Control"}.
+Diagnostics include \code{n_control}, \code{n_after_treat} and
+\code{n_after_control} (follow-up support at the survival horizon, \code{NA}
+for other outcomes), and \code{status}: \code{"ok"}, \code{"empty"},
+\code{"insufficient_arm"}, \code{"insufficient_followup"} or
+\code{"unavailable_estimate"}. The overall \code{p_inter} is \code{NA} when any
+leaf is not estimable; the discovered tree is retained.}
 \item{\code{nodes}}{Tibble with one row per node, in \code{tree}'s order: \code{node},
 \code{parent}, \code{depth}, \code{terminal}, \code{rule} (leaves), \code{variable} and
 \code{split} (the condition sending patients left) of inner nodes,
