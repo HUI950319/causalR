@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte_tree()` gains `reuse = NULL`: an earlier tree with identical
+  data, sample split and forest settings supplies its forest fits when
+  comparing tree methods or controls. Changed inputs are rejected.
+
 * `predict.hte_tree()` assigns new patients to the original rules or
   terminal node ids using the training factor encoding and exact split
   boundaries, without refitting. Missing values and unseen levels are rejected.

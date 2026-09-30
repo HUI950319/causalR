@@ -633,6 +633,12 @@
 #'   ten events and 10% rounded to zero raises a warning. This diagnostic
 #'   does not establish numerical accuracy; compare a denser grid, e.g.
 #'   `failure.times = sort(unique(c(0, data$time, time)))`.
+#' @param reuse `NULL` (default) or an earlier `hte_tree` retaining its
+#'   forest fits. The input data, covariates, encoding, sample split, seed,
+#'   grf version and forest settings must be identical. Tree methods,
+#'   controls and the reporting estimator may change. Required fits missing
+#'   from a model-based tree are computed once. `analysis$forests_reused`
+#'   records which fits were reused.
 #' @param seed Nonnegative whole number, default `123`. It draws the split,
 #'   the bootstrap multipliers and rpart's folds, and seeds the [get_hte()]
 #'   fits unless `grf_args` sets `seed`. The caller's random-number state is
@@ -806,6 +812,7 @@ get_hte_tree <- function(data,
                          estimator  = c("aipw", "tmle"),
                          tree_args  = list(),
                          grf_args   = list(),
+                         reuse      = NULL,
                          seed       = 123,
                          verbose    = FALSE) {
 
@@ -827,6 +834,7 @@ get_hte_tree <- function(data,
                    pkg, method), call. = FALSE)
   if (!is.data.frame(data) || !nrow(data))
     stop("`data` must be a non-empty data frame.", call. = FALSE)
+  original_data <- data
   cat_var <- .sens_check_col(cat_var, data, "cat_var", n = 1L)
   adj_var <- setdiff(.sens_check_col(adj_var, data, "adj_var"), cat_var)
   if (!length(adj_var))
@@ -1015,9 +1023,28 @@ get_hte_tree <- function(data,
       grid_auto <- TRUE
     }
   }
+  signature <- list(cat_var = cat_var, adj_var = adj_var, surv = surv,
+    time = if (is_surv) time, factor_encoding = factor_encoding,
+    split_frac = split_frac, seed = seed, grf_args = ga)
+  cached <- NULL
+  if (!is.null(reuse)) {
+    if (!inherits(reuse, "hte_tree") ||
+        is.null(attr(reuse, "analysis")$reuse))
+      stop("`reuse` must be an hte_tree retaining its forest fits.", call. = FALSE)
+    cached <- attr(reuse, "analysis")$reuse
+    if (!identical(original_data, cached$data) ||
+        !identical(signature, cached$signature) ||
+        !identical(attr(reuse, "analysis")$backend_version,
+                   as.character(utils::packageVersion("grf"))))
+      stop("`reuse` requires the same data and forest/split settings.", call. = FALSE)
+  }
   # 500 trees give nearly the scores and leaf effects of grf's 2000 at a
   # quarter of the time; above 10,000 rows get_hte() grows 200
-  hte <- function(rows) {
+  hte <- function(rows, fitted = NULL) {
+    if (!is.null(fitted)) {
+      fitted$data$.rule <- rows$.rule
+      return(fitted)
+    }
     g <- ga
     if (is.null(g$num.trees) && nrow(rows) <= 10000L) g$num.trees <- 500L
     do.call(get_hte, c(
@@ -1029,7 +1056,7 @@ get_hte_tree <- function(data,
   # The model-based trees use no scores: the discovery forest is fitted only
   # for the other methods, or when discovery and estimation share patients
   fit_d <- if (!model_based || same)
-    withCallingHandlers(hte(data[d_idx, , drop = FALSE]),
+    withCallingHandlers(hte(data[d_idx, , drop = FALSE], cached$discovery_fit),
       warning = function(w) {
         notes <<- c(notes, conditionMessage(w))
         invokeRestart("muffleWarning")
@@ -1132,8 +1159,9 @@ get_hte_tree <- function(data,
   } else {
     est_data <- data[e_idx, , drop = FALSE]
     est_data$.rule <- rule_of
-    est <- hte(est_data)
+    est <- hte(est_data, cached$estimation_fit)
   }
+  fit_e <- est
   ea   <- attr(est, "analysis")
   time_grid <- NULL
   if (is_surv) {
@@ -1284,6 +1312,12 @@ get_hte_tree <- function(data,
       min_leaf = min_leaf, split_frac = split_frac, estimator = estimator,
       tree_args = ta,
       time_grid = time_grid,
+      forests_reused = c(discovery = !is.null(cached$discovery_fit) &&
+                           (!model_based || same),
+                         estimation = !is.null(cached$estimation_fit)),
+      reuse = list(data = original_data, signature = signature,
+                   discovery_fit = if (is.null(fit_d)) cached$discovery_fit else fit_d,
+                   estimation_fit = fit_e),
       seed = seed, cols = cols, splits = tree, discovery = which(keep)[d_idx],
       scores_left_out = sum(!ok),
       node_failures = grown$node_failures,

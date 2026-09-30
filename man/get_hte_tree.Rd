@@ -22,6 +22,7 @@ get_hte_tree(
   estimator = c("aipw", "tmle"),
   tree_args = list(),
   grf_args = list(),
+  reuse = NULL,
   seed = 123,
   verbose = FALSE
 )
@@ -211,6 +212,13 @@ count, fraction rounded to zero and largest rounding error. At least
 ten events and 10\% rounded to zero raises a warning. This diagnostic
 does not establish numerical accuracy; compare a denser grid, e.g.
 \code{failure.times = sort(unique(c(0, data$time, time)))}.}
+
+\item{reuse}{\code{NULL} (default) or an earlier \code{hte_tree} retaining its
+forest fits. The input data, covariates, encoding, sample split, seed,
+grf version and forest settings must be identical. Tree methods,
+controls and the reporting estimator may change. Required fits missing
+from a model-based tree are computed once. \code{analysis$forests_reused}
+records which fits were reused.}
 
 \item{seed}{Nonnegative whole number, default \code{123}. It draws the split,
 the bootstrap multipliers and rpart's folds, and seeds the \code{\link[=get_hte]{get_hte()}}

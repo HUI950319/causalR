@@ -738,3 +738,27 @@ test_that("a single known propensity in grf_args reaches the forests", {
   expect_error(get_hte_tree(d, "z", "X1", surv = "y",
                             grf_args = list(W.hat = c(0.4, 0.6))), "W.hat")
 })
+
+test_that("compatible HTE trees reuse both forests and reject changed inputs", {
+  d <- tree_data(n = 800L)
+  fit <- function(method, ...) get_hte_tree(d, "z", c("X1", "X2", "X3", "grp"),
+    surv = "y", method = method, max_depth = 1,
+    grf_args = list(num.trees = 100L), ...)
+  first <- fit("rpart_dr", tree_args = list(xval = 0L))
+  fresh <- fit("ctree_dr")
+  local_mocked_bindings(get_hte = function(...) stop("unexpected forest fit"),
+                        .package = "causalR")
+  shared <- fit("ctree_dr", reuse = first)
+  expect_equal(shared$rules, fresh$rules)
+  expect_identical(shared$est$fit, first$est$fit)
+  expect_identical(attr(shared, "analysis")$forests_reused,
+                   c(discovery = TRUE, estimation = TRUE))
+  model <- fit("mob_abs", reuse = first)
+  expect_identical(model$est$fit, first$est$fit)
+  expect_identical(attr(model, "analysis")$forests_reused,
+                   c(discovery = FALSE, estimation = TRUE))
+  expect_equal(fit("ctree_dr", reuse = model)$rules, fresh$rules)
+  expect_error(fit("ctree_dr", reuse = first, seed = 124), "same data.*settings")
+  d$y[1L] <- d$y[1L] + 1
+  expect_error(fit("ctree_dr", reuse = first), "same data.*settings")
+})
