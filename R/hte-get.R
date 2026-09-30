@@ -38,15 +38,22 @@
 # estimand is unchanged, while the forests split on who survives past
 # `time` (there 236 s fell to 41 s, and a CATE correlated 0.82 across seeds
 # instead of 0.44).
+# A `failure.times` grid gets that time too when no grid point lies between
+# `time` and it: grf puts every time on the last grid point at or before
+# it, so a grid ending at `time` made those patients deaths at the horizon
+# (effects off by up to 0.03 in simulations, standard errors 19% larger).
 #' @keywords internal
 #' @noRd
-.hte_surv_yd <- function(Y, D, time, target) {
+.hte_surv_yd <- function(Y, D, time, target, grid = NULL) {
   past <- Y > time
   if (identical(target, "survival.probability") && any(past)) {
-    Y[past] <- min(Y[past])
+    after <- min(Y[past])
+    Y[past] <- after
     D[past] <- 1
+    if (!is.null(grid) && !any(grid > time & grid <= after))
+      grid <- sort(c(grid, after))
   }
-  list(Y = Y, D = D)
+  list(Y = Y, D = D, grid = grid)
 }
 
 
@@ -531,7 +538,11 @@
 #'   at 100,000 survival rows that took 13 s instead of 83 s with the same
 #'   ATE, while the per-patient CATE is noisier. For a survival outcome with
 #'   many distinct times, a coarse `failure.times` grid (for example `0:120`
-#'   for months) is what bounds time and memory.
+#'   for months) is what bounds time and memory. Patients followed past
+#'   `time` reach grf as events at the first such follow-up; a grid with no
+#'   point between `time` and it gets that point, since grf moves every time
+#'   down to the grid point at or before it and would otherwise count them
+#'   as deaths at `time`.
 #' @param verbose Logical. `TRUE` reports how many rows were dropped for a
 #'   missing `cat_var` or outcome. Default `FALSE`.
 #'
@@ -951,9 +962,10 @@ get_hte <- function(data,
   }
   X   <- .sens_model_matrix(xdat, covars, one_hot = TRUE)
   if (is_surv) {
-    yd <- .hte_surv_yd(Y, D, time, target)
+    yd <- .hte_surv_yd(Y, D, time, target, grf_args$failure.times)
     Y  <- yd$Y
     D  <- yd$D
+    grf_args$failure.times <- yd$grid
   }
   fit <- do.call(fun, c(list(X = X, Y = Y, W = W),
                         if (is_surv) list(D = D, horizon = time),

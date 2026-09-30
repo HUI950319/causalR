@@ -379,9 +379,10 @@ plt_hte_rate <- function(x,
     Y <- if (surv) d[[a$outcome[1L]]] else fit$Y.orig
     D <- if (surv) as.integer(d[[a$outcome[2L]]])
     if (surv) {
-      yd <- .hte_surv_yd(Y, D, a$time, a$target)
+      yd <- .hte_surv_yd(Y, D, a$time, a$target, ga$failure.times)
       Y  <- yd$Y
       D  <- yd$D
+      ga$failure.times <- yd$grid
     }
     refit <- function(i) {
       args <- ga

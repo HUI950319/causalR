@@ -290,6 +290,26 @@ test_that("survival: patients past `time` reach grf as events just after it", {
   expect_equal(rm$data$.cate, as.numeric(direct$predictions))
 })
 
+test_that("survival: a failure.times grid keeps patients past `time` beyond it", {
+  d <- hte_surv_data()
+  after <- min(d$time[d$time > 60])
+  fit <- function(grid) get_hte(d, cat_var = "z", adj_var = c("age", "x2", "sex"),
+                                surv = TRUE, time = 60,
+                                grf_args = c(hte_args, list(failure.times = grid)))
+  # grf puts every time past the last grid point on it, so a grid ending at
+  # `time` gets the point the patients followed longer are moved to
+  expect_equal(fit(0:60)$data$.cate, fit(c(0:60, after))$data$.cate)
+  # the rule: a point is added only when none lies in (time, first past]
+  yd <- function(grid, target = "survival.probability")
+    .hte_surv_yd(c(1, 50, 61.5, 70), c(1, 0, 0, 1), 60, target, grid)$grid
+  expect_equal(yd(0:60), c(0:60, 61.5))
+  expect_equal(yd(c(0, 30, 60, 90)), c(0, 30, 60, 61.5, 90))
+  expect_identical(yd(0:120), 0:120)
+  expect_null(yd(NULL))
+  # grf cuts RMST follow-up at `time` itself
+  expect_identical(yd(0:60, "RMST"), 0:60)
+})
+
 test_that("survival RMST is reached through grf_args$target; OR is skipped", {
   skip_if_not_installed("grf")
   expect_message(

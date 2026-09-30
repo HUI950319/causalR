@@ -19,6 +19,15 @@
   causalR now imports ggrepel (already required through UtilsR) and needs
   ggplot2 >= 3.5.0 for inside legends.
 
+* A `failure.times` grid in `grf_args` no longer biases survival estimates
+  of `get_hte()`, `get_hte_icf()` and `plt_hte_rate()`. Patients followed
+  past `time` reach grf as events at the first such follow-up, and grf
+  moves every time down to the grid point at or before it: a grid with no
+  point between `time` and that follow-up, such as one ending at `time`,
+  counted them as deaths at `time` (effects off by up to 0.03 in
+  simulations, standard errors 19% larger). That point is now added to the
+  grid.
+
 * For a survival outcome with more than 100 distinct times up to `time`,
   `get_hte_tree()` fits grf's survival and censoring curves on 100 evenly
   spaced points up to `time` plus the first follow-up past it, unless

@@ -116,7 +116,11 @@ trees, or 200 when more than 10,000 rows are analysed, with a message:
 at 100,000 survival rows that took 13 s instead of 83 s with the same
 ATE, while the per-patient CATE is noisier. For a survival outcome with
 many distinct times, a coarse \code{failure.times} grid (for example \code{0:120}
-for months) is what bounds time and memory.}
+for months) is what bounds time and memory. Patients followed past
+\code{time} reach grf as events at the first such follow-up; a grid with no
+point between \code{time} and it gets that point, since grf moves every time
+down to the grid point at or before it and would otherwise count them
+as deaths at \code{time}.}
 
 \item{verbose}{Logical. \code{TRUE} reports how many rows were dropped for a
 missing \code{cat_var} or outcome. Default \code{FALSE}.}

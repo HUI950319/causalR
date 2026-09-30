@@ -81,7 +81,9 @@
   grow <- if (identical(a$outcome_type, "survival")) {
     D <- fit$data$DSS
     if (is.logical(D)) D <- as.integer(D)
-    yd <- .hte_surv_yd(fit$data$time, D, a$time, a$target)
+    yd <- .hte_surv_yd(fit$data$time, D, a$time, a$target,
+                       forest_args$failure.times)
+    forest_args$failure.times <- yd$grid
     function(s, extra) do.call(grf::causal_survival_forest, c(
       list(X = Xs, Y = yd$Y, W = W, D = yd$D, W.hat = f$W.hat,
            horizon = a$time, target = a$target, num.trees = ra$num_trees,
