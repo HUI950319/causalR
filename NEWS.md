@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* `get_hte_tree_stability()` reports variable selection frequencies,
+  cut-points and label-invariant patient co-grouping Jaccard agreement.
+  It distinguishes fixed-score tree bootstraps from full refitting with
+  repeated sample splits, records failed runs and restores the RNG.
+
 * `get_hte_tree()` gains `reuse = NULL`: an earlier tree with identical
   data, sample split and forest settings supplies its forest fits when
   comparing tree methods or controls. Changed inputs are rejected.

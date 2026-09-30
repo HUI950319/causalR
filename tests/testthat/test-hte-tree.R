@@ -532,6 +532,25 @@ test_that("survival grids report severe early-event compression", {
   expect_equal(attr(b, "analysis")$time_grid$zero_fraction, 0)
 })
 
+test_that("failed AFT candidates leave a reported unsplit tree", {
+  withr::local_seed(19)
+  n <- 800L
+  d <- data.frame(w = rep(0:1, n / 2L), x = rep(c(0, 0, 0, 0, 1),
+                                              length.out = n), z = runif(n))
+  d$time <- ifelse(d$x == 1, 150, 0.01 + 0.1 * d$z + 0.85 * d$w)
+  d$DSS <- 1L
+  notes <- character()
+  res <- withCallingHandlers(get_hte_tree(d, "w", c("x", "z"), time = 120,
+    method = "mob_aft", max_depth = 1,
+    grf_args = list(target = "RMST", num.trees = 100L, W.hat = 0.5)),
+    warning = function(w) {
+      notes <<- c(notes, conditionMessage(w)); invokeRestart("muffleWarning")
+    })
+  expect_identical(res$rules$rule, "All patients")
+  expect_true(length(attr(res, "analysis")$node_failures) > 0L)
+  expect_true(any(grepl("node model failed", notes)))
+})
+
 test_that("numeric rules retain enough cut-point precision", {
   des <- .tree_design(data.frame(x = c(10000.1, 10000.2, 10000.3)),
                       "onehot")
@@ -761,4 +780,93 @@ test_that("compatible HTE trees reuse both forests and reject changed inputs", {
   expect_error(fit("ctree_dr", reuse = first, seed = 124), "same data.*settings")
   d$y[1L] <- d$y[1L] + 1
   expect_error(fit("ctree_dr", reuse = first), "same data.*settings")
+})
+
+test_that("tree stability bootstraps fixed scores and full mode refits", {
+  d <- tree_data(n = 600L)
+  res <- get_hte_tree(d, "z", c("X1", "X2", "X3", "grp"), surv = "y",
+    method = "rpart_dr", max_depth = 1, tree_args = list(xval = 0L),
+    grf_args = list(num.trees = 100L, num.threads = 2L))
+  withr::local_seed(55)
+  before <- .Random.seed
+  a <- get_hte_tree_stability(res, d, n_rep = 3L, mode = "full")
+  expect_identical(.Random.seed, before)
+  expect_identical(a$replicates$status, rep("ok", 3L))
+  expect_identical(nrow(a$agreement), 3L)
+  expect_true(all(a$agreement$jaccard >= 0 & a$agreement$jaccard <= 1))
+  local_mocked_bindings(get_hte = function(...) stop("unexpected forest fit"),
+                        .package = "causalR")
+  b <- get_hte_tree_stability(res, d, n_rep = 3L)
+  expect_identical(b$replicates$status, rep("ok", 3L))
+  expect_identical(.Random.seed, before)
+  expect_equal(b, get_hte_tree_stability(res, d, n_rep = 3L))
+  expect_setequal(b$variable_frequency$variable, c("X1", "X2", "X3", "grp"))
+  expect_true(all(b$variable_frequency$frequency >= 0 &
+                   b$variable_frequency$frequency <= 1))
+  expect_true(all(b$cutpoints$variable %in% b$variable_frequency$variable))
+  expect_error(get_hte_tree_stability(res, d, n_rep = 1), "n_rep")
+  d$y[1L] <- 0
+  expect_error(get_hte_tree_stability(res, d, n_rep = 3L), "original data")
+})
+
+test_that("stability Jaccard ignores node labels and handles unsplit trees", {
+  d <- tree_data(n = 600L)
+  res <- get_hte_tree(d, "z", c("X1", "X2", "X3"), surv = "y",
+    method = "rpart_dr", max_depth = 1, tree_args = list(xval = 0L),
+    grf_args = list(num.trees = 100L, num.threads = 2L))
+  permuted <- res
+  permuted$rules$node <- rev(permuted$rules$node)
+  local_mocked_bindings(get_hte_tree = function(...) permuted,
+                        .package = "causalR")
+  st <- get_hte_tree_stability(res, d, n_rep = 3L, mode = "full")
+  expect_equal(st$agreement$jaccard, rep(1, 3L))
+  expect_equal(st$reference_agreement$jaccard, rep(1, 3L))
+  ctx <- attr(res, "analysis")$reuse
+  ctx$scores[] <- 1
+  attr(res, "analysis")$reuse <- ctx
+  flat <- get_hte_tree_stability(res, d, n_rep = 3L)
+  expect_equal(flat$agreement$jaccard, rep(1, 3L))
+  expect_equal(flat$variable_frequency$frequency, rep(0, 3L))
+  expect_identical(nrow(flat$cutpoints), 0L)
+})
+
+test_that("fixed-score stability supports R-learner and node-model trees", {
+  d <- tree_data(n = 800L)
+  fits <- lapply(c("maxt", "rpart_r", "ctree_r", "mob_abs"), function(method)
+    get_hte_tree(d, "z", c("X1", "X2", "X3"), surv = "y",
+      method = method, max_depth = 1,
+      tree_args = if (method == "maxt") list(n_boot = 50L) else list(),
+      grf_args = list(num.trees = 100L, num.threads = 2L)))
+  local_mocked_bindings(get_hte = function(...) stop("unexpected forest fit"),
+                        .package = "causalR")
+  for (res in fits) {
+    st <- get_hte_tree_stability(res, d, n_rep = 2L)
+    expect_identical(st$replicates$status, rep("ok", 2L))
+  }
+})
+
+test_that("stability excludes failed fits and restores the RNG on error", {
+  d <- tree_data(n = 600L)
+  res <- get_hte_tree(d, "z", c("X1", "X2", "X3"), surv = "y",
+    method = "rpart_dr", max_depth = 1, tree_args = list(xval = 0L),
+    grf_args = list(num.trees = 100L, num.threads = 2L))
+  engine <- .tree_engine
+  calls <- 0L
+  local_mocked_bindings(.tree_engine = function(...) {
+    calls <<- calls + 1L
+    if (calls == 1L) stop("test fit failure")
+    engine(...)
+  }, .package = "causalR")
+  expect_warning(st <- get_hte_tree_stability(res, d, n_rep = 3L),
+                  "1 of 3 stability fits failed")
+  expect_identical(st$replicates$status, c("failed", "ok", "ok"))
+  expect_identical(nrow(st$agreement), 1L)
+  expect_equal(st$variable_frequency$frequency,
+                st$variable_frequency$n_selected / 2)
+  withr::local_seed(8)
+  before <- .Random.seed
+  local_mocked_bindings(.tree_engine = function(...) stop("test fit failure"),
+                        .package = "causalR")
+  expect_error(get_hte_tree_stability(res, d, n_rep = 2L), "All stability fits failed")
+  expect_identical(.Random.seed, before)
 })

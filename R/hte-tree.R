@@ -340,7 +340,7 @@
       c(cuts, max(x))[findInterval(x, cuts, left.open = TRUE) + 1L]
     })
   d  <- if (!is.null(g)) cbind(.g = g, xd)
-  fit <- switch(method,
+  fit <- tryCatch(switch(method,
     mob_model = {
       rn <- paste0(".r", seq_len(ncol(node$R)))
       dm <- data.frame(unname(node$R), xd)
@@ -394,7 +394,12 @@
         rp <- rpart::prune(rp, cp = cpt[pick, "CP"])
       }
       partykit::as.party(rp)
+    }), error = function(e) {
+      if (!length(failures)) stop(e)
+      NULL
     })
+  if (is.null(fit))
+    return(list(tree = tree, stats = stats, node_failures = failures))
   nm <- names(fit$data)
   walk <- function(nd, rows, path) {
     p <- partykit::info_node(nd)$p.value
@@ -1317,12 +1322,171 @@ get_hte_tree <- function(data,
                          estimation = !is.null(cached$estimation_fit)),
       reuse = list(data = original_data, signature = signature,
                    discovery_fit = if (is.null(fit_d)) cached$discovery_fit else fit_d,
-                   estimation_fit = fit_e),
+                   estimation_fit = fit_e, node = node, ctrl = ctrl,
+                   score_rows = ok, scores = gd),
       seed = seed, cols = cols, splits = tree, discovery = which(keep)[d_idx],
       scores_left_out = sum(!ok),
       node_failures = grown$node_failures,
       splits_dropped = nrow(grown$tree) - nrow(tree),
       call = match.call()))
+}
+
+
+#' Assess subgroup tree stability
+#'
+#' Rebuilds a tree and compares partitions on the original analysis patients.
+#' Stability describes reproducibility, not effect validity or significance.
+#' @param x An `hte_tree` from [get_hte_tree()] retaining its fitting context.
+#' @param data The identical original input data frame, including row order.
+#' @param n_rep Number of repetitions, a whole number from 2 to 10000.
+#'   Default `50`.
+#' @param mode `"tree"` (default) bootstraps the discovery sample within
+#'   treatment arms, keeping forest scores or predictions fixed. Node-model
+#'   methods refit their node models on these bootstrap samples. `"full"`
+#'   redraws the discovery/estimation split and refits both forests as required
+#'   on the original data with a new seed for each repetition.
+#' @param seed Nonnegative whole number, default `123`. Seeds the repetitions;
+#'   the caller's random-number state is restored, including on error.
+#' @param verbose Logical, default `FALSE`; reports completed repetitions.
+#' @return A list with `variable_frequency` (proportion of successful trees
+#'   using each variable), `cutpoints` (each split, its level, boundary and
+#'   direction), `agreement` (pairwise patient co-grouping Jaccard indices),
+#'   `reference_agreement` (each repetition versus `x`) and `replicates`
+#'   (status, leaf count, warnings and error). Failed repetitions are excluded
+#'   from summaries and reported. Jaccard uses patient pairs assigned to the
+#'   same leaf and is invariant to leaf labels; two empty pair sets score 1.
+#'   No confidence interval or significance test is computed from repetitions.
+#' @export
+get_hte_tree_stability <- function(x, data, n_rep = 50L,
+                                    mode = c("tree", "full"), seed = 123,
+                                    verbose = FALSE) {
+  mode <- match.arg(mode)
+  n_rep <- .hte_select_count(n_rep, "n_rep", 2L, 10000L)
+  seed <- .hte_select_count(seed, "seed", 0, .Machine$integer.max - 1e5)
+  a <- attr(x, "analysis")
+  ctx <- a$reuse
+  if (!inherits(x, "hte_tree") || is.null(ctx$ctrl))
+    stop("`x` must be an hte_tree retaining its fitting context; refit older objects.",
+         call. = FALSE)
+  if (!identical(data, ctx$data))
+    stop("Supply the identical original data used to fit `x`.", call. = FALSE)
+  if (!isTRUE(verbose) && !isFALSE(verbose))
+    stop("`verbose` must be TRUE or FALSE.", call. = FALSE)
+  genv <- globalenv()
+  old_seed <- if (exists(".Random.seed", envir = genv, inherits = FALSE))
+    get(".Random.seed", envir = genv, inherits = FALSE)
+  on.exit({
+    if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = genv)
+    else if (exists(".Random.seed", envir = genv, inherits = FALSE))
+      rm(".Random.seed", envir = genv)
+  }, add = TRUE)
+  set.seed(seed)
+  seeds <- sample.int(.Machine$integer.max - 1e5, n_rep)
+  keep <- stats::complete.cases(data[c(a$cat_var, a$outcome)])
+  patients <- data[keep, , drop = FALSE]
+  des <- list(cols = a$cols)
+  X <- .tree_new_matrix(x, patients)
+  W <- .psw_treat(patients[[a$cat_var]], a$cat_var, arg = "cat_var")$z
+  di <- match(a$discovery, which(keep))[ctx$score_rows]
+  Xd <- X[di, , drop = FALSE]
+  Wd <- W[di]
+  engine <- sub("_(dr|cate|abs|rel|aft|r)$", "", a$method)
+  model_based <- grepl("_(abs|rel|aft)$", a$method)
+  rlearner <- endsWith(a$method, "_r")
+  groups <- selected <- vector("list", n_rep)
+  cuts <- vector("list", n_rep)
+  runs <- data.frame(replicate = seq_len(n_rep), status = "ok",
+    n_leaves = NA_integer_, warning = "", error = "", stringsAsFactors = FALSE)
+  for (i in seq_len(n_rep)) {
+    notes <- character()
+    result <- tryCatch(withCallingHandlers({
+      if (mode == "full") {
+        args <- list(data = data, cat_var = a$cat_var, adj_var = a$adj_var,
+          candidate_var = a$candidate_var, surv = a$surv, method = a$method,
+          max_depth = a$max_depth, min_leaf = a$min_leaf,
+          factor_encoding = a$factor_encoding, split_frac = a$split_frac,
+          estimator = a$estimator, tree_args = a$tree_args,
+          grf_args = ctx$signature$grf_args, seed = seeds[i])
+        args$grf_args$seed <- seeds[i]
+        if (isTRUE(a$surv)) args$time <- a$time
+        if (!engine %in% c("rpart", "policy")) args$alpha <- a$alpha
+        res <- do.call(get_hte_tree, args)
+        if (!nrow(attr(res, "analysis")$splits) &&
+            length(attr(res, "analysis")$node_failures))
+          stop("Node-model tree growth failed.", call. = FALSE)
+        list(tree = attr(res, "analysis")$splits,
+             group = predict(res, patients, type = "node"))
+      } else {
+        set.seed(seeds[i])
+        b <- unlist(lapply(0:1, function(arm) {
+          j <- which(Wd == arm)
+          j[sample.int(length(j), length(j), replace = TRUE)]
+        }), use.names = FALSE)
+        node <- ctx$node
+        if (!is.null(node)) {
+          node$y <- if (is.matrix(node$y)) node$y[b, , drop = FALSE] else node$y[b]
+          node$R <- node$R[b, , drop = FALSE]
+        }
+        g <- ctx$scores[b]
+        grown <- if (a$method == "maxt")
+          .tree_maxt(g, Xd[b, , drop = FALSE], Wd[b], des$cols$var, ctx$ctrl)
+          else .tree_engine(if (model_based || (rlearner && engine != "rpart"))
+            paste0(engine, "_model") else engine, g, Xd[b, , drop = FALSE],
+            ctx$ctrl, node, weights = if (rlearner) node$R[, 1L])
+        tree <- .tree_prune(grown$tree, Xd[b, , drop = FALSE], Wd[b],
+                             ctx$ctrl$min_arm)
+        if (!nrow(tree) && length(grown$node_failures))
+          stop("Node-model tree growth failed.", call. = FALSE)
+        list(tree = tree, group = .icf_assign(tree, X))
+      }
+    }, warning = function(w) {
+      notes <<- union(notes, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }), error = function(e) {
+      runs$status[i] <<- "failed"
+      runs$error[i] <<- conditionMessage(e)
+      NULL
+    })
+    runs$warning[i] <- paste(notes, collapse = "; ")
+    if (!is.null(result)) {
+      groups[[i]] <- result$group
+      selected[[i]] <- unique(des$cols$var[result$tree$col])
+      runs$n_leaves[i] <- nrow(result$tree) + 1L
+      tr <- result$tree
+      cuts[[i]] <- data.frame(replicate = rep(i, nrow(tr)), path = tr$path,
+        variable = des$cols$var[tr$col], level = des$cols$level[tr$col],
+        value = tr$value, right = tr$right, stringsAsFactors = FALSE)
+    }
+    if (verbose) cli::cli_inform("Stability repetition {i}/{n_rep}: {runs$status[i]}.")
+  }
+  ok <- which(runs$status == "ok")
+  if (!length(ok)) stop(paste("All stability fits failed:", runs$error[1L]),
+                         call. = FALSE)
+  if (length(ok) < n_rep)
+    warning(sprintf("%d of %d stability fits failed; inspect `replicates`.",
+                    n_rep - length(ok), n_rep), call. = FALSE)
+  jaccard <- function(a, b) {
+    pairs <- function(n) sum(n * (n - 1) / 2)
+    intersection <- pairs(table(paste(a, b, sep = "|")))
+    union <- pairs(table(a)) + pairs(table(b)) - intersection
+    if (union == 0) 1 else intersection / union
+  }
+  pairs <- if (length(ok) >= 2L) utils::combn(ok, 2L) else matrix(integer(), 2L, 0L)
+  agreement <- tibble::tibble(replicate1 = pairs[1L, ], replicate2 = pairs[2L, ],
+    jaccard = vapply(seq_len(ncol(pairs)), function(j)
+      jaccard(groups[[pairs[1L, j]]], groups[[pairs[2L, j]]]), numeric(1L)))
+  frequency <- vapply(a$split_var, function(v)
+    sum(vapply(selected[ok], function(s) v %in% s, logical(1L))), integer(1L))
+  reference <- predict(x, patients, type = "node")
+  list(variable_frequency = tibble::tibble(variable = a$split_var,
+         n_selected = unname(frequency), frequency = unname(frequency) / length(ok)),
+       cutpoints = tibble::as_tibble(do.call(rbind, cuts[ok])),
+       agreement = agreement,
+       reference_agreement = tibble::tibble(replicate = ok,
+         jaccard = vapply(groups[ok], function(g) jaccard(reference, g), numeric(1L))),
+       replicates = tibble::as_tibble(runs),
+       analysis = list(mode = mode, n_rep = n_rep, seed = seed, n = nrow(patients),
+                       method = a$method))
 }
 
 
@@ -1346,6 +1510,16 @@ predict.hte_tree <- function(object, newdata, type = c("rule", "node"), ...) {
   if (!inherits(object, "hte_tree") || is.null(a$splits))
     stop("`object` must be an hte_tree retaining its splits; refit older objects.",
          call. = FALSE)
+  X <- .tree_new_matrix(object, newdata)
+  path <- .icf_assign(a$splits, X)
+  leaves <- .icf_leaves(a$splits, a$cols)
+  i <- match(path, leaves$path)
+  if (type == "rule") object$rules$rule[i] else object$rules$node[i]
+}
+
+# Training encodings shared by prediction and stability evaluation.
+.tree_new_matrix <- function(object, newdata) {
+  a <- attr(object, "analysis")
   if (!is.data.frame(newdata)) stop("`newdata` must be a data frame.", call. = FALSE)
   .sens_check_col(a$split_var, newdata, "newdata")
   cols <- a$cols
@@ -1368,10 +1542,7 @@ predict.hte_tree <- function(object, newdata, type = c("rule", "node"), ...) {
       X[, j] <- x
     }
   }
-  path <- .icf_assign(a$splits, X)
-  leaves <- .icf_leaves(a$splits, cols)
-  i <- match(path, leaves$path)
-  if (type == "rule") object$rules$rule[i] else object$rules$node[i]
+  X
 }
 
 
