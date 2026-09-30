@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `predict.hte_tree()` assigns new patients to the original rules or
+  terminal node ids using the training factor encoding and exact split
+  boundaries, without refitting. Missing values and unseen levels are rejected.
+
 * `get_hte_tree()` records its survival time grid and event compression
   in `analysis$time_grid`. It warns when at least ten positive events,
   comprising at least 10% of events up to the horizon, round to zero;

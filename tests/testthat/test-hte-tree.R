@@ -598,6 +598,28 @@ test_that("candidate_var names the split variables; factor rules keep levels", {
   expect_error(tree_call(d, candidate_var = "y"), "candidate_var")
 })
 
+test_that("tree prediction preserves factor encoding and strict cut-points", {
+  d <- tree_data(n = 800L, tau = function(d) 5 * (d$grp == "c"))
+  for (encoding in c("integer", "onehot")) {
+    res <- tree_call(d, method = "rpart_dr", candidate_var = "grp",
+                     max_depth = 1, factor_encoding = encoding,
+                     tree_args = list(xval = 0L))
+    expect_identical(predict(res, res$est$data), as.character(res$est$data$.rule))
+    nd <- data.frame(grp = factor(c("a", "b", "c"), levels = c("c", "b", "a")))
+    expect_identical(predict(res, nd), predict(res, transform(nd,
+                                                            grp = as.character(grp))))
+    expect_true(all(predict(res, nd, type = "node") %in% res$rules$node))
+    expect_error(predict(res, data.frame(grp = "new")), "unseen level")
+    expect_error(predict(res, data.frame(grp = NA_character_)), "missing")
+  }
+  res <- tree_call(tree_data(n = 800L), method = "rpart_dr", max_depth = 1,
+                   candidate_var = "X3", tree_args = list(xval = 0L))
+  cut <- attr(res, "analysis")$splits$value[1L]
+  expect_identical(predict(res, data.frame(X3 = c(cut - 1e-9, cut))),
+                   res$rules$rule)
+  expect_identical(predict(res, data.frame(X3 = numeric())), character())
+})
+
 test_that("binary and survival outcomes are split on their difference scale", {
   skip_if_not_installed("grf")
   skip_on_cran()

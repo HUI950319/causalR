@@ -1284,11 +1284,60 @@ get_hte_tree <- function(data,
       min_leaf = min_leaf, split_frac = split_frac, estimator = estimator,
       tree_args = ta,
       time_grid = time_grid,
-      seed = seed, cols = cols, discovery = which(keep)[d_idx],
+      seed = seed, cols = cols, splits = tree, discovery = which(keep)[d_idx],
       scores_left_out = sum(!ok),
       node_failures = grown$node_failures,
       splits_dropped = nrow(grown$tree) - nrow(tree),
       call = match.call()))
+}
+
+
+#' Assign new patients to a subgroup tree
+#'
+#' Applies the original cut-points and training factor levels without fitting
+#' a forest or estimating effects in the new data.
+#' @param object An `hte_tree` from [get_hte_tree()].
+#' @param newdata A data frame containing the original split variables.
+#'   Missing values and unseen categorical levels are rejected. Factor level
+#'   order in `newdata` does not change the training encoding.
+#' @param type `"rule"` (default) returns rule strings; `"node"` returns
+#'   terminal node ids matching `object$rules$node`.
+#' @param ... Reserved for S3 compatibility; must be empty.
+#' @return A character or integer vector with one entry per new patient.
+#' @export
+predict.hte_tree <- function(object, newdata, type = c("rule", "node"), ...) {
+  type <- match.arg(type)
+  if (length(list(...))) stop("Unused arguments in `...`.", call. = FALSE)
+  a <- attr(object, "analysis")
+  if (!inherits(object, "hte_tree") || is.null(a$splits))
+    stop("`object` must be an hte_tree retaining its splits; refit older objects.",
+         call. = FALSE)
+  if (!is.data.frame(newdata)) stop("`newdata` must be a data frame.", call. = FALSE)
+  .sens_check_col(a$split_var, newdata, "newdata")
+  cols <- a$cols
+  lv <- attr(cols, "levels")
+  X <- matrix(0, nrow(newdata), nrow(cols))
+  for (j in seq_len(nrow(cols))) {
+    v <- cols$var[j]
+    x <- newdata[[v]]
+    if (anyNA(x)) stop(sprintf("`newdata$%s` has missing values.", v), call. = FALSE)
+    if (cols$type[j] %in% c("code", "level") ||
+        (cols$type[j] == "num" && !is.null(lv[[v]]))) {
+      code <- match(as.character(x), lv[[v]])
+      if (anyNA(code))
+        stop(sprintf("`newdata$%s` has an unseen level.", v), call. = FALSE)
+      X[, j] <- if (cols$type[j] == "level")
+        as.numeric(as.character(x) == cols$level[j]) else code
+    } else {
+      if (!is.numeric(x) || any(!is.finite(x)))
+        stop(sprintf("`newdata$%s` must be finite numeric values.", v), call. = FALSE)
+      X[, j] <- x
+    }
+  }
+  path <- .icf_assign(a$splits, X)
+  leaves <- .icf_leaves(a$splits, cols)
+  i <- match(path, leaves$path)
+  if (type == "rule") object$rules$rule[i] else object$rules$node[i]
 }
 
 
