@@ -299,6 +299,8 @@ model needs about 10 patients per coefficient, which sets a floor on the
 leaves. The \verb{_rel} trees split on the log-OR or log-HR scale while every
 reported effect is a difference; effect modification depends on the
 scale, so the two can disagree.
+Failed node fits cannot split; a failed root remains a single leaf.
+Failures are warned once and stored in \code{analysis$node_failures}.
 The \verb{_aft} methods assume a Weibull AFT model and conditionally independent
 censoring. The estimated log-scale is a nuisance parameter in the MOB
 score whitening and is also tested when \code{parm = "all"}. AFT splits need

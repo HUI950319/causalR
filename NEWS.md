@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte_tree()` rejects failed logistic, Cox and non-finite node fits
+  before using their scores. A failed root remains an unsplit tree;
+  node-model failures are warned once and recorded in analysis metadata.
+
 * `get_hte_tree(estimator = "tmle")` now keeps its stored overall and
   subgroup results, `plt_hte_sub()` and `plt_hte_cate()` on the same TMLE
   estimator as its node and rule tables.

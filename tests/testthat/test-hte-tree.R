@@ -308,6 +308,26 @@ test_that("node-model trees tolerate constant adjustment columns", {
   }
 })
 
+test_that("node-model trees stop splitting when a logistic fit fails", {
+  withr::local_seed(21)
+  d <- data.frame(x = seq(-1, 1, length.out = 800L), w = rbinom(800L, 1, 0.5))
+  d$y <- as.integer(d$x > 0)
+  for (method in c("ctree_rel", "mob_rel")) {
+    expect_warning(res <- get_hte_tree(d, "w", "x", surv = "y", method = method,
+                                       max_depth = 1,
+                                       grf_args = list(num.trees = 100L,
+                                                       W.hat = 0.5)),
+                    "node model.*failed")
+    expect_identical(nrow(res$rules), 1L)
+    expect_match(attr(res, "analysis")$node_failures, "logit")
+  }
+  x <- cbind(`(Intercept)` = 1, .a = rep(0:1, 100L),
+              x = seq(-1, 1, length.out = 200L))
+  expect_error(.tree_nodefit("logit", keep = 2L)(as.integer(x[, "x"] > 0), x,
+                                                  estfun = TRUE),
+               "logit node model")
+})
+
 test_that("node-model trees fit logit and Cox models, or pseudo-values", {
   skip_if_not_installed("grf")
   skip_if_not_installed("survival")

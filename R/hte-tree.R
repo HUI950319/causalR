@@ -215,7 +215,9 @@
       }
       obj <- -m$loglik[2L]
     } else if (model == "cox") {
-      m  <- suppressWarnings(survival::coxph(y ~ x, weights = w))
+      m <- withCallingHandlers(survival::coxph(y ~ x, weights = w),
+        warning = function(w) stop(paste("Cox node model failed:",
+                                         conditionMessage(w)), call. = FALSE))
       cf <- stats::coef(m)
       sc <- if (estfun) as.matrix(stats::residuals(m, type = "score"))
       obj <- -m$loglik[2L]
@@ -231,15 +233,24 @@
       sc  <- if (estfun) cbind(w * (y - x[, 1L] * tau))
       obj <- -sum(w * y)^2 / sum(w * x[, 1L])
     } else {
-      m <- suppressWarnings(if (model == "logit")
-        stats::glm.fit(x, y, weights = w, family = stats::binomial())
-        else stats::lm.wfit(x, y, w))
+      m <- if (model == "logit") withCallingHandlers(
+        stats::glm.fit(x, y, weights = w, family = stats::binomial()),
+        warning = function(w) stop(paste("logit node model failed:",
+                                         conditionMessage(w)), call. = FALSE))
+        else stats::lm.wfit(x, y, w)
+      if (model == "logit" && !isTRUE(m$converged))
+        stop("The logit node model did not converge.", call. = FALSE)
       cf <- m$coefficients
       r  <- y - m$fitted.values
       sc <- if (estfun) x * (w * r)
       obj <- if (model == "logit") m$deviance / 2 else sum(w * r^2)
     }
     ok <- which(!is.na(cf))
+    if (!is.finite(obj) || any(!is.finite(cf[ok])) ||
+        (!is.null(keep) && anyNA(cf[keep])) ||
+        (estfun && any(!is.finite(sc))))
+      stop(sprintf("The %s node model has unavailable coefficients or scores.",
+                   model), call. = FALSE)
     if (estfun && decorrelate && !is.null(keep)) {
       s  <- sc[, ok, drop = FALSE]
       e  <- eigen(crossprod(s) / nrow(s), symmetric = TRUE)
@@ -269,7 +280,26 @@
   tree  <- data.frame(path = character(), col = integer(), value = numeric(),
                       right = logical(), stringsAsFactors = FALSE)
   stats <- data.frame(path = character(), statistic = numeric(),
-                      split_p = numeric(), stringsAsFactors = FALSE)
+                       split_p = numeric(), stringsAsFactors = FALSE)
+  failures <- character()
+  if (method %in% c("mob_model", "ctree_model")) {
+    rawfit <- .tree_nodefit(node$model, node$parm,
+                            decorrelate = method == "mob_model")
+    fitfun <- function(y, x, start = NULL, weights = NULL, offset = NULL, ...,
+                       estfun = FALSE, object = FALSE)
+      tryCatch(rawfit(y, x, start, weights, offset, ...,
+                      estfun = estfun, object = object), error = function(e) {
+        failures <<- union(failures, conditionMessage(e))
+        stop(e)
+      })
+    on.exit(if (length(failures)) warning(sprintf(
+      "The node model failed; affected nodes cannot split. First reason: %s",
+      failures[1L]), call. = FALSE), add = TRUE)
+    root <- tryCatch(fitfun(node$y, node$R, estfun = TRUE),
+                      error = function(e) NULL)
+    if (is.null(root))
+      return(list(tree = tree, stats = stats, node_failures = failures))
+  }
   if (method == "policy") {
     sgn  <- if (ctrl$better == "higher") 1 else -1
     G    <- cbind(0, sgn * g - ctrl$cost)
@@ -319,13 +349,12 @@
       partykit::mob(stats::as.formula(paste(
         ".y ~ 0 +", paste(rn, collapse = " + "), "|",
         paste(names(xd), collapse = " + "))), data = dm,
-        fit = .tree_nodefit(node$model, node$parm, decorrelate = TRUE),
+        fit = fitfun,
         control = partykit::mob_control(
           alpha = ctrl$alpha, maxdepth = ctrl$max_depth + 1,
           minsize = ctrl$min_n, trim = ctrl$trim))
     },
     ctree_model = {
-      fitfun <- .tree_nodefit(node$model, node$parm)
       ytrafo <- function(data, weights, control, ...)
         function(subset, weights, info = NULL, estfun = TRUE, object = FALSE) {
           f <- tryCatch(fitfun(node$y[subset], node$R[subset, , drop = FALSE],
@@ -390,7 +419,7 @@
     walk(kids[[3L - lo]], rows[!le], paste0(path, "R"))
   }
   walk(partykit::node_party(fit), seq_len(nrow(X)), "")
-  list(tree = tree, stats = stats)
+  list(tree = tree, stats = stats, node_failures = failures)
 }
 
 # Drops every split (with its subtree) a child of which holds fewer than
@@ -646,6 +675,8 @@
 #' leaves. The `_rel` trees split on the log-OR or log-HR scale while every
 #' reported effect is a difference; effect modification depends on the
 #' scale, so the two can disagree.
+#' Failed node fits cannot split; a failed root remains a single leaf.
+#' Failures are warned once and stored in `analysis$node_failures`.
 #' The `_aft` methods assume a Weibull AFT model and conditionally independent
 #' censoring. The estimated log-scale is a nuisance parameter in the MOB
 #' score whitening and is also tested when `parm = "all"`. AFT splits need
@@ -1204,6 +1235,7 @@ get_hte_tree <- function(data,
       tree_args = ta,
       seed = seed, cols = cols, discovery = which(keep)[d_idx],
       scores_left_out = sum(!ok),
+      node_failures = grown$node_failures,
       splits_dropped = nrow(grown$tree) - nrow(tree),
       call = match.call()))
 }
