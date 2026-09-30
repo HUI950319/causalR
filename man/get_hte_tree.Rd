@@ -204,7 +204,13 @@ followed longer: in 100 simulated data sets of 4,000 patients the
 effects moved by at most 0.002, with the same standard errors, at a
 third of the time. A grid ending at \code{time} would put those patients on
 the horizon instead (effects off by up to 0.03, standard errors 19\%
-larger).}
+larger).
+\code{analysis$time_grid} records the actual points, whether the automatic
+grid was used, the positive-event count up to \code{time}, their mapped bin
+count, fraction rounded to zero and largest rounding error. At least
+ten events and 10\% rounded to zero raises a warning. This diagnostic
+does not establish numerical accuracy; compare a denser grid, e.g.
+\code{failure.times = sort(unique(c(0, data$time, time)))}.}
 
 \item{seed}{Nonnegative whole number, default \code{123}. It draws the split,
 the bootstrap multipliers and rpart's folds, and seeds the \code{\link[=get_hte]{get_hte()}}

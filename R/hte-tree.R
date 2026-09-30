@@ -627,6 +627,12 @@
 #'   third of the time. A grid ending at `time` would put those patients on
 #'   the horizon instead (effects off by up to 0.03, standard errors 19%
 #'   larger).
+#'   `analysis$time_grid` records the actual points, whether the automatic
+#'   grid was used, the positive-event count up to `time`, their mapped bin
+#'   count, fraction rounded to zero and largest rounding error. At least
+#'   ten events and 10% rounded to zero raises a warning. This diagnostic
+#'   does not establish numerical accuracy; compare a denser grid, e.g.
+#'   `failure.times = sort(unique(c(0, data$time, time)))`.
 #' @param seed Nonnegative whole number, default `123`. It draws the split,
 #'   the bootstrap multipliers and rpart's folds, and seeds the [get_hte()]
 #'   fits unless `grf_args` sets `seed`. The caller's random-number state is
@@ -995,6 +1001,7 @@ get_hte_tree <- function(data,
   # ---- Discovery: scores and the tree -----------------------------------------
   ga <- grf_args
   if (is.null(ga$seed)) ga$seed <- seed
+  grid_auto <- FALSE
   # grf fits the nuisance survival and censoring curves at every distinct
   # time, which dominates a survival fit; 100 points up to `time` give the
   # same effects in a third of the time. The point after `time` keeps the
@@ -1002,9 +1009,11 @@ get_hte_tree <- function(data,
   # horizon: grf puts every later time on the last grid point.
   if (is_surv && is.null(ga$failure.times)) {
     tm <- data$time
-    if (length(unique(tm[tm <= time])) > 100L)
+    if (length(unique(tm[tm <= time])) > 100L) {
       ga$failure.times <- c(seq(min(0, tm), time, length.out = 100L),
-                            if (any(tm > time)) min(tm[tm > time]))
+                             if (any(tm > time)) min(tm[tm > time]))
+      grid_auto <- TRUE
+    }
   }
   # 500 trees give nearly the scores and leaf effects of grf's 2000 at a
   # quarter of the time; above 10,000 rows get_hte() grows 200
@@ -1126,6 +1135,24 @@ get_hte_tree <- function(data,
     est <- hte(est_data)
   }
   ea   <- attr(est, "analysis")
+  time_grid <- NULL
+  if (is_surv) {
+    points <- ea$grf_args$failure.times
+    if (is.null(points)) {
+      yy <- est$fit$Y.orig
+      points <- sort(unique(yy))
+    }
+    events <- data$time[data$DSS == 1 & data$time > 0 & data$time <= time]
+    mapped <- points[pmax(1L, findInterval(events, points))]
+    n_zero <- sum(mapped == 0)
+    time_grid <- list(points = points, automatic = grid_auto,
+      n_events = length(events), n_bins = length(unique(mapped)),
+      zero_fraction = if (length(events)) n_zero / length(events) else 0,
+      max_rounding = if (length(events)) max(events - mapped) else 0)
+    if (n_zero >= 10L && time_grid$zero_fraction >= 0.1)
+      warning(sprintf("The survival time grid rounds %.1f%% of positive events up to `time` to zero. Use a denser `grf_args$failure.times` grid, or all observed times, and compare estimates.",
+                      100 * time_grid$zero_fraction), call. = FALSE)
+  }
   s    <- .hte_arm_scores(est$fit)
   grid <- data.frame(estimand = "ATE", measure = "diff", stringsAsFactors = FALSE)
   risk <- identical(ea$target, "survival.probability")
@@ -1256,6 +1283,7 @@ get_hte_tree <- function(data,
       max_depth = max_depth, alpha = if (tested) alpha else NA_real_,
       min_leaf = min_leaf, split_frac = split_frac, estimator = estimator,
       tree_args = ta,
+      time_grid = time_grid,
       seed = seed, cols = cols, discovery = which(keep)[d_idx],
       scores_left_out = sum(!ok),
       node_failures = grown$node_failures,

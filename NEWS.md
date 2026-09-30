@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* `get_hte_tree()` records its survival time grid and event compression
+  in `analysis$time_grid`. It warns when at least ten positive events,
+  comprising at least 10% of events up to the horizon, round to zero;
+  the existing default and user-supplied grids are retained.
+
 * `get_hte_tree()` reports control counts, follow-up support and an
   estimation status for each leaf. Its overall interaction test is now
   omitted when any leaf cannot be estimated, including in downstream plots.

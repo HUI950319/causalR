@@ -505,6 +505,33 @@ test_that("survival forests fit their curves on a 100-point grid by default", {
                    fit(failure.times = sort(unique(c(0, d$time))))$rules)
 })
 
+test_that("survival grids report severe early-event compression", {
+  withr::local_seed(19)
+  n <- 800L
+  d <- data.frame(w = rep(0:1, n / 2L), x = rep(c(0, 0, 0, 0, 1),
+                                              length.out = n), z = runif(n))
+  d$time <- ifelse(d$x == 1, 150, 0.01 + 0.1 * d$z + 0.85 * d$w)
+  d$DSS <- 1L
+  fit <- function(grid = NULL) get_hte_tree(d, "w", c("x", "z"), time = 120,
+    method = "rpart_dr", max_depth = 1, tree_args = list(xval = 0L),
+    grf_args = c(list(target = "RMST", num.trees = 100L, W.hat = 0.5),
+                 if (!is.null(grid)) list(failure.times = grid)))
+  warnings <- character()
+  a <- withCallingHandlers(fit(), warning = function(w) {
+    warnings <<- c(warnings, conditionMessage(w)); invokeRestart("muffleWarning")
+  })
+  expect_true(any(grepl("time grid rounds", warnings)))
+  diag <- attr(a, "analysis")$time_grid
+  expect_true(diag$automatic)
+  expect_equal(diag$zero_fraction, 1)
+  expect_length(diag$points, 101L)
+  grid <- sort(unique(c(0, d$time, 120)))
+  b <- suppressWarnings(fit(grid))
+  expect_false(attr(b, "analysis")$time_grid$automatic)
+  expect_identical(attr(b, "analysis")$time_grid$points, grid)
+  expect_equal(attr(b, "analysis")$time_grid$zero_fraction, 0)
+})
+
 test_that("numeric rules retain enough cut-point precision", {
   des <- .tree_design(data.frame(x = c(10000.1, 10000.2, 10000.3)),
                       "onehot")
