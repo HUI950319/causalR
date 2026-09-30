@@ -465,6 +465,26 @@ test_that("both forests grow 500 trees unless grf_args sets num.trees", {
   expect_identical(ntree(fit(grf_args = list(num.trees = 60))), 60)
 })
 
+test_that("survival forests fit their curves on a 100-point grid by default", {
+  withr::local_seed(6)
+  n <- 800L
+  d <- data.frame(x = runif(n), w = rnorm(n))
+  d$z <- rbinom(n, 1, 0.5)
+  t_ev <- rexp(n, 0.02 * exp(-0.5 * d$z * (d$x > 0.5)))
+  t_c  <- runif(n, 10, 120)
+  d$time <- pmin(t_ev, t_c)
+  d$DSS  <- as.integer(t_ev <= t_c)
+  fit <- function(...) get_hte_tree(d, "z", c("x", "w"), time = 30,
+                                    method = "rpart_dr",
+                                    grf_args = list(num.trees = 50, ...))
+  grid <- c(seq(0, 30, length.out = 100), min(d$time[d$time > 30]))
+  expect_identical(fit()$rules, fit(failure.times = grid)$rules)
+  # a coarse time scale is left to grf
+  d$time <- ceiling(d$time)
+  expect_identical(fit()$rules,
+                   fit(failure.times = sort(unique(c(0, d$time))))$rules)
+})
+
 test_that("numeric rules retain enough cut-point precision", {
   des <- .tree_design(data.frame(x = c(10000.1, 10000.2, 10000.3)),
                       "onehot")

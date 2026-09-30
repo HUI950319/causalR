@@ -19,6 +19,14 @@
   causalR now imports ggrepel (already required through UtilsR) and needs
   ggplot2 >= 3.5.0 for inside legends.
 
+* For a survival outcome with more than 100 distinct times up to `time`,
+  `get_hte_tree()` fits grf's survival and censoring curves on 100 evenly
+  spaced points up to `time` plus the first follow-up past it, unless
+  `grf_args` sets `failure.times`. In 100 simulated data sets the effects
+  moved by at most 0.002 with the same standard errors, at a third of the
+  time. With the 500 trees below, a survival tree at 20,000 patients falls
+  from 37 to 10 s (`"maxt"`) and from about 30 to 5 s (ctree, rpart).
+
 * `get_hte_tree()` grows 500 trees in each of its two forests unless
   `grf_args` sets `num.trees` (above 10,000 rows `get_hte()` still grows
   200). The forests take most of the time; at 20,000 patients a continuous

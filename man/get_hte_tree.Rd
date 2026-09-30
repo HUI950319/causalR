@@ -196,7 +196,15 @@ the distinct values.}
 the rows; a single known propensity \code{W.hat}, as in a trial, is.
 Without \code{num.trees}, each fit grows 500 trees, or 200 above 10,000 rows
 as in \code{\link[=get_hte]{get_hte()}}: grf's default 2000 gave the same trees and leaf
-effects within 0.005 in simulations, at up to four times the time.}
+effects within 0.005 in simulations, at up to four times the time.
+For a survival outcome with more than 100 distinct times up to \code{time},
+\code{failure.times} defaults to 100 evenly spaced points from 0 to \code{time}
+and the first follow-up past it, where \code{\link[=get_hte]{get_hte()}} moves the patients
+followed longer: in 100 simulated data sets of 4,000 patients the
+effects moved by at most 0.002, with the same standard errors, at a
+third of the time. A grid ending at \code{time} would put those patients on
+the horizon instead (effects off by up to 0.03, standard errors 19\%
+larger).}
 
 \item{seed}{Nonnegative whole number, default \code{123}. It draws the split,
 the bootstrap multipliers and rpart's folds, and seeds the \code{\link[=get_hte]{get_hte()}}
