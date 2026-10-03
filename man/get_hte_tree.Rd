@@ -99,7 +99,7 @@ Splits target the log-time ratio; reported effects remain DR
 survival-probability or RMST differences.}
 \item{\code{"mob_r"}, \code{"ctree_r"}, \code{"rpart_r"}}{the R-learner: the tree
 splits on the forest's out-of-bag residuals \eqn{\tilde Y = Y -
-      \hat m(X)} and \eqn{\tilde W = W - \hat e(X)}, minimising the R-loss
+    \hat m(X)} and \eqn{\tilde W = W - \hat e(X)}, minimising the R-loss
 \eqn{\sum (\tilde Y - \tau \tilde W)^2} as grf's own trees and the
 iCF do. \code{"mob_r"} and \code{"ctree_r"} test the score
 \eqn{\tilde W (\tilde Y - \tilde W \tau)} of the node's

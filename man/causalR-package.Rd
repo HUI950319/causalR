@@ -19,5 +19,10 @@ Useful links:
 \author{
 \strong{Maintainer}: Hui Ouyang \email{ouyanghui950913@gmail.com}
 
+Authors:
+\itemize{
+  \item Hui Ouyang \email{ouyanghui950913@gmail.com}
+}
+
 }
 \keyword{internal}

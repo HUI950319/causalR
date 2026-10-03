@@ -50,7 +50,7 @@ non-empty \code{save_tbl} builds it too.}
 processes build \verb{$tbl}, whose tables, one for the unadjusted sample and
 one per scheme, are independent. \code{NULL} takes the number of tables, at
 most 8 and at most the logical cores less two; \code{1} builds them one after
-another. Workers are forked through \code{\link[parallel:mcdummies]{parallel::mclapply()}} on Linux and
+another. Workers are forked through \code{\link[parallel:mclapply]{parallel::mclapply()}} on Linux and
 macOS (WSL included) and started as a PSOCK cluster on Windows, which
 costs a few seconds. The result does not depend on \code{cores}, and it is
 ignored when no table is built.}

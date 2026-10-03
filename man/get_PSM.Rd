@@ -125,7 +125,7 @@ so its numbers differ slightly (measured: -0.333 here against -0.357
 there for the same nearest-neighbour match).}
 \item{\code{fit}}{Named list of the \code{matchit} objects, one per method, for
 \code{summary()}, \code{plot()}, \code{cobalt::bal.tab()} or
-\code{\link[MatchIt:match_data]{MatchIt::match.data()}}, which finds the data on its own and returns
+\code{\link[MatchIt:match.data]{MatchIt::match.data()}}, which finds the data on its own and returns
 the exposure recoded to 0/1.}
 }
 Analysis metadata is attached as \code{attr(x, "analysis")}, including the
@@ -152,7 +152,7 @@ fit <- lm(y ~ z, data = m, weights = w_nearest)
 sandwich::vcovCL(fit, cluster = m$s_nearest)
 }\if{html}{\out{</div>}}
 
-With replacement, use \code{\link[MatchIt:match_data]{MatchIt::get_matches()}} on the
+With replacement, use \code{\link[MatchIt:get_matches]{MatchIt::get_matches()}} on the
 corresponding \code{result$fit} entry to expand reused units into their
 matching sets; account for both set membership and repeated unit IDs in
 subsequent inference.
