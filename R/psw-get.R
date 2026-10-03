@@ -194,15 +194,34 @@
 # `obj$call`, which then makes up most of the object (measured at n = 400:
 # 665 KB against 113 KB) and is what any printed call would show. The symbol
 # resolves in this frame, which the formula environment keeps reachable.
+#
+# WeightIt 2.1.0 misreads backquoted non-syntactic names: `Age (years)` stops
+# as a call to Age(), and `chol-level` is fitted but dropped from `$covs`, so
+# bal.tab() on the fit would silently miss it. Such columns are fitted under
+# syntactic stand-ins, and `$covs` gets the real names back.
 #' @keywords internal
 #' @noRd
 .psw_fit <- function(data, treat, adj_var, method, ps_args) {
+  odd <- unique(c(treat, adj_var))
+  odd <- odd[make.names(odd) != odd]
+  if (length(odd)) {
+    stand_in <- utils::tail(make.unique(c(names(data), make.names(odd))),
+                            length(odd))
+    names(data)[match(odd, names(data))] <- stand_in
+    swap    <- function(v) ifelse(v %in% odd, stand_in[match(v, odd)], v)
+    treat   <- swap(treat)
+    adj_var <- swap(adj_var)
+  }
   form <- stats::reformulate(.sens_quote_names(adj_var), response = as.name(treat))
   cl   <- as.call(c(list(quote(WeightIt::weightit)),
                     list(formula = form, data = quote(data), method = method,
                          estimand = "ATE"),
                     ps_args))
   obj  <- eval(cl)
+  if (length(odd) && is.data.frame(obj$covs)) {
+    i <- match(stand_in, names(obj$covs))
+    names(obj$covs)[i[!is.na(i)]] <- odd[!is.na(i)]
+  }
   if (is.null(obj$ps))
     stop(sprintf("WeightIt method \"%s\" returns balancing weights without a propensity score, so it cannot feed a tilting function. Use one of %s.",
                  method,

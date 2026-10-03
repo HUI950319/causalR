@@ -50,10 +50,13 @@ test_that("get_PSW returns the documented structure", {
 test_that("weighting treats non-syntactic column names as literal names", {
   d <- psw_data()
   ref <- get_PSW(d, "z", psw_adj, balance = FALSE)
-  names(d) <- c("blood pressure", "chol-level", "baseline score", "treated arm")
+  # The parenthesis reads as a call to WeightIt 2.1.0 ("Could not find
+  # function"), unlike the space and the hyphen.
+  names(d) <- c("blood pressure", "chol-level", "baseline score (z)", "treated arm")
   res <- get_PSW(d, "treated arm", names(d)[1:3], balance = FALSE)
   expect_equal(res$data$ps, ref$data$ps)
   expect_equal(res$data[all_wcols], ref$data[all_wcols])
+  expect_setequal(names(res$fit$covs), names(d)[1:3])
 })
 
 
@@ -344,8 +347,10 @@ test_that("the weightit object carries a readable call, not the data", {
   expect_identical(cl[[1L]], quote(WeightIt::weightit))
   expect_identical(cl$data, quote(data))
   expect_lt(sum(nchar(deparse(cl))), 200L)
+  # An inlined call is about six times the object; WeightIt 2.1.0 objects sit
+  # just above 20 times this data on their own.
   expect_lt(as.numeric(utils::object.size(res$fit)),
-            20 * as.numeric(utils::object.size(d)))
+            25 * as.numeric(utils::object.size(d)))
   expect_no_error(summary(res$fit))
 })
 

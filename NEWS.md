@@ -1,5 +1,11 @@
 # causalR (development version)
 
+* `get_PSW()`, `get_PSM()` and `get_bal()` fit propensity scores under
+  syntactic stand-ins for non-syntactic column names and restore the real
+  names in `fit$covs`. WeightIt 2.1.0 stopped on a name such as
+  `Age (years)` and dropped hyphenated names such as `chol-level` from
+  `fit$covs` while still fitting them; scores and weights are unchanged.
+
 * `get_hte_tree_stability()` reports variable selection frequencies,
   cut-points and label-invariant patient co-grouping Jaccard agreement.
   It distinguishes fixed-score tree bootstraps from full refitting with
