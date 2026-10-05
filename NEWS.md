@@ -1,5 +1,13 @@
 # causalR (development version)
 
+* New `get_evalue()` computes the E-value of a risk, odds or hazard ratio,
+  typed in as `effect = "1.85 (1.20-2.85)"` or `est`/`lo`/`hi`, or fitted
+  from `data` with `cat_var`, `adj_var` and RegR-style `surv` (Cox on
+  `time`/`DSS`, or logistic on a named binary outcome). `rare` switches the
+  OR/HR-to-RR conversion. The E-value comes from `EValue::evalues.RR()`,
+  which keeps working when `lava` (loaded by `mets` or `dml.sensemakr`)
+  breaks `EValue::evalues.OR()` and `evalues.HR()`. Adds EValue to Suggests.
+
 * `get_PSW()`, `get_PSM()` and `get_bal()` fit propensity scores under
   syntactic stand-ins for non-syntactic column names and restore the real
   names in `fit$covs`. WeightIt 2.1.0 stopped on a name such as

@@ -314,3 +314,130 @@ test_that("print.sens_res echoes a copy-pasteable plt_sens call", {
   expect_true(any(grepl("Not comparable", out)))
   expect_true(any(grepl("sensemakr", out)))
 })
+
+evalue_cols <- c("term", "measure", "est", "lo", "hi", "rare", "rr", "rr_lo",
+                 "rr_hi", "evalue_point", "evalue_ci")
+
+test_that("get_evalue reproduces EValue on summary estimates", {
+  skip_if_not_installed("EValue")
+  res <- get_evalue(est = 2, lo = 1.3, hi = 3.1, measure = "OR", rare = TRUE)
+  expect_s3_class(res, "tbl_df")
+  expect_identical(names(res), evalue_cols)
+  expect_identical(res$measure, "OR")
+  expect_true(is.na(res$term))
+  expect_equal(res$evalue_point, 3.414214, tolerance = 1e-6)
+  expect_equal(res$evalue_ci,    1.9245,   tolerance = 1e-6)
+
+  # Common outcome: sqrt(OR), as EValue::evalues.OR(rare = FALSE)
+  res <- get_evalue(est = 2, lo = 1.3, hi = 3.1, measure = "OR")
+  expect_equal(c(res$rr, res$rr_lo, res$rr_hi),
+               c(1.414214, 1.140175, 1.760682), tolerance = 1e-6)
+  expect_equal(res$evalue_point, 2.179580, tolerance = 1e-6)
+  expect_equal(res$evalue_ci,    1.539956, tolerance = 1e-6)
+
+  # Protective HR whose interval covers the null
+  res <- get_evalue(est = 0.6, lo = 0.4, hi = 1.1, measure = "HR")
+  expect_equal(res$evalue_point, 2.1996224, tolerance = 1e-6)
+  expect_identical(res$evalue_ci, 1)
+
+  res <- get_evalue(est = 2, lo = 1.3, hi = 3.1, measure = "RR", rare = TRUE)
+  expect_true(is.na(res$rare))
+  expect_equal(res$rr, 2)
+})
+
+test_that("get_evalue reads an effect string with or without an interval", {
+  skip_if_not_installed("EValue")
+  ref <- get_evalue(est = 2, lo = 1.3, hi = 3.1, measure = "OR")
+  for (s in c("2 (1.3-3.1)", "2 (1.3, 3.1)", " 2.00(1.30 ~ 3.10) ",
+              "2 (1.3 to 3.1)", "2 [1.3\u20133.1]"))
+    expect_identical(get_evalue(effect = s, measure = "OR"), ref)
+
+  pt <- get_evalue(effect = "2", measure = "OR")
+  expect_equal(pt$evalue_point, ref$evalue_point)
+  expect_true(all(is.na(c(pt$lo, pt$hi, pt$evalue_ci))))
+
+  expect_error(get_evalue(effect = "2 (1.3; 3.1)", measure = "OR"),
+               "Cannot read `effect`")
+  expect_error(get_evalue(effect = "OR 2 (1.3-3.1)", measure = "OR"),
+               "Cannot read `effect`")
+})
+
+test_that("get_evalue fits Cox on time and DSS with surv = TRUE", {
+  sens_test_deps("EValue", "survival", "tipr")
+  d <- cox_data()
+  d$DSS <- d$status
+  res <- get_evalue(d, cat_var = "sex", adj_var = c("age", "ph.ecog"))
+  expect_identical(res$term, "sexfemale")
+  expect_identical(res$measure, "HR")
+  # Same Cox model and E-values as get_sens(method = "cox")
+  expect_equal(c(res$est, res$lo, res$hi),
+               c(0.5754446, 0.4142130, 0.7994351), tolerance = 1e-6)
+  expect_equal(res$evalue_point, 2.2898751, tolerance = 1e-6)
+  expect_equal(res$evalue_ci,    1.6103234, tolerance = 1e-6)
+
+  res <- get_evalue(d, cat_var = "sex", adj_var = c("age", "ph.ecog"),
+                    rare = TRUE)
+  expect_equal(res$evalue_point, 2.8700924, tolerance = 1e-6)
+  expect_equal(res$evalue_ci,    1.8110848, tolerance = 1e-6)
+})
+
+test_that("get_evalue fits logistic regression when surv names the outcome", {
+  sens_test_deps("EValue", "survival")
+  d <- cox_data()
+  d <- d[d$ph.ecog < 3, ]
+  d$ecog <- factor(d$ph.ecog)
+  fit <- stats::glm(status ~ ecog + age, family = stats::binomial(), data = d)
+  tm <- c("ecog1", "ecog2")
+  ci <- exp(stats::confint.default(fit, tm, level = 0.9))
+
+  res <- get_evalue(d, cat_var = "ecog", adj_var = "age", surv = "status",
+                    conf_level = 0.9)
+  expect_identical(res$term, tm)
+  expect_identical(res$measure, c("OR", "OR"))
+  expect_equal(res$est, unname(exp(stats::coef(fit)[tm])))
+  expect_equal(res$lo, unname(ci[, 1L]))
+  for (i in 1:2) {
+    one <- get_evalue(est = res$est[i], lo = res$lo[i], hi = res$hi[i],
+                      measure = "OR")
+    expect_equal(res$evalue_point[i], one$evalue_point)
+    expect_equal(res$evalue_ci[i], one$evalue_ci)
+  }
+
+  d$status_f <- factor(d$status, labels = c("no", "yes"))
+  expect_equal(get_evalue(d, "ecog", "age", surv = "status_f",
+                          conf_level = 0.9), res)
+})
+
+test_that("get_evalue still works once lava is loaded", {
+  sens_test_deps("EValue", "lava")
+  loadNamespace("lava")
+  res <- get_evalue(est = 0.5754446, lo = 0.4142130, hi = 0.7994351,
+                    measure = "HR")
+  expect_equal(res$evalue_point, 2.2898751, tolerance = 1e-6)
+  expect_equal(res$evalue_ci,    1.6103234, tolerance = 1e-6)
+  res <- get_evalue(effect = "2 (1.3-3.1)", measure = "OR")
+  expect_equal(res$evalue_point, 2.179580, tolerance = 1e-6)
+})
+
+test_that("get_evalue validates its two input modes", {
+  sens_test_deps("EValue", "survival")
+  d <- cox_data()
+  d$DSS <- d$status
+  expect_error(get_evalue(), "exactly one of")
+  expect_error(get_evalue(d, "sex", est = 2, measure = "OR"), "exactly one of")
+  expect_error(get_evalue(est = 2), "`measure` is required")
+  expect_error(get_evalue(est = 2, lo = 1.3, measure = "OR"), "both `lo` and `hi`")
+  expect_error(get_evalue(est = -2, measure = "OR"), "positive")
+  expect_error(get_evalue(effect = "2 (1.3-3.1)", lo = 1.3, hi = 3.1,
+                          measure = "OR"), "already carries")
+  expect_error(get_evalue(est = 2, measure = "OR", conf_level = 0.9),
+               "`conf_level` only applies")
+  expect_error(get_evalue(d, "sex", measure = "HR"), "`measure` only applies")
+  expect_error(get_evalue(d), "`cat_var` is required")
+  expect_error(get_evalue(d, "sex", surv = FALSE), "Fine-Gray")
+  expect_error(get_evalue(d[setdiff(names(d), "DSS")], "sex"),
+               "`time` and `DSS`")
+  d$grp <- ifelse(d$status == 1L, "yes", "no")
+  expect_error(get_evalue(d, "sex", surv = "grp"), "0/1, logical or a two-level")
+  expect_error(get_evalue(d, "sex", surv = 1), "`surv` must be")
+})

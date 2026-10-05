@@ -19,6 +19,11 @@
 #               .sens_plt_spec    plt_sens() arguments echoed by print()
 #
 #   print.sens_res reports both scales and the matching plt_sens() call.
+#
+#   get_evalue(effect | est, lo, hi | data, cat_var, adj_var, surv)
+#         standalone E-value: typed-in ratio, or Cox / logistic fit
+#         -> RR approximation (rare / sqrt(OR) / .sens_hr_to_rr)
+#         -> EValue::evalues.RR
 # =============================================================================
 
 .SENS_BENCH_DEFAULTS <- list(
@@ -742,4 +747,216 @@ print.sens_res <- function(x, ...) {
         paste0(", estimand = \"", spec$estimand, "\""),
       "\n", sep = "")
   invisible(x)
+}
+
+
+# ---- Standalone E-value ----------------------------------------------------
+
+#' E-value for an observed risk, odds or hazard ratio
+#'
+#' Computes the VanderWeele-Ding E-value of a ratio estimate, either typed in
+#' from a published table or estimated from a Cox or logistic model fitted to
+#' `data`.
+#'
+#' @param data A data frame, or `NULL` (default) when the estimate is
+#'   supplied through `effect` or `est`.
+#' @param cat_var Length-1 character. The exposure column. A factor with more
+#'   than two levels gives one row per non-reference level.
+#' @param adj_var Character vector of covariates to adjust for, or `NULL`.
+#' @param surv Model fitted to `data`, as in RegR's `get_eff()`:
+#'   \itemize{
+#'     \item `TRUE` (default): Cox regression on the columns `time` and
+#'       `DSS`; the estimate is a hazard ratio.
+#'     \item A single column name: logistic regression of that 0/1, logical
+#'       or two-level factor outcome; the estimate is an odds ratio.
+#'     \item `FALSE` (Fine-Gray subdistribution hazard ratio) is rejected:
+#'       the E-value is defined for risk, odds and hazard ratios only.
+#'   }
+#' @param effect Length-1 character holding a point estimate and, optionally,
+#'   its confidence interval as printed in a table: `"1.85"`,
+#'   `"1.85 (1.20-2.85)"` or `"1.85 (1.20, 2.85)"`. Square brackets and the
+#'   separators `-`, en or em dash, `,`, `~` and `to` are also read.
+#' @param est,lo,hi Length-1 positive numbers: the point estimate and,
+#'   both or neither, its lower and upper confidence limits.
+#' @param measure Scale of `effect` / `est`: `"RR"`, `"OR"` or `"HR"`.
+#'   Required for a typed-in estimate and not accepted with `data`, where the
+#'   model sets it.
+#' @param rare Logical, default `FALSE`. `TRUE` treats the outcome as rare, so
+#'   an odds or hazard ratio is used as a risk ratio unchanged. With `FALSE`
+#'   an OR becomes \eqn{\sqrt{OR}} and an HR becomes
+#'   \eqn{(1 - 0.5^{\sqrt{HR}}) / (1 - 0.5^{\sqrt{1/HR}})}, as in
+#'   `EValue::evalues.OR()` and `EValue::evalues.HR()`. Ignored for
+#'   `measure = "RR"`.
+#' @param conf_level Confidence level of the Wald intervals fitted from
+#'   `data`, default `0.95`. Not accepted with a typed-in estimate.
+#'
+#' @details
+#' The E-value itself, including which confidence limit it uses and the rule
+#' that an interval covering 1 has an E-value of 1, comes from
+#' [EValue::evalues.RR()]. The OR and HR conversions are done here instead of
+#' by `EValue::evalues.OR()` / `evalues.HR()`: those wrap the estimate in an
+#' `estimate` object whose arithmetic `lava` takes over once loaded (by
+#' `mets` or `dml.sensemakr`, for example), after which they fail. The
+#' formulas are the same, so the results are identical.
+#'
+#' @return A tibble with one row per estimate and columns `term` (model
+#'   coefficient; `NA` for a typed-in estimate), `measure`, `est`, `lo`, `hi`
+#'   (on the `measure` scale), `rare` (`NA` for `"RR"`), `rr`, `rr_lo`,
+#'   `rr_hi` (the risk ratios the E-value is computed from), `evalue_point`
+#'   and `evalue_ci` (`NA` without an interval, `1` when the interval covers
+#'   the null).
+#'
+#' @seealso [get_sens()], whose `method = "cox"` reports the same E-value
+#'   next to tipping points.
+#'
+#' @examplesIf requireNamespace("EValue", quietly = TRUE)
+#' get_evalue(effect = "1.85 (1.20-2.85)", measure = "OR", rare = TRUE)
+#' get_evalue(est = 0.58, lo = 0.41, hi = 0.80, measure = "HR")
+#'
+#' @examplesIf requireNamespace("EValue", quietly = TRUE) && requireNamespace("survival", quietly = TRUE)
+#' lung <- stats::na.omit(survival::lung[, c("time", "status", "sex", "age")])
+#' lung$DSS <- lung$status - 1L
+#' lung$sex <- factor(lung$sex, labels = c("male", "female"))
+#' get_evalue(lung, cat_var = "sex", adj_var = "age")
+#' get_evalue(lung, cat_var = "sex", adj_var = "age", surv = "DSS")
+#'
+#' @export
+get_evalue <- function(data       = NULL,
+                       cat_var    = NULL,
+                       adj_var    = NULL,
+                       surv       = TRUE,
+                       effect     = NULL,
+                       est        = NULL,
+                       lo         = NULL,
+                       hi         = NULL,
+                       measure    = NULL,
+                       rare       = FALSE,
+                       conf_level = 0.95) {
+  if (!requireNamespace("EValue", quietly = TRUE))
+    stop("Package 'EValue' is required for get_evalue().", call. = FALSE)
+  if (sum(!is.null(data), !is.null(effect), !is.null(est)) != 1L)
+    stop("Supply exactly one of `data`, `effect` or `est`.", call. = FALSE)
+  if (!is.logical(rare) || length(rare) != 1L || is.na(rare))
+    stop("`rare` must be TRUE or FALSE.", call. = FALSE)
+
+  if (is.null(data)) {
+    used <- c(cat_var = !is.null(cat_var), adj_var = !is.null(adj_var),
+              surv = !missing(surv), conf_level = !missing(conf_level))
+    if (any(used))
+      stop(sprintf("`%s` only applies when the estimate is fitted from `data`.",
+                   names(used)[used][1L]), call. = FALSE)
+    if (is.null(measure))
+      stop("`measure` is required with `effect` or `est`: one of \"RR\", \"OR\", \"HR\".",
+           call. = FALSE)
+    measure <- match.arg(measure, c("RR", "OR", "HR"))
+
+    if (!is.null(effect)) {
+      if (!is.null(lo) || !is.null(hi))
+        stop("`effect` already carries the interval; use `est`, `lo` and `hi` instead.",
+             call. = FALSE)
+      if (!is.character(effect) || length(effect) != 1L || is.na(effect))
+        stop("`effect` must be a single string such as \"1.85 (1.20-2.85)\".",
+             call. = FALSE)
+      txt <- gsub(paste0("[", intToUtf8(c(0x2013L, 0x2014L)), "]"), "-", effect)
+      num <- "([0-9]*\\.?[0-9]+)"
+      m <- regmatches(txt, regexec(sprintf(
+        "^\\s*%s\\s*(?:[([]\\s*%s\\s*(?:-|,|~|to)\\s*%s\\s*[])])?\\s*$",
+        num, num, num), txt, perl = TRUE))[[1L]]
+      if (!length(m))
+        stop(sprintf("Cannot read `effect` = \"%s\"; write it as \"1.85\", \"1.85 (1.20-2.85)\" or \"1.85 (1.20, 2.85)\".",
+                     effect), call. = FALSE)
+      v <- suppressWarnings(as.numeric(m[-1L]))
+      est <- v[1L]
+      if (!is.na(v[2L])) {
+        lo <- v[2L]
+        hi <- v[3L]
+      }
+    }
+
+    if (xor(is.null(lo), is.null(hi)))
+      stop("Give both `lo` and `hi`, or neither.", call. = FALSE)
+    vals <- list(est = est, lo = lo, hi = hi)
+    for (nm in names(vals)) {
+      x <- vals[[nm]]
+      if (!is.null(x) &&
+          (!is.numeric(x) || length(x) != 1L || !is.finite(x) || x <= 0))
+        stop(sprintf("`%s` must be a single positive number.", nm),
+             call. = FALSE)
+    }
+    tab <- data.frame(term = NA_character_, est = est,
+                      lo = if (is.null(lo)) NA_real_ else lo,
+                      hi = if (is.null(hi)) NA_real_ else hi)
+  } else {
+    used <- c(lo = !is.null(lo), hi = !is.null(hi), measure = !is.null(measure))
+    if (any(used))
+      stop(sprintf("`%s` only applies to a typed-in estimate; with `data` the model sets the estimate and its scale.",
+                   names(used)[used][1L]), call. = FALSE)
+    if (!is.data.frame(data) || !nrow(data))
+      stop("`data` must be a non-empty data frame.", call. = FALSE)
+    if (is.null(cat_var))
+      stop("`cat_var` is required with `data`.", call. = FALSE)
+    cat_var <- .sens_check_col(cat_var, data, "cat_var", n = 1L)
+    adj_var <- .sens_check_col(adj_var, data, "adj_var")
+    if (!is.numeric(conf_level) || length(conf_level) != 1L ||
+        is.na(conf_level) || conf_level <= 0 || conf_level >= 1)
+      stop("`conf_level` must be a single number strictly between 0 and 1.",
+           call. = FALSE)
+
+    rhs <- .sens_quote_names(c(cat_var, adj_var))
+    if (isTRUE(surv)) {
+      if (!requireNamespace("survival", quietly = TRUE))
+        stop("Package 'survival' is required for get_evalue(surv = TRUE).",
+             call. = FALSE)
+      miss <- setdiff(c("time", "DSS"), names(data))
+      if (length(miss))
+        stop(sprintf("`surv = TRUE` fits a Cox model on columns `time` and `DSS`; missing %s.",
+                     paste0("`", miss, "`", collapse = ", ")), call. = FALSE)
+      fit <- survival::coxph(
+        stats::reformulate(rhs, response = quote(survival::Surv(time, DSS))),
+        data = data)
+      measure <- "HR"
+    } else if (isFALSE(surv)) {
+      stop("`surv = FALSE` (Fine-Gray subdistribution HR) is not supported; the E-value is defined for risk, odds and hazard ratios only.",
+           call. = FALSE)
+    } else if (is.character(surv) && length(surv) == 1L && !is.na(surv) &&
+               nzchar(surv)) {
+      surv <- .sens_check_col(surv, data, "surv", n = 1L)
+      y <- data[[surv]]
+      if (!(is.logical(y) || (is.numeric(y) && all(y %in% c(0, 1, NA))) ||
+            (is.factor(y) && nlevels(droplevels(y)) == 2L)))
+        stop(sprintf("Outcome `%s` must be 0/1, logical or a two-level factor for logistic regression.",
+                     surv), call. = FALSE)
+      fit <- stats::glm(stats::reformulate(rhs, response = as.name(surv)),
+                        family = stats::binomial(), data = data)
+      measure <- "OR"
+    } else {
+      stop("`surv` must be TRUE, FALSE or a single outcome column name.",
+           call. = FALSE)
+    }
+
+    tm <- .sens_coef_terms(fit, cat_var)[[1L]]
+    ci <- stats::confint.default(fit, tm, level = conf_level)
+    tab <- data.frame(term = tm, est = exp(unname(stats::coef(fit)[tm])),
+                      lo = exp(unname(ci[, 1L])), hi = exp(unname(ci[, 2L])))
+  }
+
+  to_rr <- switch(measure,
+                  RR = identity,
+                  OR = if (rare) identity else sqrt,
+                  HR = function(x) .sens_hr_to_rr(x, rare))
+  # evalues.RR() picks the limit nearer the null and sets 1 for an interval
+  # that covers it; its message saying so is dropped, `evalue_ci` carries it.
+  ev <- t(vapply(seq_len(nrow(tab)), function(i) {
+    r <- to_rr(c(tab$est[i], tab$lo[i], tab$hi[i]))
+    e <- unclass(suppressMessages(
+      EValue::evalues.RR(r[1L], r[2L], r[3L])))["E-values", ]
+    e_ci <- e[2:3][!is.na(e[2:3])]
+    c(r, e[[1L]], if (length(e_ci)) e_ci[[1L]] else NA_real_)
+  }, numeric(5L)))
+
+  tibble::tibble(term = tab$term, measure = measure, est = tab$est,
+                 lo = tab$lo, hi = tab$hi,
+                 rare = if (identical(measure, "RR")) NA else rare,
+                 rr = ev[, 1L], rr_lo = ev[, 2L], rr_hi = ev[, 3L],
+                 evalue_point = ev[, 4L], evalue_ci = ev[, 5L])
 }
