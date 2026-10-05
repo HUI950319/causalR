@@ -786,7 +786,8 @@ print.sens_res <- function(x, ...) {
 #'   an OR becomes \eqn{\sqrt{OR}} and an HR becomes
 #'   \eqn{(1 - 0.5^{\sqrt{HR}}) / (1 - 0.5^{\sqrt{1/HR}})}, as in
 #'   `EValue::evalues.OR()` and `EValue::evalues.HR()`. Ignored for
-#'   `measure = "RR"`.
+#'   `measure = "RR"`. See the section *Choosing rare* for when `TRUE` is
+#'   justified.
 #' @param conf_level Confidence level of the Wald intervals fitted from
 #'   `data`, default `0.95`. Not accepted with a typed-in estimate.
 #'
@@ -798,6 +799,65 @@ print.sens_res <- function(x, ...) {
 #' `estimate` object whose arithmetic `lava` takes over once loaded (by
 #' `mets` or `dml.sensemakr`, for example), after which they fail. The
 #' formulas are the same, so the results are identical.
+#'
+#' @section Choosing rare:
+#' An odds ratio or hazard ratio approximates the risk ratio only when the
+#' outcome is rare; for a common outcome it lies further from 1 than the risk
+#' ratio, and has to be converted before the E-value formula applies. `rare`
+#' says which case holds.
+#'
+#' **Criterion.** Treat the outcome as rare when its cumulative incidence by
+#' the end of follow-up is below about 15% (VanderWeele and Ding, 2017;
+#' 10% is a stricter choice) in *every* exposure group, that is in every
+#' level of `cat_var`, not only in the sample as a whole.
+#'
+#' **What to look at, by design.**
+#' \itemize{
+#'   \item Cohort or cross-sectional data, logistic model (`surv` naming the
+#'     outcome): the proportion with the outcome in each exposure group.
+#'   \item Survival data, Cox model (`surv = TRUE`): one minus the
+#'     Kaplan-Meier survival at the end of follow-up in each exposure group.
+#'     The crude share of events (events / n) understates the cumulative
+#'     incidence under censoring, the more so the heavier the censoring, and
+#'     makes a common outcome look rare.
+#'   \item Case-control study: whether the disease is rare in the source
+#'     population. The share of cases in the sample is fixed by design (often
+#'     near 50%) and says nothing about rarity.
+#'   \item A typed-in estimate (`effect` or `est`): take the incidence from
+#'     the publication the estimate comes from; if it is not reported, keep
+#'     `FALSE`.
+#' }
+#'
+#' **The two errors are not symmetric.** `FALSE` shrinks the ratio towards 1
+#' and so gives the smaller E-value: for OR = 2, `rare = TRUE` gives 3.41 and
+#' `rare = FALSE` gives 2.18. Keeping `FALSE` for an outcome that is in fact
+#' rare only understates the robustness of the finding. Setting `TRUE` for an
+#' outcome that is in fact common overstates it, which is the error to
+#' avoid. When unsure, keep the default `FALSE`.
+#'
+#' Decide `rare` before looking at the E-values and report the criterion in
+#' the methods, for example "cumulative incidence by the end of follow-up was
+#' below 15% in every exposure group, so the outcome was treated as rare".
+#'
+#' Checking the criterion, with `exposure` and `outcome` standing for your
+#' `cat_var` and `surv` columns:
+#' ```
+#' # Logistic: share with the outcome in each exposure group
+#' prop.table(table(data$exposure, data$outcome), 1)
+#'
+#' # Cox: cumulative incidence at the end of follow-up in each group
+#' km <- survival::survfit(survival::Surv(time, DSS) ~ exposure, data = data)
+#' 1 - summary(km, times = max(data$time), extend = TRUE)$surv
+#' ```
+#'
+#' @references
+#' VanderWeele TJ, Ding P (2017). Sensitivity analysis in observational
+#' research: introducing the E-value. *Annals of Internal Medicine*,
+#' 167(4), 268-274. \doi{10.7326/M16-2607}
+#'
+#' VanderWeele TJ (2020). Optimal approximate conversions of odds ratios and
+#' hazard ratios to risk ratios. *Biometrics*, 76(3), 746-752.
+#' \doi{10.1111/biom.13197}
 #'
 #' @return A tibble with one row per estimate and columns `term` (model
 #'   coefficient; `NA` for a typed-in estimate), `measure`, `est`, `lo`, `hi`

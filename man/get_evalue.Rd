@@ -54,7 +54,8 @@ an odds or hazard ratio is used as a risk ratio unchanged. With \code{FALSE}
 an OR becomes \eqn{\sqrt{OR}} and an HR becomes
 \eqn{(1 - 0.5^{\sqrt{HR}}) / (1 - 0.5^{\sqrt{1/HR}})}, as in
 \code{EValue::evalues.OR()} and \code{EValue::evalues.HR()}. Ignored for
-\code{measure = "RR"}.}
+\code{measure = "RR"}. See the section \emph{Choosing rare} for when \code{TRUE} is
+justified.}
 
 \item{conf_level}{Confidence level of the Wald intervals fitted from
 \code{data}, default \code{0.95}. Not accepted with a typed-in estimate.}
@@ -81,6 +82,58 @@ by \code{EValue::evalues.OR()} / \code{evalues.HR()}: those wrap the estimate in
 \code{mets} or \code{dml.sensemakr}, for example), after which they fail. The
 formulas are the same, so the results are identical.
 }
+\section{Choosing rare}{
+
+An odds ratio or hazard ratio approximates the risk ratio only when the
+outcome is rare; for a common outcome it lies further from 1 than the risk
+ratio, and has to be converted before the E-value formula applies. \code{rare}
+says which case holds.
+
+\strong{Criterion.} Treat the outcome as rare when its cumulative incidence by
+the end of follow-up is below about 15\% (VanderWeele and Ding, 2017;
+10\% is a stricter choice) in \emph{every} exposure group, that is in every
+level of \code{cat_var}, not only in the sample as a whole.
+
+\strong{What to look at, by design.}
+\itemize{
+\item Cohort or cross-sectional data, logistic model (\code{surv} naming the
+outcome): the proportion with the outcome in each exposure group.
+\item Survival data, Cox model (\code{surv = TRUE}): one minus the
+Kaplan-Meier survival at the end of follow-up in each exposure group.
+The crude share of events (events / n) understates the cumulative
+incidence under censoring, the more so the heavier the censoring, and
+makes a common outcome look rare.
+\item Case-control study: whether the disease is rare in the source
+population. The share of cases in the sample is fixed by design (often
+near 50\%) and says nothing about rarity.
+\item A typed-in estimate (\code{effect} or \code{est}): take the incidence from
+the publication the estimate comes from; if it is not reported, keep
+\code{FALSE}.
+}
+
+\strong{The two errors are not symmetric.} \code{FALSE} shrinks the ratio towards 1
+and so gives the smaller E-value: for OR = 2, \code{rare = TRUE} gives 3.41 and
+\code{rare = FALSE} gives 2.18. Keeping \code{FALSE} for an outcome that is in fact
+rare only understates the robustness of the finding. Setting \code{TRUE} for an
+outcome that is in fact common overstates it, which is the error to
+avoid. When unsure, keep the default \code{FALSE}.
+
+Decide \code{rare} before looking at the E-values and report the criterion in
+the methods, for example "cumulative incidence by the end of follow-up was
+below 15\% in every exposure group, so the outcome was treated as rare".
+
+Checking the criterion, with \code{exposure} and \code{outcome} standing for your
+\code{cat_var} and \code{surv} columns:
+
+\if{html}{\out{<div class="sourceCode">}}\preformatted{# Logistic: share with the outcome in each exposure group
+prop.table(table(data$exposure, data$outcome), 1)
+
+# Cox: cumulative incidence at the end of follow-up in each group
+km <- survival::survfit(survival::Surv(time, DSS) ~ exposure, data = data)
+1 - summary(km, times = max(data$time), extend = TRUE)$surv
+}\if{html}{\out{</div>}}
+}
+
 \examples{
 \dontshow{if (requireNamespace("EValue", quietly = TRUE)) withAutoprint(\{ # examplesIf}
 get_evalue(effect = "1.85 (1.20-2.85)", measure = "OR", rare = TRUE)
@@ -93,6 +146,15 @@ lung$sex <- factor(lung$sex, labels = c("male", "female"))
 get_evalue(lung, cat_var = "sex", adj_var = "age")
 get_evalue(lung, cat_var = "sex", adj_var = "age", surv = "DSS")
 \dontshow{\}) # examplesIf}
+}
+\references{
+VanderWeele TJ, Ding P (2017). Sensitivity analysis in observational
+research: introducing the E-value. \emph{Annals of Internal Medicine},
+167(4), 268-274. \doi{10.7326/M16-2607}
+
+VanderWeele TJ (2020). Optimal approximate conversions of odds ratios and
+hazard ratios to risk ratios. \emph{Biometrics}, 76(3), 746-752.
+\doi{10.1111/biom.13197}
 }
 \seealso{
 \code{\link[=get_sens]{get_sens()}}, whose \code{method = "cox"} reports the same E-value
