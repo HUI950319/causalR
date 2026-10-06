@@ -95,6 +95,35 @@ test_that("get_hte_pdp() hands the forest one batch of jobs at a time", {
   expect_identical(sum(sizes), 400L * (5L + 3L + 2L + 4L))
 })
 
+test_that("patients are a fixed-seed random sample, recorded in the result", {
+  # A periodic row order: every 20th of 1981 rows is a high-effect patient.
+  # 100 evenly spaced rows (a step of 20) took only those; a random sample
+  # takes about 5%.
+  rows <- .hte_explain_rows(1981, 100)
+  expect_length(rows, 100L)
+  expect_false(is.unsorted(rows))
+  expect_lt(mean(rows %% 20 == 1), 0.2)
+
+  # the same rows whatever the seed or generator in use, which stay as they were
+  kind <- RNGkind()
+  withr::defer(RNGkind(kind[1L], kind[2L], kind[3L]))
+  set.seed(2)
+  s <- .Random.seed
+  expect_identical(.hte_explain_rows(1981, 100), rows)
+  expect_identical(.Random.seed, s)
+  RNGkind("L'Ecuyer-CMRG")
+  set.seed(3)
+  s <- .Random.seed
+  expect_identical(.hte_explain_rows(1981, 100), rows)
+  expect_identical(RNGkind()[1L], "L'Ecuyer-CMRG")
+  expect_identical(.Random.seed, s)
+
+  res <- expl_res()
+  for (f in list(get_hte_pdp, get_hte_ale))
+    expect_identical(attr(f(res, x_var = "age", max_n = 30), "analysis")$rows,
+                     .hte_explain_rows(400L, 30L))
+})
+
 test_that("time_budget sets the patient count and max_n overrides it", {
   res <- expl_res()
   expect_no_message(full <- get_hte_pdp(res, x_var = "age"))
@@ -221,15 +250,15 @@ test_that("get_hte_ale() joins the levels the explained patients have", {
   n <- 400L
   d <- data.frame(age = stats::runif(n, 20, 85),
                   nodes = sample(c(0, 3, 4), n, replace = TRUE))
-  # levels 1 and 2 only in rows 2 to 5, which 40 evenly spaced rows miss
-  d$nodes[2:5] <- c(1, 1, 2, 2)
+  # levels 1 and 2 only in 4 rows the 40 explained patients miss
+  rows <- .hte_explain_rows(n, 40L)
+  rare <- setdiff(seq_len(n), rows)[1:4]
+  d$nodes[rare] <- c(1, 1, 2, 2)
   d$z <- stats::rbinom(n, 1, 0.5)
   d$y <- d$z * (1 + 0.3 * d$nodes) + stats::rnorm(n, sd = 0.5)
   res  <- suppressMessages(get_hte(d, cat_var = "z", adj_var = c("age", "nodes"),
                                    surv = "y",
                                    grf_args = list(num.trees = 200, seed = 1)))
-  rows <- .hte_explain_rows(n, 40L)
-  expect_false(any(2:5 %in% rows))
 
   ale <- get_hte_ale(res, x_var = "nodes", max_n = 40)
   expect_identical(ale$value, c(0, 1, 2, 3, 4))
@@ -292,10 +321,14 @@ test_that("explanations weight patients as get_hte() weights its estimates", {
   skip_if_not_installed("shapviz")
   if (requireNamespace("kernelshap", quietly = TRUE)) {
     sv <- get_hte_shp(res, method = "kernel", max_n = 4, bg_n = 20)
-    bg <- .hte_explain_rows(400L, 20L)
-    expect_equal(sv$baseline, stats::weighted.mean(pred_with(fit, bg), w[bg]))
+    a  <- attr(sv, "analysis")
+    # both samples are drawn with the default seed of get_hte_shp()
+    expect_identical(a$rows, .hte_explain_rows(400L, 4L, 123L))
+    expect_identical(a$bg_rows, .hte_explain_rows(400L, 20L, 123L))
+    expect_equal(sv$baseline,
+                 stats::weighted.mean(pred_with(fit, a$bg_rows), w[a$bg_rows]))
     expect_equal(unname(rowSums(sv$S)) + sv$baseline,
-                 pred_with(fit, .hte_explain_rows(400L, 4L)), tolerance = 1e-6)
+                 pred_with(fit, a$rows), tolerance = 1e-6)
   }
   if (requireNamespace("xgboost", quietly = TRUE)) {
     # the first DMatrix trains the surrogate; predict() builds its own later
@@ -317,7 +350,8 @@ test_that("get_hte_shp() kernel SHAP is exact for up to 8 covariates", {
   for (enc in c("integer", "onehot")) {
     res  <- expl_res(enc)
     sv   <- get_hte_shp(res, method = "kernel", max_n = 6, bg_n = 20)
-    rows <- .hte_explain_rows(400L, 6L)
+    rows <- attr(sv, "analysis")$rows
+    expect_length(rows, 6L)
     expect_s3_class(sv, "shapviz")
     expect_identical(colnames(sv$S), c("age", "stage", "sex", "nodes"))
     expect_equal(unname(rowSums(sv$S)) + sv$baseline, pred_with(res$fit, rows),
@@ -361,15 +395,16 @@ test_that("explanations handle missing values, logical, character and odd names"
                   smoker       = sample(c(TRUE, FALSE), n, TRUE),
                   site         = sample(c("colon", "rectum"), n, TRUE),
                   check.names  = FALSE)
-  # rows 1, 134 and 400 are among the 4 evenly spaced rows explained below
-  d$age[c(1, 50:60)]         <- NA
-  d$`T stage`[c(134, 100:110)] <- NA
-  d$smoker[c(400, 200:205)]  <- NA
+  # Missing values on the rows explained below: the 4 patients Kernel SHAP
+  # draws with its default seed, and the one patient of max_n = 1.
+  rows <- .hte_explain_rows(n, 4L, 123L)
+  one  <- .hte_explain_rows(n, 1L)
+  d$age[c(rows[1L], one, 50:60)]   <- NA
+  d$`T stage`[c(rows[2L], 100:110)] <- NA
+  d$smoker[c(rows[4L], 200:205)]   <- NA
   d$z <- stats::rbinom(n, 1, 0.5)
   d$y <- d$z * (0.5 + 0.5 * (d$`T stage` %in% "T3")) + stats::rnorm(n)
-  adj  <- c("age", "Tumor size", "T stage", "smoker", "site")
-  rows <- .hte_explain_rows(n, 4L)
-  expect_identical(rows, c(1, 134, 267, 400))
+  adj <- c("age", "Tumor size", "T stage", "smoker", "site")
 
   for (enc in c("integer", "onehot")) {
     res <- suppressWarnings(suppressMessages(get_hte(
@@ -385,10 +420,10 @@ test_that("explanations handle missing values, logical, character and odd names"
     al <- get_hte_ale(res, n_bins = 5, max_n = Inf)
     expect_false(anyNA(al$ale))
     # a patient missing the covariate is left out of it
-    expect_identical(sum(al$n[al$variable == "T stage"]), n - 12L)
-    expect_identical(sum(al$n[al$variable == "smoker"]), n - 7L)
+    expect_identical(sum(al$n[al$variable == "T stage"]),
+                     sum(!is.na(d$`T stage`)))
+    expect_identical(sum(al$n[al$variable == "smoker"]), sum(!is.na(d$smoker)))
     # the one patient explained misses age: nothing to step through
-    expect_true(is.na(d$age[.hte_explain_rows(n, 1L)]))
     expect_message(na1 <- get_hte_ale(res, x_var = "age", max_n = 1),
                    "fewer than 2")
     expect_true(is.na(na1$ale))
@@ -396,6 +431,7 @@ test_that("explanations handle missing values, logical, character and odd names"
     if (requireNamespace("shapviz", quietly = TRUE) &&
         requireNamespace("kernelshap", quietly = TRUE)) {
       sv <- get_hte_shp(res, method = "kernel", max_n = 4, bg_n = 20)
+      expect_identical(attr(sv, "analysis")$rows, rows)
       expect_identical(colnames(sv$S), adj)
       expect_equal(unname(rowSums(sv$S)) + sv$baseline,
                    pred_with(res$fit, rows), tolerance = 1e-6)
@@ -407,7 +443,7 @@ test_that("explanations handle missing values, logical, character and odd names"
       expect_false(anyNA(sv$S))
       expect_true(is.logical(sv$X$smoker))
       expect_true(is.character(sv$X$site))
-      expect_identical(sum(is.na(sv$X$`T stage`)), 12L)
+      expect_identical(sum(is.na(sv$X$`T stage`)), sum(is.na(d$`T stage`)))
     }
   }
 })
@@ -429,8 +465,8 @@ test_that("get_hte_shp() Kernel SHAP stays additive beyond 8 covariates", {
   sv <- get_hte_shp(res, method = "kernel", max_n = 3, bg_n = 10)
   expect_identical(dim(sv$S), c(3L, 9L))
   expect_equal(unname(rowSums(sv$S)) + sv$baseline,
-               pred_with(res$fit, .hte_explain_rows(n, 3L)), tolerance = 1e-6)
-  # the seed fixes the sampled coalitions
+               pred_with(res$fit, attr(sv, "analysis")$rows), tolerance = 1e-6)
+  # the seed fixes the patients and the sampled coalitions
   expect_identical(get_hte_shp(res, method = "kernel", max_n = 3, bg_n = 10)$S,
                    sv$S)
 })

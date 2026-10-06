@@ -36,8 +36,8 @@ the partial dependence of two covariates as a heat map.}
 \describe{
 \item{\code{"cate"}}{The out-of-bag CATE of every patient (grey), jittered
 for a categorical covariate and smoothed by loess (span
-\code{cate_smooth}) for a continuous one. Above 2000 patients only 2000,
-evenly spaced as \code{pdp_args$max_n} picks them, are drawn; the loess
+\code{cate_smooth}) for a continuous one. Above 2000 patients a random
+2000, drawn as \code{pdp_args$max_n} draws them, are shown; the loess
 line and the y range still use every patient. Descriptive only:
 forest estimates are shrunk towards the overall mean.}
 \item{\code{"dr"}}{The doubly robust estimate with pointwise confidence
@@ -89,8 +89,9 @@ quantiles as in \code{\link[=get_hte_pdp]{get_hte_pdp()}}; tied quantiles merge,
 covariate with many ties gets fewer. Heat-map tiles reach halfway
 to their neighbours.}
 \item{\code{max_n}}{Positive whole number or \code{Inf}, default \code{1000}.
-Maximum patients averaged over, taken evenly spaced so the result
-does not depend on the random seed; \code{Inf} uses everyone.}
+Maximum patients averaged over, a random sample drawn with a fixed
+seed so the result does not depend on the random seed in use (evenly
+spaced rows could follow a periodic row order); \code{Inf} uses everyone.}
 }
 The forest predicts each grid combination for each selected patient in
 batches; large grids and background samples still require more work.}

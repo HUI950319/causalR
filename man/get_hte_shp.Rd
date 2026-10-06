@@ -22,11 +22,11 @@ get_hte_shp(
 
 \item{max_n}{\code{NULL} (default) to let \code{time_budget} set the number of
 patients explained, or a positive whole number or \code{Inf} to set it
-directly. The patients are evenly spaced through the data.}
+directly. A cut takes a random sample drawn with \code{seed}.}
 
 \item{bg_n}{Positive whole number, default \code{50}. Background patients of
-\code{method = "kernel"}, evenly spaced through the data; the run time grows
-in proportion. Only used by \code{"kernel"}.}
+\code{method = "kernel"}, a random sample drawn with \code{seed}; the run time
+grows in proportion. Only used by \code{"kernel"}.}
 
 \item{surrogate_args}{Named list for \code{method = "surrogate"}, passed to
 \code{\link[xgboost:xgb.train]{xgboost::xgb.train()}}:
@@ -42,7 +42,8 @@ Only used by \code{"surrogate"}.}
 \item{time_budget}{Positive number of seconds, default \code{20}, that the cost
 model aims for when \code{max_n = NULL}. Ignored otherwise.}
 
-\item{seed}{Integer seed, default \code{123}, for the held-out split of
+\item{seed}{Integer seed, default \code{123}, for the patients explained when
+they are cut, the background of \code{"kernel"}, the held-out split of
 \code{"surrogate"} and the sampled coalitions of \code{"kernel"}. The global random
 number state is restored on exit.}
 
@@ -54,8 +55,9 @@ A \code{\link[shapviz:shapviz]{shapviz::shapviz()}} object: the SHAP matrix \cod
 covariates), the original covariate values \code{X} and the \code{baseline}, ready
 for the \verb{shapviz::sv_*()} plots and \verb{MLR::plt_shp_*()}.
 \code{attr(res, "analysis")} holds \code{method}, \code{n} (patients explained),
-\code{n_total}, \code{bg_n} (kernel), \code{r2} (surrogate), \code{surrogate_args},
-\code{time_budget}, \code{est_sec} and \code{elapsed_sec}.
+\code{n_total}, \code{rows} (their rows in \code{x$data}), \code{bg_n} and \code{bg_rows}
+(kernel), \code{r2} (surrogate), \code{surrogate_args}, \code{time_budget}, \code{est_sec}
+and \code{elapsed_sec}.
 }
 \description{
 Splits each patient's CATE, minus a baseline, into additive contributions
@@ -103,13 +105,15 @@ model, or a proxy for one -- not a cause of the outcome.
 Every grid point costs one forest prediction per patient, so the run time
 grows with the number of patients, covariates and grid points, and with the
 size of the forest (patients times trees). With \code{max_n = NULL} the patients
-are cut, evenly spaced through the data, to the number that a conservative
-cost model -- fitted to timings on a 24-core machine -- puts within
-\code{time_budget} seconds, and a message reports the cut. The count depends on
-the forest and the arguments only, so the same call gives the same result
-on any machine, while the run time scales with its speed.
-\code{attr(res, "analysis")} records the patients used, the estimated and the
-elapsed seconds.
+are cut to the number that a conservative cost model -- fitted to timings
+on a 24-core machine -- puts within \code{time_budget} seconds, and a message
+reports the cut. Patients are cut to a simple random sample drawn with a
+fixed seed and its own generator: evenly spaced rows would follow any
+periodic row order, and the sample leaves the random number state as it
+was. The count depends on the forest and the arguments only, so the same
+call gives the same result on any machine, while the run time scales with
+its speed. \code{attr(res, "analysis")} records the rows used (\code{rows}), the
+estimated and the elapsed seconds.
 }
 
 \examples{

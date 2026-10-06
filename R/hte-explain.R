@@ -15,7 +15,8 @@
 #   L2  .hte_pdp_grid()       grid values or levels of one covariate
 #   L2  .hte_explain_size()   patients that fit the time budget
 #   L2  .hte_explain_cost()   conservative predict-time model of a forest
-#   L2  .hte_explain_rows()   evenly spaced rows, as .hte_pdp() picks them
+#   L2  .hte_explain_rows()   fixed-seed random sample of rows, as .hte_pdp()
+#                             and plt_hte_dep() draw them
 #   L2  .hte_explain_vars()   `x_var` resolution, as in plt_hte_dep()
 #   L2  .hte_explain_check()  checks shared by the three
 #   L2  .hte_levels()         levels of a categorical covariate, in code order
@@ -73,10 +74,30 @@
   list(n = n, est = fixed + k$a + n * per)
 }
 
+# The patients to explain: all of them, or a simple random sample of n in
+# row order. Evenly spaced rows were reproducible too, but follow any
+# periodic row order: 100 of 1981 rows, a step of 20, took every one of a 5%
+# group placed on every 20th row. The sample uses its own seed and the
+# Mersenne-Twister generator, so it is the same whatever the seed or
+# generator in use, and the random number state is restored afterwards.
 #' @keywords internal
 #' @noRd
-.hte_explain_rows <- function(n_all, n)
-  if (n >= n_all) seq_len(n_all) else unique(round(seq(1, n_all, length.out = n)))
+.hte_explain_rows <- function(n_all, n, seed = 1L) {
+  if (n >= n_all) return(seq_len(n_all))
+  genv <- globalenv()
+  kind <- RNGkind()
+  old  <- if (exists(".Random.seed", envir = genv, inherits = FALSE))
+    get(".Random.seed", envir = genv, inherits = FALSE)
+  on.exit({
+    RNGkind(kind[1L], kind[2L], kind[3L])
+    if (!is.null(old)) assign(".Random.seed", old, envir = genv)
+    else if (exists(".Random.seed", envir = genv, inherits = FALSE))
+      rm(".Random.seed", envir = genv)
+  })
+  set.seed(seed, kind = "Mersenne-Twister", normal.kind = "Inversion",
+           sample.kind = "Rejection")
+  sort(sample.int(n_all, n))
+}
 
 # Levels of a categorical covariate in the order get_hte() coded them, or the
 # sorted values of a numeric covariate with at most 5 of them.
@@ -253,13 +274,15 @@
 #' Every grid point costs one forest prediction per patient, so the run time
 #' grows with the number of patients, covariates and grid points, and with the
 #' size of the forest (patients times trees). With `max_n = NULL` the patients
-#' are cut, evenly spaced through the data, to the number that a conservative
-#' cost model -- fitted to timings on a 24-core machine -- puts within
-#' `time_budget` seconds, and a message reports the cut. The count depends on
-#' the forest and the arguments only, so the same call gives the same result
-#' on any machine, while the run time scales with its speed.
-#' `attr(res, "analysis")` records the patients used, the estimated and the
-#' elapsed seconds.
+#' are cut to the number that a conservative cost model -- fitted to timings
+#' on a 24-core machine -- puts within `time_budget` seconds, and a message
+#' reports the cut. Patients are cut to a simple random sample drawn with a
+#' fixed seed and its own generator: evenly spaced rows would follow any
+#' periodic row order, and the sample leaves the random number state as it
+#' was. The count depends on the forest and the arguments only, so the same
+#' call gives the same result on any machine, while the run time scales with
+#' its speed. `attr(res, "analysis")` records the rows used (`rows`), the
+#' estimated and the elapsed seconds.
 #'
 #' @param x An `hte_res` object from [get_hte()].
 #' @param x_var Covariates to explain: `NULL` (default) for every covariate in
@@ -271,8 +294,8 @@
 #'   merge, so a covariate with many ties gets fewer.
 #' @param max_n `NULL` (default) to let `time_budget` set the number of
 #'   patients averaged over, or a positive whole number or `Inf` to set it
-#'   directly. The patients are evenly spaced through the data, so the result
-#'   does not depend on the random seed.
+#'   directly. A cut takes a random sample with a fixed seed, so the result
+#'   does not depend on the random seed in use.
 #' @param time_budget Positive number of seconds, default `20`, that the cost
 #'   model aims for when `max_n = NULL`. Ignored otherwise.
 #' @param verbose `TRUE` reports the estimated and the elapsed seconds.
@@ -282,8 +305,8 @@
 #'   `value` (the grid value of a numeric covariate, `NA` otherwise), `level`
 #'   (the level of a categorical covariate, `NA` otherwise) and `estimate`,
 #'   the mean CATE. `attr(res, "analysis")` holds `method`, `n` (patients
-#'   averaged over), `n_total`, `grid_n`, `time_budget`, `est_sec` and
-#'   `elapsed_sec`.
+#'   averaged over), `n_total`, `rows` (their rows in `x$data`), `grid_n`,
+#'   `time_budget`, `est_sec` and `elapsed_sec`.
 #'
 #' @references
 #' Friedman JH (2001). Greedy function approximation: a gradient boosting
@@ -345,7 +368,8 @@ get_hte_pdp <- function(x,
   if (verbose)
     cli::cli_inform("Partial dependence over {m} patient{?s}: estimated {round(sz$est, 1)} s, took {round(elapsed, 1)} s.")
   attr(out, "analysis") <- list(method = "pdp", n = m, n_total = n_all,
-                                grid_n = grid_n, time_budget = time_budget,
+                                rows = rows, grid_n = grid_n,
+                                time_budget = time_budget,
                                 est_sec = sz$est, elapsed_sec = elapsed)
   out
 }
@@ -395,9 +419,9 @@ get_hte_pdp <- function(x,
 #'   quantile intervals for each continuous covariate; tied quantiles merge,
 #'   so a covariate with many ties gets fewer.
 #' @param max_n `NULL` (default) to let `time_budget` set the number of
-#'   patients, or a positive whole number or `Inf` to set it directly. The
-#'   patients are evenly spaced through the data, so the result does not
-#'   depend on the random seed.
+#'   patients, or a positive whole number or `Inf` to set it directly. A cut
+#'   takes a random sample with a fixed seed, so the result does not depend
+#'   on the random seed in use.
 #'
 #' @return A tibble with one row per covariate and interval end or level:
 #'   `variable`, `value` (the interval end of a continuous covariate, or the
@@ -406,7 +430,7 @@ get_hte_pdp <- function(x,
 #'   centred accumulated effect) and `n` (patients in the interval ending at
 #'   `value`, `NA` for the lowest end; patients at the level for a categorical
 #'   covariate, whose rows follow its steps). `attr(res, "analysis")` holds
-#'   `method`, `n`, `n_total`,
+#'   `method`, `n`, `n_total`, `rows` (the patients' rows in `x$data`),
 #'   `n_bins`, `time_budget`, `est_sec` and `elapsed_sec`.
 #'
 #' @references
@@ -594,7 +618,8 @@ get_hte_ale <- function(x,
   if (verbose)
     cli::cli_inform("ALE over {m} patient{?s}: estimated {round(sz$est, 1)} s, took {round(elapsed, 1)} s.")
   attr(out, "analysis") <- list(method = "ale", n = m, n_total = n_all,
-                                n_bins = n_bins, time_budget = time_budget,
+                                rows = rows, n_bins = n_bins,
+                                time_budget = time_budget,
                                 est_sec = sz$est, elapsed_sec = elapsed)
   out
 }
@@ -649,10 +674,10 @@ get_hte_ale <- function(x,
 #' @param method `"surrogate"` (default) or `"kernel"`; see Description.
 #' @param max_n `NULL` (default) to let `time_budget` set the number of
 #'   patients explained, or a positive whole number or `Inf` to set it
-#'   directly. The patients are evenly spaced through the data.
+#'   directly. A cut takes a random sample drawn with `seed`.
 #' @param bg_n Positive whole number, default `50`. Background patients of
-#'   `method = "kernel"`, evenly spaced through the data; the run time grows
-#'   in proportion. Only used by `"kernel"`.
+#'   `method = "kernel"`, a random sample drawn with `seed`; the run time
+#'   grows in proportion. Only used by `"kernel"`.
 #' @param surrogate_args Named list for `method = "surrogate"`, passed to
 #'   [xgboost::xgb.train()]:
 #'   \describe{
@@ -663,7 +688,8 @@ get_hte_ale <- function(x,
 #'     \item{`learning_rate`}{Number in (0, 1], default `0.1`.}
 #'   }
 #'   Only used by `"surrogate"`.
-#' @param seed Integer seed, default `123`, for the held-out split of
+#' @param seed Integer seed, default `123`, for the patients explained when
+#'   they are cut, the background of `"kernel"`, the held-out split of
 #'   `"surrogate"` and the sampled coalitions of `"kernel"`. The global random
 #'   number state is restored on exit.
 #'
@@ -671,8 +697,9 @@ get_hte_ale <- function(x,
 #'   covariates), the original covariate values `X` and the `baseline`, ready
 #'   for the `shapviz::sv_*()` plots and `MLR::plt_shp_*()`.
 #'   `attr(res, "analysis")` holds `method`, `n` (patients explained),
-#'   `n_total`, `bg_n` (kernel), `r2` (surrogate), `surrogate_args`,
-#'   `time_budget`, `est_sec` and `elapsed_sec`.
+#'   `n_total`, `rows` (their rows in `x$data`), `bg_n` and `bg_rows`
+#'   (kernel), `r2` (surrogate), `surrogate_args`, `time_budget`, `est_sec`
+#'   and `elapsed_sec`.
 #'
 #' @references
 #' Lundberg SM, Lee SI (2017). A unified approach to interpreting model
@@ -774,7 +801,7 @@ get_hte_shp <- function(x,
     # the xgboost fit, timed as the forest's predictions were.
     sz   <- .hte_explain_size(x, max_n, time_budget, rows = 1,
                               extra = 2.5e-4 + 0.8 * 2e-5, fixed = 3)
-    rows <- .hte_explain_rows(n_all, sz$n)
+    rows <- .hte_explain_rows(n_all, sz$n, seed)
     m    <- length(rows)
     X0   <- X[rows, , drop = FALSE]
     w0   <- w_all[rows]
@@ -822,7 +849,7 @@ get_hte_shp <- function(x,
     bg_n  <- min(bg_n, n_all)
     sz    <- .hte_explain_size(x, max_n, time_budget, rows = bg_n * coal,
                                calls = if (exact) 2 else 5)
-    rows  <- .hte_explain_rows(n_all, sz$n)
+    rows  <- .hte_explain_rows(n_all, sz$n, seed)
     m     <- length(rows)
     if (is.null(max_n) && m < 10L)
       cli::cli_warn(paste(
@@ -852,7 +879,7 @@ get_hte_shp <- function(x,
       }
       as.numeric(stats::predict(object, Xn)$predictions)
     }
-    bg <- .hte_explain_rows(n_all, bg_n)
+    bg <- .hte_explain_rows(n_all, bg_n, seed)
     ks <- kernelshap::kernelshap(
       x$fit, X = d[rows, covars, drop = FALSE],
       bg_X = d[bg, covars, drop = FALSE],
@@ -866,8 +893,9 @@ get_hte_shp <- function(x,
   if (verbose)
     cli::cli_inform("SHAP ({method}) of {m} patient{?s}: estimated {round(sz$est, 1)} s, took {round(elapsed, 1)} s.")
   attr(sv, "analysis") <- list(
-    method = method, n = m, n_total = n_all,
-    bg_n = if (method == "kernel") bg_n, r2 = r2,
+    method = method, n = m, n_total = n_all, rows = rows,
+    bg_n = if (method == "kernel") bg_n,
+    bg_rows = if (method == "kernel") bg, r2 = r2,
     surrogate_args = if (method == "surrogate") sa,
     time_budget = time_budget, est_sec = sz$est, elapsed_sec = elapsed)
   sv

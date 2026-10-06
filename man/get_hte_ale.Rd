@@ -26,9 +26,9 @@ quantile intervals for each continuous covariate; tied quantiles merge,
 so a covariate with many ties gets fewer.}
 
 \item{max_n}{\code{NULL} (default) to let \code{time_budget} set the number of
-patients, or a positive whole number or \code{Inf} to set it directly. The
-patients are evenly spaced through the data, so the result does not
-depend on the random seed.}
+patients, or a positive whole number or \code{Inf} to set it directly. A cut
+takes a random sample with a fixed seed, so the result does not depend
+on the random seed in use.}
 
 \item{time_budget}{Positive number of seconds, default \code{20}, that the cost
 model aims for when \code{max_n = NULL}. Ignored otherwise.}
@@ -44,7 +44,7 @@ value of a numeric one with at most 5 values; \code{NA} otherwise), \code{level}
 centred accumulated effect) and \code{n} (patients in the interval ending at
 \code{value}, \code{NA} for the lowest end; patients at the level for a categorical
 covariate, whose rows follow its steps). \code{attr(res, "analysis")} holds
-\code{method}, \code{n}, \code{n_total},
+\code{method}, \code{n}, \code{n_total}, \code{rows} (the patients' rows in \code{x$data}),
 \code{n_bins}, \code{time_budget}, \code{est_sec} and \code{elapsed_sec}.
 }
 \description{
@@ -87,13 +87,15 @@ covariate.
 Every grid point costs one forest prediction per patient, so the run time
 grows with the number of patients, covariates and grid points, and with the
 size of the forest (patients times trees). With \code{max_n = NULL} the patients
-are cut, evenly spaced through the data, to the number that a conservative
-cost model -- fitted to timings on a 24-core machine -- puts within
-\code{time_budget} seconds, and a message reports the cut. The count depends on
-the forest and the arguments only, so the same call gives the same result
-on any machine, while the run time scales with its speed.
-\code{attr(res, "analysis")} records the patients used, the estimated and the
-elapsed seconds.
+are cut to the number that a conservative cost model -- fitted to timings
+on a 24-core machine -- puts within \code{time_budget} seconds, and a message
+reports the cut. Patients are cut to a simple random sample drawn with a
+fixed seed and its own generator: evenly spaced rows would follow any
+periodic row order, and the sample leaves the random number state as it
+was. The count depends on the forest and the arguments only, so the same
+call gives the same result on any machine, while the run time scales with
+its speed. \code{attr(res, "analysis")} records the rows used (\code{rows}), the
+estimated and the elapsed seconds.
 }
 
 \examples{

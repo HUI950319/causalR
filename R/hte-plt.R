@@ -29,8 +29,8 @@
 # ---- L2 partial dependence -------------------------------------------------
 
 # Partial dependence as in StratifiedMedicine::plot_dependence(): every
-# analysed row -- or an evenly spaced subset of at most `max_n`, so the result
-# does not depend on the random seed -- gets the covariates in `vars` set to
+# analysed row -- or a fixed-seed random sample of `max_n` of them, so the
+# result does not depend on the random seed -- gets the covariates in `vars` set to
 # each grid combination, and the forest's CATE is averaged. The grid and the
 # averaging are those of get_hte_pdp() (.hte_pdp_grid(), .hte_pdp_mean() in
 # hte-explain.R), so the two agree at the same patients.
@@ -144,8 +144,8 @@
 #'   \describe{
 #'     \item{`"cate"`}{The out-of-bag CATE of every patient (grey), jittered
 #'       for a categorical covariate and smoothed by loess (span
-#'       `cate_smooth`) for a continuous one. Above 2000 patients only 2000,
-#'       evenly spaced as `pdp_args$max_n` picks them, are drawn; the loess
+#'       `cate_smooth`) for a continuous one. Above 2000 patients a random
+#'       2000, drawn as `pdp_args$max_n` draws them, are shown; the loess
 #'       line and the y range still use every patient. Descriptive only:
 #'       forest estimates are shrunk towards the overall mean.}
 #'     \item{`"dr"`}{The doubly robust estimate with pointwise confidence
@@ -192,8 +192,9 @@
 #'       covariate with many ties gets fewer. Heat-map tiles reach halfway
 #'       to their neighbours.}
 #'     \item{`max_n`}{Positive whole number or `Inf`, default `1000`.
-#'       Maximum patients averaged over, taken evenly spaced so the result
-#'       does not depend on the random seed; `Inf` uses everyone.}
+#'       Maximum patients averaged over, a random sample drawn with a fixed
+#'       seed so the result does not depend on the random seed in use (evenly
+#'       spaced rows could follow a periodic row order); `Inf` uses everyone.}
 #'   }
 #'   The forest predicts each grid combination for each selected patient in
 #'   batches; large grids and background samples still require more work.
@@ -431,12 +432,11 @@ plt_hte_dep <- function(x,
       if ("cate" %in% display) {
         pts <- data.frame(x = xval(d[[v]]), y = d$.cate, panel = label)
         pts <- pts[!is.na(pts$x), , drop = FALSE]
-        # Evenly spaced patients are drawn, as .hte_pdp() picks them; the
-        # loess line and the y range use every patient.
+        # A fixed-seed random sample is drawn, as .hte_pdp() draws patients;
+        # the loess line and the y range use every patient.
         shown <- pts
         if (nrow(pts) > max_pts)
-          shown <- pts[unique(round(seq(1, nrow(pts), length.out = max_pts))), ,
-                       drop = FALSE]
+          shown <- pts[.hte_explain_rows(nrow(pts), max_pts), , drop = FALSE]
         q <- q + if (is_n) {
           list(ggplot2::geom_point(data = shown, ggplot2::aes(x = x, y = y),
                                    colour = "grey55", alpha = 0.4, size = 0.8),

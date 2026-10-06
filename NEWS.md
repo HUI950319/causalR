@@ -44,6 +44,17 @@
   such neighbouring levels -- rare levels once `max_n` or the time budget
   cut the patients -- made every later level `NA`.
 
+* When patients are cut, `get_hte_pdp()`, `get_hte_ale()`, `get_hte_shp()`
+  (patients and Kernel SHAP background) and `plt_hte_dep()` (the `"pdp"`
+  layer, the heat map and the grey points) take a simple random sample drawn
+  with a fixed seed instead of evenly spaced rows, which follow any periodic
+  row order: with a high-effect group on every 20th of 1981 rows (5%), 100
+  evenly spaced rows were all from that group and the partial dependence
+  read about 2.0 instead of 0.45. The sample has its own generator and seed
+  (`get_hte_shp()` uses `seed`) and leaves the random number state alone.
+  The rows used are returned in `attr(res, "analysis")$rows`, and for
+  Kernel SHAP the background in `$bg_rows`.
+
 * `get_hte_ale()` returns `ale = NA` with a message for a covariate whose
   explained patients show fewer than 2 distinct values or levels. Such a
   covariate on its own stopped with "wrong sign in 'by' argument" (for
