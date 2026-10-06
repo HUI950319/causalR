@@ -186,7 +186,10 @@
 #'   `type = "heat"`:
 #'   \describe{
 #'     \item{`grid_n`}{Finite whole number of at least 2, default `21`.
-#'       Number of grid points for each continuous covariate.}
+#'       Number of grid points for each continuous covariate, set at its
+#'       quantiles as in [get_hte_pdp()]; tied quantiles merge, so a
+#'       covariate with many ties gets fewer. Heat-map tiles reach halfway
+#'       to their neighbours.}
 #'     \item{`max_n`}{Positive whole number or `Inf`, default `1000`.
 #'       Maximum patients averaged over, taken evenly spaced so the result
 #'       does not depend on the random seed; `Inf` uses everyone.}
@@ -356,9 +359,30 @@ plt_hte_dep <- function(x,
   # ---- Heat map -------------------------------------------------------------
   if (type == "heat") {
     pd    <- .hte_pdp(x, vars, pdp_args$grid_n, pdp_args$max_n)
-    pd$x1 <- pd[[vars[1L]]]
-    pd$x2 <- pd[[vars[2L]]]
-    p <- ggplot2::ggplot(pd, ggplot2::aes(x = x1, y = x2, fill = estimate)) +
+    # The quantile grid of a continuous covariate is uneven, and geom_tile()
+    # would give every tile the narrowest step, leaving gaps; each tile spans
+    # instead halfway to its neighbours, the outer ones ending at the extreme
+    # grid values, the covariate's range. A level keeps the full width of
+    # its discrete position.
+    tile <- function(v) {
+      xv <- pd[[v]]
+      if (!is.numeric(xv)) return(list(at = xv, size = 1))
+      g  <- sort(unique(xv))
+      if (length(g) == 1L) return(list(at = xv, size = 1))
+      mid <- (g[-1L] + g[-length(g)]) / 2
+      lo  <- c(g[1L], mid)
+      hi  <- c(mid, g[length(g)])
+      i   <- match(xv, g)
+      list(at = (lo[i] + hi[i]) / 2, size = hi[i] - lo[i])
+    }
+    t1 <- tile(vars[1L])
+    t2 <- tile(vars[2L])
+    pd$x1 <- t1$at
+    pd$x2 <- t2$at
+    pd$w1 <- t1$size
+    pd$w2 <- t2$size
+    p <- ggplot2::ggplot(pd, ggplot2::aes(x = x1, y = x2, fill = estimate,
+                                          width = w1, height = w2)) +
       ggplot2::geom_tile() +
       ggplot2::scale_fill_gradient2(low = "navy", mid = "white",
                                     high = "firebrick", midpoint = 0,

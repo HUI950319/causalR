@@ -22,7 +22,8 @@ the order of \code{x$importance}, a character vector of covariate names, or
 \code{\link[=plt_hte_dep]{plt_hte_dep()}}.}
 
 \item{grid_n}{Finite whole number of at least 2, default \code{21}. Number of
-grid points for each continuous covariate.}
+quantile grid points for each continuous covariate; tied quantiles
+merge, so a covariate with many ties gets fewer.}
 
 \item{max_n}{\code{NULL} (default) to let \code{time_budget} set the number of
 patients averaged over, or a positive whole number or \code{Inf} to set it
@@ -54,9 +55,11 @@ The explained function is the full forest's CATE on the \code{"diff"} scale of
 \code{\link[=get_hte]{get_hte()}}, the same as the \code{"pdp"} layer of \code{\link[=plt_hte_dep]{plt_hte_dep()}}: the S(t) or
 RMST difference for a survival outcome, the risk difference for a binary
 one and the mean difference otherwise. A continuous covariate (more than 5
-distinct values) gets \code{grid_n} evenly spaced values from its minimum to its
-maximum; a categorical one, or a numeric one with at most 5 values, gets
-each level. When covariates are correlated, the partial dependence also
+distinct values) is set to its quantiles at \code{grid_n} evenly spaced
+probabilities from 0 to 1, so the grid follows the data from its minimum to
+its maximum and a long tail gets few points; a categorical one, or a
+numeric one with at most 5 values, gets each level. When covariates are
+correlated, the partial dependence also
 averages over combinations the data never show; \code{\link[=get_hte_ale]{get_hte_ale()}} stays
 within the data.
 }

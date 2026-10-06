@@ -215,12 +215,19 @@ test_that("PDP predicts bounded batches without changing grid estimates", {
     cells <<- c(cells, length(newdata))
     original(object, newdata, ...)
   }, .package = "stats")
+  # batches of 5000 patients instead of a million design cells
+  local_mocked_bindings(.hte_explain_cost = function(fit)
+    list(a = 0, b = 0, batch = 5000))
   p <- plt_hte_dep(res, x_var = c("age", "stage"), type = "heat",
                    pdp_args = list(grid_n = 121, max_n = Inf))
+  # whole-year ages tie, so their 121 quantiles merge into fewer points
+  g <- length(unique(stats::quantile(res$data$age, seq(0, 1, length.out = 121),
+                                     names = FALSE)))
+  expect_lt(g, 121L)
   expect_gt(length(cells), 1L)
-  expect_lte(max(cells), 1e6)
-  expect_equal(sum(cells), 121 * 3 * length(res$fit$X.orig))
-  for (k in c(1L, 121L, 242L, 363L)) {
+  expect_lte(max(cells), 5000 * ncol(res$fit$X.orig))
+  expect_equal(sum(cells), g * 3 * length(res$fit$X.orig))
+  for (k in c(1L, g, g + 1L, 3L * g)) {
     row <- p$data[k, ]
     value <- manual_pdp(res$fit, list(age = row$age,
       stageI = as.integer(row$stage == "I"),
@@ -228,6 +235,19 @@ test_that("PDP predicts bounded batches without changing grid estimates", {
       stageIII = as.integer(row$stage == "III")))
     expect_equal(row$estimate, value)
   }
+})
+
+test_that("heat-map tiles of an uneven quantile grid meet without gaps", {
+  res <- dep_res()
+  p   <- plt_hte_dep(res, x_var = c("age", "stage"), type = "heat",
+                     pdp_args = list(grid_n = 6))
+  e   <- unique(ggplot2::layer_data(p)[, c("xmin", "xmax")])
+  e   <- e[order(e$xmin), ]
+  expect_equal(e$xmin[-1L], e$xmax[-nrow(e)])
+  g <- sort(unique(p$data$age))
+  expect_true(all(g >= e$xmin & g <= e$xmax))
+  # the tiles cover the covariate's range and no more
+  expect_equal(range(e), range(res$data$age))
 })
 
 test_that("pdp sets an integer-coded factor through its level code", {

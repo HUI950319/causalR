@@ -205,15 +205,18 @@
   est / m
 }
 
-# Values a partial dependence sets covariate v to: grid_n evenly spaced
-# values from the minimum to the maximum of a continuous covariate, the
-# levels of any other (.hte_levels()).
+# Values a partial dependence sets covariate v to: the quantiles of a
+# continuous covariate at grid_n evenly spaced probabilities from 0 to 1,
+# tied ones merged, the levels of any other (.hte_levels()). Evenly spaced
+# values over the range put 11 of 21 points above the 99th percentile of a
+# log-normal covariate, where the forest only extrapolates.
 #' @keywords internal
 #' @noRd
 .hte_pdp_grid <- function(x, v, grid_n) {
   xv <- x$data[[v]]
   if (.hte_is_num(xv))
-    seq(min(xv, na.rm = TRUE), max(xv, na.rm = TRUE), length.out = grid_n)
+    unique(stats::quantile(xv, seq(0, 1, length.out = grid_n), na.rm = TRUE,
+                           names = FALSE))
   else .hte_levels(x, v)
 }
 
@@ -231,9 +234,11 @@
 #' [get_hte()], the same as the `"pdp"` layer of [plt_hte_dep()]: the S(t) or
 #' RMST difference for a survival outcome, the risk difference for a binary
 #' one and the mean difference otherwise. A continuous covariate (more than 5
-#' distinct values) gets `grid_n` evenly spaced values from its minimum to its
-#' maximum; a categorical one, or a numeric one with at most 5 values, gets
-#' each level. When covariates are correlated, the partial dependence also
+#' distinct values) is set to its quantiles at `grid_n` evenly spaced
+#' probabilities from 0 to 1, so the grid follows the data from its minimum to
+#' its maximum and a long tail gets few points; a categorical one, or a
+#' numeric one with at most 5 values, gets each level. When covariates are
+#' correlated, the partial dependence also
 #' averages over combinations the data never show; [get_hte_ale()] stays
 #' within the data.
 #'
@@ -255,7 +260,8 @@
 #'   `"fct"` / `"num"` for only the categorical / continuous ones, as in
 #'   [plt_hte_dep()].
 #' @param grid_n Finite whole number of at least 2, default `21`. Number of
-#'   grid points for each continuous covariate.
+#'   quantile grid points for each continuous covariate; tied quantiles
+#'   merge, so a covariate with many ties gets fewer.
 #' @param max_n `NULL` (default) to let `time_budget` set the number of
 #'   patients averaged over, or a positive whole number or `Inf` to set it
 #'   directly. The patients are evenly spaced through the data, so the result

@@ -12,6 +12,18 @@
   results are reproducible. `get_hte_shp()` returns a `shapviz` object. Adds
   kernelshap, shapviz and xgboost to Suggests.
 
+* The partial dependence of `get_hte_pdp()` and of `plt_hte_dep()` (the
+  `"pdp"` layer and `type = "heat"`) sets a continuous covariate to its
+  quantiles at `grid_n` evenly spaced probabilities instead of evenly spaced
+  values from its minimum to its maximum, which put 11 of 21 points above the
+  99th percentile of a log-normal covariate, where the forest only
+  extrapolates. Tied quantiles merge, so a covariate with many ties gets
+  fewer than `grid_n` points. Heat-map tiles reach halfway to their
+  neighbours, so the uneven grid leaves no gaps. Both functions now share one
+  implementation that predicts batch by batch, so `get_hte_pdp(max_n = Inf)`
+  no longer builds one job vector per patient and grid point (about 1.7 GB at
+  100,000 patients and 30 covariates).
+
 * New `get_evalue()` computes the E-value of a risk, odds or hazard ratio,
   typed in as `effect = "1.85 (1.20-2.85)"` or `est`/`lo`/`hi`, or fitted
   from `data` with `cat_var`, `adj_var` and RegR-style `surv` (Cox on

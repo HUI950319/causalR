@@ -83,7 +83,10 @@ default the \code{p_het} equals \code{get_hte()$importance}.}
 \code{type = "heat"}:
 \describe{
 \item{\code{grid_n}}{Finite whole number of at least 2, default \code{21}.
-Number of grid points for each continuous covariate.}
+Number of grid points for each continuous covariate, set at its
+quantiles as in \code{\link[=get_hte_pdp]{get_hte_pdp()}}; tied quantiles merge, so a
+covariate with many ties gets fewer. Heat-map tiles reach halfway
+to their neighbours.}
 \item{\code{max_n}}{Positive whole number or \code{Inf}, default \code{1000}.
 Maximum patients averaged over, taken evenly spaced so the result
 does not depend on the random seed; \code{Inf} uses everyone.}

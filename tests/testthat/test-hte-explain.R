@@ -40,6 +40,9 @@ test_that("get_hte_pdp() matches .hte_pdp() and hand-set predictions", {
 
   age <- get_hte_pdp(res, x_var = "age", grid_n = 5, max_n = Inf)
   ref <- .hte_pdp(res, "age", 5, Inf)
+  # the grid follows the data: quantiles, not even steps over the range
+  expect_equal(age$value, stats::quantile(res$data$age, c(0, .25, .5, .75, 1),
+                                          names = FALSE))
   expect_equal(age$value, ref$age)
   expect_equal(age$estimate, ref$estimate)
   expect_true(all(is.na(age$level)))
