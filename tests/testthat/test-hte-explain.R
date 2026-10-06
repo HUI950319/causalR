@@ -339,6 +339,85 @@ test_that("get_hte_shp() surrogate collapses one-hot columns and restores the RN
   expect_true(is.na(attr(few, "analysis")$r2))
 })
 
+test_that("explanations handle missing values, logical, character and odd names", {
+  skip_if_not_installed("grf")
+  set.seed(2)
+  n <- 400L
+  d <- data.frame(age          = stats::rnorm(n, 60, 10),
+                  `Tumor size` = stats::rlnorm(n),
+                  `T stage`    = factor(sample(c("T1", "T2", "T3"), n, TRUE)),
+                  smoker       = sample(c(TRUE, FALSE), n, TRUE),
+                  site         = sample(c("colon", "rectum"), n, TRUE),
+                  check.names  = FALSE)
+  # rows 1, 134 and 400 are among the 4 evenly spaced rows explained below
+  d$age[c(1, 50:60)]         <- NA
+  d$`T stage`[c(134, 100:110)] <- NA
+  d$smoker[c(400, 200:205)]  <- NA
+  d$z <- stats::rbinom(n, 1, 0.5)
+  d$y <- d$z * (0.5 + 0.5 * (d$`T stage` %in% "T3")) + stats::rnorm(n)
+  adj  <- c("age", "Tumor size", "T stage", "smoker", "site")
+  rows <- .hte_explain_rows(n, 4L)
+  expect_identical(rows, c(1, 134, 267, 400))
+
+  for (enc in c("integer", "onehot")) {
+    res <- suppressWarnings(suppressMessages(get_hte(
+      d, cat_var = "z", adj_var = adj, surv = "y", factor_encoding = enc,
+      grf_args = list(num.trees = 100, seed = 1))))
+
+    pd <- get_hte_pdp(res, grid_n = 5, max_n = Inf)
+    expect_setequal(unique(pd$variable), adj)
+    expect_false(anyNA(pd$estimate))
+    expect_identical(pd$level[pd$variable == "smoker"], c("FALSE", "TRUE"))
+    expect_identical(pd$level[pd$variable == "site"], c("colon", "rectum"))
+
+    al <- get_hte_ale(res, n_bins = 5, max_n = Inf)
+    expect_false(anyNA(al$ale))
+    # a patient missing the covariate is left out of it
+    expect_identical(sum(al$n[al$variable == "T stage"]), n - 12L)
+    expect_identical(sum(al$n[al$variable == "smoker"]), n - 7L)
+
+    if (requireNamespace("shapviz", quietly = TRUE) &&
+        requireNamespace("kernelshap", quietly = TRUE)) {
+      sv <- get_hte_shp(res, method = "kernel", max_n = 4, bg_n = 20)
+      expect_identical(colnames(sv$S), adj)
+      expect_equal(unname(rowSums(sv$S)) + sv$baseline,
+                   pred_with(res$fit, rows), tolerance = 1e-6)
+    }
+    if (requireNamespace("shapviz", quietly = TRUE) &&
+        requireNamespace("xgboost", quietly = TRUE)) {
+      sv <- suppressWarnings(get_hte_shp(res, max_n = Inf))
+      expect_identical(colnames(sv$S), adj)
+      expect_false(anyNA(sv$S))
+      expect_true(is.logical(sv$X$smoker))
+      expect_true(is.character(sv$X$site))
+      expect_identical(sum(is.na(sv$X$`T stage`)), 12L)
+    }
+  }
+})
+
+test_that("get_hte_shp() Kernel SHAP stays additive beyond 8 covariates", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("kernelshap")
+  skip_if_not_installed("shapviz")
+  set.seed(5)
+  n <- 300L
+  d <- as.data.frame(matrix(stats::rnorm(n * 9), n, 9,
+                            dimnames = list(NULL, paste0("x", 1:9))))
+  d$z <- stats::rbinom(n, 1, 0.5)
+  d$y <- d$z * (1 + d$x1) + stats::rnorm(n)
+  res <- suppressMessages(get_hte(d, cat_var = "z", adj_var = paste0("x", 1:9),
+                                  surv = "y",
+                                  grf_args = list(num.trees = 100, seed = 1)))
+  # 9 covariates: sampled coalitions on top of the exact degree-2 ones
+  sv <- get_hte_shp(res, method = "kernel", max_n = 3, bg_n = 10)
+  expect_identical(dim(sv$S), c(3L, 9L))
+  expect_equal(unname(rowSums(sv$S)) + sv$baseline,
+               pred_with(res$fit, .hte_explain_rows(n, 3L)), tolerance = 1e-6)
+  # the seed fixes the sampled coalitions
+  expect_identical(get_hte_shp(res, method = "kernel", max_n = 3, bg_n = 10)$S,
+                   sv$S)
+})
+
 test_that("explanations run on a survival forest", {
   skip_if_not_installed("grf")
   set.seed(1)
