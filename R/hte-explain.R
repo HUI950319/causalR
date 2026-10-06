@@ -8,7 +8,11 @@
 #   L1  get_hte_ale()         accumulated local effects
 #   L1  get_hte_shp()         SHAP values: TreeSHAP of an xgboost surrogate of
 #                             the forest, or Kernel SHAP of the forest itself
-#   L2  .hte_predict_set()    forest CATE with one covariate replaced per row
+#   L2  .hte_predict_set()    forest CATE with covariates replaced per row
+#   L2  .hte_pdp_mean()       forest CATE averaged over patients per block of
+#                             settings, streamed in batches; the engine of
+#                             get_hte_pdp() and of .hte_pdp() in hte-plt.R
+#   L2  .hte_pdp_grid()       grid values or levels of one covariate
 #   L2  .hte_explain_size()   patients that fit the time budget
 #   L2  .hte_explain_cost()   conservative predict-time model of a forest
 #   L2  .hte_explain_rows()   evenly spaced rows, as .hte_pdp() picks them
@@ -134,11 +138,16 @@
 # The forest's CATE for X.orig[row, ] with covariate var[i] set to value[i]:
 # the value itself for a numeric covariate, its position in .hte_levels() for
 # a categorical one -- the integer code, or which one-hot column to set.
-# var[i] = NA keeps the row as observed. Rows run in batches of at most
-# .HTE_EXPLAIN_CELLS design cells.
+# var[i] = NA keeps the row as observed. `var` and `value` may also be lists
+# of such vectors, each setting one more covariate per row. Rows run in
+# batches of at most .HTE_EXPLAIN_CELLS design cells.
 #' @keywords internal
 #' @noRd
 .hte_predict_set <- function(x, row, var, value) {
+  if (!is.list(var)) {
+    var   <- list(var)
+    value <- list(value)
+  }
   fit    <- x$fit
   X      <- fit$X.orig
   a      <- attr(x, "analysis")
@@ -149,21 +158,63 @@
   for (start in seq(1, length(row), by = batch)) {
     i  <- seq(start, min(length(row), start + batch - 1))
     Xk <- X[row[i], , drop = FALSE]
-    vi <- var[i]
-    for (v in unique(vi[!is.na(vi)])) {
-      s    <- which(vi == v)
-      cols <- which(src == v)
-      val  <- value[i][s]
-      if (onehot && !is.numeric(x$data[[v]])) {
-        Xk[s, cols] <- 0
-        Xk[cbind(s, cols[val])] <- 1
-      } else {
-        Xk[s, cols] <- val
+    for (j in seq_along(var)) {
+      vi <- var[[j]][i]
+      for (v in unique(vi[!is.na(vi)])) {
+        s    <- which(vi == v)
+        cols <- which(src == v)
+        val  <- value[[j]][i][s]
+        if (onehot && !is.numeric(x$data[[v]])) {
+          Xk[s, cols] <- 0
+          Xk[cbind(s, cols[val])] <- 1
+        } else {
+          Xk[s, cols] <- val
+        }
       }
     }
     out[i] <- as.numeric(stats::predict(fit, Xk)$predictions)
   }
   out
+}
+
+# Partial dependence: the forest's CATE averaged over the patients `rows` for
+# each of B blocks, block b setting covariate var[[j]][b] to value[[j]][b]
+# for every j, as .hte_predict_set() takes them. The B x length(rows) jobs
+# are enumerated batch by batch, so memory stays at one batch however many
+# patients and blocks there are.
+#' @keywords internal
+#' @noRd
+.hte_pdp_mean <- function(x, rows, var, value) {
+  if (!is.list(var)) {
+    var   <- list(var)
+    value <- list(value)
+  }
+  m     <- length(rows)
+  B     <- length(var[[1L]])
+  step  <- .hte_explain_cost(x$fit)$batch
+  total <- B * as.double(m)
+  est   <- numeric(B)
+  for (start in seq(1, total, by = step)) {
+    idx  <- seq(start, min(total, start + step - 1)) - 1
+    k    <- as.integer(idx %/% m) + 1L
+    pred <- .hte_predict_set(x, rows[idx %% m + 1], lapply(var, `[`, k),
+                             lapply(value, `[`, k))
+    id   <- sort(unique(k))
+    est[id] <- est[id] + rowsum(pred, k, reorder = TRUE)[, 1L]
+  }
+  est / m
+}
+
+# Values a partial dependence sets covariate v to: grid_n evenly spaced
+# values from the minimum to the maximum of a continuous covariate, the
+# levels of any other (.hte_levels()).
+#' @keywords internal
+#' @noRd
+.hte_pdp_grid <- function(x, v, grid_n) {
+  xv <- x$data[[v]]
+  if (.hte_is_num(xv))
+    seq(min(xv, na.rm = TRUE), max(xv, na.rm = TRUE), length.out = grid_n)
+  else .hte_levels(x, v)
 }
 
 
@@ -256,12 +307,8 @@ get_hte_pdp <- function(x,
   vars <- .hte_explain_vars(x, x_var)
 
   d    <- x$data
-  grid <- lapply(stats::setNames(vars, vars), function(v) {
-    xv <- d[[v]]
-    if (.hte_is_num(xv)) seq(min(xv, na.rm = TRUE), max(xv, na.rm = TRUE),
-                             length.out = grid_n)
-    else .hte_levels(x, v)
-  })
+  grid <- lapply(stats::setNames(vars, vars), function(v)
+    .hte_pdp_grid(x, v, grid_n))
   size  <- lengths(grid)
   num   <- vapply(d[vars], is.numeric, logical(1L))
   n_all <- nrow(x$fit$X.orig)
@@ -269,11 +316,9 @@ get_hte_pdp <- function(x,
   rows  <- .hte_explain_rows(n_all, sz$n)
   m     <- length(rows)
 
-  # One job per patient, covariate and grid point, covariate by covariate.
+  # One block per covariate and grid point, covariate by covariate.
   code <- unlist(lapply(vars, function(v)
     if (num[[v]]) grid[[v]] else seq_along(grid[[v]])), use.names = FALSE)
-  pred <- .hte_predict_set(x, rep(rows, sum(size)),
-                           rep(rep(vars, size), each = m), rep(code, each = m))
 
   out <- tibble::tibble(
     variable = rep(vars, size),
@@ -282,7 +327,7 @@ get_hte_pdp <- function(x,
     level    = unlist(lapply(vars, function(v)
       if (num[[v]]) rep(NA_character_, size[[v]]) else grid[[v]]),
       use.names = FALSE),
-    estimate = colMeans(matrix(pred, nrow = m)))
+    estimate = .hte_pdp_mean(x, rows, rep(vars, size), code))
   elapsed <- proc.time()[[3L]] - t0
   if (verbose)
     cli::cli_inform("Partial dependence over {m} patient{?s}: estimated {round(sz$est, 1)} s, took {round(elapsed, 1)} s.")

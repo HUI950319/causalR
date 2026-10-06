@@ -74,6 +74,22 @@ test_that("get_hte_pdp() batches covariates without changing their curves", {
   expect_identical(a$n_total, 400L)
 })
 
+test_that("get_hte_pdp() hands the forest one batch of jobs at a time", {
+  res   <- expl_res()
+  sizes <- integer()
+  real  <- .hte_predict_set
+  local_mocked_bindings(
+    .hte_explain_cost = function(fit) list(a = 0, b = 0, batch = 500),
+    .hte_predict_set  = function(x, row, ...) {
+      sizes <<- c(sizes, length(row))
+      real(x, row, ...)
+    })
+  get_hte_pdp(res, grid_n = 5, max_n = Inf)
+  expect_lte(max(sizes), 500L)
+  # age 5 grid points, stage 3 levels, sex 2, nodes 4
+  expect_identical(sum(sizes), 400L * (5L + 3L + 2L + 4L))
+})
+
 test_that("time_budget sets the patient count and max_n overrides it", {
   res <- expl_res()
   expect_no_message(full <- get_hte_pdp(res, x_var = "age"))

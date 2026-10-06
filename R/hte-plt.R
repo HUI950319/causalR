@@ -31,67 +31,27 @@
 # Partial dependence as in StratifiedMedicine::plot_dependence(): every
 # analysed row -- or an evenly spaced subset of at most `max_n`, so the result
 # does not depend on the random seed -- gets the covariates in `vars` set to
-# each grid combination, and the forest's CATE is averaged. A factor is set
-# through its one-hot columns, which get_hte() keeps for every level, so no
-# row ever carries two levels at once -- or, with factor_encoding =
-# "integer", through its one column of level codes; a numeric covariate is
-# one column.
+# each grid combination, and the forest's CATE is averaged. The grid and the
+# averaging are those of get_hte_pdp() (.hte_pdp_grid(), .hte_pdp_mean() in
+# hte-explain.R), so the two agree at the same patients.
 #' @keywords internal
 #' @noRd
 .hte_pdp <- function(x, vars, grid_n, max_n) {
-  fit  <- x$fit
-  X    <- fit$X.orig
   d    <- x$data
-  src  <- attr(x, "analysis")$covariates[attr(X, "assign")]
-  rows <- if (nrow(X) > max_n) {
-    unique(round(seq(1, nrow(X), length.out = max_n)))
-  } else {
-    seq_len(nrow(X))
-  }
-  X0 <- X[rows, , drop = FALSE]
-
-  grid <- lapply(stats::setNames(vars, vars), function(v) {
-    xv <- d[[v]]
-    if (.hte_is_num(xv)) seq(min(xv, na.rm = TRUE), max(xv, na.rm = TRUE),
-                             length.out = grid_n)
-    else if (is.numeric(xv)) sort(unique(xv))
-    else levels(droplevels(as.factor(xv)))
-  })
+  rows <- .hte_explain_rows(nrow(x$fit$X.orig), max_n)
+  grid <- lapply(stats::setNames(vars, vars), function(v)
+    .hte_pdp_grid(x, v, grid_n))
   combo <- expand.grid(grid, KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
-
-  # Traverse grid x patients in bounded batches, including when max_n = Inf.
-  # At most one million numeric cells (~8 MB) per prediction matrix.
-  batch_n <- max(1, floor(1e6 / ncol(X0)))
-  n0 <- nrow(X0)
-  total <- nrow(combo) * as.double(n0)
-  combo$estimate <- numeric(nrow(combo))
-  for (start in seq(1, total, by = batch_n)) {
-    index <- seq(start, min(total, start + batch_n - 1)) - 1
-    k <- index %/% n0 + 1L
-    Xk <- X0[index %% n0 + 1L, , drop = FALSE]
-    for (v in vars) {
-      cols <- which(src == v)
-      if (is.numeric(d[[v]])) {
-        Xk[, cols] <- combo[[v]][k]
-      } else if (identical(attr(x, "analysis")$factor_encoding, "integer")) {
-        Xk[, cols] <- match(combo[[v]][k], grid[[v]])
-      } else {
-        Xk[, cols] <- 0
-        Xk[cbind(seq_len(nrow(Xk)), cols[match(combo[[v]][k], grid[[v]])])] <- 1
-      }
-    }
-    pred <- as.numeric(stats::predict(fit, Xk)$predictions)
-    sums <- rowsum(pred, k)
-    ids <- as.integer(rownames(sums))
-    combo$estimate[ids] <- combo$estimate[ids] + sums[, 1L]
-  }
-  combo$estimate <- combo$estimate / n0
+  combo$estimate <- .hte_pdp_mean(
+    x, rows, lapply(vars, function(v) rep(v, nrow(combo))),
+    lapply(vars, function(v)
+      if (is.numeric(d[[v]])) combo[[v]] else match(combo[[v]], grid[[v]])))
 
   for (v in vars)
     if (!.hte_is_num(d[[v]]))
       combo[[v]] <- factor(as.character(combo[[v]]),
                            levels = as.character(grid[[v]]))
-  attr(combo, "n_rows") <- nrow(X0)
+  attr(combo, "n_rows") <- length(rows)
   combo
 }
 
