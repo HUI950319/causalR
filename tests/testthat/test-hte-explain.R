@@ -203,6 +203,42 @@ test_that("get_hte_ale() steps an unordered factor through similar levels", {
   expect_identical(ale$n[ale$variable == "grp"], nk)
 })
 
+test_that("get_hte_ale() joins the levels the explained patients have", {
+  skip_if_not_installed("grf")
+  set.seed(4)
+  n <- 400L
+  d <- data.frame(age = stats::runif(n, 20, 85),
+                  nodes = sample(c(0, 3, 4), n, replace = TRUE))
+  # levels 1 and 2 only in rows 2 to 5, which 40 evenly spaced rows miss
+  d$nodes[2:5] <- c(1, 1, 2, 2)
+  d$z <- stats::rbinom(n, 1, 0.5)
+  d$y <- d$z * (1 + 0.3 * d$nodes) + stats::rnorm(n, sd = 0.5)
+  res  <- suppressMessages(get_hte(d, cat_var = "z", adj_var = c("age", "nodes"),
+                                   surv = "y",
+                                   grf_args = list(num.trees = 200, seed = 1)))
+  rows <- .hte_explain_rows(n, 40L)
+  expect_false(any(2:5 %in% rows))
+
+  ale <- get_hte_ale(res, x_var = "nodes", max_n = 40)
+  expect_identical(ale$value, c(0, 1, 2, 3, 4))
+  nv <- d$nodes[rows]
+  expect_identical(ale$n, tabulate(match(nv, c(0, 1, 2, 3, 4)), 5L))
+  expect_true(all(is.na(ale$ale[2:3])))
+
+  # steps 0 -> 3 -> 4 over the levels present
+  chain <- c(0, 3, 4)
+  k  <- match(nv, chain)
+  f0 <- pred_with(res$fit, rows)
+  fu <- pred_with(res$fit, rows, list(nodes = chain[pmin(k + 1L, 3L)]))
+  fd <- pred_with(res$fit, rows, list(nodes = chain[pmax(k - 1L, 1L)]))
+  nk <- tabulate(k, 3L)
+  st <- vapply(1:2, function(q) (sum((fu - f0)[k == q]) +
+                                   sum((f0 - fd)[k == q + 1L])) /
+                 (nk[q] + nk[q + 1L]), numeric(1))
+  A  <- c(0, cumsum(st))
+  expect_equal(ale$ale[c(1, 4, 5)], A - sum(nk * A) / sum(nk))
+})
+
 test_that("explanations weight patients as get_hte() weights its estimates", {
   res  <- expl_res(weighted = TRUE)
   fit  <- res$fit

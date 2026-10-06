@@ -39,6 +39,11 @@
   categorical covariate follow that order. Numeric, logical and ordered
   covariates keep their own order.
 
+* `get_hte_ale()` skips a level none of the explained patients has, joining
+  the levels on either side, and reports it as `ale = NA`, `n = 0`. Two
+  such neighbouring levels -- rare levels once `max_n` or the time budget
+  cut the patients -- made every later level `NA`.
+
 * New `get_evalue()` computes the E-value of a risk, odds or hazard ratio,
   typed in as `effect = "1.85 (1.20-2.85)"` or `est`/`lo`/`hi`, or fitted
   from `data` with `cat_var`, `adj_var` and RegR-style `surv` (Cox on

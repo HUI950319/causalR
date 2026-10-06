@@ -375,7 +375,10 @@ get_hte_pdp <- function(x,
 #' apart the other covariates lie between them -- the Kolmogorov-Smirnov
 #' distance of a numeric covariate, half the L1 distance of the level shares
 #' of a categorical one, summed over all patients -- so each step joins
-#' similar patients. The rows of a categorical covariate follow its steps.
+#' similar patients. The rows of a categorical covariate follow its steps. A
+#' level none of the explained patients has -- likely for a rare level once
+#' the patients are cut -- is skipped: the steps join the levels on either
+#' side of it, and it gets `ale = NA`, `n = 0`.
 #' The curve is centred to a weighted mean of zero, so
 #' it shows how the CATE varies with the covariate, not its level. The
 #' averages and the centring weight patients as [get_hte_pdp()] does; `n`
@@ -502,16 +505,23 @@ get_hte_ale <- function(x,
       list(z = z, i = i, j = j, row = c(rows[i], rows[i]),
            value = c(z[j], z[j + 1L]))
     } else {
-      # k: each patient's position along the path of levels
+      # pos: each patient's level along the path; k: along the levels kept,
+      # those some explained patient of positive weight has. The steps join
+      # the kept levels, so a level missing from the explained patients
+      # neither breaks the chain nor gets an estimate.
       lev  <- .hte_levels(x, v)
       path <- path_of(v, lev)
-      k    <- match(match(if (is.numeric(xv)) xv else as.character(xv), lev),
+      pos  <- match(match(if (is.numeric(xv)) xv else as.character(xv), lev),
                     path)
-      up   <- which(!is.na(k) & k < length(lev))
+      wl   <- vapply(seq_along(lev), function(q) sum(wr[which(pos == q)]),
+                     numeric(1L))
+      keep <- which(wl > 0)
+      k    <- match(pos, keep)
+      up   <- which(!is.na(k) & k < length(keep))
       dn   <- which(!is.na(k) & k > 1L)
-      code <- if (is.numeric(xv)) function(q) lev[path[q]] else
-        function(q) path[q]
-      list(lev = lev[path], k = k, up = up, dn = dn,
+      code <- if (is.numeric(xv)) function(q) lev[path[keep[q]]] else
+        function(q) path[keep[q]]
+      list(lev = lev[path], pos = pos, keep = keep, k = k, up = up, dn = dn,
            row = c(rows[up], rows[dn]),
            value = c(code(k[up] + 1L), code(k[dn] - 1L)))
     }
@@ -546,28 +556,28 @@ get_hte_ale <- function(x,
       tibble::tibble(variable = v, value = s$z, level = NA_character_,
                      ale = A, n = c(NA_integer_, nk))
     } else {
-      K  <- length(s$lev)
-      nu <- length(s$up)
-      fu <- p[seq_len(nu)]
-      fd <- p[nu + seq_along(s$dn)]
-      nk <- tabulate(s$k[!is.na(s$k)], K)
-      wk <- vapply(seq_len(K), function(q2) sum(wr[which(s$k == q2)]),
-                   numeric(1L))
-      gu <- wr[s$up] * (fu - f0[s$up])
-      gd <- wr[s$dn] * (f0[s$dn] - fd)
-      st <- vapply(seq_len(K - 1L), function(q2) {
-        if (wk[q2] + wk[q2 + 1L] == 0) return(NA_real_)
-        (sum(gu[s$k[s$up] == q2]) + sum(gd[s$k[s$dn] == q2 + 1L])) /
-          (wk[q2] + wk[q2 + 1L])
-      }, numeric(1L))
-      A  <- c(0, cumsum(st))
-      ok <- !is.na(A)
-      A  <- A - sum(wk[ok] * A[ok]) / sum(wk[ok])
+      K   <- length(s$keep)
+      nu  <- length(s$up)
+      fu  <- p[seq_len(nu)]
+      fd  <- p[nu + seq_along(s$dn)]
+      ale <- rep(NA_real_, length(s$lev))
+      if (K) {
+        wk <- vapply(seq_len(K), function(q2) sum(wr[which(s$k == q2)]),
+                     numeric(1L))
+        gu <- wr[s$up] * (fu - f0[s$up])
+        gd <- wr[s$dn] * (f0[s$dn] - fd)
+        st <- vapply(seq_len(K - 1L), function(q2)
+          (sum(gu[s$k[s$up] == q2]) + sum(gd[s$k[s$dn] == q2 + 1L])) /
+            (wk[q2] + wk[q2 + 1L]), numeric(1L))
+        A  <- c(0, cumsum(st))
+        ale[s$keep] <- A - sum(wk * A) / sum(wk)
+      }
       num <- is.numeric(d[[v]])
       tibble::tibble(variable = v,
                      value = if (num) s$lev else NA_real_,
                      level = if (num) NA_character_ else s$lev,
-                     ale = A, n = nk)
+                     ale = ale,
+                     n = tabulate(s$pos[!is.na(s$pos)], length(s$lev)))
     }
   })
   out <- tibble::as_tibble(do.call(rbind, out))
