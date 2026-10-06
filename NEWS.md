@@ -1,5 +1,15 @@
 # causalR (development version)
 
+* New `get_hte_pdp()`, `get_hte_ale()` and `get_hte_shp()` explain the
+  forest of a `get_hte()` result without refitting it: partial dependence,
+  accumulated local effects, and SHAP values -- by default TreeSHAP of an
+  xgboost surrogate of the forest (its held-out R^2 reported), or Kernel SHAP
+  of the forest itself with `method = "kernel"`. With `max_n = NULL` a
+  conservative cost model cuts the patients to stay within `time_budget`
+  (default 20 s); the cut depends on the forest and arguments only, so
+  results are reproducible. `get_hte_shp()` returns a `shapviz` object. Adds
+  kernelshap, shapviz and xgboost to Suggests.
+
 * New `get_evalue()` computes the E-value of a risk, odds or hazard ratio,
   typed in as `effect = "1.85 (1.20-2.85)"` or `est`/`lo`/`hi`, or fitted
   from `data` with `cat_var`, `adj_var` and RegR-style `surv` (Cox on
