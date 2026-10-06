@@ -24,6 +24,14 @@
   no longer builds one job vector per patient and grid point (about 1.7 GB at
   100,000 patients and 30 covariates).
 
+* `get_hte_pdp()`, `get_hte_ale()`, `get_hte_shp()` and the `"pdp"` layer of
+  `plt_hte_dep()` weight patients with the forest's observation weights
+  (`grf_args$sample.weights`, or equal cluster weights), as `get_hte()`
+  weights its estimates. They averaged patients equally, so with weights
+  that favoured older patients a partial dependence read 0.72 against a
+  weighted 0.92. The xgboost surrogate is fitted with the weights and its
+  R^2 is weighted; Kernel SHAP weights its background patients.
+
 * New `get_evalue()` computes the E-value of a risk, odds or hazard ratio,
   typed in as `effect = "1.85 (1.20-2.85)"` or `est`/`lo`/`hi`, or fitted
   from `data` with `cat_var`, `adj_var` and RegR-style `surv` (Cox on

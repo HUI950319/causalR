@@ -66,8 +66,10 @@ order \code{factor_encoding = "integer"} codes them in -- each step averaging
 the change over the patients of both neighbouring levels. That order is
 arbitrary for a nominal factor, and its ALE depends on it; its partial
 dependence does not. The curve is centred to a weighted mean of zero, so
-it shows how the CATE varies with the covariate, not its level. A patient
-missing the covariate is left out of that covariate.
+it shows how the CATE varies with the covariate, not its level. The
+averages and the centring weight patients as \code{\link[=get_hte_pdp]{get_hte_pdp()}} does; \code{n}
+counts them. A patient missing the covariate is left out of that
+covariate.
 }
 \section{Time budget}{
 

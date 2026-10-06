@@ -3,9 +3,9 @@
 
 expl_cache <- new.env()
 
-expl_res <- function(encoding = "integer") {
+expl_res <- function(encoding = "integer", weighted = FALSE) {
   skip_if_not_installed("grf")
-  key <- paste0("res_", encoding)
+  key <- paste0("res_", encoding, if (weighted) "_w")
   if (is.null(expl_cache[[key]])) {
     set.seed(20261006)
     n <- 400L
@@ -17,10 +17,12 @@ expl_res <- function(encoding = "integer") {
     d$y <- 0.02 * d$age + d$z * (1 + 0.04 * (d$age - 50) +
                                    0.8 * (d$stage == "III")) +
       stats::rnorm(n, sd = 0.5)
+    # weights that tilt the population towards older patients
+    ga <- list(num.trees = 200, seed = 1)
+    if (weighted) ga$sample.weights <- ifelse(d$age > 60, 4, 1)
     expl_cache[[key]] <- suppressMessages(get_hte(
       d, cat_var = "z", adj_var = c("age", "stage", "sex", "nodes"),
-      surv = "y", factor_encoding = encoding,
-      grf_args = list(num.trees = 200, seed = 1)))
+      surv = "y", factor_encoding = encoding, grf_args = ga))
   }
   expl_cache[[key]]
 }
@@ -158,6 +160,66 @@ test_that("get_hte_ale() matches a hand computation", {
   expect_equal(sum(oh_ale$n[oh_ale$variable == "stage"] *
                      oh_ale$ale[oh_ale$variable == "stage"]), 0)
   expect_equal(oh_ale$value[oh_ale$variable == "nodes"], 0:3)
+})
+
+test_that("explanations weight patients as get_hte() weights its estimates", {
+  res  <- expl_res(weighted = TRUE)
+  fit  <- res$fit
+  w    <- fit$sample.weights
+  all_rows <- seq_len(nrow(fit$X.orig))
+
+  pd <- get_hte_pdp(res, x_var = "stage", max_n = Inf)
+  expect_equal(pd$estimate[2],
+               stats::weighted.mean(pred_with(fit, all_rows, list(stage = 2)), w))
+
+  rows <- .hte_explain_rows(400L, 40L)
+  wr   <- w[rows]
+  ale  <- get_hte_ale(res, x_var = "age", n_bins = 4, max_n = 40)
+  xv   <- res$data$age[rows]
+  z    <- unique(stats::quantile(xv, seq(0, 1, length.out = 5), type = 1,
+                                 names = FALSE))
+  K    <- length(z) - 1L
+  j    <- pmax(1L, findInterval(xv, z, left.open = TRUE))
+  dl   <- pred_with(fit, rows, list(age = z[j + 1L])) -
+    pred_with(fit, rows, list(age = z[j]))
+  st   <- vapply(seq_len(K), function(b)
+    stats::weighted.mean(dl[j == b], wr[j == b]), numeric(1))
+  wk   <- vapply(seq_len(K), function(b) sum(wr[j == b]), numeric(1))
+  A    <- c(0, cumsum(st))
+  expect_equal(ale$ale, A - sum(wk * (A[-1] + A[-(K + 1)]) / 2) / sum(wk))
+  # `n` still counts patients
+  expect_identical(ale$n, c(NA_integer_, tabulate(j, K)))
+
+  cat_ale <- get_hte_ale(res, x_var = "sex", max_n = 40)
+  k  <- as.integer(res$data$sex[rows])
+  f0 <- pred_with(fit, rows)
+  f2 <- pred_with(fit, rows, list(sex = 2))
+  f1 <- pred_with(fit, rows, list(sex = 1))
+  step <- (sum((wr * (f2 - f0))[k == 1]) + sum((wr * (f0 - f1))[k == 2])) /
+    sum(wr)
+  Wk <- c(sum(wr[k == 1]), sum(wr[k == 2]))
+  expect_equal(cat_ale$ale, c(0, step) - Wk[2] * step / sum(Wk))
+
+  skip_if_not_installed("shapviz")
+  if (requireNamespace("kernelshap", quietly = TRUE)) {
+    sv <- get_hte_shp(res, method = "kernel", max_n = 4, bg_n = 20)
+    bg <- .hte_explain_rows(400L, 20L)
+    expect_equal(sv$baseline, stats::weighted.mean(pred_with(fit, bg), w[bg]))
+    expect_equal(unname(rowSums(sv$S)) + sv$baseline,
+                 pred_with(fit, .hte_explain_rows(400L, 4L)), tolerance = 1e-6)
+  }
+  if (requireNamespace("xgboost", quietly = TRUE)) {
+    # the first DMatrix trains the surrogate; predict() builds its own later
+    seen <- list()
+    real <- xgboost::xgb.DMatrix
+    local_mocked_bindings(xgb.DMatrix = function(data, ..., weight = NULL) {
+      seen[[length(seen) + 1L]] <<- weight
+      real(data, ..., weight = weight)
+    }, .package = "xgboost")
+    sv <- suppressWarnings(get_hte_shp(res, max_n = 100))
+    expect_length(seen[[1L]], 80L)
+    expect_setequal(seen[[1L]], unique(w))
+  }
 })
 
 test_that("get_hte_shp() kernel SHAP is exact for up to 8 covariates", {

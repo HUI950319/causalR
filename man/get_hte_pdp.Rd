@@ -58,7 +58,10 @@ one and the mean difference otherwise. A continuous covariate (more than 5
 distinct values) is set to its quantiles at \code{grid_n} evenly spaced
 probabilities from 0 to 1, so the grid follows the data from its minimum to
 its maximum and a long tail gets few points; a categorical one, or a
-numeric one with at most 5 values, gets each level. When covariates are
+numeric one with at most 5 values, gets each level. Patients count with the
+forest's observation weights -- \code{grf_args$sample.weights}, or equal
+cluster weights under \code{equalize.cluster.weights = TRUE} -- as in the
+estimates of \code{\link[=get_hte]{get_hte()}}. When covariates are
 correlated, the partial dependence also
 averages over combinations the data never show; \code{\link[=get_hte_ale]{get_hte_ale()}} stays
 within the data.

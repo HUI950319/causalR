@@ -84,6 +84,10 @@ warning follows below 10.}
 }
 Both work on the original covariates: a factor gets one SHAP value, its
 one-hot columns summed, and the returned feature values keep its levels.
+With the forest's observation weights (see \code{\link[=get_hte_pdp]{get_hte_pdp()}}) the surrogate
+is fitted, and its R^2 computed, with them, and Kernel SHAP weights its
+background patients; summaries of the result, such as
+\code{shapviz::sv_importance()}, still average the explained patients equally.
 }
 \details{
 The explained function is the full forest's CATE on the \code{"diff"} scale of

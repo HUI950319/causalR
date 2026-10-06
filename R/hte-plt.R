@@ -161,8 +161,9 @@
 #'       arms. With nothing left the panel has no red layer and `p_het` is
 #'       `NA`.}
 #'     \item{`"pdp"`}{The partial dependence of the forest (blue): its CATE
-#'       averaged over the patients with the covariate set to each level or
-#'       grid value, other covariates as observed.}
+#'       averaged over the patients, with the observation weights of the
+#'       `"dr"` layer, the covariate set to each level or grid value and the
+#'       other covariates as observed.}
 #'   }
 #'   Default `c("cate", "dr")`. Only used by `type = "dep"`.
 #' @param conf_level Confidence level of the `"dr"` intervals. Default `0.95`.

@@ -179,9 +179,10 @@
 
 # Partial dependence: the forest's CATE averaged over the patients `rows` for
 # each of B blocks, block b setting covariate var[[j]][b] to value[[j]][b]
-# for every j, as .hte_predict_set() takes them. The B x length(rows) jobs
-# are enumerated batch by batch, so memory stays at one batch however many
-# patients and blocks there are.
+# for every j, as .hte_predict_set() takes them. Patients carry the forest's
+# observation weights (.hte_weights()), as in get_hte()'s estimates. The
+# B x length(rows) jobs are enumerated batch by batch, so memory stays at one
+# batch however many patients and blocks there are.
 #' @keywords internal
 #' @noRd
 .hte_pdp_mean <- function(x, rows, var, value) {
@@ -190,6 +191,7 @@
     value <- list(value)
   }
   m     <- length(rows)
+  wr    <- .hte_weights(x$fit)[rows]
   B     <- length(var[[1L]])
   step  <- .hte_explain_cost(x$fit)$batch
   total <- B * as.double(m)
@@ -197,12 +199,13 @@
   for (start in seq(1, total, by = step)) {
     idx  <- seq(start, min(total, start + step - 1)) - 1
     k    <- as.integer(idx %/% m) + 1L
-    pred <- .hte_predict_set(x, rows[idx %% m + 1], lapply(var, `[`, k),
+    i    <- idx %% m + 1
+    pred <- .hte_predict_set(x, rows[i], lapply(var, `[`, k),
                              lapply(value, `[`, k))
     id   <- sort(unique(k))
-    est[id] <- est[id] + rowsum(pred, k, reorder = TRUE)[, 1L]
+    est[id] <- est[id] + rowsum(pred * wr[i], k, reorder = TRUE)[, 1L]
   }
-  est / m
+  est / sum(wr)
 }
 
 # Values a partial dependence sets covariate v to: the quantiles of a
@@ -237,7 +240,10 @@
 #' distinct values) is set to its quantiles at `grid_n` evenly spaced
 #' probabilities from 0 to 1, so the grid follows the data from its minimum to
 #' its maximum and a long tail gets few points; a categorical one, or a
-#' numeric one with at most 5 values, gets each level. When covariates are
+#' numeric one with at most 5 values, gets each level. Patients count with the
+#' forest's observation weights -- `grf_args$sample.weights`, or equal
+#' cluster weights under `equalize.cluster.weights = TRUE` -- as in the
+#' estimates of [get_hte()]. When covariates are
 #' correlated, the partial dependence also
 #' averages over combinations the data never show; [get_hte_ale()] stays
 #' within the data.
@@ -366,8 +372,10 @@ get_hte_pdp <- function(x,
 #' the change over the patients of both neighbouring levels. That order is
 #' arbitrary for a nominal factor, and its ALE depends on it; its partial
 #' dependence does not. The curve is centred to a weighted mean of zero, so
-#' it shows how the CATE varies with the covariate, not its level. A patient
-#' missing the covariate is left out of that covariate.
+#' it shows how the CATE varies with the covariate, not its level. The
+#' averages and the centring weight patients as [get_hte_pdp()] does; `n`
+#' counts them. A patient missing the covariate is left out of that
+#' covariate.
 #'
 #' @inheritSection get_hte_pdp Time budget
 #'
@@ -434,6 +442,7 @@ get_hte_ale <- function(x,
   rows <- .hte_explain_rows(n_all, sz$n)
   m    <- length(rows)
   d0   <- d[rows, , drop = FALSE]
+  wr   <- .hte_weights(x$fit)[rows]
 
   spec <- lapply(vars, function(v) {
     xv <- d0[[v]]
@@ -473,12 +482,14 @@ get_hte_ale <- function(x,
         return(tibble::tibble(variable = v, value = s$z, level = NA_character_,
                               ale = 0, n = NA_integer_))
       h  <- length(s$i)
-      dk <- p[h + seq_len(h)] - p[seq_len(h)]
+      wi <- wr[s$i]
+      dk <- wi * (p[h + seq_len(h)] - p[seq_len(h)])
       nk <- tabulate(s$j, K)
+      wk <- vapply(seq_len(K), function(b) sum(wi[s$j == b]), numeric(1L))
       st <- vapply(seq_len(K), function(b)
-        if (nk[b]) mean(dk[s$j == b]) else 0, numeric(1L))
+        if (wk[b] > 0) sum(dk[s$j == b]) / wk[b] else 0, numeric(1L))
       A  <- c(0, cumsum(st))
-      A  <- A - sum(nk * (A[-1L] + A[-(K + 1L)]) / 2) / sum(nk)
+      A  <- A - sum(wk * (A[-1L] + A[-(K + 1L)]) / 2) / sum(wk)
       tibble::tibble(variable = v, value = s$z, level = NA_character_,
                      ale = A, n = c(NA_integer_, nk))
     } else {
@@ -487,16 +498,18 @@ get_hte_ale <- function(x,
       fu <- p[seq_len(nu)]
       fd <- p[nu + seq_along(s$dn)]
       nk <- tabulate(s$k[!is.na(s$k)], K)
+      wk <- vapply(seq_len(K), function(q2) sum(wr[which(s$k == q2)]),
+                   numeric(1L))
+      gu <- wr[s$up] * (fu - f0[s$up])
+      gd <- wr[s$dn] * (f0[s$dn] - fd)
       st <- vapply(seq_len(K - 1L), function(q2) {
-        a <- s$k[s$up] == q2
-        b <- s$k[s$dn] == q2 + 1L
-        if (nk[q2] + nk[q2 + 1L] == 0L) return(NA_real_)
-        (sum(fu[a] - f0[s$up][a]) + sum(f0[s$dn][b] - fd[b])) /
-          (nk[q2] + nk[q2 + 1L])
+        if (wk[q2] + wk[q2 + 1L] == 0) return(NA_real_)
+        (sum(gu[s$k[s$up] == q2]) + sum(gd[s$k[s$dn] == q2 + 1L])) /
+          (wk[q2] + wk[q2 + 1L])
       }, numeric(1L))
       A  <- c(0, cumsum(st))
       ok <- !is.na(A)
-      A  <- A - sum(nk[ok] * A[ok]) / sum(nk[ok])
+      A  <- A - sum(wk[ok] * A[ok]) / sum(wk[ok])
       num <- is.numeric(d[[v]])
       tibble::tibble(variable = v,
                      value = if (num) s$lev else NA_real_,
@@ -545,6 +558,10 @@ get_hte_ale <- function(x,
 #' }
 #' Both work on the original covariates: a factor gets one SHAP value, its
 #' one-hot columns summed, and the returned feature values keep its levels.
+#' With the forest's observation weights (see [get_hte_pdp()]) the surrogate
+#' is fitted, and its R^2 computed, with them, and Kernel SHAP weights its
+#' background patients; summaries of the result, such as
+#' `shapviz::sv_importance()`, still average the explained patients equally.
 #'
 #' The explained function is the full forest's CATE on the `"diff"` scale of
 #' [get_hte()], so a SHAP value is a contribution to the S(t) or RMST
@@ -665,6 +682,7 @@ get_hte_shp <- function(x,
   d      <- x$data
   n_all  <- nrow(X)
   p      <- length(covars)
+  w_all  <- .hte_weights(x$fit)
 
   genv <- globalenv()
   old_seed <- if (exists(".Random.seed", envir = genv, inherits = FALSE))
@@ -685,20 +703,23 @@ get_hte_shp <- function(x,
     rows <- .hte_explain_rows(n_all, sz$n)
     m    <- length(rows)
     X0   <- X[rows, , drop = FALSE]
+    w0   <- w_all[rows]
     tau  <- .hte_predict_set(x, rows, rep(NA_character_, m), rep(NA_real_, m))
     ho   <- if (m >= 10L) sample.int(m, floor(0.2 * m)) else integer(0)
     tr   <- setdiff(seq_len(m), ho)
     bst  <- xgboost::xgb.train(
       params = list(objective = "reg:squarederror", max_depth = sa$max_depth,
                     learning_rate = sa$learning_rate, seed = seed),
-      data = xgboost::xgb.DMatrix(X0[tr, , drop = FALSE], label = tau[tr]),
+      data = xgboost::xgb.DMatrix(X0[tr, , drop = FALSE], label = tau[tr],
+                                  weight = w0[tr]),
       nrounds = sa$nrounds, verbose = 0)
-    if (length(ho) && stats::var(tau[ho]) > 0) {
+    wh <- w0[ho]
+    ss <- if (length(ho))
+      sum(wh * (tau[ho] - sum(wh * tau[ho]) / sum(wh))^2) else 0
+    r2 <- if (ss > 0) {
       fit_ho <- stats::predict(bst, X0[ho, , drop = FALSE])
-      r2 <- 1 - sum((fit_ho - tau[ho])^2) / sum((tau[ho] - mean(tau[ho]))^2)
-    } else {
-      r2 <- NA_real_
-    }
+      1 - sum(wh * (fit_ho - tau[ho])^2) / ss
+    } else NA_real_
     phi <- stats::predict(bst, X0, predcontrib = TRUE)
     src <- covars[attr(X, "assign")]
     S   <- vapply(covars, function(v)
@@ -752,10 +773,12 @@ get_hte_shp <- function(x,
       }
       as.numeric(stats::predict(object, Xn)$predictions)
     }
+    bg <- .hte_explain_rows(n_all, bg_n)
     ks <- kernelshap::kernelshap(
       x$fit, X = d[rows, covars, drop = FALSE],
-      bg_X = d[.hte_explain_rows(n_all, bg_n), covars, drop = FALSE],
-      pred_fun = pred_df, feature_names = covars, exact = exact,
+      bg_X = d[bg, covars, drop = FALSE],
+      pred_fun = pred_df, feature_names = covars,
+      bg_w = if (any(w_all != w_all[1L])) w_all[bg], exact = exact,
       hybrid_degree = hd, m = 2L * p, verbose = FALSE)
     sv <- shapviz::shapviz(ks)
   }

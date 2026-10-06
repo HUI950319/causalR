@@ -53,8 +53,9 @@ only the values that patients followed beyond \code{time} reach in both
 arms. With nothing left the panel has no red layer and \code{p_het} is
 \code{NA}.}
 \item{\code{"pdp"}}{The partial dependence of the forest (blue): its CATE
-averaged over the patients with the covariate set to each level or
-grid value, other covariates as observed.}
+averaged over the patients, with the observation weights of the
+\code{"dr"} layer, the covariate set to each level or grid value and the
+other covariates as observed.}
 }
 Default \code{c("cate", "dr")}. Only used by \code{type = "dep"}.}
 
