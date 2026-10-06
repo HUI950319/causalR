@@ -44,6 +44,10 @@
   such neighbouring levels -- rare levels once `max_n` or the time budget
   cut the patients -- made every later level `NA`.
 
+* `get_hte_shp(method = "surrogate")` warns when fewer than 10 patients are
+  explained: nothing is held out, so the surrogate's `r2` is `NA` and went
+  unchecked without a word.
+
 * New `get_evalue()` computes the E-value of a risk, odds or hazard ratio,
   typed in as `effect = "1.85 (1.20-2.85)"` or `est`/`lo`/`hi`, or fitted
   from `data` with `cat_var`, `adj_var` and RegR-style `surv` (Cox on

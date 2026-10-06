@@ -333,6 +333,10 @@ test_that("get_hte_shp() surrogate collapses one-hot columns and restores the RN
   # The CATE varies with age and stage only, so they carry the credit.
   imp <- colMeans(abs(sv$S))
   expect_identical(names(sort(imp, decreasing = TRUE))[1:2], c("age", "stage"))
+
+  # Below 10 patients nothing is held out, so the surrogate goes unchecked.
+  expect_warning(few <- get_hte_shp(oh, max_n = 5), "too few to hold out")
+  expect_true(is.na(attr(few, "analysis")$r2))
 })
 
 test_that("explanations run on a survival forest", {

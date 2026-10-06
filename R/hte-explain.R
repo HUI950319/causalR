@@ -609,7 +609,9 @@ get_hte_ale <- function(x,
 #'     are exact for this surrogate and only approximate for the forest, so
 #'     `attr(res, "analysis")$r2` reports how much
 #'     of the forest's CATE it reproduces on the held-out 20%, and a warning
-#'     follows below 0.9. TreeSHAP conditions along the tree paths, so with
+#'     follows below 0.9; with fewer than 10 patients nothing is held out,
+#'     `r2` is `NA` and a warning says so. TreeSHAP conditions along the
+#'     tree paths, so with
 #'     correlated covariates its credit can differ from Kernel SHAP's.}
 #'   \item{`"kernel"`}{Kernel SHAP of the forest itself (Covert & Lee 2021),
 #'     through [kernelshap::kernelshap()], against `bg_n` background patients:
@@ -790,6 +792,11 @@ get_hte_shp <- function(x,
     S   <- matrix(S, nrow = m, dimnames = list(NULL, covars))
     sv  <- shapviz::shapviz(S, X = d[rows, covars, drop = FALSE],
                             baseline = unname(phi[1L, ncol(phi)]))
+    if (!length(ho))
+      cli::cli_warn(paste(
+        "Only {m} patient{?s} {?is/are} explained, too few to hold out 20%",
+        "and check the surrogate (R{.sup 2} is NA); raise {.arg max_n} or",
+        "{.arg time_budget}."))
     if (!is.na(r2) && r2 < 0.9)
       cli::cli_warn(paste(
         "The surrogate reproduces only R{.sup 2} = {round(r2, 3)} of the",

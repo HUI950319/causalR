@@ -72,7 +72,9 @@ using 80\% of the explained patients, and its exact TreeSHAP values
 are exact for this surrogate and only approximate for the forest, so
 \code{attr(res, "analysis")$r2} reports how much
 of the forest's CATE it reproduces on the held-out 20\%, and a warning
-follows below 0.9. TreeSHAP conditions along the tree paths, so with
+follows below 0.9; with fewer than 10 patients nothing is held out,
+\code{r2} is \code{NA} and a warning says so. TreeSHAP conditions along the
+tree paths, so with
 correlated covariates its credit can differ from Kernel SHAP's.}
 \item{\code{"kernel"}}{Kernel SHAP of the forest itself (Covert & Lee 2021),
 through \code{\link[kernelshap:kernelshap]{kernelshap::kernelshap()}}, against \code{bg_n} background patients:
