@@ -140,17 +140,19 @@ test_that("get_hte_ale() matches a hand computation", {
   expect_equal(ale$ale, A)
   expect_identical(ale$n, c(NA_integer_, nk))
 
+  # The steps follow the returned order of the levels (similarity order).
   cat_ale <- get_hte_ale(res, x_var = "stage", max_n = 40)
-  k  <- as.integer(res$data$stage[rows])
+  path <- match(cat_ale$level, c("I", "II", "III"))
+  expect_setequal(path, 1:3)
+  k  <- match(as.integer(res$data$stage[rows]), path)
   f0 <- pred_with(fit, rows)
-  fu <- pred_with(fit, rows, list(stage = pmin(k + 1L, 3L)))
-  fd <- pred_with(fit, rows, list(stage = pmax(k - 1L, 1L)))
+  fu <- pred_with(fit, rows, list(stage = path[pmin(k + 1L, 3L)]))
+  fd <- pred_with(fit, rows, list(stage = path[pmax(k - 1L, 1L)]))
   nk <- tabulate(k, 3L)
   st <- vapply(1:2, function(q) (sum((fu - f0)[k == q]) +
                                    sum((f0 - fd)[k == q + 1L])) /
                  (nk[q] + nk[q + 1L]), numeric(1))
   A  <- c(0, cumsum(st))
-  expect_identical(cat_ale$level, c("I", "II", "III"))
   expect_equal(cat_ale$ale, A - sum(nk * A) / sum(nk))
   expect_identical(cat_ale$n, nk)
 
@@ -160,6 +162,45 @@ test_that("get_hte_ale() matches a hand computation", {
   expect_equal(sum(oh_ale$n[oh_ale$variable == "stage"] *
                      oh_ale$ale[oh_ale$variable == "stage"]), 0)
   expect_equal(oh_ale$value[oh_ale$variable == "nodes"], 0:3)
+})
+
+test_that("get_hte_ale() steps an unordered factor through similar levels", {
+  skip_if_not_installed("grf")
+  set.seed(3)
+  n   <- 600L
+  grp <- sample(c("A", "B", "C", "D"), n, replace = TRUE)
+  d   <- data.frame(grp = factor(grp),
+                    age = stats::rnorm(n, c(A = 30, B = 70, C = 40, D = 60)[grp], 15),
+                    sz  = factor(c(A = "s", B = "l", C = "s", D = "l")[grp]),
+                    ord = factor(grp, levels = c("D", "C", "B", "A"),
+                                 ordered = TRUE))
+  d$z <- stats::rbinom(n, 1, 0.5)
+  d$y <- d$z * (d$grp %in% c("B", "D")) + stats::rnorm(n, sd = 0.5)
+  res <- suppressMessages(get_hte(d, cat_var = "z",
+                                  adj_var = c("grp", "age", "sz", "ord"),
+                                  surv = "y",
+                                  grf_args = list(num.trees = 200, seed = 1)))
+  ale <- get_hte_ale(res, x_var = c("grp", "ord"), max_n = Inf)
+  # age and sz place C between A and D, and D next to B
+  expect_identical(ale$level[ale$variable == "grp"], c("A", "C", "D", "B"))
+  # an ordered factor keeps its own order
+  expect_identical(ale$level[ale$variable == "ord"], c("D", "C", "B", "A"))
+
+  # the steps follow that path: A -> C -> D -> B is codes 1 -> 3 -> 4 -> 2
+  path <- c(1L, 3L, 4L, 2L)
+  pos  <- match(as.integer(d$grp), path)
+  fit  <- res$fit
+  rows <- seq_len(n)
+  f0   <- pred_with(fit, rows)
+  fu   <- pred_with(fit, rows, list(grp = path[pmin(pos + 1L, 4L)]))
+  fd   <- pred_with(fit, rows, list(grp = path[pmax(pos - 1L, 1L)]))
+  nk   <- tabulate(pos, 4L)
+  st   <- vapply(1:3, function(q) (sum((fu - f0)[pos == q]) +
+                                     sum((f0 - fd)[pos == q + 1L])) /
+                   (nk[q] + nk[q + 1L]), numeric(1))
+  A    <- c(0, cumsum(st))
+  expect_equal(ale$ale[ale$variable == "grp"], A - sum(nk * A) / sum(nk))
+  expect_identical(ale$n[ale$variable == "grp"], nk)
 })
 
 test_that("explanations weight patients as get_hte() weights its estimates", {

@@ -366,12 +366,17 @@ get_hte_pdp <- function(x,
 #' `n_bins + 1` quantiles of the patients used; each patient is predicted at
 #' both ends of its interval, the differences are averaged within intervals
 #' and summed from the lowest end. A categorical covariate, or a numeric one
-#' with at most 5 values, steps through its levels in their order -- the
-#' factor's own order, alphabetical for character, `FALSE` before `TRUE`, the
-#' order `factor_encoding = "integer"` codes them in -- each step averaging
-#' the change over the patients of both neighbouring levels. That order is
-#' arbitrary for a nominal factor, and its ALE depends on it; its partial
-#' dependence does not. The curve is centred to a weighted mean of zero, so
+#' with at most 5 values, steps from level to level, each step averaging the
+#' change over the patients of both neighbouring levels. A numeric covariate,
+#' a logical one and an ordered factor step in their own order. The order of
+#' an unordered factor or a character covariate is arbitrary and the ALE
+#' depends on it, so with 3 or more levels they step in the order of Apley &
+#' Zhu (2020): one-dimensional scaling places the levels on a line by how far
+#' apart the other covariates lie between them -- the Kolmogorov-Smirnov
+#' distance of a numeric covariate, half the L1 distance of the level shares
+#' of a categorical one, summed over all patients -- so each step joins
+#' similar patients. The rows of a categorical covariate follow its steps.
+#' The curve is centred to a weighted mean of zero, so
 #' it shows how the CATE varies with the covariate, not its level. The
 #' averages and the centring weight patients as [get_hte_pdp()] does; `n`
 #' counts them. A patient missing the covariate is left out of that
@@ -394,7 +399,8 @@ get_hte_pdp <- function(x,
 #'   (the level of a categorical covariate, `NA` otherwise), `ale` (the
 #'   centred accumulated effect) and `n` (patients in the interval ending at
 #'   `value`, `NA` for the lowest end; patients at the level for a categorical
-#'   covariate). `attr(res, "analysis")` holds `method`, `n`, `n_total`,
+#'   covariate, whose rows follow its steps). `attr(res, "analysis")` holds
+#'   `method`, `n`, `n_total`,
 #'   `n_bins`, `time_budget`, `est_sec` and `elapsed_sec`.
 #'
 #' @references
@@ -444,6 +450,48 @@ get_hte_ale <- function(x,
   d0   <- d[rows, , drop = FALSE]
   wr   <- .hte_weights(x$fit)[rows]
 
+  # The order an unordered factor with 3 or more levels steps through, as in
+  # Apley & Zhu (2020) and ALEPlot: one-dimensional scaling places the levels
+  # on a line by how far apart the other covariates lie between them -- the
+  # Kolmogorov-Smirnov distance of a numeric covariate at 100 quantiles, half
+  # the L1 distance of the level shares of a categorical one, summed -- so
+  # each step joins similar patients. Computed on all patients; other
+  # covariates keep their own order. Returns indices into `lev`.
+  covars  <- attr(x, "analysis")$covariates
+  path_of <- function(v, lev) {
+    K  <- length(lev)
+    xv <- d[[v]]
+    if (K < 3L || is.numeric(xv) || is.logical(xv) || is.ordered(xv))
+      return(seq_len(K))
+    g <- factor(as.character(xv), levels = lev)
+    D <- matrix(0, K, K)
+    for (u in setdiff(covars, v)) {
+      xu <- d[[u]]
+      ok <- !is.na(g) & !is.na(xu)
+      if (!any(ok)) next
+      if (is.numeric(xu)) {
+        q  <- stats::quantile(xu[ok], seq(0, 1, length.out = 100), names = FALSE)
+        Fk <- lapply(lev, function(l) {
+          s <- xu[ok][g[ok] == l]
+          if (length(s)) stats::ecdf(s)(q)
+        })
+      } else {
+        tab <- table(g[ok], as.character(xu[ok]))
+        Fk  <- lapply(seq_len(K), function(k)
+          if (sum(tab[k, ])) tab[k, ] / sum(tab[k, ]))
+      }
+      if (any(vapply(Fk, is.null, logical(1L)))) next
+      for (a in seq_len(K - 1L)) for (b in (a + 1L):K) {
+        e <- abs(Fk[[a]] - Fk[[b]])
+        D[a, b] <- D[b, a] <- D[a, b] + if (is.numeric(xu)) max(e) else sum(e) / 2
+      }
+    }
+    if (all(D == 0)) return(seq_len(K))
+    ord <- order(stats::cmdscale(D, k = 1L)[, 1L])
+    # the sign of the scaling is arbitrary; start from the earlier end level
+    if (ord[K] < ord[1L]) rev(ord) else ord
+  }
+
   spec <- lapply(vars, function(v) {
     xv <- d0[[v]]
     if (cont[[v]]) {
@@ -454,12 +502,17 @@ get_hte_ale <- function(x,
       list(z = z, i = i, j = j, row = c(rows[i], rows[i]),
            value = c(z[j], z[j + 1L]))
     } else {
+      # k: each patient's position along the path of levels
       lev  <- .hte_levels(x, v)
-      k    <- match(if (is.numeric(xv)) xv else as.character(xv), lev)
+      path <- path_of(v, lev)
+      k    <- match(match(if (is.numeric(xv)) xv else as.character(xv), lev),
+                    path)
       up   <- which(!is.na(k) & k < length(lev))
       dn   <- which(!is.na(k) & k > 1L)
-      code <- if (is.numeric(xv)) function(q) lev[q] else function(q) q
-      list(lev = lev, k = k, up = up, dn = dn, row = c(rows[up], rows[dn]),
+      code <- if (is.numeric(xv)) function(q) lev[path[q]] else
+        function(q) path[q]
+      list(lev = lev[path], k = k, up = up, dn = dn,
+           row = c(rows[up], rows[dn]),
            value = c(code(k[up] + 1L), code(k[dn] - 1L)))
     }
   })

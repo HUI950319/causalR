@@ -32,6 +32,13 @@
   weighted 0.92. The xgboost surrogate is fitted with the weights and its
   R^2 is weighted; Kernel SHAP weights its background patients.
 
+* `get_hte_ale()` steps an unordered factor or character covariate with 3 or
+  more levels in the order of Apley & Zhu (2020) instead of its arbitrary
+  level order: one-dimensional scaling of how far apart the other covariates
+  lie between the levels, so each step joins similar patients. The rows of a
+  categorical covariate follow that order. Numeric, logical and ordered
+  covariates keep their own order.
+
 * New `get_evalue()` computes the E-value of a risk, odds or hazard ratio,
   typed in as `effect = "1.85 (1.20-2.85)"` or `est`/`lo`/`hi`, or fitted
   from `data` with `cat_var`, `adj_var` and RegR-style `surv` (Cox on

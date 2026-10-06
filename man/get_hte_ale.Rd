@@ -43,7 +43,8 @@ value of a numeric one with at most 5 values; \code{NA} otherwise), \code{level}
 (the level of a categorical covariate, \code{NA} otherwise), \code{ale} (the
 centred accumulated effect) and \code{n} (patients in the interval ending at
 \code{value}, \code{NA} for the lowest end; patients at the level for a categorical
-covariate). \code{attr(res, "analysis")} holds \code{method}, \code{n}, \code{n_total},
+covariate, whose rows follow its steps). \code{attr(res, "analysis")} holds
+\code{method}, \code{n}, \code{n_total},
 \code{n_bins}, \code{time_budget}, \code{est_sec} and \code{elapsed_sec}.
 }
 \description{
@@ -60,12 +61,17 @@ The explained function is the full forest's CATE on the \code{"diff"} scale of
 \code{n_bins + 1} quantiles of the patients used; each patient is predicted at
 both ends of its interval, the differences are averaged within intervals
 and summed from the lowest end. A categorical covariate, or a numeric one
-with at most 5 values, steps through its levels in their order -- the
-factor's own order, alphabetical for character, \code{FALSE} before \code{TRUE}, the
-order \code{factor_encoding = "integer"} codes them in -- each step averaging
-the change over the patients of both neighbouring levels. That order is
-arbitrary for a nominal factor, and its ALE depends on it; its partial
-dependence does not. The curve is centred to a weighted mean of zero, so
+with at most 5 values, steps from level to level, each step averaging the
+change over the patients of both neighbouring levels. A numeric covariate,
+a logical one and an ordered factor step in their own order. The order of
+an unordered factor or a character covariate is arbitrary and the ALE
+depends on it, so with 3 or more levels they step in the order of Apley &
+Zhu (2020): one-dimensional scaling places the levels on a line by how far
+apart the other covariates lie between them -- the Kolmogorov-Smirnov
+distance of a numeric covariate, half the L1 distance of the level shares
+of a categorical one, summed over all patients -- so each step joins
+similar patients. The rows of a categorical covariate follow its steps.
+The curve is centred to a weighted mean of zero, so
 it shows how the CATE varies with the covariate, not its level. The
 averages and the centring weight patients as \code{\link[=get_hte_pdp]{get_hte_pdp()}} does; \code{n}
 counts them. A patient missing the covariate is left out of that
