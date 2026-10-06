@@ -1,10 +1,12 @@
 # causalR (development version)
 
 * New `get_hte_pdp()`, `get_hte_ale()` and `get_hte_shp()` explain the
-  forest of a `get_hte()` result without refitting it: partial dependence,
-  accumulated local effects, and SHAP values -- by default TreeSHAP of an
-  xgboost surrogate of the forest (its held-out R^2 reported), or Kernel SHAP
-  of the forest itself with `method = "kernel"`. With `max_n = NULL` a
+  forest of a `get_hte()` result without refitting the causal forest:
+  partial dependence, accumulated local effects, and SHAP values. By default
+  `get_hte_shp()` fits a new xgboost model that imitates the forest's CATE
+  and returns that surrogate's TreeSHAP values, an approximation for the
+  forest (the surrogate's held-out R^2 reported); `method = "kernel"` runs
+  Kernel SHAP on the forest itself, with no new model. With `max_n = NULL` a
   conservative cost model cuts the patients to stay within `time_budget`
   (default 20 s); the cut depends on the forest and arguments only, so
   results are reproducible. `get_hte_shp()` returns a `shapviz` object. Adds

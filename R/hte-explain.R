@@ -18,8 +18,9 @@
 #
 # All three explain one function: the full forest's CATE on the "diff" scale
 # of get_hte(), predicted at new covariate values -- not the out-of-bag CATE
-# in x$data$.cate, which is no function of the covariates alone. Nothing is
-# refitted.
+# in x$data$.cate, which is no function of the covariates alone. The causal
+# forest is never refitted; only get_hte_shp(method = "surrogate") fits a new
+# model, an xgboost imitation of the forest's CATE, and explains that.
 # =============================================================================
 
 
@@ -470,13 +471,16 @@ get_hte_ale <- function(x,
 #' Splits each patient's CATE, minus a baseline, into additive contributions
 #' of the covariates (Lundberg & Lee 2017). grf has no TreeSHAP: a forest's
 #' prediction solves a weighted estimating equation rather than averaging its
-#' trees, so exact tree algorithms do not apply. Two routes are offered, and
-#' neither refits the forest:
+#' trees, so exact tree algorithms do not apply. Two routes are offered.
+#' Neither refits the causal forest or uses the outcomes, but the surrogate
+#' route fits a new model and explains that model instead of the forest:
 #' \describe{
-#'   \item{`"surrogate"` (default)}{An xgboost model is fitted to the forest's
-#'     CATE of the explained patients, 80% of them, and its exact TreeSHAP
-#'     values (Lundberg et al. 2020) explain every explained patient. This
-#'     explains the surrogate, so `attr(res, "analysis")$r2` reports how much
+#'   \item{`"surrogate"` (default)}{A new xgboost model is fitted that
+#'     imitates the forest: it regresses the forest's CATE on the covariates,
+#'     using 80% of the explained patients, and its exact TreeSHAP values
+#'     (Lundberg et al. 2020) explain every explained patient. The SHAP values
+#'     are exact for this surrogate and only approximate for the forest, so
+#'     `attr(res, "analysis")$r2` reports how much
 #'     of the forest's CATE it reproduces on the held-out 20%, and a warning
 #'     follows below 0.9. TreeSHAP conditions along the tree paths, so with
 #'     correlated covariates its credit can differ from Kernel SHAP's.}
