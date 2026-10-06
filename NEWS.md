@@ -44,6 +44,12 @@
   such neighbouring levels -- rare levels once `max_n` or the time budget
   cut the patients -- made every later level `NA`.
 
+* `get_hte_ale()` returns `ale = NA` with a message for a covariate whose
+  explained patients show fewer than 2 distinct values or levels. Such a
+  covariate on its own stopped with "wrong sign in 'by' argument" (for
+  example `max_n = 1`, or every explained patient missing it), and beside
+  others it read `ale = 0`.
+
 * `get_hte_shp(method = "surrogate")` warns when fewer than 10 patients are
   explained: nothing is held out, so the surrogate's `r2` is `NA` and went
   unchecked without a word.

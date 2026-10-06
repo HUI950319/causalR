@@ -203,6 +203,18 @@ test_that("get_hte_ale() steps an unordered factor through similar levels", {
   expect_identical(ale$n[ale$variable == "grp"], nk)
 })
 
+test_that("get_hte_ale() returns NA for a covariate it cannot step through", {
+  res <- expl_res()
+  # one patient: no interval for age, no neighbouring level for stage
+  expect_message(one <- get_hte_ale(res, x_var = "age", max_n = 1),
+                 "fewer than 2")
+  expect_true(is.na(one$ale))
+  expect_message(both <- get_hte_ale(res, x_var = c("age", "stage"), max_n = 1),
+                 "age.*stage")
+  expect_true(all(is.na(both$ale)))
+  expect_identical(sum(both$n[both$variable == "stage"]), 1L)
+})
+
 test_that("get_hte_ale() joins the levels the explained patients have", {
   skip_if_not_installed("grf")
   set.seed(4)
@@ -375,6 +387,11 @@ test_that("explanations handle missing values, logical, character and odd names"
     # a patient missing the covariate is left out of it
     expect_identical(sum(al$n[al$variable == "T stage"]), n - 12L)
     expect_identical(sum(al$n[al$variable == "smoker"]), n - 7L)
+    # the one patient explained misses age: nothing to step through
+    expect_true(is.na(d$age[.hte_explain_rows(n, 1L)]))
+    expect_message(na1 <- get_hte_ale(res, x_var = "age", max_n = 1),
+                   "fewer than 2")
+    expect_true(is.na(na1$ale))
 
     if (requireNamespace("shapviz", quietly = TRUE) &&
         requireNamespace("kernelshap", quietly = TRUE)) {

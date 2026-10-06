@@ -73,7 +73,9 @@ of a categorical one, summed over all patients -- so each step joins
 similar patients. The rows of a categorical covariate follow its steps. A
 level none of the explained patients has -- likely for a rare level once
 the patients are cut -- is skipped: the steps join the levels on either
-side of it, and it gets \code{ale = NA}, \code{n = 0}.
+side of it, and it gets \code{ale = NA}, \code{n = 0}. A covariate whose explained
+patients show fewer than 2 distinct values or levels -- all of them
+missing it, say -- has no step to take: its \code{ale} is \code{NA}, with a message.
 The curve is centred to a weighted mean of zero, so
 it shows how the CATE varies with the covariate, not its level. The
 averages and the centring weight patients as \code{\link[=get_hte_pdp]{get_hte_pdp()}} does; \code{n}

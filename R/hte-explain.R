@@ -144,6 +144,7 @@
 #' @keywords internal
 #' @noRd
 .hte_predict_set <- function(x, row, var, value) {
+  if (!length(row)) return(numeric(0))
   if (!is.list(var)) {
     var   <- list(var)
     value <- list(value)
@@ -378,7 +379,9 @@ get_hte_pdp <- function(x,
 #' similar patients. The rows of a categorical covariate follow its steps. A
 #' level none of the explained patients has -- likely for a rare level once
 #' the patients are cut -- is skipped: the steps join the levels on either
-#' side of it, and it gets `ale = NA`, `n = 0`.
+#' side of it, and it gets `ale = NA`, `n = 0`. A covariate whose explained
+#' patients show fewer than 2 distinct values or levels -- all of them
+#' missing it, say -- has no step to take: its `ale` is `NA`, with a message.
 #' The curve is centred to a weighted mean of zero, so
 #' it shows how the CATE varies with the covariate, not its level. The
 #' averages and the centring weight patients as [get_hte_pdp()] does; `n`
@@ -543,7 +546,7 @@ get_hte_ale <- function(x,
       K  <- length(s$z) - 1L
       if (K < 1L)
         return(tibble::tibble(variable = v, value = s$z, level = NA_character_,
-                              ale = 0, n = NA_integer_))
+                              ale = NA_real_, n = NA_integer_))
       h  <- length(s$i)
       wi <- wr[s$i]
       dk <- wi * (p[h + seq_len(h)] - p[seq_len(h)])
@@ -561,7 +564,7 @@ get_hte_ale <- function(x,
       fu  <- p[seq_len(nu)]
       fd  <- p[nu + seq_along(s$dn)]
       ale <- rep(NA_real_, length(s$lev))
-      if (K) {
+      if (K > 1L) {
         wk <- vapply(seq_len(K), function(q2) sum(wr[which(s$k == q2)]),
                      numeric(1L))
         gu <- wr[s$up] * (fu - f0[s$up])
@@ -580,6 +583,12 @@ get_hte_ale <- function(x,
                      n = tabulate(s$pos[!is.na(s$pos)], length(s$lev)))
     }
   })
+  bad <- vars[vapply(out, function(t) all(is.na(t$ale)), logical(1L))]
+  if (length(bad))
+    cli::cli_inform(paste(
+      "ALE is {.code NA} for {.var {bad}}: fewer than 2 distinct values or",
+      "levels among the {m} explained patient{?s}. Raise {.arg max_n} or",
+      "{.arg time_budget}."))
   out <- tibble::as_tibble(do.call(rbind, out))
   elapsed <- proc.time()[[3L]] - t0
   if (verbose)
