@@ -208,6 +208,24 @@ test_that("plt_hte_tree() draws the tree with its split p-values", {
   expect_s3_class(p, "ggplot")
   expect_named(attr(p, "plot_size"), c("width", "height"))
   expect_true(any(grepl("^X3\np ", labels(p))))
+  # cut-offs on the edges at 4 significant digits, the rules keep them whole
+  cut <- as.numeric(sub("^X3 <= ", "", grep("^X3 <= ", res$nodes$split,
+                                            value = TRUE)[1L]))
+  expect_true(paste(">", format(signif(cut, 4L))) %in% labels(p))
+  expect_false(paste(">", format(cut, digits = 15L)) %in% labels(p))
+  # leaves: node number and n, colored by the side of zero of their interval
+  lf <- res$nodes[is.na(res$nodes$split), ]
+  layer <- Filter(function(l) inherits(l$geom, "GeomLabel") &&
+                    all(startsWith(l$data$label, "Node ")), p$layers)[[1L]]
+  expect_identical(startsWith(layer$data$label[match(lf$node, layer$data$id)],
+                              sprintf("Node %d, n = %d\n", lf$node, lf$n)),
+                   rep(TRUE, nrow(lf)))
+  expect_equal(layer$aes_params$colour[match(lf$node, layer$data$id)],
+               ifelse(lf$conf.low > 0, "#D6604D",
+                      ifelse(lf$conf.high < 0, "#4393C3", "grey35")))
+  # right-angle edges: four points from each parent to each child
+  path <- Filter(function(l) inherits(l$geom, "GeomPath"), p$layers)[[1L]]$data
+  expect_identical(as.vector(table(path$id)), rep(4L, nrow(res$nodes) - 1L))
   expect_s3_class(plt_hte_tree(res, type = "dr"), "ggplot")
   expect_s3_class(plt_hte_tree(res, type = "box"), "ggplot")
   expect_error(plt_hte_tree(res, type = "km"), "survival")

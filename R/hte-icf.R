@@ -1052,8 +1052,11 @@ get_hte_icf <- function(data,
 #'
 #' Draws `x$tree`, the tree [get_hte_icf()] selected, with ggparty: the split
 #' variable at every inner node, the condition on every edge and, above each
-#' leaf, its patients and its effect with the 95% interval from `x$rules`.
-#' Beneath each leaf a panel chosen by `type` shows that subgroup.
+#' leaf, its node number, its patients and its effect with the 95% interval
+#' from `x$rules`. Beneath each leaf a panel chosen by `type` shows that
+#' subgroup. The edges take right angles; each split variable has a color of
+#' its own, and a leaf is red when its interval lies above zero, blue below
+#' and grey across.
 #'
 #' @param x A [get_hte_icf()] result with at least one split.
 #' @param type Panel beneath each leaf, on one axis shared by all leaves:
@@ -1150,34 +1153,44 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
                  switch(type, box = "a continuous", bar = "a binary or continuous",
                         km = "a survival")), call. = FALSE)
 
-  # Edge and inner-node text in the words of the rules; leaf text from info
+  # Edge and inner-node text in the words of the rules, a continuous cut-off
+  # at 4 significant digits (the rules keep it whole); leaf text from info,
+  # with the side of zero its interval lies on
   le <- intToUtf8(0x2264L)
   ne <- intToUtf8(0x2260L)
   edge  <- character()
   inner <- character()
+  var   <- character()
   leaf  <- character()
+  sig   <- character()
   num_f <- paste0("%.", if (scale %in% c("S", "binary")) 3 else 2, "f")
   walk <- function(nd) {
     id <- as.character(partykit::id_node(nd))
     if (partykit::is.terminal(nd)) {
       i <- partykit::info_node(nd)
-      leaf[id] <<- sprintf(paste0("n = %d\n", num_f, " (", num_f, ", ", num_f, ")"),
-                           i$n, i$estimate, i$conf.low, i$conf.high)
+      leaf[id] <<- sprintf(paste0("Node %s, n = %d\n", num_f, " (", num_f, ", ",
+                                  num_f, ")"),
+                           id, i$n, i$estimate, i$conf.low, i$conf.high)
       if (length(i$action) == 1L && !is.na(i$action))
         leaf[id] <<- paste0(leaf[id], "\n", i$action)
+      sig[id] <<- if (!is.na(i$conf.low) && i$conf.low > 0) "above"
+        else if (!is.na(i$conf.high) && i$conf.high < 0) "below" else "zero"
       return(invisible())
     }
     s    <- partykit::split_node(nd)
     col  <- partykit::varid_split(s)
     v    <- cols$var[col]
+    br   <- partykit::breaks_split(s)
     side <- .icf_leaves(data.frame(path = "", col = col,
-                                   value = partykit::breaks_split(s),
+                                   value = if (cols$type[col] == "num")
+                                     signif(br, 4L) else br,
                                    right = partykit::right_split(s)), cols)$rule
     side <- substring(side, nchar(v) + 2L)
     side <- gsub("!=", ne, gsub("<=", le, side, fixed = TRUE), fixed = TRUE)
     kids <- partykit::kids_node(nd)
     edge[as.character(vapply(kids, partykit::id_node, integer(1L)))] <<- side
     sp <- partykit::info_node(nd)$split_p
+    var[id]   <<- v
     inner[id] <<- if (length(sp) == 1L && !is.na(sp))
       paste0(v, "\n", if (sp < 0.001) "p < 0.001" else sprintf("p = %.3f", sp))
     else v
@@ -1197,9 +1210,7 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
     pd  <- data.frame(td[match(lid, fit), seq_len(p_x), drop = FALSE],
                       do.call(rbind, inf)[c("estimate", "conf.low", "conf.high")],
                       check.names = FALSE)
-    pd$sig <- factor(ifelse(!is.na(pd$conf.low) & pd$conf.low > 0, "above",
-                     ifelse(!is.na(pd$conf.high) & pd$conf.high < 0, "below",
-                            "zero")), c("above", "below", "zero"))
+    pd$sig <- factor(sig[as.character(lid)], c("above", "below", "zero"))
     fit <- lid
   } else {
     pd <- td[seq_len(p_x)]
@@ -1231,6 +1242,7 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
     RMST = sprintf("RMST(%s) difference", format(a$time)),
     binary = "Risk difference", "Mean difference")
   arm_col <- c(Control = "#4393C3", Treated = "#D6604D")
+  sig_col <- c(above = "#D6604D", below = "#4393C3", zero = "grey35")
   theme_panel <- list(
     UtilsR::theme_my(base_size = 9),
     ggplot2::theme(legend.position = "none"))
@@ -1246,10 +1258,8 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
            ggplot2::geom_pointrange(ggplot2::aes(x = estimate, y = 0,
                                                  xmin = conf.low, xmax = conf.high,
                                                  colour = sig), na.rm = TRUE),
-           ggplot2::scale_colour_manual(values = c(above = "#D6604D",
-                                                   below = "#4393C3",
-                                                   zero = "grey35"),
-                                        drop = FALSE, guide = "none"),
+           ggplot2::scale_colour_manual(values = sig_col, drop = FALSE,
+                                        guide = "none"),
            ggplot2::scale_x_continuous(limits = lim + c(-1, 1) * 0.06 * diff(lim)),
            ggplot2::labs(x = lab, y = NULL), theme_panel, flat_y)
     },
@@ -1288,34 +1298,60 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
       ggplot2::labs(x = "Time", y = "Survival", colour = NULL),
       theme_panel))
 
-  # Labels at ggparty's own layout: inner nodes, edge midpoints, leaves
+  # Labels at ggparty's own layout. Edges take right angles, siblings sharing
+  # one bar halfway from the parent to its nearest child, as plt_rpa() draws
+  # them, with each condition on the bar between parent and child.
   tall <- type %in% c("box", "bar", "km")
   p <- ggparty::ggparty(py, terminal_space = if (tall) 0.4 else 0.25)
   L <- p$data
   nodes <- L[L$kids > 0, c("id", "x", "y")]
   nodes$label <- inner[as.character(nodes$id)]
-  edges <- L[!is.na(L$parent), c("id", "x", "y", "x_parent", "y_parent")]
+  edges <- L[!is.na(L$parent), c("id", "parent", "x", "y", "x_parent", "y_parent")]
+  bar   <- edges$y_parent -
+    stats::ave(edges$y_parent - edges$y, edges$parent, FUN = min) / 2
+  path  <- data.frame(id = rep(edges$id, each = 4L),
+                      x  = c(rbind(edges$x_parent, edges$x_parent, edges$x, edges$x)),
+                      y  = c(rbind(edges$y_parent, bar, bar, edges$y)))
   edges$x <- (edges$x + edges$x_parent) / 2
-  edges$y <- (edges$y + edges$y_parent) / 2
+  edges$y <- bar
   edges$label <- edge[as.character(edges$id)]
   leaves <- L[L$kids == 0, c("id", "x", "y")]
   leaves$label <- leaf[as.character(leaves$id)]
 
+  # Inner nodes take one color per split variable, alphabetically, from the
+  # Lancet palette without its red; leaves the color of their effect's side
+  # of zero on a light fill that hides the edge beneath. Colors are set, not
+  # mapped, so they stay off the scale of the km legend.
+  inner_var <- var[as.character(nodes$id)]
+  vars     <- sort(unique(inner_var))
+  var_col  <- stats::setNames(rep_len(UtilsR::pal_lancet[-2L], length(vars)), vars)
+  leaf_col <- sig_col[sig[as.character(leaves$id)]]
+  leaf_bg  <- vapply(leaf_col, function(k)
+    grDevices::colorRampPalette(c("white", k))(9L)[2L], character(1L))
+
   n_leaf <- nrow(leaves)
   depth  <- max(L$level)
   p <- p +
-    ggparty::geom_edge(colour = "grey45") +
+    ggplot2::geom_path(data = path, ggplot2::aes(x = x, y = y, group = id),
+                       colour = "grey30", linewidth = 0.6, linejoin = "mitre",
+                       inherit.aes = FALSE) +
     ggplot2::geom_label(data = edges, ggplot2::aes(x = x, y = y, label = label),
-                        size = 3, fill = "white", inherit.aes = FALSE) +
+                        size = 3, fill = "grey92", inherit.aes = FALSE) +
     ggplot2::geom_label(data = nodes, ggplot2::aes(x = x, y = y, label = label),
                         size = 3.6, fontface = "bold", fill = "white",
-                        inherit.aes = FALSE) +
+                        colour = unname(var_col[inner_var]), inherit.aes = FALSE) +
     ggplot2::geom_label(data = leaves, ggplot2::aes(x = x, y = y, label = label),
-                        size = 3, vjust = 0, lineheight = 0.95,
-                        fill = "white", inherit.aes = FALSE) +
+                        size = 3, vjust = 0, lineheight = 0.95, fontface = "bold",
+                        colour = unname(leaf_col), fill = unname(leaf_bg),
+                        inherit.aes = FALSE) +
     ggparty::geom_node_plot(gglist = gg, shared_axis_labels = TRUE,
-                            shared_legend = FALSE,
-                            height = if (tall) 0.9 else 0.8, nudge_y = -0.01)
+                            shared_legend = FALSE, height = 0.95,
+                            nudge_y = -0.01) +
+    # ggparty keeps 7.5% of the height below the panels for the shared x
+    # title, which boxes and bars do not have
+    ggplot2::coord_cartesian(ylim = c(if (type %in% c("box", "bar")) -0.01
+                                      else -0.06, 1.05),
+                             xlim = c(-0.05, 1.05), clip = "off")
   # ggparty's shared legend does not come through, so the arms of the curves
   # get a legend of their own on the tree
   if (type == "km")

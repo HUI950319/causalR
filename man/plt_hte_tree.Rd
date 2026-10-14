@@ -40,10 +40,11 @@ also written to PDF through \code{RegR::save_plt()}.
 \description{
 Draws \code{x$tree} with ggparty, as \code{\link[=plt_hte_icf]{plt_hte_icf()}} draws its tree: the split
 variable and the p-value of its split test at every inner node, the
-condition on every edge and, above each leaf, its patients and its effect
-with the 95\% interval from \code{x$rules} (and, for a policy tree, the arm it
-recommends). Beneath each leaf a panel chosen by \code{type} shows that
-subgroup.
+condition on every edge and, above each leaf, its node number, its
+patients and its effect with the 95\% interval from \code{x$rules} (and, for a
+policy tree, the arm it recommends). Beneath each leaf a panel chosen by
+\code{type} shows that subgroup. Edges, colors and cut-offs are drawn as in
+\code{\link[=plt_hte_icf]{plt_hte_icf()}}.
 }
 \details{
 The panels show the patients the effects were estimated on: the

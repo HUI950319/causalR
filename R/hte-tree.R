@@ -1552,10 +1552,11 @@ predict.hte_tree <- function(object, newdata, type = c("rule", "node"), ...) {
 #'
 #' Draws `x$tree` with ggparty, as [plt_hte_icf()] draws its tree: the split
 #' variable and the p-value of its split test at every inner node, the
-#' condition on every edge and, above each leaf, its patients and its effect
-#' with the 95% interval from `x$rules` (and, for a policy tree, the arm it
-#' recommends). Beneath each leaf a panel chosen by `type` shows that
-#' subgroup.
+#' condition on every edge and, above each leaf, its node number, its
+#' patients and its effect with the 95% interval from `x$rules` (and, for a
+#' policy tree, the arm it recommends). Beneath each leaf a panel chosen by
+#' `type` shows that subgroup. Edges, colors and cut-offs are drawn as in
+#' [plt_hte_icf()].
 #'
 #' @param x A [get_hte_tree()] result with at least one split.
 #' @inheritParams plt_hte_icf
