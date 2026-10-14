@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* `get_hte_unihtee()` also returns `hte`: with `method = "grf"`, the
+  `get_hte()` result its scores come from, so `plt_hte_sub()` and the other
+  `get_hte()` helpers can reuse that forest without refitting it; `NULL` with
+  `method = "glm"`.
+
 * New `get_hte_pdp()`, `get_hte_ale()` and `get_hte_shp()` explain the
   forest of a `get_hte()` result without refitting the causal forest:
   partial dependence, accumulated local effects, and SHAP values. By default

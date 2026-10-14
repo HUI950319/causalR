@@ -90,6 +90,9 @@ candidate's SD, \code{NA} for binary), \code{measure}, \code{estimate},
 a survival outcome) and one \verb{.score_<measure>} pseudo-outcome per
 measure. With \code{method = "grf"} it also holds the \code{\link[=get_hte]{get_hte()}} columns
 \code{.cate} and \code{.dr_score} (equal to \code{.score_diff}).}
+\item{\code{hte}}{With \code{method = "grf"}, the \code{\link[=get_hte]{get_hte()}} result the scores
+come from, so its forest can be reused without refitting, for
+example by \code{\link[=plt_hte_sub]{plt_hte_sub()}}; \code{NULL} with \code{method = "glm"}.}
 }
 Analysis metadata is attached as \code{attr(x, "analysis")}, including the
 covariates adjusted for and the arguments of the backend.

@@ -30,7 +30,8 @@ test_that("glm route returns the documented table and recovers the truth", {
   d   <- uni_cont_data()
   res <- get_hte_unihtee(d, cat_var = "a", adj_var = c("w1", "w2", "w3", "w4", "sex"),
                          surv = "y", method = "glm")
-  expect_named(res, c("vip", "data"))
+  expect_named(res, c("vip", "data", "hte"))
+  expect_null(res$hte)  # no forest on the glm route
   expect_named(res$vip, c("variable", "type", "contrast", "n", "sd", "measure",
                           "estimate", "std.error", "conf.low", "conf.high",
                           "p.value", "p.adj"))
@@ -94,6 +95,15 @@ test_that("grf route equals grf::best_linear_projection()", {
   v <- res$vip[res$vip$variable == "w3", ]
   expect_equal(v$estimate, unname(blp["w3", 1]))
   expect_equal(v$std.error, unname(blp["w3", 2]))
+
+  # The get_hte() result the scores come from is returned with them, and its
+  # forest is the one a separate get_hte() call fits.
+  expect_s3_class(res$hte, "hte_res")
+  expect_equal(res$hte$data$.dr_score, res$data$.score_diff)
+  expect_equal(res$hte$data$.cate, hte$data$.cate)
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  expect_s3_class(plt_hte_sub(res$hte, sub_var = "sex"), "ggplot")
 })
 
 test_that("survival outcomes run through the forest on both scales", {

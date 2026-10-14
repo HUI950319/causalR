@@ -216,6 +216,9 @@
 #'       a survival outcome) and one `.score_<measure>` pseudo-outcome per
 #'       measure. With `method = "grf"` it also holds the [get_hte()] columns
 #'       `.cate` and `.dr_score` (equal to `.score_diff`).}
+#'     \item{`hte`}{With `method = "grf"`, the [get_hte()] result the scores
+#'       come from, so its forest can be reused without refitting, for
+#'       example by [plt_hte_sub()]; `NULL` with `method = "glm"`.}
 #'   }
 #'   Analysis metadata is attached as `attr(x, "analysis")`, including the
 #'   covariates adjusted for and the arguments of the backend.
@@ -499,7 +502,8 @@ get_hte_unihtee <- function(data,
   for (m in measure) d[[paste0(".score_", m)]] <- scores[[m]]
 
   structure(
-    list(vip = tibble::as_tibble(vip), data = d),
+    list(vip = tibble::as_tibble(vip), data = d,
+         hte = if (method == "grf") res),
     analysis = list(
       method = method, outcome_type = type, cat_var = cat_var,
       treated = treated, surv = surv, candidate_var = candidate_var,
