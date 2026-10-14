@@ -1055,8 +1055,8 @@ get_hte_icf <- function(data,
 #' leaf, its node number, its patients and its effect with the 95% interval
 #' from `x$rules`. Beneath each leaf a panel chosen by `type` shows that
 #' subgroup. The edges take right angles; each split variable has a color of
-#' its own, and a leaf is red when its interval lies above zero, blue below
-#' and grey across.
+#' its own, and a leaf is filled blue below zero and red above, darker the
+#' further its effect lies from zero.
 #'
 #' @param x A [get_hte_icf()] result with at least one split.
 #' @param type Panel beneath each leaf, on one axis shared by all leaves:
@@ -1154,14 +1154,15 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
                         km = "a survival")), call. = FALSE)
 
   # Edge and inner-node text in the words of the rules, a continuous cut-off
-  # at 4 significant digits (the rules keep it whole); leaf text from info,
-  # with the side of zero its interval lies on
+  # at 4 significant digits (the rules keep it whole); leaf text, effect and
+  # the side of zero its interval lies on from info
   le <- intToUtf8(0x2264L)
   ne <- intToUtf8(0x2260L)
   edge  <- character()
   inner <- character()
   var   <- character()
   leaf  <- character()
+  est   <- numeric()
   sig   <- character()
   num_f <- paste0("%.", if (scale %in% c("S", "binary")) 3 else 2, "f")
   walk <- function(nd) {
@@ -1173,6 +1174,7 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
                            id, i$n, i$estimate, i$conf.low, i$conf.high)
       if (length(i$action) == 1L && !is.na(i$action))
         leaf[id] <<- paste0(leaf[id], "\n", i$action)
+      est[id] <<- i$estimate
       sig[id] <<- if (!is.na(i$conf.low) && i$conf.low > 0) "above"
         else if (!is.na(i$conf.high) && i$conf.high < 0) "below" else "zero"
       return(invisible())
@@ -1319,15 +1321,24 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
   leaves$label <- leaf[as.character(leaves$id)]
 
   # Inner nodes take one color per split variable, alphabetically, from the
-  # Lancet palette without its red; leaves the color of their effect's side
-  # of zero on a light fill that hides the edge beneath. Colors are set, not
-  # mapped, so they stay off the scale of the km legend.
+  # Lancet palette without its red. Leaves are filled on a diverging scale
+  # centred at zero, blue below and red above, darker the further the effect
+  # lies from zero, the largest absolute effect of the tree the darkest;
+  # text and border turn white on dark fills. Colors are set, not mapped, so
+  # they stay off the scale of the km legend.
   inner_var <- var[as.character(nodes$id)]
   vars     <- sort(unique(inner_var))
   var_col  <- stats::setNames(rep_len(UtilsR::pal_lancet[-2L], length(vars)), vars)
-  leaf_col <- sig_col[sig[as.character(leaves$id)]]
-  leaf_bg  <- vapply(leaf_col, function(k)
-    grDevices::colorRampPalette(c("white", k))(9L)[2L], character(1L))
+  e        <- est[as.character(leaves$id)]
+  e_max    <- if (any(!is.na(e))) max(abs(e), na.rm = TRUE) else 0
+  u        <- if (e_max > 0) (e / e_max + 1) / 2 else rep(0.5, length(e))
+  ramp     <- grDevices::colorRamp(c("#2166AC", "#4393C3", "#92C5DE", "#F7F7F7",
+                                     "#F4A582", "#D6604D", "#B2182B"))(
+    ifelse(is.na(u), 0.5, u))
+  leaf_bg  <- ifelse(is.na(u), "grey90",
+                     grDevices::rgb(ramp, maxColorValue = 255))
+  leaf_col <- ifelse(drop(ramp %*% c(0.299, 0.587, 0.114)) < 0.6 * 255,
+                     "white", "grey15")
 
   n_leaf <- nrow(leaves)
   depth  <- max(L$level)

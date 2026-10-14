@@ -43,8 +43,8 @@ variable at every inner node, the condition on every edge and, above each
 leaf, its node number, its patients and its effect with the 95\% interval
 from \code{x$rules}. Beneath each leaf a panel chosen by \code{type} shows that
 subgroup. The edges take right angles; each split variable has a color of
-its own, and a leaf is red when its interval lies above zero, blue below
-and grey across.
+its own, and a leaf is filled blue below zero and red above, darker the
+further its effect lies from zero.
 }
 \details{
 The panels show the patients the effects were estimated on: the

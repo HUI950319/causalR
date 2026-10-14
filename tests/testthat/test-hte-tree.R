@@ -213,16 +213,24 @@ test_that("plt_hte_tree() draws the tree with its split p-values", {
                                             value = TRUE)[1L]))
   expect_true(paste(">", format(signif(cut, 4L))) %in% labels(p))
   expect_false(paste(">", format(cut, digits = 15L)) %in% labels(p))
-  # leaves: node number and n, colored by the side of zero of their interval
+  # leaves: node number and n, filled red above zero and blue below, darker
+  # the further the effect lies from zero, the largest the darkest
   lf <- res$nodes[is.na(res$nodes$split), ]
   layer <- Filter(function(l) inherits(l$geom, "GeomLabel") &&
                     all(startsWith(l$data$label, "Node ")), p$layers)[[1L]]
-  expect_identical(startsWith(layer$data$label[match(lf$node, layer$data$id)],
+  at <- match(lf$node, layer$data$id)
+  expect_identical(startsWith(layer$data$label[at],
                               sprintf("Node %d, n = %d\n", lf$node, lf$n)),
                    rep(TRUE, nrow(lf)))
-  expect_equal(layer$aes_params$colour[match(lf$node, layer$data$id)],
-               ifelse(lf$conf.low > 0, "#D6604D",
-                      ifelse(lf$conf.high < 0, "#4393C3", "grey35")))
+  fill <- grDevices::col2rgb(layer$aes_params$fill[at])
+  expect_identical(fill["red", ] > fill["blue", ], lf$estimate > 0)
+  for (side in split(seq_len(nrow(lf)), lf$estimate > 0))
+    expect_identical(order(colSums(fill[, side, drop = FALSE])),
+                     order(-abs(lf$estimate[side])))
+  far <- which.max(abs(lf$estimate))
+  expect_identical(layer$aes_params$fill[at[far]],
+                   if (lf$estimate[far] > 0) "#B2182B" else "#2166AC")
+  expect_identical(layer$aes_params$colour[at[far]], "white")
   # right-angle edges: four points from each parent to each child
   path <- Filter(function(l) inherits(l$geom, "GeomPath"), p$layers)[[1L]]$data
   expect_identical(as.vector(table(path$id)), rep(4L, nrow(res$nodes) - 1L))
