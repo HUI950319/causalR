@@ -629,7 +629,7 @@ plt_hte_dep <- function(x,
 #'   estimates.
 #' @param title Plot title, or `NULL` (default).
 #' @param fixed_size Size policy. `TRUE` (default) pins the plot to the size
-#'   its text needs -- rows 0.3 in tall, the graph column a quarter of the
+#'   its text needs -- rows `row_height` tall, the graph column a quarter of the
 #'   width and at least 2 in -- so it draws the same on every device: a larger
 #'   one only adds white space, a smaller one clips it. A single positive
 #'   number pins the total width in inches instead, the graph column taking
@@ -637,6 +637,11 @@ plt_hte_dep <- function(x,
 #'   its cell of a \pkg{patchwork} composition: that is what
 #'   `plot_layout(widths = , heights = )` needs, since patchwork cannot give a
 #'   pinned plot a proportional share.
+#' @param row_height Height of one table row in inches, a single positive
+#'   number; default `0.3`. A pinned plot (`fixed_size` not `FALSE`) draws its
+#'   rows at this height and its height follows; with `fixed_size = FALSE`
+#'   only the suggested height in `attr(p, "plot_size")` does. Text size is
+#'   unchanged, so a value much below `0.2` crowds the rows.
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
 #'   `width` or `height` left out is taken from `attr(p, "plot_size")`. Do not
@@ -736,6 +741,7 @@ plt_hte_sub <- function(x,
                         ticks_at    = NULL,
                         title       = NULL,
                         fixed_size  = TRUE,
+                        row_height  = 0.3,
                         save        = list()) {
 
   if (!inherits(x, "hte_res"))
@@ -773,6 +779,10 @@ plt_hte_sub <- function(x,
         (is.numeric(fixed_size) && length(fixed_size) == 1L &&
          is.finite(fixed_size) && fixed_size > 0)))
     stop("`fixed_size` must be TRUE, FALSE, or a single positive width in inches.",
+         call. = FALSE)
+  if (!is.numeric(row_height) || length(row_height) != 1L ||
+      !is.finite(row_height) || row_height <= 0)
+    stop("`row_height` must be a single positive height in inches.",
          call. = FALSE)
   if (!is.null(save) && !is.list(save))
     stop("`save` must be `NULL` or a list.", call. = FALSE)
@@ -1060,7 +1070,7 @@ plt_hte_sub <- function(x,
   lab_gp <- rep(list(rep(list(grid::gpar(cex = cex_lab)), n_text)), sum(!bold))
   if (overall)
     lab_gp[[1L]][[1L]] <- grid::gpar(cex = cex_bold, fontface = "bold")
-  row_in <- 0.3   # row height in inches, pinned or assumed by the suggested size
+  row_in <- row_height   # pinned, or assumed by the suggested size
   rules  <- list("1" = grid::gpar(lty = 1, lwd = 2), "2" = grid::gpar(lty = 2))
   rules[[as.character(nrow(text) + 1L)]] <-
     grid::gpar(lty = 1, lwd = 2, columns = seq_len(n_text))

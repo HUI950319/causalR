@@ -763,7 +763,8 @@ test_that("fixed_size pins the plot to the size its text needs", {
   skip_if_not_installed("forestplot")
   skip_if_not_installed("ggplotify")
   res <- dep_res()
-  expect_identical(tail(names(formals(plt_hte_sub)), 2L), c("fixed_size", "save"))
+  expect_identical(tail(names(formals(plt_hte_sub)), 3L),
+                   c("fixed_size", "row_height", "save"))
 
   p <- plt_hte_sub(res, sub_var = "stage")
   size <- attr(p, "plot_size")
@@ -785,6 +786,15 @@ test_that("fixed_size pins the plot to the size its text needs", {
   expect_error(plt_hte_sub(res, sub_var = "stage", fixed_size = 2), "no room")
   for (bad in list("yes", c(5, 6), -1, NA))
     expect_error(plt_hte_sub(res, fixed_size = bad), "`fixed_size`")
+
+  # row_height sets the pinned row pitch, and the height follows it
+  p21 <- plt_hte_sub(res, sub_var = "stage", row_height = 0.21)
+  size21 <- attr(p21, "plot_size")
+  expect_equal(drawn(p21, 14, 10)$heights, rep(0.21, 6L), tolerance = 1e-6)
+  expect_identical(size21[["width"]], size[["width"]])
+  expect_equal(size[["height"]] - size21[["height"]], 0.09 * 6, tolerance = 0.1)
+  for (bad in list("yes", c(0.2, 0.3), 0, NA))
+    expect_error(plt_hte_sub(res, row_height = bad), "`row_height`")
 
   # FALSE stretches the table over the page, as before
   pf <- plt_hte_sub(res, sub_var = "stage", fixed_size = FALSE)

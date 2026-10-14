@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* `plt_hte_sub()` gains `row_height` (default `0.3`, the previous fixed
+  value): the height of one table row in inches, which a pinned plot draws
+  and its height follows. `RegR::get_int()` uses it to draw a shorter
+  subgroup forest.
+
 * `get_hte_unihtee()` also returns `hte`: with `method = "grf"`, the
   `get_hte()` result its scores come from, so `plt_hte_sub()` and the other
   `get_hte()` helpers can reuse that forest without refitting it; `NULL` with
