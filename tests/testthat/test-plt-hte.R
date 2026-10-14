@@ -413,9 +413,17 @@ fp_col <- function(p, j) fp_table(p)[[j]]
 fp_headers <- function(p) vapply(fp_table(p), `[`, "", 1L)
 
 # Page size of a PDF in inches, from its MediaBox, and its number of pages.
+# cairo_pdf(), save_plt()'s default device, keeps the page objects in
+# Flate-compressed object streams, so the MediaBox is also sought in every
+# stream once inflated.
 pdf_size <- function(f) {
-  box <- grepRaw("/MediaBox \\[[^]]*\\]", readBin(f, "raw", file.size(f)),
-                 value = TRUE)
+  b <- readBin(f, "raw", file.size(f))
+  at <- grepRaw("stream\r?\n", b, all = TRUE)
+  at <- at + ifelse(b[at + 6L] == as.raw(10L), 7L, 8L)
+  parts <- c(list(b), lapply(at, function(i)
+    tryCatch(memDecompress(b[i:length(b)], "gzip"), error = function(e) raw())))
+  box <- Filter(length, lapply(parts, grepRaw,
+                               pattern = "/MediaBox \\[[^]]*\\]", value = TRUE))[[1]]
   as.numeric(strsplit(trimws(gsub("[^0-9. ]", "", rawToChar(box))), " +")[[1]][3:4]) / 72
 }
 pdf_pages <- function(f)
