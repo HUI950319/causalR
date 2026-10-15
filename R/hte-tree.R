@@ -596,9 +596,14 @@
 #'   error.
 #'   \describe{
 #'     \item{`"maxt"`}{`n_boot`, bootstrap draws per node test, default
-#'       `1000` (`0` gives no p-values and needs `alpha = 1`); `max_cuts`,
-#'       the most cuts tried per design column, evenly spaced among the
-#'       admissible ones, default `100`.}
+#'       `NULL`: 1000, or above 50,000 discovery patients 5e7 divided by
+#'       their number, at least 250, so that the bootstrap takes about the
+#'       time of 50,000 patients (`analysis$tree_args` records the draws
+#'       used); `0` gives no p-values and needs `alpha = 1`. Fewer draws
+#'       give coarser p-values: the smallest is 1 / (`n_boot` + 1), and the
+#'       Monte Carlo standard error of one near 0.05 grows from 0.007 at 1000
+#'       draws to 0.014 at 250. `max_cuts`, the most cuts tried per design
+#'       column, evenly spaced among the admissible ones, default `100`.}
 #'     \item{the ctree methods}{`testtype`, `"Bonferroni"` (default),
 #'       `"Univariate"` or `"MonteCarlo"`, as in
 #'       [partykit::ctree_control()].}
@@ -925,7 +930,7 @@ get_hte_tree <- function(data,
       is.na(split_frac) || split_frac <= 0 || split_frac > 1)
     stop("`split_frac` must be a single number in (0, 1].", call. = FALSE)
   ta <- .merge_named_arg(tree_args, switch(engine,
-    maxt   = list(n_boot = 1000L, max_cuts = 100L),
+    maxt   = list(n_boot = NULL, max_cuts = 100L),
     ctree  = c(list(testtype = "Bonferroni"),
                if (model_based) list(adjust = TRUE, parm = "treatment")),
     mob    = c(list(trim = 0.1, max_cuts = 100L),
@@ -939,9 +944,10 @@ get_hte_tree <- function(data,
                    paste0("\"", choices, "\"", collapse = ", ")), call. = FALSE)
   switch(engine,
     maxt = {
-      ta$n_boot   <- .hte_select_count(ta$n_boot, "tree_args$n_boot", 0, 1e6)
+      if (!is.null(ta$n_boot))
+        ta$n_boot <- .hte_select_count(ta$n_boot, "tree_args$n_boot", 0, 1e6)
       ta$max_cuts <- .hte_select_count(ta$max_cuts, "tree_args$max_cuts", 1, 1e6)
-      if (ta$n_boot == 0L && alpha < 1)
+      if (identical(ta$n_boot, 0L) && alpha < 1)
         stop("`tree_args$n_boot = 0` gives no p-values, so it needs `alpha = 1`.",
              call. = FALSE)
     },
@@ -1149,6 +1155,18 @@ get_hte_tree <- function(data,
   }
   Xd <- X[d_idx, , drop = FALSE][ok, , drop = FALSE]
   Wd <- W[d_idx][ok]
+  # The max-t bootstrap grows with the patients times the draws: at 300,000
+  # rows, 1000 draws took 15 s of a 52 s call. Above 50,000 discovery
+  # patients a call that sets no n_boot draws 5e7 / n, at least 250, which
+  # keeps the tree near the time of 50,000 patients: 4 s at 300,000 rows.
+  if (method == "maxt" && is.null(ta$n_boot)) {
+    ta$n_boot <- as.integer(min(1000, max(250, round(5e7 / sum(ok)))))
+    if (ta$n_boot < 1000L)
+      cli::cli_inform(c("i" = paste(
+        "Drawing {ta$n_boot} bootstrap samples per max-t test for {sum(ok)}",
+        "discovery patients, more than 50,000, instead of 1000; set",
+        "{.code tree_args = list(n_boot = )} to change it.")))
+  }
   # A node model needs about 10 patients per coefficient
   ctrl <- c(list(max_depth = max_depth, alpha = alpha, min_arm = 2L,
                  min_n = max(2L, ceiling(min_leaf * sum(ok)),

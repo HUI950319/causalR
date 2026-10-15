@@ -257,6 +257,29 @@ test_that("a constant effect keeps every patient together unless alpha = 1", {
   expect_true(all(is.na(full$nodes$split_p)))
 })
 
+test_that("maxt draws fewer bootstrap samples above 50,000 discovery patients", {
+  skip_if_not_installed("grf")
+  expect_identical(attr(tree_call(tree_data(), max_depth = 1),
+                        "analysis")$tree_args$n_boot, 1000L)
+  withr::local_seed(4)
+  n <- 120000L
+  d <- data.frame(x = runif(n), z = rbinom(n, 1, 0.5))
+  d$y <- d$z * (d$x > 0.5) + rnorm(n)
+  # about 60,000 discovery patients: 5e7 / 60,000 draws
+  expect_message(big <- get_hte_tree(d, "z", "x", surv = "y", max_depth = 1,
+                                     grf_args = list(num.trees = 50L)),
+                 "833 bootstrap samples")
+  expect_identical(attr(big, "analysis")$tree_args$n_boot, 833L)
+  expect_identical(big$nodes$variable[1L], "x")
+  # a set n_boot is kept, without the message
+  expect_no_message(set <- get_hte_tree(d, "z", "x", surv = "y", max_depth = 1,
+                                        grf_args = list(num.trees = 50L),
+                                        tree_args = list(n_boot = 300L),
+                                        reuse = big),
+                    message = "bootstrap samples")
+  expect_identical(attr(set, "analysis")$tree_args$n_boot, 300L)
+})
+
 test_that("the max-t multipliers are the signs sample() draws", {
   # the signs and the random-number state left after them
   draw <- function(f, kind, sample_kind = "Rejection")

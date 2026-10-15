@@ -1,5 +1,14 @@
 # causalR (development version)
 
+* `get_hte_tree(method = "maxt")` is faster on large samples. Its bootstrap
+  draws the signs of `sample()` in under half the time, so a seed grows the
+  same tree; and `tree_args$n_boot` now defaults to `NULL`: 1000 draws per
+  node test as before, but above 50,000 discovery patients 5e7 divided by
+  their number, at least 250, with a message. At 300,000 rows the tree took
+  4 s instead of 24 s. Fewer draws make the p-values coarser (at least
+  1 / (`n_boot` + 1)); set `tree_args = list(n_boot = 1000)` to keep 1000.
+  `analysis$tree_args` records the draws used.
+
 * `plt_hte_sub()` gains `row_height` (default `0.3`, the previous fixed
   value): the height of one table row in inches, which a pinned plot draws
   and its height follows. `RegR::get_int()` uses it to draw a shorter

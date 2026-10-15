@@ -155,9 +155,14 @@ overrides keep the other defaults, and a field of another method is an
 error.
 \describe{
 \item{\code{"maxt"}}{\code{n_boot}, bootstrap draws per node test, default
-\code{1000} (\code{0} gives no p-values and needs \code{alpha = 1}); \code{max_cuts},
-the most cuts tried per design column, evenly spaced among the
-admissible ones, default \code{100}.}
+\code{NULL}: 1000, or above 50,000 discovery patients 5e7 divided by
+their number, at least 250, so that the bootstrap takes about the
+time of 50,000 patients (\code{analysis$tree_args} records the draws
+used); \code{0} gives no p-values and needs \code{alpha = 1}. Fewer draws
+give coarser p-values: the smallest is 1 / (\code{n_boot} + 1), and the
+Monte Carlo standard error of one near 0.05 grows from 0.007 at 1000
+draws to 0.014 at 250. \code{max_cuts}, the most cuts tried per design
+column, evenly spaced among the admissible ones, default \code{100}.}
 \item{the ctree methods}{\code{testtype}, \code{"Bonferroni"} (default),
 \code{"Univariate"} or \code{"MonteCarlo"}, as in
 \code{\link[partykit:ctree_control]{partykit::ctree_control()}}.}
