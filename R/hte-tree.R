@@ -62,6 +62,20 @@
 
 # ---- L2 engines ----------------------------------------------------------------
 
+# The Rademacher signs of sample(c(-1, 1), k, replace = TRUE), in under half
+# its time: they took most of a max-t node. Its default "Rejection" sampler
+# spends one uniform per sign and keeps bit 0 of floor(65536 * u) (R's
+# R_unif_index() via rbits()), so the same arithmetic on runif() gives the
+# same signs and leaves the same random-number state; a seed grows the same
+# tree. The older "Rounding" sampler keeps sample().
+#' @keywords internal
+#' @noRd
+.rademacher <- function(k) {
+  if (RNGkind()[3L] != "Rejection")
+    return(sample(c(-1, 1), k, replace = TRUE))
+  2 * bitwAnd(as.integer(stats::runif(k) * 65536), 1L) - 1
+}
+
 # One node of the max-t tree. Every admissible cut of every column -- both
 # sides at least `min_n` rows and `min_arm` of each arm -- gets the Welch t of
 # the two sides' mean scores, and a variable's statistic is its largest |t|
@@ -124,7 +138,7 @@
     size <- max(1L, min(B, floor(5e6 / n)))
     while (done < B) {
       cb <- min(size, B - done)
-      RE <- r * matrix(sample(c(-1, 1), n * cb, replace = TRUE), n, cb)
+      RE <- r * matrix(.rademacher(n * cb), n, cb)
       ST <- colSums(RE)
       at <- done + seq_len(cb)
       for (cd in cand) {

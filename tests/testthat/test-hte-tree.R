@@ -257,6 +257,20 @@ test_that("a constant effect keeps every patient together unless alpha = 1", {
   expect_true(all(is.na(full$nodes$split_p)))
 })
 
+test_that("the max-t multipliers are the signs sample() draws", {
+  # the signs and the random-number state left after them
+  draw <- function(f, kind, sample_kind = "Rejection")
+    suppressWarnings(withr::with_seed(
+      11, list(f(1e5), get(".Random.seed", globalenv())),
+      .rng_kind = kind, .rng_sample_kind = sample_kind))
+  signs <- function(k) sample(c(-1, 1), k, replace = TRUE)
+  for (kind in c("Mersenne-Twister", "L'Ecuyer-CMRG", "Knuth-TAOCP-2002"))
+    expect_identical(draw(.rademacher, kind), draw(signs, kind), info = kind)
+  # the older "Rounding" sampler draws other signs, which .rademacher() follows
+  expect_identical(draw(.rademacher, "Mersenne-Twister", "Rounding"),
+                   draw(signs, "Mersenne-Twister", "Rounding"))
+})
+
 test_that("every method grows on the scores within max_depth", {
   skip_if_not_installed("grf")
   skip_if_not_installed("rpart")
