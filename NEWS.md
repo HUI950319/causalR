@@ -1,5 +1,11 @@
 # causalR (development version)
 
+* `plt_hte_tree()` and `plt_hte_icf()` no longer carry the fit in the plot.
+  Their layers kept the drawing function's environment, and with it the fit
+  and its forests, so `saveRDS()` of a tree plot wrote all of it out. A tree
+  of 1600 patients and 500 trees drew a 49 MB object, now 17 MB (the rest is
+  ggplot2's own), which no longer grows with the forests.
+
 * `get_hte_tree(method = "maxt")` is faster on large samples. Its bootstrap
   draws the signs of `sample()` in under half the time, so a seed grows the
   same tree; and `tree_args$n_boot` now defaults to `NULL`: 1000 draws per

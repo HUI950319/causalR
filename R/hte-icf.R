@@ -1238,10 +1238,17 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
   }
   py <- partykit::party(partykit::node_party(x$tree), data = pd,
                         fitted = data.frame(`(fitted)` = fit, check.names = FALSE))
+  # The layers keep this environment through their aesthetics, and a saved or
+  # sent plot writes out all it holds: the fit, its analysis with the forests
+  # and the patient-level party go first, and so do `fn` and `fit_fn`, which
+  # stay unevaluated and so tied to the caller's frame and its fit.
+  horizon <- a$time
+  outcome <- a$outcome
+  rm(x, a, td, fn, fit_fn)
 
   lab <- switch(scale,
-    S = sprintf("St(%s-year) difference", format(a$time / 12)),
-    RMST = sprintf("RMST(%s) difference", format(a$time)),
+    S = sprintf("St(%s-year) difference", format(horizon / 12)),
+    RMST = sprintf("RMST(%s) difference", format(horizon)),
     binary = "Risk difference", "Mean difference")
   arm_col <- c(Control = "#4393C3", Treated = "#D6604D")
   sig_col <- c(above = "#D6604D", below = "#4393C3", zero = "grey35")
@@ -1278,7 +1285,7 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
       ggplot2::geom_boxplot(ggplot2::aes(x = arm, y = yval, fill = arm),
                             width = 0.6, outlier.size = 0.3),
       ggplot2::scale_fill_manual(values = arm_col),
-      ggplot2::labs(x = NULL, y = a$outcome), theme_panel),
+      ggplot2::labs(x = NULL, y = outcome), theme_panel),
     bar = list(
       ggplot2::stat_summary(ggplot2::aes(x = arm, y = yval, fill = arm),
                             fun = mean, geom = "col", width = 0.6),
@@ -1288,15 +1295,15 @@ plt_hte_icf <- function(x, type = c("effect", "dr", "box", "bar", "km"),
                             geom = "errorbar", width = 0.2),
       ggplot2::scale_fill_manual(values = arm_col),
       ggplot2::labs(x = NULL, y = if (scale == "binary")
-        paste("Share with", a$outcome) else paste("Mean", a$outcome)),
+        paste("Share with", outcome) else paste("Mean", outcome)),
       theme_panel),
     km = list(
       ggplot2::geom_step(ggplot2::aes(x = time, y = surv, colour = arm),
                          na.rm = TRUE),
-      ggplot2::geom_vline(xintercept = a$time, linetype = 2, colour = "grey50"),
+      ggplot2::geom_vline(xintercept = horizon, linetype = 2, colour = "grey50"),
       ggplot2::scale_colour_manual(values = arm_col),
-      ggplot2::scale_x_continuous(breaks = pretty(c(0, a$time), n = 3),
-                                  limits = c(0, a$time)),
+      ggplot2::scale_x_continuous(breaks = pretty(c(0, horizon), n = 3),
+                                  limits = c(0, horizon)),
       ggplot2::labs(x = "Time", y = "Survival", colour = NULL),
       theme_panel))
 

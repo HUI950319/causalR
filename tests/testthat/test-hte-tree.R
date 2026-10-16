@@ -236,6 +236,14 @@ test_that("plt_hte_tree() draws the tree with its split p-values", {
   expect_identical(as.vector(table(path$id)), rep(4L, nrow(res$nodes) - 1L))
   expect_s3_class(plt_hte_tree(res, type = "dr"), "ggplot")
   expect_s3_class(plt_hte_tree(res, type = "box"), "ggplot")
+  # A saved or sent plot writes out what its layers' aesthetics keep, which
+  # must not include the fit: weight added to the fit leaves the plot as is.
+  heavy <- res
+  attr(heavy, "analysis")$reuse$weight <- raw(1e7)
+  for (type in c("effect", "dr")) {
+    size <- function(x) length(serialize(plt_hte_tree(x, type = type), NULL))
+    expect_lt(size(heavy) - size(res), 1e6)
+  }
   expect_error(plt_hte_tree(res, type = "km"), "survival")
   expect_error(plt_hte_tree(res$rules), "get_hte_tree")
   pol <- tree_call(d, method = "policy", max_depth = 1,
