@@ -486,11 +486,11 @@
 #' @param cat_var Length-1 character. The binary exposure column, coded as in
 #'   [get_hte()].
 #' @param adj_var Character vector of covariates the forests condition on.
-#'   Without `candidate_var` they are also the split variables. Rows missing
+#'   Without `tree_var` they are also the split variables. Rows missing
 #'   `cat_var` or the outcome are dropped, as in [get_hte()].
-#' @param candidate_var `NULL` (default), or a character vector of the only
-#'   variables the tree may split on. They join `adj_var`, so a candidate is
-#'   always adjusted for. Split variables must be numeric, factor, character
+#' @param tree_var `NULL` (default), or a character vector of the only
+#'   variables the tree may split on. They join `adj_var`, so a split
+#'   variable is always adjusted for. Split variables must be numeric, factor, character
 #'   or logical with no missing value, since a rule cannot say where a
 #'   missing value goes.
 #' @param surv Outcome selector, as in [get_hte()]: `TRUE` (default) for the
@@ -819,7 +819,7 @@
 get_hte_tree <- function(data,
                          cat_var,
                          adj_var,
-                         candidate_var = NULL,
+                         tree_var   = NULL,
                          surv       = TRUE,
                          time       = 120,
                          method     = c("maxt", "mob_dr", "mob_cate", "mob_abs",
@@ -900,14 +900,14 @@ get_hte_tree <- function(data,
     stop(sprintf("Package 'survival' is required for get_hte_tree(method = \"%s\") with a survival outcome.",
                  method), call. = FALSE)
   split_var <- adj_var
-  if (!is.null(candidate_var)) {
-    candidate_var <- unique(.sens_check_col(candidate_var, data, "candidate_var"))
-    bad <- intersect(candidate_var, c(cat_var, outcome))
+  if (!is.null(tree_var)) {
+    tree_var <- unique(.sens_check_col(tree_var, data, "tree_var"))
+    bad <- intersect(tree_var, c(cat_var, outcome))
     if (length(bad))
-      stop(sprintf("`candidate_var` cannot hold the exposure or outcome column %s.",
+      stop(sprintf("`tree_var` cannot hold the exposure or outcome column %s.",
                    paste0("`", bad, "`", collapse = ", ")), call. = FALSE)
-    adj_var   <- union(adj_var, candidate_var)
-    split_var <- candidate_var
+    adj_var   <- union(adj_var, tree_var)
+    split_var <- tree_var
   }
   if (!is.numeric(max_depth) || length(max_depth) != 1L || is.na(max_depth) ||
       max_depth < 1 || (is.finite(max_depth) && max_depth != round(max_depth)))
@@ -1336,7 +1336,7 @@ get_hte_tree <- function(data,
       backend_version = ea$backend_version, forest = ea$forest,
       outcome_type = ea$outcome_type, cat_var = cat_var, treated = ea$treated,
       surv = surv, outcome = outcome, time = ea$time, target = ea$target,
-      adj_var = adj_var, candidate_var = candidate_var, split_var = split_var,
+      adj_var = adj_var, tree_var = tree_var, split_var = split_var,
       factor_encoding = factor_encoding, method = method,
       node_model = if (model_based) switch(node$model,
         cox = "Cox (log-HR)", logit = "logit (log-OR)",
@@ -1434,7 +1434,9 @@ get_hte_tree_stability <- function(x, data, n_rep = 50L,
     result <- tryCatch(withCallingHandlers({
       if (mode == "full") {
         args <- list(data = data, cat_var = a$cat_var, adj_var = a$adj_var,
-          candidate_var = a$candidate_var, surv = a$surv, method = a$method,
+          # results before the rename hold `candidate_var`
+          tree_var = c(a$tree_var, a$candidate_var), surv = a$surv,
+          method = a$method,
           max_depth = a$max_depth, min_leaf = a$min_leaf,
           factor_encoding = a$factor_encoding, split_frac = a$split_frac,
           estimator = a$estimator, tree_args = a$tree_args,

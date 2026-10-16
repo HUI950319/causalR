@@ -361,7 +361,7 @@ test_that("node-model trees test the treatment coefficient, adjusted for adj_var
   expect_error(get_hte_tree(d, "w", av, surv = "y", method = "mob_dr",
                             tree_args = list(adjust = FALSE)), "unknown field")
   d$x4[1] <- NA
-  expect_error(get_hte_tree(d, "w", av, candidate_var = "x3", surv = "y",
+  expect_error(get_hte_tree(d, "w", av, tree_var = "x3", surv = "y",
                             method = "mob_abs"), "adjust = FALSE")
 })
 
@@ -674,24 +674,24 @@ test_that("incomplete estimation leaves have diagnostics and no interaction test
   expect_false(any(grepl("P for interaction", capture.output(print(res)))))
 })
 
-test_that("candidate_var names the split variables; factor rules keep levels", {
+test_that("tree_var names the split variables; factor rules keep levels", {
   skip_if_not_installed("grf")
   d <- tree_data(tau = function(d) 0.5 + 1.5 * (d$grp == "c"))
   for (enc in c("onehot", "integer")) {
-    res <- tree_call(d, adj_var = c("X1", "X2", "X3"), candidate_var = "grp",
+    res <- tree_call(d, adj_var = c("X1", "X2", "X3"), tree_var = "grp",
                      factor_encoding = enc, tree_args = list(n_boot = 200L))
     expect_setequal(res$rules$rule, c("grp != c", "grp = c"))
     a <- attr(res, "analysis")
     expect_setequal(a$adj_var, c("X1", "X2", "X3", "grp"))
     expect_identical(a$split_var, "grp")
   }
-  expect_error(tree_call(d, candidate_var = "y"), "candidate_var")
+  expect_error(tree_call(d, tree_var = "y"), "tree_var")
 })
 
 test_that("tree prediction preserves factor encoding and strict cut-points", {
   d <- tree_data(n = 800L, tau = function(d) 5 * (d$grp == "c"))
   for (encoding in c("integer", "onehot")) {
-    res <- tree_call(d, method = "rpart_dr", candidate_var = "grp",
+    res <- tree_call(d, method = "rpart_dr", tree_var = "grp",
                      max_depth = 1, factor_encoding = encoding,
                      tree_args = list(xval = 0L))
     expect_identical(predict(res, res$est$data), as.character(res$est$data$.rule))
@@ -703,7 +703,7 @@ test_that("tree prediction preserves factor encoding and strict cut-points", {
     expect_error(predict(res, data.frame(grp = NA_character_)), "missing")
   }
   res <- tree_call(tree_data(n = 800L), method = "rpart_dr", max_depth = 1,
-                   candidate_var = "X3", tree_args = list(xval = 0L))
+                   tree_var = "X3", tree_args = list(xval = 0L))
   cut <- attr(res, "analysis")$splits$value[1L]
   expect_identical(predict(res, data.frame(X3 = c(cut - 1e-9, cut))),
                    res$rules$rule)
@@ -878,6 +878,32 @@ test_that("tree stability bootstraps fixed scores and full mode refits", {
   expect_error(get_hte_tree_stability(res, d, n_rep = 1), "n_rep")
   d$y[1L] <- 0
   expect_error(get_hte_tree_stability(res, d, n_rep = 3L), "original data")
+})
+
+test_that("tree_var replaces candidate_var, and older results still refit", {
+  for (f in list(get_hte_tree, get_hte_icf))
+    expect_identical(names(formals(f))[1:4],
+                     c("data", "cat_var", "adj_var", "tree_var"))
+  expect_error(tree_call(tree_data(), candidate_var = "X3"), "unused argument")
+  d <- tree_data(n = 600L)
+  res <- get_hte_tree(d, "z", c("X1", "X2"), tree_var = "X3", surv = "y",
+    method = "rpart_dr", max_depth = 1, tree_args = list(xval = 0L),
+    grf_args = list(num.trees = 100L, num.threads = 2L))
+  expect_identical(attr(res, "analysis")$tree_var, "X3")
+  # a result saved before the rename holds `candidate_var`
+  old <- res
+  a <- attr(old, "analysis")
+  a$candidate_var <- a$tree_var
+  a$tree_var <- NULL
+  attr(old, "analysis") <- a
+  seen <- list()
+  local_mocked_bindings(get_hte_tree = function(...) {
+    seen[[length(seen) + 1L]] <<- list(...)$tree_var
+    res
+  }, .package = "causalR")
+  get_hte_tree_stability(res, d, n_rep = 2L, mode = "full")
+  get_hte_tree_stability(old, d, n_rep = 2L, mode = "full")
+  expect_identical(unique(seen), list("X3"))
 })
 
 test_that("stability Jaccard ignores node labels and handles unsplit trees", {

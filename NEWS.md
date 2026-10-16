@@ -1,5 +1,12 @@
 # causalR (development version)
 
+* `get_hte_tree()` and `get_hte_icf()` rename `candidate_var` to `tree_var`,
+  the only variables their trees may split on, and so does their
+  `analysis`; the old name is gone. `get_hte_select()` and
+  `get_hte_unihtee()`, which screen variables rather than split on them,
+  keep `candidate_var`. `get_hte_tree_stability()` still refits results
+  saved under the old name.
+
 * `plt_hte_tree()` and `plt_hte_icf()` no longer carry the fit in the plot.
   Their layers kept the drawing function's environment, and with it the fit
   and its forests, so `saveRDS()` of a tree plot wrote all of it out. A tree

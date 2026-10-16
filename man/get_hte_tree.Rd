@@ -8,7 +8,7 @@ get_hte_tree(
   data,
   cat_var,
   adj_var,
-  candidate_var = NULL,
+  tree_var = NULL,
   surv = TRUE,
   time = 120,
   method = c("maxt", "mob_dr", "mob_cate", "mob_abs", "mob_rel", "ctree_dr",
@@ -34,12 +34,12 @@ get_hte_tree(
 \code{\link[=get_hte]{get_hte()}}.}
 
 \item{adj_var}{Character vector of covariates the forests condition on.
-Without \code{candidate_var} they are also the split variables. Rows missing
+Without \code{tree_var} they are also the split variables. Rows missing
 \code{cat_var} or the outcome are dropped, as in \code{\link[=get_hte]{get_hte()}}.}
 
-\item{candidate_var}{\code{NULL} (default), or a character vector of the only
-variables the tree may split on. They join \code{adj_var}, so a candidate is
-always adjusted for. Split variables must be numeric, factor, character
+\item{tree_var}{\code{NULL} (default), or a character vector of the only
+variables the tree may split on. They join \code{adj_var}, so a split
+variable is always adjusted for. Split variables must be numeric, factor, character
 or logical with no missing value, since a rule cannot say where a
 missing value goes.}
 
