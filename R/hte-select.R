@@ -226,7 +226,7 @@
 #' @param cat_var Single binary treatment column, following [get_hte()]: 0/1,
 #'   logical, or a two-level factor/character column. The second level is the
 #'   treated arm (character levels are sorted).
-#' @param candidate_var Nonempty character vector of distinct candidate
+#' @param tree_var Nonempty character vector of distinct candidate
 #'   effect-modifier columns. Numeric, logical, factor and character columns
 #'   are supported; constant columns are rejected. Input order breaks ranking
 #'   ties. Treatment, outcome, matching and propensity columns are excluded.
@@ -466,7 +466,7 @@
 #' }
 #' }
 #' @export
-get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
+get_hte_select <- function(data, cat_var, tree_var, surv = TRUE,
                            match_var = NULL, ps_var = NULL, n_select = NULL,
                            imp_metric = "score_sd", sel_metric = NULL,
                            fit_args = list(nfolds = 10L, standardize = TRUE),
@@ -478,9 +478,9 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
     stop("`data` must be a non-empty data frame with unique column names.",
          call. = FALSE)
   cat_var <- .sens_check_col(cat_var, data, "cat_var", n = 1L)
-  candidate_var <- .sens_check_col(candidate_var, data, "candidate_var")
-  if (is.null(cat_var) || !length(candidate_var) || anyDuplicated(candidate_var))
-    stop("Supply one `cat_var` and nonempty, distinct `candidate_var` names.",
+  tree_var <- .sens_check_col(tree_var, data, "tree_var")
+  if (is.null(cat_var) || !length(tree_var) || anyDuplicated(tree_var))
+    stop("Supply one `cat_var` and nonempty, distinct `tree_var` names.",
          call. = FALSE)
   available <- c("score_sd", "score_iqr", "score_mean_abs", "score_median", "score_mean",
                   "autoc", "qini", "r_loss", "dr_loss")
@@ -525,13 +525,13 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
     outcome <- .sens_check_col(surv, data, "surv", n = 1L)
   }
   roles <- c(cat_var, outcome, match_var, ps_var)
-  if (anyDuplicated(roles) || any(candidate_var %in% roles))
+  if (anyDuplicated(roles) || any(tree_var %in% roles))
     stop("Treatment, outcome, adjustment and candidate columns must be distinct.",
          call. = FALSE)
   if (any(adjust_var %in% roles))
     stop("`eval_args$adjust_var` cannot include treatment, outcome, PS or matching columns.",
          call. = FALSE)
-  model_vars <- unique(c(candidate_var, if (use_eval) adjust_var))
+  model_vars <- unique(c(tree_var, if (use_eval) adjust_var))
   used <- c(roles, model_vars)
   valid_type <- vapply(data[used], function(x) {
     is.null(dim(x)) && (is.factor(x) || (!is.object(x) &&
@@ -555,7 +555,7 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
     stop("`verbose` must be TRUE or FALSE.", call. = FALSE)
   seed <- .hte_select_count(seed, "seed", 0, .Machine$integer.max)
   if (!is.null(n_select))
-    n_select <- .hte_select_count(n_select, "n_select", 1, length(candidate_var))
+    n_select <- .hte_select_count(n_select, "n_select", 1, length(tree_var))
   fit_args <- .merge_named_arg(fit_args,
                                list(nfolds = 10L, standardize = TRUE), "fit_args")
   if (!is.logical(fit_args$standardize) || length(fit_args$standardize) != 1L ||
@@ -623,9 +623,9 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
   x <- full_x[, assignment != 0L, drop = FALSE]
   assignment <- assignment[assignment != 0L]
   colnames(x) <- make.unique(colnames(x))
-  columns <- stats::setNames(lapply(seq_along(candidate_var), function(i) {
+  columns <- stats::setNames(lapply(seq_along(tree_var), function(i) {
     which(assignment == i)
-  }), candidate_var)
+  }), tree_var)
 
   genv <- globalenv()
   old_seed <- if (exists(".Random.seed", envir = genv, inherits = FALSE))
@@ -666,11 +666,11 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
       stop("The training split has no observed events.", call. = FALSE)
     if (type != "survival" && length(unique(y[train])) < 2L)
       stop("The outcome is constant in the training split.", call. = FALSE)
-    constant_train <- vapply(data[train, candidate_var, drop = FALSE],
+    constant_train <- vapply(data[train, tree_var, drop = FALSE],
                               function(v) length(unique(v)) < 2L, logical(1))
     if (any(constant_train))
       stop(sprintf("Constant candidate in the training split: %s.",
-                   paste(candidate_var[constant_train], collapse = ", ")), call. = FALSE)
+                   paste(tree_var[constant_train], collapse = ", ")), call. = FALSE)
     evaluation <- tryCatch(withCallingHandlers(
       .hte_select_evaluation(x[validation, , drop = FALSE],
         if (type == "survival") y[validation, , drop = FALSE] else y[validation],
@@ -727,11 +727,11 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
         message = fit$warnings)
     fit
   }
-  single <- lapply(seq_along(candidate_var), function(i) {
-    fit_subset(candidate_var[i], "single", i)
+  single <- lapply(seq_along(tree_var), function(i) {
+    fit_subset(tree_var[i], "single", i)
   })
-  ranking <- do.call(rbind, lapply(seq_along(candidate_var), function(i) {
-    data.frame(variable = candidate_var[i], n = length(train), n_eval = length(validation),
+  ranking <- do.call(rbind, lapply(seq_along(tree_var), function(i) {
+    data.frame(variable = tree_var[i], n = length(train), n_eval = length(validation),
                single[[i]]$statistics)
   }))
   ranking <- ranking[order(.hte_select_direction(imp_metric) * ranking[[imp_metric]],
@@ -742,7 +742,7 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
     vars <- ranking$variable[seq_len(k)]
     # The one-variable prefix is the top single-variable model.
     fit <- fit_subset(vars, "forward", k,
-                      if (k == 1L) single[[match(vars, candidate_var)]])
+                      if (k == 1L) single[[match(vars, tree_var)]])
     data.frame(step = k, added_variable = vars[k], n_vars = k,
                variables = I(list(vars)), n = length(train), n_eval = length(validation),
                fit$statistics)
@@ -782,7 +782,7 @@ get_hte_select <- function(data, cat_var, candidate_var, surv = TRUE,
                        treatment_mapping = unique(data.frame(
                          original = as.character(data[[cat_var]]), encoded = trt)),
                        loss = loss, method = "weighting", n = nrow(data),
-                       candidate_var = candidate_var, match_var = match_var,
+                       tree_var = tree_var, match_var = match_var,
                        ps_var = ps_var, n_select = n_select,
                        imp_metric = imp_metric, sel_metric = sel_metric,
                        best_step = best_step, sel_baseline = sel_baseline,

@@ -7,7 +7,7 @@
 get_hte_unihtee(
   data,
   cat_var,
-  candidate_var = NULL,
+  tree_var = NULL,
   adj_var = NULL,
   surv = TRUE,
   method = c("grf", "glm"),
@@ -27,7 +27,7 @@ get_hte_unihtee(
 \code{\link[=get_hte]{get_hte()}}: \code{0}/\code{1}, logical, or a two-level factor or character column
 whose second level is the treated arm.}
 
-\item{candidate_var}{Character vector of the candidate modifiers, one table
+\item{tree_var}{Character vector of the candidate modifiers, one table
 row each, or \code{NULL} (default) for every \code{adj_var} column. A numeric
 column with more than two distinct values is a continuous candidate; any
 column with exactly two values (numeric, logical, factor or character) is
@@ -35,7 +35,7 @@ binary. Categorical columns with three or more levels, constant columns
 and \code{cat_var} itself are rejected.}
 
 \item{adj_var}{Character vector of covariates the nuisance models condition
-on. The models adjust for the union of \code{adj_var} and \code{candidate_var}, so
+on. The models adjust for the union of \code{adj_var} and \code{tree_var}, so
 every candidate is adjusted for.}
 
 \item{surv}{Outcome selector, as in \code{\link[=get_hte]{get_hte()}}: \code{TRUE} (default) for the

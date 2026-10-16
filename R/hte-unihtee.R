@@ -112,14 +112,14 @@
 #' @param cat_var Length-1 character. The binary exposure column, coded as in
 #'   [get_hte()]: `0`/`1`, logical, or a two-level factor or character column
 #'   whose second level is the treated arm.
-#' @param candidate_var Character vector of the candidate modifiers, one table
+#' @param tree_var Character vector of the candidate modifiers, one table
 #'   row each, or `NULL` (default) for every `adj_var` column. A numeric
 #'   column with more than two distinct values is a continuous candidate; any
 #'   column with exactly two values (numeric, logical, factor or character) is
 #'   binary. Categorical columns with three or more levels, constant columns
 #'   and `cat_var` itself are rejected.
 #' @param adj_var Character vector of covariates the nuisance models condition
-#'   on. The models adjust for the union of `adj_var` and `candidate_var`, so
+#'   on. The models adjust for the union of `adj_var` and `tree_var`, so
 #'   every candidate is adjusted for.
 #' @param surv Outcome selector, as in [get_hte()]: `TRUE` (default) for the
 #'   survival columns `time` and `DSS` (`method = "grf"` only), or a single
@@ -261,7 +261,7 @@
 #' @export
 get_hte_unihtee <- function(data,
                             cat_var,
-                            candidate_var = NULL,
+                            tree_var   = NULL,
                             adj_var    = NULL,
                             surv       = TRUE,
                             method     = c("grf", "glm"),
@@ -288,36 +288,36 @@ get_hte_unihtee <- function(data,
     stop("`data` must be a non-empty data frame.", call. = FALSE)
   cat_var <- .sens_check_col(cat_var, data, "cat_var", n = 1L)
   adj_var <- setdiff(.sens_check_col(adj_var, data, "adj_var"), cat_var)
-  candidate_var <- .sens_check_col(candidate_var, data, "candidate_var")
-  if (cat_var %in% candidate_var)
-    stop("`candidate_var` must not include `cat_var`.", call. = FALSE)
-  if (anyDuplicated(candidate_var))
-    stop("`candidate_var` must not contain duplicates.", call. = FALSE)
-  if (is.null(candidate_var)) candidate_var <- adj_var
-  if (!length(candidate_var))
-    stop("Supply the candidate modifiers through `candidate_var` or `adj_var`.",
+  tree_var <- .sens_check_col(tree_var, data, "tree_var")
+  if (cat_var %in% tree_var)
+    stop("`tree_var` must not include `cat_var`.", call. = FALSE)
+  if (anyDuplicated(tree_var))
+    stop("`tree_var` must not contain duplicates.", call. = FALSE)
+  if (is.null(tree_var)) tree_var <- adj_var
+  if (!length(tree_var))
+    stop("Supply the candidate modifiers through `tree_var` or `adj_var`.",
          call. = FALSE)
-  covars <- unique(c(adj_var, candidate_var))
+  covars <- unique(c(adj_var, tree_var))
   is_surv <- isTRUE(surv)
   if (!is_surv && !missing(time))
     stop("`time` only applies to survival outcomes (`surv = TRUE`).",
          call. = FALSE)
 
   # Candidate type and levels are fixed on the full data, before any fit.
-  kind <- vapply(candidate_var, function(v) {
+  kind <- vapply(tree_var, function(v) {
     x <- data[[v]]
     if (!(is.numeric(x) || is.factor(x) || is.character(x) || is.logical(x)))
-      stop(sprintf("`candidate_var` column `%s` must be numeric, logical, factor or character.",
+      stop(sprintf("`tree_var` column `%s` must be numeric, logical, factor or character.",
                    v), call. = FALSE)
     k <- length(unique(x[!is.na(x)]))
     if (k < 2L)
-      stop(sprintf("`candidate_var` column `%s` is constant.", v), call. = FALSE)
+      stop(sprintf("`tree_var` column `%s` is constant.", v), call. = FALSE)
     if (k == 2L) return("binary")
     if (is.numeric(x)) return("continuous")
-    stop(sprintf("`candidate_var` column `%s` has %d levels, but a categorical candidate needs exactly two levels: code the others as 0/1 indicators, or read its joint test in get_hte()$importance$p_het.",
+    stop(sprintf("`tree_var` column `%s` has %d levels, but a categorical candidate needs exactly two levels: code the others as 0/1 indicators, or read its joint test in get_hte()$importance$p_het.",
                  v, k), call. = FALSE)
   }, character(1L), USE.NAMES = FALSE)
-  levs <- lapply(candidate_var, function(v) {
+  levs <- lapply(tree_var, function(v) {
     x <- data[[v]]
     if (is.factor(x)) levels(droplevels(x)) else
       as.character(sort(unique(x[!is.na(x)])))
@@ -365,7 +365,7 @@ get_hte_unihtee <- function(data,
            call. = FALSE)
     outcome <- .sens_check_col(surv, data, "surv", n = 1L)
     if (outcome %in% c(cat_var, covars))
-      stop("`adj_var` / `candidate_var` must not include the outcome column.",
+      stop("`adj_var` / `tree_var` must not include the outcome column.",
            call. = FALSE)
     backend_args <- .merge_named_arg(glm_args, list(folds = 5L, ps_trim = 0.01),
                                      "glm_args")
@@ -461,11 +461,11 @@ get_hte_unihtee <- function(data,
   # continuous candidate -- or NA with a warning.
   project <- function(j, phi, m) {
     cont <- kind[j] == "continuous"
-    x    <- d[[candidate_var[j]]]
+    x    <- d[[tree_var[j]]]
     if (!cont) x <- match(as.character(x), levs[[j]]) - 1L
     pr <- .uni_project(x, phi, W, wt, cl, beyond, cont)
     if (!is.null(pr$why)) {
-      warning(sprintf("`%s` (%s): %s; estimate set to NA.", candidate_var[j],
+      warning(sprintf("`%s` (%s): %s; estimate set to NA.", tree_var[j],
                       m, pr$why), call. = FALSE)
       return(rep(NA_real_, 4L))
     }
@@ -479,13 +479,13 @@ get_hte_unihtee <- function(data,
                      vapply(levs, function(l) paste(l[2L], "vs", l[1L]),
                             character(1L)))
   vip <- do.call(rbind, lapply(measure, function(m) {
-    vals <- vapply(seq_along(candidate_var),
+    vals <- vapply(seq_along(tree_var),
                    function(j) project(j, scores[[m]], m), numeric(4L))
     b  <- vals[3L, ]
     se <- vals[4L, ]
     tr <- if (m == "diff") identity else exp
     p  <- 2 * stats::pnorm(-abs(b / se))
-    out <- data.frame(variable = candidate_var, type = kind,
+    out <- data.frame(variable = tree_var, type = kind,
                       contrast = contrast, n = as.integer(vals[1L, ]),
                       sd = vals[2L, ], measure = m, estimate = tr(b),
                       std.error = se, conf.low = tr(b - z * se),
@@ -506,13 +506,13 @@ get_hte_unihtee <- function(data,
          hte = if (method == "grf") res),
     analysis = list(
       method = method, outcome_type = type, cat_var = cat_var,
-      treated = treated, surv = surv, candidate_var = candidate_var,
+      treated = treated, surv = surv, tree_var = tree_var,
       adj_var = adj_var, covariates = covars, measure = measure,
       target = target, time = if (is_surv) time else NULL, outcome = outcome,
       conf_level = conf_level, n = length(W), n_treat = sum(W),
       ps_range = range(e), seed = seed, backend_args = backend_args,
-      candidate_type = stats::setNames(kind, candidate_var),
-      candidate_levels = stats::setNames(levs, candidate_var),
+      candidate_type = stats::setNames(kind, tree_var),
+      candidate_levels = stats::setNames(levs, tree_var),
       weights = if (any(wt != 1)) wt, clusters = if (length(cl)) cl))
 }
 

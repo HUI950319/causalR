@@ -230,7 +230,7 @@ test_that("backend errors identify the affected model and warnings are retained"
 
 test_that("the public signature and documentation expose all defaults", {
   expect_identical(names(formals(get_hte_select)),
-                   c("data", "cat_var", "candidate_var", "surv", "match_var", "ps_var",
+                   c("data", "cat_var", "tree_var", "surv", "match_var", "ps_var",
                      "n_select", "imp_metric", "sel_metric", "fit_args",
                      "eval_args", "seed", "verbose"))
   expect_identical(eval(formals(get_hte_select)$fit_args),

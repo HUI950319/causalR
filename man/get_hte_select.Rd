@@ -7,7 +7,7 @@
 get_hte_select(
   data,
   cat_var,
-  candidate_var,
+  tree_var,
   surv = TRUE,
   match_var = NULL,
   ps_var = NULL,
@@ -29,7 +29,7 @@ no missing or non-finite values. No rows are dropped or imputed.}
 logical, or a two-level factor/character column. The second level is the
 treated arm (character levels are sorted).}
 
-\item{candidate_var}{Nonempty character vector of distinct candidate
+\item{tree_var}{Nonempty character vector of distinct candidate
 effect-modifier columns. Numeric, logical, factor and character columns
 are supported; constant columns are rejected. Input order breaks ranking
 ties. Treatment, outcome, matching and propensity columns are excluded.}

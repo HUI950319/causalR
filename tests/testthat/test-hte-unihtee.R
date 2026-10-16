@@ -132,10 +132,10 @@ test_that("survival outcomes run through the forest on both scales", {
   expect_no_warning(for (q in c(p$patches$plots, list(p))) ggplot2::ggplot_build(q))
 })
 
-test_that("candidate_var narrows the table and joins the adjustment set", {
+test_that("tree_var narrows the table and joins the adjustment set", {
   skip_if_not_installed("sandwich")
   d   <- uni_cont_data(n = 400L)
-  res <- get_hte_unihtee(d, cat_var = "a", candidate_var = "w3",
+  res <- get_hte_unihtee(d, cat_var = "a", tree_var = "w3",
                          adj_var = c("w1", "w2"), surv = "y", method = "glm")
   expect_equal(res$vip$variable, "w3")
   expect_equal(attr(res, "analysis")$covariates, c("w1", "w2", "w3"))
@@ -162,7 +162,7 @@ test_that("invalid input stops with a pointed message", {
   expect_error(f(adj_var = c("w1", "one")), "constant")
   expect_error(f(adj_var = "w1", glm_args = list(nfold = 5)), "unknown")
   expect_error(f(adj_var = "w1", time = 60), "survival")
-  expect_error(f(adj_var = "w1", candidate_var = "a"), "cat_var")
+  expect_error(f(adj_var = "w1", tree_var = "a"), "cat_var")
   expect_error(get_hte_unihtee(d, cat_var = "a", adj_var = "w1", method = "glm"),
                "method = \"grf\"")
 })
