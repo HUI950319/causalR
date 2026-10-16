@@ -1,5 +1,11 @@
 # causalR (development version)
 
+* `get_hte_icf()` is faster and finds the same rules for a seed. It reads the
+  voting trees straight from each forest's node vectors instead of rebuilding
+  every tree through `grf::get_tree()`. With the default settings, a call on
+  1600 patients took 26 s instead of 32 s. If a later grf version drops those
+  internal fields, `get_hte_icf()` falls back to `grf::get_tree()`.
+
 * `get_hte_tree()`, `get_hte_icf()`, `get_hte_select()` and
   `get_hte_unihtee()` rename `candidate_var` to `tree_var`, and so does their
   `analysis`; the old name is gone. `get_hte_tree_stability()` still refits

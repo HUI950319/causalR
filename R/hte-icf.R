@@ -8,6 +8,7 @@
 #                         rules on the discovery part, estimate them on the rest
 #   L2  .icf_discover()   screen, grow `n_forest` forests, keep each forest's
 #                         best pruned tree per depth, vote
+#   L2  .icf_trees()      a forest's trees as node vectors
 #   L2  .icf_leaves()     readable rule and voting key of every leaf
 #   L2  .icf_assign()     leaf of each row under a partition
 #   L2  .icf_party()      the selected tree as a partykit party ($tree)
@@ -120,32 +121,28 @@
         cbind(1, W, forest$predictions[, 1L], r^2, r * v, v^2)
       } else G0
       top <- rep(list(list(score = -Inf)), length(P$j))
-      for (t in seq_len(forest[["_num_trees"]])) {
-        tr    <- grf::get_tree(forest, t)
-        nodes <- tr$nodes
-        leaf  <- vapply(nodes, function(x) x$is_leaf, logical(1L))
+      for (tr in .icf_trees(forest)) {
+        leaf <- tr$leaf
+        var  <- tr$var
+        val  <- tr$val
+        kid  <- tr$kid
         # By default a tree is judged on the rows it did not choose its splits
         # on: its honest half and the rows it never drew. The iCF code uses
         # its honest leaf samples only.
-        honest <- unlist(lapply(nodes[leaf], function(x) x$samples))
+        honest <- tr$honest
         e <- if (leafs) replace(numeric(n), honest, 1) else {
           e <- rep(1, n)
-          e[setdiff(tr$drawn_samples, honest)] <- 0
+          e[setdiff(tr$drawn, honest)] <- 0
           e
         }
         Ge    <- G * e
         min_n <- max(2L, ceiling(ra$min_leaf * sum(e)))
-        pick  <- function(field) vapply(nodes, function(x)
-          if (x$is_leaf) NA_real_ else as.numeric(x[[field]]), numeric(1L))
-        var <- pick("split_variable")
-        val <- pick("split_value")
-        kid <- cbind(pick("left_child"), pick("right_child"))
 
         # Stats (patients, treated, then the loss sums) of the node each row
         # sits in at every depth; a row at a leaf stays there.
-        cur <- rep(1L, n)
+        cur <- rep(tr$root, n)
         tally <- function() {
-          s <- matrix(0, length(nodes), ncol(Ge))
+          s <- matrix(0, length(leaf), ncol(Ge))
           r <- rowsum(Ge, cur)
           s[as.integer(rownames(r)), ] <- r
           s
@@ -167,7 +164,7 @@
         } else function(s) s[4L] - s[3L]^2 / s[1L]
         own_of <- function(s)
           if (s[1L] > 1) raw(s) * s[1L]^2 / (s[1L] - 1)^2 else 0
-        root <- st[[1L]][1L, ]
+        root <- st[[1L]][tr$root, ]
         own0 <- own_of(root)
         pen  <- ra$penalty * raw(root) / (root[1L] - 1)
         prune <- function(id, k, d) {
@@ -188,35 +185,36 @@
           if (k >= d || leaf[id]) integer() else
             c(id, whole(kid[id, 1L], k + 1L, d), whole(kid[id, 2L], k + 1L, d))
         for (i in seq_along(P$j)) {
-          p <- prune(1L, 0L, P$d[i])
+          p <- prune(tr$root, 0L, P$d[i])
           # The iCF code takes the smallest pruned loss summed over the leaf
           # samples; otherwise the largest drop per patient
           score <- if (leafs) -p$loss else (own0 - p$loss) / sum(e)
           if (score > top[[i]]$score)
-            top[[i]] <- list(score = score, nodes = nodes,
-                             keep = if (ra$prune) p$keep else whole(1L, 0L, P$d[i]))
+            top[[i]] <- list(score = score, tree = tr,
+                             keep = if (ra$prune) p$keep else
+                               whole(tr$root, 0L, P$d[i]))
         }
       }
 
-      # Kept splits as paths from the root ("", "L", "LR", ...), columns of `X`
+      # Kept splits as paths from the root ("", "L", "LR", ...), columns of
+      # `X`, breadth first
       for (i in seq_along(P$j)) {
-        nodes <- top[[i]]$nodes
-        tree  <- data.frame(path = character(), col = integer(),
-                            value = numeric(), stringsAsFactors = FALSE)
-        todo  <- list(list(1L, ""))
-        while (length(todo)) {
-          id <- todo[[1L]][[1L]]
-          pa <- todo[[1L]][[2L]]
-          todo <- todo[-1L]
-          if (id %in% top[[i]]$keep) {
-            x <- nodes[[id]]
-            tree[nrow(tree) + 1L, ] <- list(pa, sc[x$split_variable],
-                                            x$split_value)
-            todo <- c(todo, list(list(x$left_child, paste0(pa, "L")),
-                                 list(x$right_child, paste0(pa, "R"))))
-          }
+        tr <- top[[i]]$tree
+        id <- tr$root
+        pa <- ""
+        ids <- paths <- NULL
+        while (length(id)) {
+          k     <- id %in% top[[i]]$keep
+          id    <- id[k]
+          pa    <- pa[k]
+          ids   <- c(ids, id)
+          paths <- c(paths, pa)
+          id <- c(rbind(tr$kid[id, 1L], tr$kid[id, 2L]))
+          pa <- c(rbind(paste0(pa, "L"), paste0(pa, "R")))
         }
-        best[[P$j[i]]][[b]] <- tree
+        best[[P$j[i]]][[b]] <- data.frame(
+          path = as.character(paths), col = sc[tr$var[ids]],
+          value = as.numeric(tr$val[ids]), stringsAsFactors = FALSE)
       }
     }
   }
@@ -225,13 +223,23 @@
   # partition keeps its most frequent tree shape, at median split values. The
   # leaf keys are sorted, as the leaves of X1-then-X3 and X3-then-X1 trees
   # come in different orders. The iCF code votes on the tree shape itself and
-  # averages the split values.
+  # averages the split values. A leaf key depends on the split values of
+  # binary and coded columns only, so .icf_leaves() runs once per tree that
+  # differs in more than its continuous cut-offs.
   shape_of <- function(tr) paste(tr$path, tr$col, collapse = ";")
-  key_of <- if (identical(ra$vote, "shape")) shape_of else function(tr)
-    paste(sort(.icf_leaves(tr, cols)$key), collapse = " | ")
+  key_of <- if (identical(ra$vote, "shape")) function(trees)
+    vapply(trees, shape_of, character(1L)) else function(trees) {
+    sig <- vapply(trees, function(tr) paste(tr$path, tr$col, ifelse(
+      cols$type[tr$col] == "num" & is.finite(tr$value), "",
+      sprintf("%a", tr$value)), collapse = ";"), character(1L))
+    u <- !duplicated(sig)
+    key <- vapply(trees[u], function(tr)
+      paste(sort(.icf_leaves(tr, cols)$key), collapse = " | "), character(1L))
+    key[match(sig, sig[u])]
+  }
   parts <- lapply(seq_along(depth), function(j) {
     trees <- best[[j]]
-    keys  <- vapply(trees, key_of, character(1L))
+    keys  <- key_of(trees)
     u     <- unique(keys)
     win   <- u[which.max(tabulate(match(keys, u)))]
     wins  <- which(keys == win)
@@ -249,6 +257,44 @@
   })
 
   list(parts = parts, g = g, fit = fit, screened = screened)
+}
+
+# The trees of a grf forest as vectors indexed by node: the root, split
+# column and value, the two children, whether the node is a leaf (no
+# children), the honest (leaf) samples and the drawn samples, all 1-based.
+# They are read from the forest's own fields (grf internals, checked against
+# grf 2.6.1), where the node numbers are grf's: grf::get_tree() renumbers the
+# nodes breadth first and builds each node and its leaf statistics in R, which
+# took most of a get_hte_icf() run. grf keeps samples on leaves only, and a
+# node its pruning of empty leaves cuts off is left empty. A forest without
+# those fields goes through grf::get_tree().
+#' @keywords internal
+#' @noRd
+.icf_trees <- function(forest) {
+  nt <- seq_len(forest[["_num_trees"]])
+  if (!all(c("_root_nodes", "_child_nodes", "_split_vars", "_split_values",
+             "_leaf_samples", "_drawn_samples") %in% names(forest)))
+    return(lapply(nt, function(t) {
+      tr    <- grf::get_tree(forest, t)
+      nodes <- tr$nodes
+      leaf  <- vapply(nodes, function(x) x$is_leaf, logical(1L))
+      pick  <- function(field) vapply(nodes, function(x)
+        if (x$is_leaf) NA_real_ else as.numeric(x[[field]]), numeric(1L))
+      list(root = 1, var = pick("split_variable"), val = pick("split_value"),
+           kid = cbind(pick("left_child"), pick("right_child")), leaf = leaf,
+           honest = unlist(lapply(nodes[leaf], function(x) x$samples)),
+           drawn = tr$drawn_samples)
+    }))
+  lapply(nt, function(t) {
+    ch   <- forest[["_child_nodes"]][[t]]
+    leaf <- ch[[1L]] == 0 & ch[[2L]] == 0
+    list(root = forest[["_root_nodes"]][[t]] + 1,
+         var = forest[["_split_vars"]][[t]] + 1,
+         val = forest[["_split_values"]][[t]],
+         kid = cbind(ch[[1L]], ch[[2L]]) + 1, leaf = leaf,
+         honest = unlist(forest[["_leaf_samples"]][[t]][leaf]) + 1,
+         drawn = forest[["_drawn_samples"]][[t]] + 1)
+  })
 }
 
 

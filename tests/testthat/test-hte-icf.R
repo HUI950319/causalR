@@ -54,6 +54,40 @@ test_that("trees splitting X1 and X3 in either order vote for one partition", {
   expect_identical(res$vote$share, 1)
 })
 
+test_that(".icf_trees() reads grf's node fields as grf::get_tree() does", {
+  skip_if_not_installed("grf")
+  d <- icf_data(n = 400L)
+  X <- as.matrix(d[c("X1", "X2", "X3", "X4")])
+  # Pruned empty leaves, no honesty and kept empty leaves
+  for (extra in list(list(min.node.size = 1), list(honesty = FALSE),
+                     list(honesty.prune.leaves = FALSE))) {
+    f <- do.call(grf::causal_forest, c(list(X, d$y, d$z, num.trees = 20L,
+                                            seed = 1), extra))
+    ok <- vapply(seq_along(trees <- .icf_trees(f)), function(t) {
+      tr <- trees[[t]]
+      g  <- grf::get_tree(f, t)
+      # Breadth first from the root, as get_tree() numbers the nodes
+      bfs <- tr$root
+      i <- 1L
+      while (i <= length(bfs)) {
+        if (!tr$leaf[bfs[i]]) bfs <- c(bfs, tr$kid[bfs[i], ])
+        i <- i + 1L
+      }
+      leaf  <- vapply(g$nodes, function(x) x$is_leaf, logical(1L))
+      inner <- g$nodes[!leaf]
+      identical(tr$leaf[bfs], leaf) &&
+        identical(tr$var[bfs[!leaf]],
+                  vapply(inner, function(x) x$split_variable, numeric(1L))) &&
+        identical(tr$val[bfs[!leaf]],
+                  vapply(inner, function(x) x$split_value, numeric(1L))) &&
+        identical(sort(tr$honest),
+                  sort(unlist(lapply(g$nodes[leaf], function(x) x$samples)))) &&
+        identical(tr$drawn, g$drawn_samples)
+    }, logical(1L))
+    expect_true(all(ok))
+  }
+})
+
 test_that("get_hte_icf() keeps every patient together when the effect is constant", {
   skip_if_not_installed("grf")
   d <- icf_data(tau = function(d) rep(0.5, nrow(d)))
