@@ -890,7 +890,9 @@ test_that("ci_shape, overall_shape and box_col draw a meta-analysis style", {
   expect_length(sq, 3L)
   # the most precise level gets the largest square
   se <- attr(m, "subgroup")$std.error
+  grDevices::pdf(NULL)   # converting units needs a device, not the default one
   side <- vapply(sq, function(k) grid::convertWidth(k$width, "in", TRUE), 0)
+  grDevices::dev.off()
   expect_identical(unname(which.max(side)), which.min(se))
   # the summary row is bold across its columns
   bold <- function(lab) Filter(function(k) identical(k$label, lab),
