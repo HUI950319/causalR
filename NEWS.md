@@ -6,12 +6,13 @@
     table and on the axis; `FALSE` restores three decimals. `xlim`,
     `ticks_at`, `effect` and `attr(p, "subgroup")` keep the scale of the
     estimates.
-  - The estimate column is headed by the measure and its interval, e.g.
-    `"3-year DSS difference, % (95% CI)"` instead of
-    `"St(3-year) difference"`, and the axis names the comparison, e.g.
+  - The estimate column is headed by the measure, e.g.
+    `"3-year DSS difference, %"` instead of `"St(3-year) difference"`, and
+    the axis names the comparison, e.g.
     `"Difference in 3-year DSS (%), NACT - no NACT"`: an exposure with
     yes / no levels is named after `cat_var`. `est_label` and `xlab` replace
-    either text.
+    either text; a `"\n"` in `est_label` starts a header line, which takes a
+    table row of its own.
   - `direction_labels = TRUE`, the new default, writes in the header row which
     arm each side of the reference line favours (survival outcomes) or has the
     higher value (others), e.g. `"Favours no NACT"` and `"Favours NACT"`;

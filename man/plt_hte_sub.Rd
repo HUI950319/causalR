@@ -47,8 +47,8 @@ otherwise add it with \code{get_hte(sub_var = )}.}
 an outcome probability, a binary outcome or \eqn{S(t)}.
 Relative effects do not support forests with sample weights or clusters.}
 
-\item{conf_level}{Confidence level of the intervals, named in the default
-\code{est_label}. Default \code{0.95}, whatever level \code{x} was computed with.}
+\item{conf_level}{Confidence level of the intervals, not printed on the
+plot. Default \code{0.95}, whatever level \code{x} was computed with.}
 
 \item{effect}{\code{NULL} (default) or rows to replace, e.g. with an estimate
 from a published study: a named list whose elements are named by a
@@ -92,9 +92,11 @@ stays \code{M}). Only the drawing changes: \code{sub_var}, \code{effect} and
 \code{attr(p, "subgroup")} keep the original names.}
 
 \item{est_label}{\code{NULL} (default) or a single string heading the estimate
-column. \code{NULL} names the measure, \verb{\%} when \code{percent} applies, and the
-interval, e.g. \code{"3-year DSS difference, \% (95\% CI)"} for a survival
-probability at \code{time = 36} or \code{"Risk ratio (95\% CI)"}.}
+column. \code{NULL} names the measure, and \verb{\%} when \code{percent} applies, e.g.
+\code{"3-year DSS difference, \%"} for a survival probability at \code{time = 36}
+or \code{"Risk ratio"}; the interval level is not named. \code{"\\n"} starts a new
+header line, e.g. \code{"3-year DSS difference, \%\\n(95\% CI)"}: each line takes
+a table row, and the other headers sit on the last one.}
 
 \item{xlab}{\code{NULL} (default) or a single string for the axis title. \code{NULL}
 names the measure and the comparison, treated arm first, e.g.

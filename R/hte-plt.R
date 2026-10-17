@@ -586,8 +586,8 @@ plt_hte_dep <- function(x,
 #'   [get_hte()]. `"ratio"` and `"OR"` are drawn on a log axis; `"OR"` needs
 #'   an outcome probability, a binary outcome or \eqn{S(t)}.
 #'   Relative effects do not support forests with sample weights or clusters.
-#' @param conf_level Confidence level of the intervals, named in the default
-#'   `est_label`. Default `0.95`, whatever level `x` was computed with.
+#' @param conf_level Confidence level of the intervals, not printed on the
+#'   plot. Default `0.95`, whatever level `x` was computed with.
 #' @param effect `NULL` (default) or rows to replace, e.g. with an estimate
 #'   from a published study: a named list whose elements are named by a
 #'   variable of `sub_var`, holding strings named by its levels; by a level
@@ -623,9 +623,11 @@ plt_hte_dep <- function(x,
 #'   stays `M`). Only the drawing changes: `sub_var`, `effect` and
 #'   `attr(p, "subgroup")` keep the original names.
 #' @param est_label `NULL` (default) or a single string heading the estimate
-#'   column. `NULL` names the measure, `%` when `percent` applies, and the
-#'   interval, e.g. `"3-year DSS difference, % (95% CI)"` for a survival
-#'   probability at `time = 36` or `"Risk ratio (95% CI)"`.
+#'   column. `NULL` names the measure, and `%` when `percent` applies, e.g.
+#'   `"3-year DSS difference, %"` for a survival probability at `time = 36`
+#'   or `"Risk ratio"`; the interval level is not named. `"\n"` starts a new
+#'   header line, e.g. `"3-year DSS difference, %\n(95% CI)"`: each line takes
+#'   a table row, and the other headers sit on the last one.
 #' @param xlab `NULL` (default) or a single string for the axis title. `NULL`
 #'   names the measure and the comparison, treated arm first, e.g.
 #'   `"Difference in 3-year DSS (%), NACT - no NACT"`. An exposure whose two
@@ -1035,9 +1037,9 @@ plt_hte_sub <- function(x,
   yn <- tolower(c(a$treated, ref))
   arms <- if (yn[1L] %in% c("yes", "1", "true") && yn[2L] %in% c("no", "0", "false"))
     c(a$cat_var, paste("no", a$cat_var)) else c(a$treated, ref)
+  # The interval is left out of the header, which keeps the column narrow
   if (is.null(est_label))
-    est_label <- sprintf("%s%s (%s%% CI)", lab, if (pct) ", %" else "",
-                         format(100 * conf_level))
+    est_label <- paste0(lab, if (pct) ", %")
   # Left and right of the reference line: the arm a survival effect favours
   # (an event risk ratio below 1 favours the treated arm), otherwise the arm
   # with the higher value
@@ -1090,20 +1092,26 @@ plt_hte_sub <- function(x,
   body$label <- ifelse(flush, disp, paste0("   ", disp))
   cols <- c("label", if (show_n) "n", "est", if (show_pvalue) "p",
             if (show_pinter) "p_inter")
-  text <- rbind(c("Subgroup",
-                  if (show_n) sprintf("N (%s / %s)", a$treated, ref),
-                  est_label,
-                  if (show_pvalue) "P", if (show_pinter) "P for interaction"),
-                as.matrix(body[cols]))
+  # forestplot draws every row at one height, so a header cell with line
+  # breaks takes one table row per line; shorter cells sit on the last one
+  head <- strsplit(c("Subgroup",
+                     if (show_n) sprintf("N (%s / %s)", a$treated, ref),
+                     est_label,
+                     if (show_pvalue) "P", if (show_pinter) "P for interaction"),
+                   "\n", fixed = TRUE)
+  n_hdr <- max(lengths(head))
+  head  <- vapply(head, function(l) c(rep("", n_hdr - length(l)), l),
+                  character(n_hdr))
+  text  <- rbind(matrix(head, nrow = n_hdr), as.matrix(body[cols]))
   dimnames(text) <- NULL
-  mean  <- c(NA, body$mean)
-  lower <- c(NA, body$lower)
-  upper <- c(NA, body$upper)
-  bold  <- c(TRUE, body$bold)
+  mean  <- c(rep(NA, n_hdr), body$mean)
+  lower <- c(rep(NA, n_hdr), body$lower)
+  upper <- c(rep(NA, n_hdr), body$upper)
+  bold  <- c(rep(TRUE, n_hdr), body$bold)
   # The "All patients" row: its glyph, its colour, and with "summary" a
   # summary row of forestplot. Squares are sized by the inverse variance of
   # their estimate, as in a meta-analysis; diamonds keep one size.
-  ov_row <- if (overall) 2L else 0L
+  ov_row <- if (overall) n_hdr + 1L else 0L
   is_sum <- bold
   is_sum[ov_row] <- overall_shape == "summary"
   shape  <- rep(ci_shape, length(mean))
@@ -1214,7 +1222,8 @@ plt_hte_sub <- function(x,
   if (overall && !is_sum[ov_row])
     lab_gp[[1L]][[1L]] <- grid::gpar(cex = cex_bold, fontface = "bold")
   row_in <- row_height   # pinned, or assumed by the suggested size
-  rules  <- list("1" = grid::gpar(lty = 1, lwd = 2), "2" = grid::gpar(lty = 2))
+  rules  <- stats::setNames(list(grid::gpar(lty = 1, lwd = 2), grid::gpar(lty = 2)),
+                            c("1", n_hdr + 1L))
   rules[[as.character(nrow(text) + 1L)]] <-
     grid::gpar(lty = 1, lwd = 2, columns = seq_len(n_text))
   p <- on_null(forestplot::forestplot(
@@ -1245,7 +1254,7 @@ plt_hte_sub <- function(x,
                        valueOnly = TRUE) + 0.1
   head_vp <- function() {
     vps <- grid::grid.ls(viewports = TRUE, grobs = FALSE, print = FALSE)$name
-    grep("^Line_1_", vps, value = TRUE)[1L]
+    grep(sprintf("^Line_%d_", n_hdr), vps, value = TRUE)[1L]
   }
   draw_dir <- function() {
     if (is.null(dir_lab) || is.na(vp <- head_vp())) return(invisible())
@@ -1264,7 +1273,7 @@ plt_hte_sub <- function(x,
     # width as in RegR::plt_eff2(), and about 0.3 in a row.
     text_in <- on_null(sum(vapply(seq_len(n_text), function(j)
       max(vapply(seq_len(nrow(text)), function(i) {
-        gp <- if (is_sum[i] || (overall && i == 2L && j == 1L))
+        gp <- if (is_sum[i] || (i == ov_row && j == 1L))
                 grid::gpar(cex = cex_bold, fontface = "bold")
               else grid::gpar(cex = cex_lab)
         grid::convertWidth(grid::grobWidth(grid::textGrob(text[i, j], gp = gp)),
