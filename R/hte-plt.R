@@ -622,13 +622,23 @@ plt_hte_dep <- function(x,
 #'   renames variable rows only (its keys are variable names, so a level `M`
 #'   stays `M`). Only the drawing changes: `sub_var`, `effect` and
 #'   `attr(p, "subgroup")` keep the original names.
-#' @param est_label `NULL` (default) or a single string heading the estimate
-#'   column. `NULL` names the measure, and `%` when `axis_args$percent`
-#'   applies, e.g.
-#'   `"3-year DSS difference, %"` for a survival probability at `time = 36`
-#'   or `"Risk ratio"`; the interval level is not named. `"\n"` starts a new
-#'   header line, e.g. `"3-year DSS difference, %\n(95% CI)"`: each line takes
-#'   a table row, and the other headers sit on the last one.
+#' @param header_list `NULL` (default) or a named list of single strings
+#'   replacing column headers, keyed as in `RegR::plt_eff2()`; a header left
+#'   out keeps its default. `"\n"` starts a new header line, e.g.
+#'   `list(effect = "3-year DSS difference, %\n(95% CI)")`: each line takes a
+#'   table row, and the other headers sit on the last one.
+#'   \describe{
+#'     \item{`label`}{The label column. Default `"Subgroup"`.}
+#'     \item{`count`}{The patients per arm. Default `"N (<treated> /
+#'       <reference>)"`, e.g. `"N (1 / 0)"`.}
+#'     \item{`effect`}{The estimate column. The default names the measure, and
+#'       `%` when `axis_args$percent` applies, e.g. `"3-year DSS difference,
+#'       %"` for a survival probability at `time = 36` or `"Risk ratio"`; the
+#'       interval level is not named.}
+#'     \item{`p.value`}{The `P` column. Default `"P"`.}
+#'     \item{`p.interaction`}{The "P for interaction" column. Default
+#'       `"P for interaction"`.}
+#'   }
 #' @param xlab `NULL` (default) or a single string for the axis title. `NULL`
 #'   names the measure and the comparison, treated arm first, e.g.
 #'   `"Difference in 3-year DSS (%), NACT - no NACT"`. An exposure whose two
@@ -689,6 +699,9 @@ plt_hte_dep <- function(x,
 #' @param box_col One or two colours: of the glyphs and intervals of the
 #'   subgroup rows, then of the "All patients" row. One colour serves both.
 #'   Default `"blue4"`.
+#' @param ... Deprecated: `est_label`, now `header_list$effect`, keeps working
+#'   for one cycle with a warning and is ignored when `header_list$effect` is
+#'   given as well. Any other name is rejected as an unused argument.
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
 #'   `width` or `height` left out is taken from `attr(p, "plot_size")`. Do not
@@ -703,7 +716,7 @@ plt_hte_dep <- function(x,
 #' The counts are patients per arm, treated first. A level with fewer
 #' than two patients in either arm -- or, for a survival outcome, no patient
 #' in an arm followed beyond `time` -- has no estimate: it is drawn with a
-#' dash, with a warning. For a survival probability the default `est_label`
+#' dash, with a warning. For a survival probability the default effect header
 #' and `xlab` read `<time / 12>-year DSS`, e.g. `10-year DSS` for
 #' `time = 120`: `time` is taken in months, as in \pkg{RegR}.
 #'
@@ -788,7 +801,7 @@ plt_hte_sub <- function(x,
                         show_pvalue = FALSE,
                         show_pinter = FALSE,
                         label_column_list = NULL,
-                        est_label   = NULL,
+                        header_list = NULL,
                         xlab        = NULL,
                         axis_args   = list(xlim = NULL, xticks = NULL,
                                            percent = TRUE,
@@ -798,10 +811,21 @@ plt_hte_sub <- function(x,
                         row_height  = 0.3,
                         ci_shape    = "diamond",
                         box_col     = "blue4",
+                        ...,
                         save        = list()) {
 
   if (!inherits(x, "hte_res"))
     stop("`x` must be an `hte_res` object from get_hte().", call. = FALSE)
+  # `est_label` is deprecated and lives in `...`, out of the usage; any other
+  # name is a typo, not a silent no-op
+  dots <- list(...)
+  bad  <- if (is.null(names(dots))) rep("", length(dots)) else names(dots)
+  bad  <- c(setdiff(bad, "est_label"), bad[duplicated(bad)])
+  if (length(bad))
+    stop(sprintf("unused argument(s) in plt_hte_sub(): %s.",
+                 paste(unique(ifelse(nzchar(bad), bad, "<unnamed>")),
+                       collapse = ", ")),
+         call. = FALSE)
   measure <- match.arg(measure)
   if (!is.numeric(conf_level) || length(conf_level) != 1L ||
       is.na(conf_level) || conf_level <= 0 || conf_level >= 1)
@@ -850,7 +874,19 @@ plt_hte_sub <- function(x,
       !is.finite(row_height) || row_height <= 0)
     stop("`row_height` must be a single positive height in inches.",
          call. = FALSE)
-  texts <- list(est_label = est_label, xlab = xlab)
+  # The header overrides of RegR::plt_eff2(), by its column keys
+  heads <- .merge_named_arg(
+    header_list, list(label = NULL, count = NULL, effect = NULL,
+                      p.value = NULL, p.interaction = NULL), "header_list")
+  if (!is.null(dots[["est_label"]])) {
+    warning("`est_label` is deprecated in plt_hte_sub(); use `header_list$effect` instead.",
+            if (!is.null(heads$effect))
+              " `header_list$effect` wins; `est_label` is ignored." else "",
+            call. = FALSE)
+    if (is.null(heads$effect)) heads$effect <- dots[["est_label"]]
+  }
+  texts <- c(stats::setNames(heads, paste0("header_list$", names(heads))),
+             list(xlab = xlab))
   for (nm in names(texts))
     if (!is.null(texts[[nm]]) && (!is.character(texts[[nm]]) ||
                                   length(texts[[nm]]) != 1L || is.na(texts[[nm]])))
@@ -1051,9 +1087,6 @@ plt_hte_sub <- function(x,
   yn <- tolower(c(a$treated, ref))
   arms <- if (yn[1L] %in% c("yes", "1", "true") && yn[2L] %in% c("no", "0", "false"))
     c(a$cat_var, paste("no", a$cat_var)) else c(a$treated, ref)
-  # The interval is left out of the header, which keeps the column narrow
-  if (is.null(est_label))
-    est_label <- paste0(lab, if (pct) ", %")
   # Left and right of the reference line: the arm a survival effect favours
   # (an event risk ratio below 1 favours the treated arm), otherwise the arm
   # with the higher value
@@ -1107,11 +1140,14 @@ plt_hte_sub <- function(x,
   cols <- c("label", if (show_n) "n", "est", if (show_pvalue) "p",
             if (show_pinter) "p_inter")
   # forestplot draws every row at one height, so a header cell with line
-  # breaks takes one table row per line; shorter cells sit on the last one
-  head <- strsplit(c("Subgroup",
-                     if (show_n) sprintf("N (%s / %s)", a$treated, ref),
-                     est_label,
-                     if (show_pvalue) "P", if (show_pinter) "P for interaction"),
+  # breaks takes one table row per line; shorter cells sit on the last one.
+  # The interval is left out of the effect header, which keeps it narrow.
+  hd <- function(key, auto) if (is.null(heads[[key]])) auto else heads[[key]]
+  head <- strsplit(c(hd("label", "Subgroup"),
+                     if (show_n) hd("count", sprintf("N (%s / %s)", a$treated, ref)),
+                     hd("effect", paste0(lab, if (pct) ", %")),
+                     if (show_pvalue) hd("p.value", "P"),
+                     if (show_pinter) hd("p.interaction", "P for interaction")),
                    "\n", fixed = TRUE)
   n_hdr <- max(lengths(head))
   head  <- vapply(head, function(l) c(rep("", n_hdr - length(l)), l),

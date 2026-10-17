@@ -15,7 +15,7 @@ plt_hte_sub(
   show_pvalue = FALSE,
   show_pinter = FALSE,
   label_column_list = NULL,
-  est_label = NULL,
+  header_list = NULL,
   xlab = NULL,
   axis_args = list(xlim = NULL, xticks = NULL, percent = TRUE, direction_labels = TRUE),
   title = NULL,
@@ -23,6 +23,7 @@ plt_hte_sub(
   row_height = 0.3,
   ci_shape = "diamond",
   box_col = "blue4",
+  ...,
   save = list()
 )
 }
@@ -87,13 +88,21 @@ renames variable rows only (its keys are variable names, so a level \code{M}
 stays \code{M}). Only the drawing changes: \code{sub_var}, \code{effect} and
 \code{attr(p, "subgroup")} keep the original names.}
 
-\item{est_label}{\code{NULL} (default) or a single string heading the estimate
-column. \code{NULL} names the measure, and \verb{\%} when \code{axis_args$percent}
-applies, e.g.
-\code{"3-year DSS difference, \%"} for a survival probability at \code{time = 36}
-or \code{"Risk ratio"}; the interval level is not named. \code{"\\n"} starts a new
-header line, e.g. \code{"3-year DSS difference, \%\\n(95\% CI)"}: each line takes
-a table row, and the other headers sit on the last one.}
+\item{header_list}{\code{NULL} (default) or a named list of single strings
+replacing column headers, keyed as in \code{RegR::plt_eff2()}; a header left
+out keeps its default. \code{"\\n"} starts a new header line, e.g.
+\code{list(effect = "3-year DSS difference, \%\\n(95\% CI)")}: each line takes a
+table row, and the other headers sit on the last one.
+\describe{
+\item{\code{label}}{The label column. Default \code{"Subgroup"}.}
+\item{\code{count}}{The patients per arm. Default \code{"N (<treated> / <reference>)"}, e.g. \code{"N (1 / 0)"}.}
+\item{\code{effect}}{The estimate column. The default names the measure, and
+\verb{\%} when \code{axis_args$percent} applies, e.g. \code{"3-year DSS difference, \%"} for a survival probability at \code{time = 36} or \code{"Risk ratio"}; the
+interval level is not named.}
+\item{\code{p.value}}{The \code{P} column. Default \code{"P"}.}
+\item{\code{p.interaction}}{The "P for interaction" column. Default
+\code{"P for interaction"}.}
+}}
 
 \item{xlab}{\code{NULL} (default) or a single string for the axis title. \code{NULL}
 names the measure and the comparison, treated arm first, e.g.
@@ -162,6 +171,10 @@ spanning the interval, with the whole row in bold: e.g.
 subgroup rows, then of the "All patients" row. One colour serves both.
 Default \code{"blue4"}.}
 
+\item{...}{Deprecated: \code{est_label}, now \code{header_list$effect}, keeps working
+for one cycle with a warning and is ignored when \code{header_list$effect} is
+given as well. Any other name is rejected as an unused argument.}
+
 \item{save}{\code{NULL} or a list with \code{filename}, \code{width} and \code{height}, passed
 to \code{RegR::save_plt()} for PDF output. \code{list()} and \code{NULL} skip saving; a
 \code{width} or \code{height} left out is taken from \code{attr(p, "plot_size")}. Do not
@@ -199,7 +212,7 @@ retain the tree's AIPW or TMLE estimator.
 The counts are patients per arm, treated first. A level with fewer
 than two patients in either arm -- or, for a survival outcome, no patient
 in an arm followed beyond \code{time} -- has no estimate: it is drawn with a
-dash, with a warning. For a survival probability the default \code{est_label}
+dash, with a warning. For a survival probability the default effect header
 and \code{xlab} read \verb{<time / 12>-year DSS}, e.g. \verb{10-year DSS} for
 \code{time = 120}: \code{time} is taken in months, as in \pkg{RegR}.
 }

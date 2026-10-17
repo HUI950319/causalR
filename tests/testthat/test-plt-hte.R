@@ -668,7 +668,7 @@ test_that("label_column_list renames rows; the SEER dictionary names variables o
   expect_identical(trimws(fp_col(q, 1))[2], "Age")
 
   expect_identical(names(formals(plt_hte_sub))[9:11],
-                   c("show_pinter", "label_column_list", "est_label"))
+                   c("show_pinter", "label_column_list", "header_list"))
   expect_error(plt_hte_sub(res, label_column_list = "Sex"), "label_column_list")
   expect_error(plt_hte_sub(res, label_column_list = list(sex = 1)), "label_column_list")
 })
@@ -782,8 +782,9 @@ test_that("fixed_size pins the plot to the size its text needs", {
   skip_if_not_installed("forestplot")
   skip_if_not_installed("ggplotify")
   res <- dep_res()
-  expect_identical(tail(names(formals(plt_hte_sub)), 5L),
-                   c("fixed_size", "row_height", "ci_shape", "box_col", "save"))
+  expect_identical(tail(names(formals(plt_hte_sub)), 6L),
+                   c("fixed_size", "row_height", "ci_shape", "box_col", "...",
+                     "save"))
 
   p <- plt_hte_sub(res, sub_var = "stage")
   size <- attr(p, "plot_size")
@@ -869,7 +870,8 @@ test_that("plt_hte_sub shows percentages, plain titles and direction labels", {
   expect_false(any(c("Higher with no z", "Higher with z") %in% fp_texts(p0)))
   expect_true("Risk difference, z - no z" %in% fp_texts(p0))
 
-  p1 <- plt_hte_sub(res, sub_var = "stage", est_label = "ARD (95% CI)",
+  p1 <- plt_hte_sub(res, sub_var = "stage",
+                    header_list = list(effect = "ARD (95% CI)"),
                     xlab = "Absolute risk difference",
                     axis_args = list(direction_labels = c("Favours control",
                                                           "Favours z")))
@@ -879,7 +881,7 @@ test_that("plt_hte_sub shows percentages, plain titles and direction labels", {
   # each line of a header takes a table row of its own; the direction labels
   # sit in the last header row
   q <- plt_hte_sub(res, sub_var = "stage", conf_level = 0.9,
-                   est_label = "Risk difference, %\n(90% CI)")
+                   header_list = list(effect = "Risk difference, %\n(90% CI)"))
   expect_identical(fp_headers(q)[3], "Risk difference, %\n(90% CI)")
   expect_length(drawn(p, 14, 10)$heights, 6L)
   expect_length(drawn(q, 14, 10)$heights, 7L)
@@ -887,7 +889,8 @@ test_that("plt_hte_sub shows percentages, plain titles and direction labels", {
                                    fp_grobs(q, "text"))[[1L]]$vp$name
   expect_match(vp_of(p, "Higher with z"), "^Line_1_")
   expect_match(vp_of(q, "Higher with z"), "^Line_2_")
-  p3 <- plt_hte_sub(res, sub_var = "stage", est_label = "Risk\ndifference\n(95% CI)")
+  p3 <- plt_hte_sub(res, sub_var = "stage",
+                    header_list = list(effect = "Risk\ndifference\n(95% CI)"))
   expect_identical(fp_headers(p3)[3], "Risk\ndifference\n(95% CI)")
   expect_length(drawn(p3, 14, 10)$heights, 8L)
   # ratios are no percentages
@@ -896,10 +899,39 @@ test_that("plt_hte_sub shows percentages, plain titles and direction labels", {
 
   expect_error(plt_hte_sub(res, axis_args = list(percent = NA)),
                "`axis_args$percent`", fixed = TRUE)
-  expect_error(plt_hte_sub(res, est_label = 1), "`est_label`")
+  expect_error(plt_hte_sub(res, header_list = list(effect = 1)),
+               "`header_list$effect`", fixed = TRUE)
   expect_error(plt_hte_sub(res, xlab = c("a", "b")), "`xlab`")
   expect_error(plt_hte_sub(res, axis_args = list(direction_labels = "left")),
                "`axis_args$direction_labels`", fixed = TRUE)
+})
+
+test_that("plt_hte_sub takes header_list and deprecates est_label", {
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  res <- dep_res()
+  p <- plt_hte_sub(res, sub_var = "stage", show_pvalue = TRUE, show_pinter = TRUE,
+                   header_list = list(count = "N", p.value = "P value",
+                                      p.interaction = "P inter"))
+  # the headers left out keep their defaults
+  expect_identical(fp_headers(p),
+                   c("Subgroup", "N", "Risk difference, %", "P value", "P inter"))
+  # fp_table() finds the header by "Subgroup", so a renamed one is looked up
+  lab <- plt_hte_sub(res, sub_var = "stage", header_list = list(label = "Stage"))
+  expect_true("Stage" %in% fp_texts(lab))
+  expect_false("Subgroup" %in% fp_texts(lab))
+  expect_error(plt_hte_sub(res, header_list = list(estimate = "x")),
+               "unknown field")
+  expect_error(plt_hte_sub(res, est_lab = "x"), "unused argument")
+
+  expect_false("est_label" %in% names(formals(plt_hte_sub)))
+  expect_warning(q <- plt_hte_sub(res, sub_var = "stage", est_label = "ARD"),
+                 "use `header_list$effect` instead", fixed = TRUE)
+  expect_identical(fp_headers(q)[3], "ARD")
+  expect_warning(q <- plt_hte_sub(res, sub_var = "stage", est_label = "ARD",
+                                  header_list = list(effect = "RD")),
+                 "`header_list$effect` wins", fixed = TRUE)
+  expect_identical(fp_headers(q)[3], "RD")
 })
 
 test_that("axis_args gathers the axis settings of plt_hte_sub", {
@@ -975,7 +1007,7 @@ test_that("ci_shape and box_col draw a meta-analysis style", {
   expect_error(plt_hte_sub(res, box_col = c("red", "blue", "green")), "`box_col`")
   expect_error(plt_hte_sub(res, box_col = "notacolour"), "`box_col`")
   expect_identical(names(formals(plt_hte_sub))[10:14],
-                   c("label_column_list", "est_label", "xlab", "axis_args",
+                   c("label_column_list", "header_list", "xlab", "axis_args",
                      "title"))
 })
 

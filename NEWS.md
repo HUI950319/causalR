@@ -15,9 +15,13 @@
     `"3-year DSS difference, %"` instead of `"St(3-year) difference"`, and
     the axis names the comparison, e.g.
     `"Difference in 3-year DSS (%), NACT - no NACT"`: an exposure with
-    yes / no levels is named after `cat_var`. `est_label` and `xlab` replace
-    either text; a `"\n"` in `est_label` starts a header line, which takes a
-    table row of its own.
+    yes / no levels is named after `cat_var`. `header_list$effect` and `xlab`
+    replace either text; a `"\n"` in a header starts a header line, which
+    takes a table row of its own.
+  - `header_list` replaces column headers by the keys of `RegR::plt_eff2()`:
+    `label`, `count`, `effect`, `p.value` and `p.interaction`. It takes over
+    from `est_label`, which keeps working for one cycle with a deprecation
+    warning.
   - `axis_args$direction_labels = TRUE`, the new default, writes in the header row which
     arm each side of the reference line favours (survival outcomes) or has the
     higher value (others), e.g. `"Favours no NACT"` and `"Favours NACT"`;
@@ -28,7 +32,7 @@
     sized by inverse variance and `c("normal", "summary")` adds a summary
     diamond spanning the interval of "All patients". The defaults keep the
     blue diamonds.
-  - `est_label`, `xlab` and `axis_args` come after `label_column_list`: a call
+  - `header_list`, `xlab` and `axis_args` come after `label_column_list`: a call
     that passed `title` or a later argument by position must name it.
 
 * `get_hte_icf()` is faster and finds the same rules for a seed. It reads the
