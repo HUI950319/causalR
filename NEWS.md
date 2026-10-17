@@ -1,5 +1,11 @@
 # causalR (development version)
 
+* `get_bal()` and `plt_hte_unihtee()` no longer need RegR for their default
+  `var_names`, now `character()`. With RegR installed the labels of
+  `RegR::name_map_seer` still apply, as before; without it the default keeps
+  the column names instead of failing with "there is no package called
+  'RegR'".
+
 * `plt_hte_sub()` reads more plainly and can draw a meta-analysis forest.
   - `axis_args` gathers the axis settings, with the field names of
     `RegR::plt_eff2()`: `xlim`, `xticks` (formerly the argument `ticks_at`),

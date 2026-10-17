@@ -12,7 +12,7 @@ get_bal(
   cat_smd = c("overall", "level"),
   tbl = FALSE,
   cores = NULL,
-  var_names = RegR::name_map_seer,
+  var_names = character(),
   love_args = list(),
   save_plt = list(),
   save_tbl = list()
@@ -57,11 +57,12 @@ ignored when no table is built.}
 
 \item{var_names}{Display labels keyed by column name, a named list or
 character vector such as \code{c(bmi = "Body mass index")}, used by the plot
-and \verb{$tbl}. It is merged into \code{RegR::name_map_seer} (the default), your
-labels winning; names not in \code{adj_var} are ignored, and a covariate in
-neither keeps its column name. \code{NULL} keeps every column name. In the
-plot a factor's label is applied to each of its level rows; \verb{$balance}
-always keeps the column names. The default needs RegR.}
+and \verb{$tbl}; \code{character()} (default) gives none of your own. When RegR is
+installed they are merged into \code{RegR::name_map_seer}, your labels
+winning; names not in \code{adj_var} are ignored, and a covariate in neither
+keeps its column name. \code{NULL} keeps every column name. In the plot a
+factor's label is applied to each of its level rows; \verb{$balance} always
+keeps the column names.}
 
 \item{love_args}{Named list of love plot settings; \code{list()} (default)
 keeps every default. Unknown or duplicated fields are an error.

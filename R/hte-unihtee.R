@@ -558,10 +558,10 @@ get_hte_unihtee <- function(data,
 #'   range per panel that also covers its intervals.
 #' @param var_names Display labels keyed by candidate name, a named list or
 #'   character vector such as `c(bmi = "Body mass index")`, as in
-#'   [get_bal()]: merged into `RegR::name_map_seer` (the default), your labels
-#'   winning; a candidate in neither keeps its column name. `NULL` keeps every
-#'   column name. Two candidates may not share a label. The default needs
-#'   RegR.
+#'   [get_bal()]; `character()` (default) gives none of your own. When RegR
+#'   is installed they are merged into `RegR::name_map_seer`, your labels
+#'   winning; a candidate in neither keeps its column name. `NULL` keeps
+#'   every column name. Two candidates may not share a label.
 #' @param title Plot title, or `NULL` (default).
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
@@ -616,7 +616,7 @@ plt_hte_unihtee <- function(x,
                             sig_level = 0.05,
                             dr_args   = list(spline_df = 2, bins = 0),
                             axis_arg  = list(share_y = "all"),
-                            var_names = RegR::name_map_seer,
+                            var_names = character(),
                             title     = NULL,
                             save      = list()) {
 

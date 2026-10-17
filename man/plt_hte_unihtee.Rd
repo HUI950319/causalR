@@ -12,7 +12,7 @@ plt_hte_unihtee(
   sig_level = 0.05,
   dr_args = list(spline_df = 2, bins = 0),
   axis_arg = list(share_y = "all"),
-  var_names = RegR::name_map_seer,
+  var_names = character(),
   title = NULL,
   save = list()
 )
@@ -56,10 +56,10 @@ range per panel that also covers its intervals.}
 
 \item{var_names}{Display labels keyed by candidate name, a named list or
 character vector such as \code{c(bmi = "Body mass index")}, as in
-\code{\link[=get_bal]{get_bal()}}: merged into \code{RegR::name_map_seer} (the default), your labels
-winning; a candidate in neither keeps its column name. \code{NULL} keeps every
-column name. Two candidates may not share a label. The default needs
-RegR.}
+\code{\link[=get_bal]{get_bal()}}; \code{character()} (default) gives none of your own. When RegR
+is installed they are merged into \code{RegR::name_map_seer}, your labels
+winning; a candidate in neither keeps its column name. \code{NULL} keeps
+every column name. Two candidates may not share a label.}
 
 \item{title}{Plot title, or \code{NULL} (default).}
 

@@ -282,11 +282,12 @@
 #'   ignored when no table is built.
 #' @param var_names Display labels keyed by column name, a named list or
 #'   character vector such as `c(bmi = "Body mass index")`, used by the plot
-#'   and `$tbl`. It is merged into `RegR::name_map_seer` (the default), your
-#'   labels winning; names not in `adj_var` are ignored, and a covariate in
-#'   neither keeps its column name. `NULL` keeps every column name. In the
-#'   plot a factor's label is applied to each of its level rows; `$balance`
-#'   always keeps the column names. The default needs RegR.
+#'   and `$tbl`; `character()` (default) gives none of your own. When RegR is
+#'   installed they are merged into `RegR::name_map_seer`, your labels
+#'   winning; names not in `adj_var` are ignored, and a covariate in neither
+#'   keeps its column name. `NULL` keeps every column name. In the plot a
+#'   factor's label is applied to each of its level rows; `$balance` always
+#'   keeps the column names.
 #' @param love_args Named list of love plot settings; `list()` (default)
 #'   keeps every default. Unknown or duplicated fields are an error.
 #'   \describe{
@@ -411,7 +412,7 @@ get_bal <- function(data,
                     cat_smd   = c("overall", "level"),
                     tbl       = FALSE,
                     cores     = NULL,
-                    var_names = RegR::name_map_seer,
+                    var_names = character(),
                     love_args = list(),
                     save_plt  = list(),
                     save_tbl  = list()) {

@@ -1,7 +1,7 @@
 # get_bal() builds on get_PSM() / get_PSW() for the weights and on cobalt
 # (a WeightIt dependency, so always installed) for the balance, so the core
-# paths never skip. optmatch ("full") and RegR (save, and the default
-# var_names = RegR::name_map_seer) are Suggests.
+# paths never skip. optmatch ("full") and RegR (save, and the
+# RegR::name_map_seer labels that var_names merges in) are Suggests.
 
 bal_data <- function(n = 400L) {
   set.seed(20260927)
@@ -391,6 +391,7 @@ test_that("var_names relabels the plot, not $balance", {
 })
 
 test_that("var_names merges into RegR::name_map_seer; NULL keeps the names", {
+  skip_if_not_installed("RegR")
   d <- bal_data()
   names(d)[names(d) == "x1"] <- "Age"
   adj <- c("Age", "x2", "x3")
@@ -398,6 +399,8 @@ test_that("var_names merges into RegR::name_map_seer; NULL keeps the names", {
     levels(get_bal(d, "z", adj, methods = "ATO", ...)$plt$data$var)
 
   expect_setequal(lab(), c("Age (year)", "x2", "x3"))
+  # the former default gives the same labels as character()
+  expect_identical(lab(var_names = RegR::name_map_seer), lab())
   expect_setequal(lab(var_names = c(x2 = "Male")), c("Age (year)", "Male", "x3"))
   expect_setequal(lab(var_names = list(Age = "Age, y")), c("Age, y", "x2", "x3"))
   expect_setequal(lab(var_names = NULL), adj)
@@ -408,6 +411,13 @@ test_that("var_names merges into RegR::name_map_seer; NULL keeps the names", {
   expect_error(lab(var_names = c(x2 = "Age (year)")),
                "same display label.*`Age`.*`x2`")
   expect_error(lab(var_names = c(x2 = "x3")), "same display label.*`x2`.*`x3`")
+})
+
+test_that("no argument default needs RegR, a Suggests package", {
+  # a default is evaluated as soon as the body reads the argument, so
+  # var_names = RegR::name_map_seer failed for anyone without RegR
+  for (f in list(get_bal, plt_hte_unihtee))
+    expect_false("RegR" %in% unlist(lapply(formals(f), all.names)))
 })
 
 test_that("love_args is validated before anything is fitted", {

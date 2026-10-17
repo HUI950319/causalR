@@ -126,7 +126,6 @@ test_that("survival outcomes run through the forest on both scales", {
   expect_equal(res$vip$contrast[res$vip$variable == "grp"], rep("TRUE vs FALSE", 2))
   expect_true(all(c(".score_diff", ".score_ratio") %in% names(res$data)))
   skip_if_not_installed("patchwork")
-  skip_if_not_installed("RegR")  # the default var_names
   p <- plt_hte_unihtee(res, type = "dep", x_var = c("x2", "grp"), measure = "ratio")
   expect_s3_class(p, "patchwork")
   expect_no_warning(for (q in c(p$patches$plots, list(p))) ggplot2::ggplot_build(q))
@@ -174,7 +173,6 @@ uni_plot_res <- local({
   cache <- NULL
   function() {
     skip_if_not_installed("sandwich")
-    skip_if_not_installed("RegR")  # the default var_names
     if (is.null(cache))
       cache <<- get_hte_unihtee(uni_cont_data(), cat_var = "a",
                                 adj_var = c("w1", "w2", "w3", "w4", "sex"),
