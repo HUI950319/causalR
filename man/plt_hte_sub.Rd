@@ -17,15 +17,11 @@ plt_hte_sub(
   label_column_list = NULL,
   est_label = NULL,
   xlab = NULL,
-  xlim = NULL,
-  ticks_at = NULL,
-  percent = TRUE,
-  direction_labels = TRUE,
+  axis_args = list(xlim = NULL, xticks = NULL, percent = TRUE, direction_labels = TRUE),
   title = NULL,
   fixed_size = TRUE,
   row_height = 0.3,
-  ci_shape = c("diamond", "normal"),
-  overall_shape = NULL,
+  ci_shape = "diamond",
   box_col = "blue4",
   save = list()
 )
@@ -92,7 +88,8 @@ stays \code{M}). Only the drawing changes: \code{sub_var}, \code{effect} and
 \code{attr(p, "subgroup")} keep the original names.}
 
 \item{est_label}{\code{NULL} (default) or a single string heading the estimate
-column. \code{NULL} names the measure, and \verb{\%} when \code{percent} applies, e.g.
+column. \code{NULL} names the measure, and \verb{\%} when \code{axis_args$percent}
+applies, e.g.
 \code{"3-year DSS difference, \%"} for a survival probability at \code{time = 36}
 or \code{"Risk ratio"}; the interval level is not named. \code{"\\n"} starts a new
 header line, e.g. \code{"3-year DSS difference, \%\\n(95\% CI)"}: each line takes
@@ -104,31 +101,34 @@ names the measure and the comparison, treated arm first, e.g.
 levels read yes / no (\code{Yes}/\code{No}, \code{1}/\code{0}, \code{TRUE}/\code{FALSE}, in any case) is
 named after \code{cat_var}, as here; otherwise its levels name the arms.}
 
-\item{xlim}{\code{NULL} (default) or two increasing numbers giving the axis
-range, positive for \code{"ratio"} and \code{"OR"}; intervals running past it end
-in arrows.}
-
-\item{ticks_at}{\code{NULL} (default) or the axis ticks, on the scale of the
+\item{axis_args}{Named list of axis settings, as \code{axis_args} of
+\code{RegR::plt_eff2()}; the defaults are written out in the usage above. A
+partial list is merged over them, so only the fields given change;
+unknown or duplicated fields are rejected.
+\describe{
+\item{\code{xlim}}{\code{NULL} (default) or two increasing numbers giving the axis
+range, on the scale of the estimates and positive for \code{"ratio"} and
+\code{"OR"}; intervals running past it end in arrows.}
+\item{\code{xticks}}{\code{NULL} (default) or the axis ticks, on the scale of the
 estimates.}
-
-\item{percent}{Logical. \code{TRUE} (default) shows a difference of
-probabilities -- a survival probability or a binary risk -- in percentage
-points with one decimal, in the table and on the axis. It changes the
-display only: \code{xlim}, \code{ticks_at}, \code{effect} and \code{attr(p, "subgroup")} stay
-on the scale of the estimates. It does not apply to RMST, continuous
-outcomes or ratios. \code{FALSE} shows probabilities with three decimals.}
-
-\item{direction_labels}{\code{TRUE} (default), \code{FALSE}, or two strings: the
-labels written left and right of the reference line, in the header row of
-the forest column. \code{TRUE} writes, for a survival outcome, which arm each
-side favours -- right of 0 the treated arm for a difference, left of 1 for
-an event risk or odds ratio, right of 1 for an RMST ratio -- e.g.
-\code{"Favours no NACT"} and \code{"Favours NACT"}; otherwise which arm has the
-higher value, e.g. \code{"Higher with no z"} and \code{"Higher with z"}. The arms
-are named as in \code{xlab}. A pinned plot (\code{fixed_size = TRUE}) widens the
-forest column so that both fit. With automatic ticks (\code{ticks_at} and
-\code{xlim} both \code{NULL}), an axis that would end at the reference line gets
-one more tick beyond it to make room.}
+\item{\code{percent}}{\code{TRUE} (default) shows a difference of probabilities --
+a survival probability or a binary risk -- in percentage points with
+one decimal, in the table and on the axis. It changes the display
+only: \code{xlim}, \code{xticks}, \code{effect} and \code{attr(p, "subgroup")} stay on the
+scale of the estimates. It does not apply to RMST, continuous outcomes
+or ratios. \code{FALSE} shows probabilities with three decimals.}
+\item{\code{direction_labels}}{\code{TRUE} (default), \code{FALSE}, or two strings: the
+labels written left and right of the reference line, in the last
+header row of the forest column. \code{TRUE} writes, for a survival
+outcome, which arm each side favours -- right of 0 the treated arm for
+a difference, left of 1 for an event risk or odds ratio, right of 1 for
+an RMST ratio -- e.g. \code{"Favours no NACT"} and \code{"Favours NACT"};
+otherwise which arm has the higher value, e.g. \code{"Higher with no z"} and
+\code{"Higher with z"}. The arms are named as in \code{xlab}. A pinned plot
+(\code{fixed_size = TRUE}) widens the forest column so that both fit. With
+automatic ticks (\code{xticks} and \code{xlim} both \code{NULL}), an axis that would
+end at the reference line gets one more tick beyond it to make room.}
+}}
 
 \item{title}{Plot title, or \code{NULL} (default).}
 
@@ -149,15 +149,14 @@ rows at this height and its height follows; with \code{fixed_size = FALSE}
 only the suggested height in \code{attr(p, "plot_size")} does. Text size is
 unchanged, so a value much below \code{0.2} crowds the rows.}
 
-\item{ci_shape}{Glyph of the subgroup rows: \code{"diamond"} (default) or
-\code{"normal"}, a square with whiskers whose size follows the inverse
-variance of its estimate, relative to the most precise square drawn, as
-in a meta-analysis forest plot.}
-
-\item{overall_shape}{Glyph of the "All patients" row: \code{NULL} (default)
-takes \code{ci_shape}; \code{"diamond"} or \code{"normal"} as in \code{ci_shape}; or
-\code{"summary"}, a meta-analysis summary diamond spanning the interval, with
-the whole row in bold.}
+\item{ci_shape}{Glyph of the estimates: one value for every row, or two,
+of the subgroup rows and then of the "All patients" row, as \code{box_col}.
+\code{"diamond"} (default) or \code{"normal"}, a square with whiskers whose size
+follows the inverse variance of its estimate, relative to the most
+precise square drawn, as in a meta-analysis forest plot. The "All
+patients" row may also take \code{"summary"}, a meta-analysis summary diamond
+spanning the interval, with the whole row in bold: e.g.
+\code{c("normal", "summary")}.}
 
 \item{box_col}{One or two colours: of the glyphs and intervals of the
 subgroup rows, then of the "All patients" row. One colour serves both.
@@ -259,8 +258,8 @@ plt_hte_sub(res, sub_var = c("sex", "stage"), show_pvalue = TRUE,
                           "All patients" = "0.100 (0.040, 0.160)"))
 
 # Meta-analysis style: squares by inverse variance, a summary diamond
-plt_hte_sub(res, sub_var = "stage", ci_shape = "normal",
-            overall_shape = "summary", box_col = c("blue4", "#B2182B"))
+plt_hte_sub(res, sub_var = "stage", ci_shape = c("normal", "summary"),
+            box_col = c("blue4", "#B2182B"))
 }
 \dontshow{\}) # examplesIf}
 }

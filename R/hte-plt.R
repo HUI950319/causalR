@@ -623,7 +623,8 @@ plt_hte_dep <- function(x,
 #'   stays `M`). Only the drawing changes: `sub_var`, `effect` and
 #'   `attr(p, "subgroup")` keep the original names.
 #' @param est_label `NULL` (default) or a single string heading the estimate
-#'   column. `NULL` names the measure, and `%` when `percent` applies, e.g.
+#'   column. `NULL` names the measure, and `%` when `axis_args$percent`
+#'   applies, e.g.
 #'   `"3-year DSS difference, %"` for a survival probability at `time = 36`
 #'   or `"Risk ratio"`; the interval level is not named. `"\n"` starts a new
 #'   header line, e.g. `"3-year DSS difference, %\n(95% CI)"`: each line takes
@@ -633,28 +634,34 @@ plt_hte_dep <- function(x,
 #'   `"Difference in 3-year DSS (%), NACT - no NACT"`. An exposure whose two
 #'   levels read yes / no (`Yes`/`No`, `1`/`0`, `TRUE`/`FALSE`, in any case) is
 #'   named after `cat_var`, as here; otherwise its levels name the arms.
-#' @param xlim `NULL` (default) or two increasing numbers giving the axis
-#'   range, positive for `"ratio"` and `"OR"`; intervals running past it end
-#'   in arrows.
-#' @param ticks_at `NULL` (default) or the axis ticks, on the scale of the
-#'   estimates.
-#' @param percent Logical. `TRUE` (default) shows a difference of
-#'   probabilities -- a survival probability or a binary risk -- in percentage
-#'   points with one decimal, in the table and on the axis. It changes the
-#'   display only: `xlim`, `ticks_at`, `effect` and `attr(p, "subgroup")` stay
-#'   on the scale of the estimates. It does not apply to RMST, continuous
-#'   outcomes or ratios. `FALSE` shows probabilities with three decimals.
-#' @param direction_labels `TRUE` (default), `FALSE`, or two strings: the
-#'   labels written left and right of the reference line, in the header row of
-#'   the forest column. `TRUE` writes, for a survival outcome, which arm each
-#'   side favours -- right of 0 the treated arm for a difference, left of 1 for
-#'   an event risk or odds ratio, right of 1 for an RMST ratio -- e.g.
-#'   `"Favours no NACT"` and `"Favours NACT"`; otherwise which arm has the
-#'   higher value, e.g. `"Higher with no z"` and `"Higher with z"`. The arms
-#'   are named as in `xlab`. A pinned plot (`fixed_size = TRUE`) widens the
-#'   forest column so that both fit. With automatic ticks (`ticks_at` and
-#'   `xlim` both `NULL`), an axis that would end at the reference line gets
-#'   one more tick beyond it to make room.
+#' @param axis_args Named list of axis settings, as `axis_args` of
+#'   `RegR::plt_eff2()`; the defaults are written out in the usage above. A
+#'   partial list is merged over them, so only the fields given change;
+#'   unknown or duplicated fields are rejected.
+#'   \describe{
+#'     \item{`xlim`}{`NULL` (default) or two increasing numbers giving the axis
+#'       range, on the scale of the estimates and positive for `"ratio"` and
+#'       `"OR"`; intervals running past it end in arrows.}
+#'     \item{`xticks`}{`NULL` (default) or the axis ticks, on the scale of the
+#'       estimates.}
+#'     \item{`percent`}{`TRUE` (default) shows a difference of probabilities --
+#'       a survival probability or a binary risk -- in percentage points with
+#'       one decimal, in the table and on the axis. It changes the display
+#'       only: `xlim`, `xticks`, `effect` and `attr(p, "subgroup")` stay on the
+#'       scale of the estimates. It does not apply to RMST, continuous outcomes
+#'       or ratios. `FALSE` shows probabilities with three decimals.}
+#'     \item{`direction_labels`}{`TRUE` (default), `FALSE`, or two strings: the
+#'       labels written left and right of the reference line, in the last
+#'       header row of the forest column. `TRUE` writes, for a survival
+#'       outcome, which arm each side favours -- right of 0 the treated arm for
+#'       a difference, left of 1 for an event risk or odds ratio, right of 1 for
+#'       an RMST ratio -- e.g. `"Favours no NACT"` and `"Favours NACT"`;
+#'       otherwise which arm has the higher value, e.g. `"Higher with no z"` and
+#'       `"Higher with z"`. The arms are named as in `xlab`. A pinned plot
+#'       (`fixed_size = TRUE`) widens the forest column so that both fit. With
+#'       automatic ticks (`xticks` and `xlim` both `NULL`), an axis that would
+#'       end at the reference line gets one more tick beyond it to make room.}
+#'   }
 #' @param title Plot title, or `NULL` (default).
 #' @param fixed_size Size policy. `TRUE` (default) pins the plot to the size
 #'   its text needs -- rows `row_height` tall, the graph column a quarter of the
@@ -671,14 +678,14 @@ plt_hte_dep <- function(x,
 #'   rows at this height and its height follows; with `fixed_size = FALSE`
 #'   only the suggested height in `attr(p, "plot_size")` does. Text size is
 #'   unchanged, so a value much below `0.2` crowds the rows.
-#' @param ci_shape Glyph of the subgroup rows: `"diamond"` (default) or
-#'   `"normal"`, a square with whiskers whose size follows the inverse
-#'   variance of its estimate, relative to the most precise square drawn, as
-#'   in a meta-analysis forest plot.
-#' @param overall_shape Glyph of the "All patients" row: `NULL` (default)
-#'   takes `ci_shape`; `"diamond"` or `"normal"` as in `ci_shape`; or
-#'   `"summary"`, a meta-analysis summary diamond spanning the interval, with
-#'   the whole row in bold.
+#' @param ci_shape Glyph of the estimates: one value for every row, or two,
+#'   of the subgroup rows and then of the "All patients" row, as `box_col`.
+#'   `"diamond"` (default) or `"normal"`, a square with whiskers whose size
+#'   follows the inverse variance of its estimate, relative to the most
+#'   precise square drawn, as in a meta-analysis forest plot. The "All
+#'   patients" row may also take `"summary"`, a meta-analysis summary diamond
+#'   spanning the interval, with the whole row in bold: e.g.
+#'   `c("normal", "summary")`.
 #' @param box_col One or two colours: of the glyphs and intervals of the
 #'   subgroup rows, then of the "All patients" row. One colour serves both.
 #'   Default `"blue4"`.
@@ -766,8 +773,8 @@ plt_hte_dep <- function(x,
 #'                           "All patients" = "0.100 (0.040, 0.160)"))
 #'
 #' # Meta-analysis style: squares by inverse variance, a summary diamond
-#' plt_hte_sub(res, sub_var = "stage", ci_shape = "normal",
-#'             overall_shape = "summary", box_col = c("blue4", "#B2182B"))
+#' plt_hte_sub(res, sub_var = "stage", ci_shape = c("normal", "summary"),
+#'             box_col = c("blue4", "#B2182B"))
 #' }
 #'
 #' @export
@@ -783,15 +790,13 @@ plt_hte_sub <- function(x,
                         label_column_list = NULL,
                         est_label   = NULL,
                         xlab        = NULL,
-                        xlim        = NULL,
-                        ticks_at    = NULL,
-                        percent     = TRUE,
-                        direction_labels = TRUE,
+                        axis_args   = list(xlim = NULL, xticks = NULL,
+                                           percent = TRUE,
+                                           direction_labels = TRUE),
                         title       = NULL,
                         fixed_size  = TRUE,
                         row_height  = 0.3,
-                        ci_shape    = c("diamond", "normal"),
-                        overall_shape = NULL,
+                        ci_shape    = "diamond",
                         box_col     = "blue4",
                         save        = list()) {
 
@@ -803,7 +808,7 @@ plt_hte_sub <- function(x,
     stop("`conf_level` must be a single number strictly between 0 and 1.",
          call. = FALSE)
   flags <- list(overall = overall, show_n = show_n, show_pvalue = show_pvalue,
-                show_pinter = show_pinter, percent = percent)
+                show_pinter = show_pinter)
   for (nm in names(flags))
     if (!is.logical(flags[[nm]]) || length(flags[[nm]]) != 1L ||
         is.na(flags[[nm]]))
@@ -817,15 +822,25 @@ plt_hte_sub <- function(x,
          is.character(s) && length(s) == 1L && !is.na(s), logical(1L)))))
     stop("`label_column_list` must be `NULL` or a list or character vector of single strings with unique names, e.g. c(age_55 = \"Age category (year)\").",
          call. = FALSE)
+  axis_args <- .merge_named_arg(
+    axis_args, list(xlim = NULL, xticks = NULL, percent = TRUE,
+                    direction_labels = TRUE), "axis_args")
+  xlim     <- axis_args$xlim
+  ticks_at <- axis_args$xticks
+  percent  <- axis_args$percent
+  direction_labels <- axis_args$direction_labels
   if (!is.null(xlim) && (!is.numeric(xlim) || length(xlim) != 2L ||
                          anyNA(xlim) || xlim[1L] >= xlim[2L]))
-    stop("`xlim` must be `NULL` or two increasing numbers.", call. = FALSE)
+    stop("`axis_args$xlim` must be `NULL` or two increasing numbers.",
+         call. = FALSE)
   if (!is.null(ticks_at) && (!is.numeric(ticks_at) || !length(ticks_at) ||
                              anyNA(ticks_at)))
-    stop("`ticks_at` must be `NULL` or a numeric vector.", call. = FALSE)
+    stop("`axis_args$xticks` must be `NULL` or a numeric vector.", call. = FALSE)
   if (log_x && any(c(xlim, ticks_at) <= 0))
-    stop("`xlim` and `ticks_at` must be positive on the log axis of \"ratio\" and \"OR\".",
+    stop("`axis_args$xlim` and `axis_args$xticks` must be positive on the log axis of \"ratio\" and \"OR\".",
          call. = FALSE)
+  if (!is.logical(percent) || length(percent) != 1L || is.na(percent))
+    stop("`axis_args$percent` must be TRUE or FALSE.", call. = FALSE)
   if (!(isTRUE(fixed_size) || isFALSE(fixed_size) ||
         (is.numeric(fixed_size) && length(fixed_size) == 1L &&
          is.finite(fixed_size) && fixed_size > 0)))
@@ -843,17 +858,16 @@ plt_hte_sub <- function(x,
   if (!(isTRUE(direction_labels) || isFALSE(direction_labels) ||
         (is.character(direction_labels) && length(direction_labels) == 2L &&
          !anyNA(direction_labels))))
-    stop("`direction_labels` must be TRUE, FALSE, or two strings: the left and the right label.",
+    stop("`axis_args$direction_labels` must be TRUE, FALSE, or two strings: the left and the right label.",
          call. = FALSE)
-  if (identical(ci_shape, c("diamond", "normal"))) ci_shape <- "diamond"
-  if (!is.character(ci_shape) || length(ci_shape) != 1L ||
-      !ci_shape %in% c("diamond", "normal"))
-    stop("`ci_shape` must be \"diamond\" or \"normal\".", call. = FALSE)
-  if (is.null(overall_shape)) overall_shape <- ci_shape
-  if (!is.character(overall_shape) || length(overall_shape) != 1L ||
-      !overall_shape %in% c("diamond", "normal", "summary"))
-    stop("`overall_shape` must be `NULL`, \"diamond\", \"normal\" or \"summary\".",
+  # One glyph for every row, or the subgroup rows' and then the overall row's
+  if (!is.character(ci_shape) || !length(ci_shape) %in% 1:2 || anyNA(ci_shape) ||
+      !ci_shape[1L] %in% c("diamond", "normal") ||
+      !ci_shape[length(ci_shape)] %in% c("diamond", "normal", "summary"))
+    stop("`ci_shape` must be \"diamond\" or \"normal\", optionally followed by the glyph of the \"All patients\" row: \"diamond\", \"normal\" or \"summary\".",
          call. = FALSE)
+  overall_shape <- ci_shape[length(ci_shape)]
+  ci_shape <- ci_shape[1L]
   if (!is.character(box_col) || !length(box_col) %in% 1:2 || anyNA(box_col) ||
       inherits(tryCatch(grDevices::col2rgb(box_col), error = identity), "error"))
     stop("`box_col` must be one or two colours: the subgroup rows, then the \"All patients\" row.",

@@ -1,10 +1,15 @@
 # causalR (development version)
 
 * `plt_hte_sub()` reads more plainly and can draw a meta-analysis forest.
-  - `percent = TRUE`, the new default, shows a difference of survival
-    probabilities or risks in percentage points with one decimal, in the
-    table and on the axis; `FALSE` restores three decimals. `xlim`,
-    `ticks_at`, `effect` and `attr(p, "subgroup")` keep the scale of the
+  - `axis_args` gathers the axis settings, with the field names of
+    `RegR::plt_eff2()`: `xlim`, `xticks` (formerly the argument `ticks_at`),
+    `percent` and `direction_labels`. Write
+    `axis_args = list(xlim = , xticks = )` where a call passed `xlim` or
+    `ticks_at`; a partial list keeps the other defaults.
+  - `axis_args$percent = TRUE`, the new default, shows a difference of
+    survival probabilities or risks in percentage points with one decimal,
+    in the table and on the axis; `FALSE` restores three decimals. `xlim`,
+    `xticks`, `effect` and `attr(p, "subgroup")` keep the scale of the
     estimates.
   - The estimate column is headed by the measure, e.g.
     `"3-year DSS difference, %"` instead of `"St(3-year) difference"`, and
@@ -13,18 +18,18 @@
     yes / no levels is named after `cat_var`. `est_label` and `xlab` replace
     either text; a `"\n"` in `est_label` starts a header line, which takes a
     table row of its own.
-  - `direction_labels = TRUE`, the new default, writes in the header row which
+  - `axis_args$direction_labels = TRUE`, the new default, writes in the header row which
     arm each side of the reference line favours (survival outcomes) or has the
     higher value (others), e.g. `"Favours no NACT"` and `"Favours NACT"`;
     `FALSE` leaves them out and two strings replace them. A pinned plot widens
     its forest column for them and for the axis title.
-  - `ci_shape = "normal"` draws squares sized by inverse variance,
-    `overall_shape = "summary"` a summary diamond spanning the interval of
-    "All patients", and `box_col` takes a second colour for that row. The
-    defaults keep the blue diamonds.
-  - `est_label` and `xlab` come after `label_column_list`, and `percent` and
-    `direction_labels` after `ticks_at`: a call that passed `xlim` or a later
-    argument by position must name it.
+  - `ci_shape` takes one glyph or two, of the subgroup rows and then of "All
+    patients", as `box_col` takes one colour or two: `"normal"` draws squares
+    sized by inverse variance and `c("normal", "summary")` adds a summary
+    diamond spanning the interval of "All patients". The defaults keep the
+    blue diamonds.
+  - `est_label`, `xlab` and `axis_args` come after `label_column_list`: a call
+    that passed `title` or a later argument by position must name it.
 
 * `get_hte_icf()` is faster and finds the same rules for a seed. It reads the
   voting trees straight from each forest's node vectors instead of rebuilding

@@ -747,8 +747,9 @@ test_that("plt_hte_sub rejects invalid requests and saves a PDF", {
   expect_error(plt_hte_sub(res, overall = NA), "overall")
   expect_error(plt_hte_sub(res, conf_level = 1.5), "conf_level")
   expect_error(plt_hte_sub(res, show_pvalue = "yes"), "show_pvalue")
-  expect_error(plt_hte_sub(res, xlim = c(1, 0)), "xlim")
-  expect_error(plt_hte_sub(res, measure = "ratio", xlim = c(-1, 2)), "positive")
+  expect_error(plt_hte_sub(res, axis_args = list(xlim = c(1, 0))), "xlim")
+  expect_error(plt_hte_sub(res, measure = "ratio",
+                           axis_args = list(xlim = c(-1, 2))), "positive")
   expect_error(plt_hte_sub(res, save = "a.pdf"), "`save`")
 
   set.seed(2)
@@ -781,9 +782,8 @@ test_that("fixed_size pins the plot to the size its text needs", {
   skip_if_not_installed("forestplot")
   skip_if_not_installed("ggplotify")
   res <- dep_res()
-  expect_identical(tail(names(formals(plt_hte_sub)), 6L),
-                   c("fixed_size", "row_height", "ci_shape", "overall_shape",
-                     "box_col", "save"))
+  expect_identical(tail(names(formals(plt_hte_sub)), 5L),
+                   c("fixed_size", "row_height", "ci_shape", "box_col", "save"))
 
   p <- plt_hte_sub(res, sub_var = "stage")
   size <- attr(p, "plot_size")
@@ -855,11 +855,12 @@ test_that("plt_hte_sub shows percentages, plain titles and direction labels", {
   expect_true("Risk difference (%), z - no z" %in% fp_texts(p))
   expect_true(all(c("Higher with no z", "Higher with z") %in% fp_texts(p)))
   # the estimates themselves keep their scale
-  expect_equal(attr(p, "subgroup"), attr(plt_hte_sub(res, sub_var = "stage",
-                                                     percent = FALSE), "subgroup"))
+  expect_equal(attr(p, "subgroup"),
+               attr(plt_hte_sub(res, sub_var = "stage",
+                                axis_args = list(percent = FALSE)), "subgroup"))
 
-  p0 <- plt_hte_sub(res, sub_var = "stage", percent = FALSE,
-                    direction_labels = FALSE, conf_level = 0.9)
+  p0 <- plt_hte_sub(res, sub_var = "stage", conf_level = 0.9,
+                    axis_args = list(percent = FALSE, direction_labels = FALSE))
   expect_identical(fp_headers(p0)[3], "Risk difference")
   expect_identical(fp_col(p0, 3)[2],
                    sprintf("%.3f (%.3f, %.3f)", ov$estimate,
@@ -870,7 +871,8 @@ test_that("plt_hte_sub shows percentages, plain titles and direction labels", {
 
   p1 <- plt_hte_sub(res, sub_var = "stage", est_label = "ARD (95% CI)",
                     xlab = "Absolute risk difference",
-                    direction_labels = c("Favours control", "Favours z"))
+                    axis_args = list(direction_labels = c("Favours control",
+                                                          "Favours z")))
   expect_identical(fp_headers(p1)[3], "ARD (95% CI)")
   expect_true(all(c("Absolute risk difference", "Favours control",
                     "Favours z") %in% fp_texts(p1)))
@@ -892,13 +894,46 @@ test_that("plt_hte_sub shows percentages, plain titles and direction labels", {
   pr <- plt_hte_sub(res, sub_var = "stage", measure = "ratio")
   expect_identical(fp_headers(pr)[3], "Risk ratio")
 
-  expect_error(plt_hte_sub(res, percent = NA), "`percent`")
+  expect_error(plt_hte_sub(res, axis_args = list(percent = NA)),
+               "`axis_args$percent`", fixed = TRUE)
   expect_error(plt_hte_sub(res, est_label = 1), "`est_label`")
   expect_error(plt_hte_sub(res, xlab = c("a", "b")), "`xlab`")
-  expect_error(plt_hte_sub(res, direction_labels = "left"), "`direction_labels`")
+  expect_error(plt_hte_sub(res, axis_args = list(direction_labels = "left")),
+               "`axis_args$direction_labels`", fixed = TRUE)
 })
 
-test_that("ci_shape, overall_shape and box_col draw a meta-analysis style", {
+test_that("axis_args gathers the axis settings of plt_hte_sub", {
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  res <- dep_res()
+  expect_identical(eval(formals(plt_hte_sub)$axis_args),
+                   list(xlim = NULL, xticks = NULL, percent = TRUE,
+                        direction_labels = TRUE))
+  # xticks sits on the scale of the estimates; percent labels it
+  p <- plt_hte_sub(res, sub_var = "stage",
+                   axis_args = list(xticks = c(-0.2, 0, 0.2)))
+  ax <- fp_grobs(p, "xaxis")[[1L]]
+  expect_equal(ax$at, c(-0.2, 0, 0.2))
+  expect_identical(ax$label, c("-20", "0", "20"))
+  # a partial list keeps the other defaults: the direction labels stay on
+  expect_true("Higher with z" %in% fp_texts(p))
+  # xlim and xticks together, as the notes draw them
+  q <- plt_hte_sub(res, sub_var = "stage",
+                   axis_args = list(xlim = c(-0.4, 0.4), xticks = c(-0.4, 0, 0.4),
+                                    percent = FALSE))
+  expect_identical(fp_grobs(q, "xaxis")[[1L]]$label, c("-0.4", "0", "0.4"))
+
+  expect_error(plt_hte_sub(res, axis_args = "x"), "`axis_args`")
+  expect_error(plt_hte_sub(res, axis_args = list(ticks_at = 0)), "ticks_at")
+  expect_error(plt_hte_sub(res, axis_args = list(xlim = c(0, 1), xlim = c(0, 2))),
+               "duplicated")
+  expect_error(plt_hte_sub(res, axis_args = list(xticks = "a")), "xticks")
+  # the arguments it replaces are gone
+  for (old in c("xlim", "ticks_at", "percent", "direction_labels", "overall_shape"))
+    expect_false(old %in% names(formals(plt_hte_sub)))
+})
+
+test_that("ci_shape and box_col draw a meta-analysis style", {
   skip_if_not_installed("forestplot")
   skip_if_not_installed("ggplotify")
   res <- dep_res()
@@ -906,8 +941,9 @@ test_that("ci_shape, overall_shape and box_col draw a meta-analysis style", {
   p <- plt_hte_sub(res, sub_var = "stage")
   expect_identical(fp_fills(p, "polygon"), rep("blue4", 4L))
 
-  m <- plt_hte_sub(res, sub_var = "stage", ci_shape = "normal",
-                   overall_shape = "summary", box_col = c("blue4", "#B2182B"))
+  expect_identical(eval(formals(plt_hte_sub)$ci_shape), "diamond")
+  m <- plt_hte_sub(res, sub_var = "stage", ci_shape = c("normal", "summary"),
+                   box_col = c("blue4", "#B2182B"))
   # one summary diamond for "All patients", squares for the levels
   expect_identical(fp_fills(m, "polygon"), "#B2182B")
   sq <- Filter(function(k) identical(k$gp$fill, "blue4"), fp_grobs(m, "rect"))
@@ -923,7 +959,7 @@ test_that("ci_shape, overall_shape and box_col draw a meta-analysis style", {
                                fp_grobs(m, "text"))[[1L]]$gp$font
   expect_identical(unname(bold(fp_col(m, 3)[2])), 2L)
 
-  # overall_shape follows ci_shape; a second colour marks the overall row
+  # one ci_shape serves the overall row too; a second colour marks it
   n <- plt_hte_sub(res, sub_var = "stage", ci_shape = "normal")
   expect_length(fp_grobs(n, "polygon"), 0L)
   expect_length(Filter(function(k) identical(k$gp$fill, "blue4"),
@@ -932,15 +968,15 @@ test_that("ci_shape, overall_shape and box_col draw a meta-analysis style", {
   expect_identical(sort(fp_fills(d2, "polygon")), c(rep("blue4", 3L), "red"))
 
   expect_error(plt_hte_sub(res, ci_shape = "square"), "`ci_shape`")
-  expect_error(plt_hte_sub(res, overall_shape = "box"), "`overall_shape`")
+  expect_error(plt_hte_sub(res, ci_shape = c("normal", "box")), "`ci_shape`")
+  expect_error(plt_hte_sub(res, ci_shape = "summary"), "`ci_shape`")
+  expect_error(plt_hte_sub(res, ci_shape = c("normal", "normal", "summary")),
+               "`ci_shape`")
   expect_error(plt_hte_sub(res, box_col = c("red", "blue", "green")), "`box_col`")
   expect_error(plt_hte_sub(res, box_col = "notacolour"), "`box_col`")
-  expect_identical(names(formals(plt_hte_sub))[10:16],
-                   c("label_column_list", "est_label", "xlab", "xlim",
-                     "ticks_at", "percent", "direction_labels"))
-  expect_identical(tail(names(formals(plt_hte_sub)), 6L),
-                   c("fixed_size", "row_height", "ci_shape", "overall_shape",
-                     "box_col", "save"))
+  expect_identical(names(formals(plt_hte_sub))[10:14],
+                   c("label_column_list", "est_label", "xlab", "axis_args",
+                     "title"))
 })
 
 test_that("plt_hte_sub returns a ggplot patchwork can combine", {
