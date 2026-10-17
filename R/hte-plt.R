@@ -586,8 +586,8 @@ plt_hte_dep <- function(x,
 #'   [get_hte()]. `"ratio"` and `"OR"` are drawn on a log axis; `"OR"` needs
 #'   an outcome probability, a binary outcome or \eqn{S(t)}.
 #'   Relative effects do not support forests with sample weights or clusters.
-#' @param conf_level Confidence level of the intervals, not printed on the
-#'   plot. Default `0.95`, whatever level `x` was computed with.
+#' @param conf_level Confidence level of the intervals, named in the default
+#'   `est_label`. Default `0.95`, whatever level `x` was computed with.
 #' @param effect `NULL` (default) or rows to replace, e.g. with an estimate
 #'   from a published study: a named list whose elements are named by a
 #'   variable of `sub_var`, holding strings named by its levels; by a level
@@ -622,15 +622,42 @@ plt_hte_dep <- function(x,
 #'   renames variable rows only (its keys are variable names, so a level `M`
 #'   stays `M`). Only the drawing changes: `sub_var`, `effect` and
 #'   `attr(p, "subgroup")` keep the original names.
+#' @param est_label `NULL` (default) or a single string heading the estimate
+#'   column. `NULL` names the measure, `%` when `percent` applies, and the
+#'   interval, e.g. `"3-year DSS difference, % (95% CI)"` for a survival
+#'   probability at `time = 36` or `"Risk ratio (95% CI)"`.
+#' @param xlab `NULL` (default) or a single string for the axis title. `NULL`
+#'   names the measure and the comparison, treated arm first, e.g.
+#'   `"Difference in 3-year DSS (%), NACT - no NACT"`. An exposure whose two
+#'   levels read yes / no (`Yes`/`No`, `1`/`0`, `TRUE`/`FALSE`, in any case) is
+#'   named after `cat_var`, as here; otherwise its levels name the arms.
 #' @param xlim `NULL` (default) or two increasing numbers giving the axis
 #'   range, positive for `"ratio"` and `"OR"`; intervals running past it end
 #'   in arrows.
 #' @param ticks_at `NULL` (default) or the axis ticks, on the scale of the
 #'   estimates.
+#' @param percent Logical. `TRUE` (default) shows a difference of
+#'   probabilities -- a survival probability or a binary risk -- in percentage
+#'   points with one decimal, in the table and on the axis. It changes the
+#'   display only: `xlim`, `ticks_at`, `effect` and `attr(p, "subgroup")` stay
+#'   on the scale of the estimates. It does not apply to RMST, continuous
+#'   outcomes or ratios. `FALSE` shows probabilities with three decimals.
+#' @param direction_labels `TRUE` (default), `FALSE`, or two strings: the
+#'   labels written left and right of the reference line, in the header row of
+#'   the forest column. `TRUE` writes, for a survival outcome, which arm each
+#'   side favours -- right of 0 the treated arm for a difference, left of 1 for
+#'   an event risk or odds ratio, right of 1 for an RMST ratio -- e.g.
+#'   `"Favours no NACT"` and `"Favours NACT"`; otherwise which arm has the
+#'   higher value, e.g. `"Higher with no z"` and `"Higher with z"`. The arms
+#'   are named as in `xlab`. A pinned plot (`fixed_size = TRUE`) widens the
+#'   forest column so that both fit. With automatic ticks (`ticks_at` and
+#'   `xlim` both `NULL`), an axis that would end at the reference line gets
+#'   one more tick beyond it to make room.
 #' @param title Plot title, or `NULL` (default).
 #' @param fixed_size Size policy. `TRUE` (default) pins the plot to the size
 #'   its text needs -- rows `row_height` tall, the graph column a quarter of the
-#'   width and at least 2 in -- so it draws the same on every device: a larger
+#'   width, at least 2 in and as wide as the axis title and the direction
+#'   labels need -- so it draws the same on every device: a larger
 #'   one only adds white space, a smaller one clips it. A single positive
 #'   number pins the total width in inches instead, the graph column taking
 #'   what the text leaves. `FALSE` stretches the plot over the device, or over
@@ -642,6 +669,17 @@ plt_hte_dep <- function(x,
 #'   rows at this height and its height follows; with `fixed_size = FALSE`
 #'   only the suggested height in `attr(p, "plot_size")` does. Text size is
 #'   unchanged, so a value much below `0.2` crowds the rows.
+#' @param ci_shape Glyph of the subgroup rows: `"diamond"` (default) or
+#'   `"normal"`, a square with whiskers whose size follows the inverse
+#'   variance of its estimate, relative to the most precise square drawn, as
+#'   in a meta-analysis forest plot.
+#' @param overall_shape Glyph of the "All patients" row: `NULL` (default)
+#'   takes `ci_shape`; `"diamond"` or `"normal"` as in `ci_shape`; or
+#'   `"summary"`, a meta-analysis summary diamond spanning the interval, with
+#'   the whole row in bold.
+#' @param box_col One or two colours: of the glyphs and intervals of the
+#'   subgroup rows, then of the "All patients" row. One colour serves both.
+#'   Default `"blue4"`.
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
 #'   `width` or `height` left out is taken from `attr(p, "plot_size")`. Do not
@@ -656,9 +694,9 @@ plt_hte_dep <- function(x,
 #' The counts are patients per arm, treated first. A level with fewer
 #' than two patients in either arm -- or, for a survival outcome, no patient
 #' in an arm followed beyond `time` -- has no estimate: it is drawn with a
-#' dash, with a warning. For a survival probability the `"diff"` column and
-#' axis read `St(<time / 12>-year)`, e.g. `St(10-year)` for `time = 120`:
-#' `time` is taken in months, as in \pkg{RegR}.
+#' dash, with a warning. For a survival probability the default `est_label`
+#' and `xlab` read `<time / 12>-year DSS`, e.g. `10-year DSS` for
+#' `time = 120`: `time` is taken in months, as in \pkg{RegR}.
 #'
 #' @section Replaced rows:
 #' An interval string replaces the row's estimate and interval, taken as they
@@ -724,6 +762,10 @@ plt_hte_dep <- function(x,
 #'             effect = list(sex = c(M = "0.150 (0.050, 0.250)", F = "0.05"),
 #'                           III = "conf_0.9",
 #'                           "All patients" = "0.100 (0.040, 0.160)"))
+#'
+#' # Meta-analysis style: squares by inverse variance, a summary diamond
+#' plt_hte_sub(res, sub_var = "stage", ci_shape = "normal",
+#'             overall_shape = "summary", box_col = c("blue4", "#B2182B"))
 #' }
 #'
 #' @export
@@ -737,11 +779,18 @@ plt_hte_sub <- function(x,
                         show_pvalue = FALSE,
                         show_pinter = FALSE,
                         label_column_list = NULL,
+                        est_label   = NULL,
+                        xlab        = NULL,
                         xlim        = NULL,
                         ticks_at    = NULL,
+                        percent     = TRUE,
+                        direction_labels = TRUE,
                         title       = NULL,
                         fixed_size  = TRUE,
                         row_height  = 0.3,
+                        ci_shape    = c("diamond", "normal"),
+                        overall_shape = NULL,
+                        box_col     = "blue4",
                         save        = list()) {
 
   if (!inherits(x, "hte_res"))
@@ -752,7 +801,7 @@ plt_hte_sub <- function(x,
     stop("`conf_level` must be a single number strictly between 0 and 1.",
          call. = FALSE)
   flags <- list(overall = overall, show_n = show_n, show_pvalue = show_pvalue,
-                show_pinter = show_pinter)
+                show_pinter = show_pinter, percent = percent)
   for (nm in names(flags))
     if (!is.logical(flags[[nm]]) || length(flags[[nm]]) != 1L ||
         is.na(flags[[nm]]))
@@ -784,6 +833,30 @@ plt_hte_sub <- function(x,
       !is.finite(row_height) || row_height <= 0)
     stop("`row_height` must be a single positive height in inches.",
          call. = FALSE)
+  texts <- list(est_label = est_label, xlab = xlab)
+  for (nm in names(texts))
+    if (!is.null(texts[[nm]]) && (!is.character(texts[[nm]]) ||
+                                  length(texts[[nm]]) != 1L || is.na(texts[[nm]])))
+      stop(sprintf("`%s` must be `NULL` or a single string.", nm), call. = FALSE)
+  if (!(isTRUE(direction_labels) || isFALSE(direction_labels) ||
+        (is.character(direction_labels) && length(direction_labels) == 2L &&
+         !anyNA(direction_labels))))
+    stop("`direction_labels` must be TRUE, FALSE, or two strings: the left and the right label.",
+         call. = FALSE)
+  if (identical(ci_shape, c("diamond", "normal"))) ci_shape <- "diamond"
+  if (!is.character(ci_shape) || length(ci_shape) != 1L ||
+      !ci_shape %in% c("diamond", "normal"))
+    stop("`ci_shape` must be \"diamond\" or \"normal\".", call. = FALSE)
+  if (is.null(overall_shape)) overall_shape <- ci_shape
+  if (!is.character(overall_shape) || length(overall_shape) != 1L ||
+      !overall_shape %in% c("diamond", "normal", "summary"))
+    stop("`overall_shape` must be `NULL`, \"diamond\", \"normal\" or \"summary\".",
+         call. = FALSE)
+  if (!is.character(box_col) || !length(box_col) %in% 1:2 || anyNA(box_col) ||
+      inherits(tryCatch(grDevices::col2rgb(box_col), error = identity), "error"))
+    stop("`box_col` must be one or two colours: the subgroup rows, then the \"All patients\" row.",
+         call. = FALSE)
+  box_col <- rep_len(box_col, 2L)
   if (!is.null(save) && !is.list(save))
     stop("`save` must be `NULL` or a list.", call. = FALSE)
   # grf also has to be loaded for predict() on a forest read back from disk
@@ -946,18 +1019,40 @@ plt_hte_sub <- function(x,
   # ---- Table ----------------------------------------------------------------
   ref <- setdiff(levels(factor(d[[a$cat_var]])), a$treated)[1L]
   t_x <- format(a$time)
+  t_y <- format(a$time / 12)
+  # A difference of probabilities reads in percentage points
+  pct <- percent && measure == "diff" && scale %in% c("S", "binary")
+  k_x <- if (pct) 100 else 1
   lab <- switch(measure,
-    # time in months, written in years as RegR does: S(120) is St(10-year)
-    diff  = switch(scale, S = sprintf("St(%s-year) difference", format(a$time / 12)),
+    # time in months, written in years as RegR does: S(120) is 10-year DSS
+    diff  = switch(scale, S = sprintf("%s-year DSS difference", t_y),
                    RMST = sprintf("RMST(%s) difference", t_x),
                    binary = "Risk difference", continuous = "Mean difference"),
     ratio = switch(scale, S = "Event risk ratio", RMST = "RMST ratio",
                    binary = "Risk ratio", continuous = "Ratio of means"),
     OR    = switch(scale, S = "Event odds ratio", binary = "Odds ratio"))
-  num_f   <- paste0("%.", if (!log_x && scale %in% c("S", "binary")) 3 else 2, "f")
+  # An exposure whose levels read yes / no is named after its column
+  yn <- tolower(c(a$treated, ref))
+  arms <- if (yn[1L] %in% c("yes", "1", "true") && yn[2L] %in% c("no", "0", "false"))
+    c(a$cat_var, paste("no", a$cat_var)) else c(a$treated, ref)
+  if (is.null(est_label))
+    est_label <- sprintf("%s%s (%s%% CI)", lab, if (pct) ", %" else "",
+                         format(100 * conf_level))
+  # Left and right of the reference line: the arm a survival effect favours
+  # (an event risk ratio below 1 favours the treated arm), otherwise the arm
+  # with the higher value
+  dir_lab <- if (isTRUE(direction_labels)) {
+    left_treated <- scale == "S" && log_x
+    paste(if (scale %in% c("S", "RMST")) "Favours" else "Higher with",
+          if (left_treated) arms else rev(arms))
+  } else if (is.character(direction_labels)) {
+    direction_labels
+  }
+  num_f   <- paste0("%.", if (pct) 1 else if (!log_x && scale %in% c("S", "binary")) 3 else 2, "f")
   fmt_est <- function(e, l, h)
     ifelse(is.na(e), "\u2014",
-           sprintf(paste0(num_f, " (", num_f, ", ", num_f, ")"), e, l, h))
+           sprintf(paste0(num_f, " (", num_f, ", ", num_f, ")"),
+                   k_x * e, k_x * l, k_x * h))
   fmt_p <- function(p)
     ifelse(is.na(p), "", ifelse(p < 0.001, "<0.001", sprintf("%.3f", p)))
   fmt_n <- function(n, nt) sprintf("%d / %d", nt, n - nt)
@@ -997,7 +1092,7 @@ plt_hte_sub <- function(x,
             if (show_pinter) "p_inter")
   text <- rbind(c("Subgroup",
                   if (show_n) sprintf("N (%s / %s)", a$treated, ref),
-                  lab,
+                  est_label,
                   if (show_pvalue) "P", if (show_pinter) "P for interaction"),
                 as.matrix(body[cols]))
   dimnames(text) <- NULL
@@ -1005,6 +1100,34 @@ plt_hte_sub <- function(x,
   lower <- c(NA, body$lower)
   upper <- c(NA, body$upper)
   bold  <- c(TRUE, body$bold)
+  # The "All patients" row: its glyph, its colour, and with "summary" a
+  # summary row of forestplot. Squares are sized by the inverse variance of
+  # their estimate, as in a meta-analysis; diamonds keep one size.
+  ov_row <- if (overall) 2L else 0L
+  is_sum <- bold
+  is_sum[ov_row] <- overall_shape == "summary"
+  shape  <- rep(ci_shape, length(mean))
+  shape[ov_row] <- overall_shape
+  row_col <- rep(box_col[1L], length(mean))
+  row_col[ov_row] <- box_col[2L]
+  tr_x <- if (log_x) log else identity
+  se_x <- (tr_x(upper) - tr_x(lower)) / (2 * z)
+  sq   <- shape == "normal" & !is_sum & is.finite(se_x) & se_x > 0
+  box_size <- rep(0.3, length(mean))
+  if (any(sq))
+    box_size[sq] <- 0.12 + 0.2 * sqrt(min(se_x[sq])^2 / se_x[sq]^2)
+  box_size[ov_row] <- if (overall_shape == "summary") 0.45 else box_size[ov_row]
+  glyph <- list(diamond = forestplot::fpDrawDiamondCI,
+                normal  = forestplot::fpDrawNormalCI,
+                summary = forestplot::fpDrawDiamondCI)
+  fn_row <- lapply(seq_along(mean), function(i) {
+    f   <- glyph[[shape[i]]]
+    col <- row_col[i]
+    function(lower_limit, estimate, upper_limit, size, y.offset = 0.5,
+             clr.line, clr.marker, ...)
+      f(lower_limit, estimate, upper_limit, size, y.offset = y.offset,
+        clr.line = col, clr.marker = col, ...)
+  })
 
   # ---- Axis -----------------------------------------------------------------
   zero <- if (log_x) 1 else 0
@@ -1019,9 +1142,23 @@ plt_hte_sub <- function(x,
       for (drop in list(c(0.02, 0.2, 2, 20), c(0.05, 0.5, 5, 50)))
         if (length(tk) > 7L)
           tk <- tk[!tk %in% drop | seq_along(tk) %in% c(1L, length(tk))]
+      # one more tick where the axis would end at 1, for a direction label
+      if (!is.null(dir_lab) && is.null(xlim)) {
+        below <- cand[cand < min(tk)]
+        above <- cand[cand > max(tk)]
+        if (min(tk) >= 1 && length(below)) tk <- c(max(below), tk)
+        if (max(tk) <= 1 && length(above)) tk <- c(tk, min(above))
+      }
       tk
     } else {
-      pretty(rng, n = 4)
+      tk <- pretty(rng, n = 4)
+      # one more tick where the axis would end at 0, for a direction label
+      if (!is.null(dir_lab) && is.null(xlim) && length(tk) > 1L) {
+        step <- tk[2L] - tk[1L]
+        if (min(tk) >= 0) tk <- c(min(tk) - step, tk)
+        if (max(tk) <= 0) tk <- c(tk, max(tk) + step)
+      }
+      tk
     }
     if (!is.null(xlim)) {
       ticks_at <- ticks_at[ticks_at >= xlim[1L] & ticks_at <= xlim[2L]]
@@ -1037,13 +1174,18 @@ plt_hte_sub <- function(x,
   } else {
     c(-Inf, Inf)
   }
-  attr(ticks_at, "labels") <- as.character(ticks_at)   # 1, not 1.00
-  xlab <- if (log_x) {
-    sprintf("%s%s, %s vs %s", lab,
-            if (scale == "S") sprintf(" by t = %s", t_x) else "", a$treated, ref)
-  } else {
-    sprintf("%s, %s - %s", lab, a$treated, ref)
-  }
+  # 1, not 1.00; percentage points when `percent` applies
+  attr(ticks_at, "labels") <- as.character(round(k_x * ticks_at, 8))
+  if (is.null(xlab))
+    xlab <- if (log_x) {
+      sprintf("%s%s, %s vs %s", lab,
+              if (scale == "S") sprintf(" at %s years", t_y) else "",
+              arms[1L], arms[2L])
+    } else {
+      sprintf("%s%s, %s - %s",
+              if (scale == "S") sprintf("Difference in %s-year DSS", t_y) else lab,
+              if (pct) " (%)" else "", arms[1L], arms[2L])
+    }
 
   # ---- forestplot, styled as RegR::plt_eff2() -------------------------------
   # forestplot() measures its text as it builds, as does the size estimate
@@ -1067,8 +1209,9 @@ plt_hte_sub <- function(x,
   # every default font from the first, so the others are all given.
   cex_lab  <- 0.8 + 1 / 12
   cex_bold <- 0.88 + 1 / 12
-  lab_gp <- rep(list(rep(list(grid::gpar(cex = cex_lab)), n_text)), sum(!bold))
-  if (overall)
+  xlab_gp  <- grid::gpar(cex = 0.9 + 1 / 12, fontface = "plain")
+  lab_gp <- rep(list(rep(list(grid::gpar(cex = cex_lab)), n_text)), sum(!is_sum))
+  if (overall && !is_sum[ov_row])
     lab_gp[[1L]][[1L]] <- grid::gpar(cex = cex_bold, fontface = "bold")
   row_in <- row_height   # pinned, or assumed by the suggested size
   rules  <- list("1" = grid::gpar(lty = 1, lwd = 2), "2" = grid::gpar(lty = 2))
@@ -1076,20 +1219,44 @@ plt_hte_sub <- function(x,
     grid::gpar(lty = 1, lwd = 2, columns = seq_len(n_text))
   p <- on_null(forestplot::forestplot(
     labeltext  = text, mean = mean, lower = lower, upper = upper,
-    is.summary = bold, zero = zero, xlog = log_x, xticks = ticks_at,
+    is.summary = is_sum, zero = zero, xlog = log_x, xticks = ticks_at,
     clip = clip, graph.pos = "right", align = c("l", rep("r", n_text - 1L)),
     hrzl_lines = rules, xlab = xlab, title = title,
-    fn.ci_norm = forestplot::fpDrawDiamondCI, boxsize = 0.3,
-    col = forestplot::fpColors(box = "blue4", lines = "blue4",
-                               zero = "black"),
+    fn.ci_norm = fn_row, fn.ci_sum = forestplot::fpDrawSummaryCI,
+    boxsize = box_size,
+    col = forestplot::fpColors(box = box_col[1L], lines = box_col[1L],
+                               summary = box_col[2L], zero = "black"),
     txt_gp = forestplot::fpTxtGp(label = lab_gp,
                                  summary = grid::gpar(cex = cex_bold, fontface = "bold"),
                                  ticks = grid::gpar(cex = cex_lab, fontface = "plain"),
-                                 xlab  = grid::gpar(cex = 0.9 + 1 / 12, fontface = "plain"),
+                                 xlab  = xlab_gp,
                                  title = grid::gpar(cex = 1.2 + 1 / 12, fontface = "bold")),
     lwd.zero = 1, lwd.ci = 1.5, lwd.xaxis = 2, ci.vertices = TRUE,
     ci.vertices.height = 0.2, colgap = grid::unit(6, "mm"),
     lineheight = if (isFALSE(fixed_size)) "auto" else grid::unit(row_in, "in")))
+
+  # The header cell of the forest column carries the native x scale of the
+  # axis; the labels sit either side of the reference line there.
+  dir_gp <- grid::gpar(cex = cex_lab)
+  dir_gap <- 1.5   # mm from the reference line
+  # the axis title is centred under the forest column, which it must not outgrow
+  xlab_in <- function()
+    grid::convertWidth(grid::grobWidth(grid::textGrob(xlab, gp = xlab_gp)), "in",
+                       valueOnly = TRUE) + 0.1
+  head_vp <- function() {
+    vps <- grid::grid.ls(viewports = TRUE, grobs = FALSE, print = FALSE)$name
+    grep("^Line_1_", vps, value = TRUE)[1L]
+  }
+  draw_dir <- function() {
+    if (is.null(dir_lab) || is.na(vp <- head_vp())) return(invisible())
+    grid::seekViewport(vp)
+    zx <- grid::unit(tr_x(zero), "native")
+    grid::grid.text(dir_lab[1L], x = zx - grid::unit(dir_gap, "mm"), hjust = 1,
+                    gp = dir_gp, name = "direction_left")
+    grid::grid.text(dir_lab[2L], x = zx + grid::unit(dir_gap, "mm"), hjust = 0,
+                    gp = dir_gp, name = "direction_right")
+    grid::upViewport(0)
+  }
 
   if (isFALSE(fixed_size)) {
     # Suggested size: the widest cell of every text column (bold rows and
@@ -1097,13 +1264,14 @@ plt_hte_sub <- function(x,
     # width as in RegR::plt_eff2(), and about 0.3 in a row.
     text_in <- on_null(sum(vapply(seq_len(n_text), function(j)
       max(vapply(seq_len(nrow(text)), function(i) {
-        gp <- if (bold[i] || (overall && i == 2L && j == 1L))
+        gp <- if (is_sum[i] || (overall && i == 2L && j == 1L))
                 grid::gpar(cex = cex_bold, fontface = "bold")
               else grid::gpar(cex = cex_lab)
         grid::convertWidth(grid::grobWidth(grid::textGrob(text[i, j], gp = gp)),
                            "in", valueOnly = TRUE)
       }, numeric(1L))), numeric(1L)))) + n_text * 6 / 25.4
-    size <- round(c(width  = max(text_in / 0.75, text_in + 2) + 0.4,
+    size <- round(c(width  = max(text_in / 0.75, text_in + 2,
+                                 text_in + on_null(xlab_in())) + 0.4,
                     height = row_in * nrow(text) + 0.9 +
                       if (is.null(title)) 0 else 0.4), 1)
   } else {
@@ -1120,13 +1288,34 @@ plt_hte_sub <- function(x,
       area <- c(grid::convertWidth(grid::unit(1, "npc"), "in", valueOnly = TRUE),
                 grid::convertHeight(grid::unit(1, "npc"), "in", valueOnly = TRUE))
       grid::upViewport(0)
+      # the x scale of the forest column and the width of the direction labels
+      vp <- head_vp()
+      xs <- if (!is.na(vp)) {
+        grid::seekViewport(vp)
+        sc <- grid::current.viewport()$xscale
+        grid::upViewport(0)
+        sc
+      }
+      dir_w <- if (!is.null(dir_lab)) vapply(dir_lab, function(s)
+        grid::convertWidth(grid::grobWidth(grid::textGrob(s, gp = dir_gp)), "in",
+                           valueOnly = TRUE), numeric(1L))
       # the graph is the last layout column
-      list(text = sum(w[-length(w)]), over = grDevices::dev.size("in") - area)
+      list(text = sum(w[-length(w)]), over = grDevices::dev.size("in") - area,
+           xs = xs, dir_w = dir_w, xlab_w = xlab_in())
     }, width = 40, height = 40)
+    # Room for each direction label on its side of the reference line; a side
+    # too short to hold one at any width is left as it is
+    need <- 0
+    if (!is.null(dir_lab) && length(probe$xs) == 2L) {
+      fr <- c(tr_x(zero) - probe$xs[1L], probe$xs[2L] - tr_x(zero)) /
+        diff(probe$xs)
+      ok <- fr > 0.05
+      if (any(ok)) need <- max((probe$dir_w[ok] + (dir_gap + 1) / 25.4) / fr[ok])
+    }
     graph_w <- if (is.numeric(fixed_size)) {
       fixed_size - probe$text - probe$over[1L]
     } else {
-      max(probe$text / 3, 2)
+      max(probe$text / 3, 2, need, probe$xlab_w)
     }
     if (graph_w <= 0)
       stop(sprintf("`fixed_size` leaves no room for the forest column: the labels alone need %.1f in.",
@@ -1148,7 +1337,8 @@ plt_hte_sub <- function(x,
   # forestplot does, save for the 5 mm margins, which forestplot turns into a
   # share of the capture. grid.grabExpr() hands back to the device that was
   # current, and selecting the null device opens a new one, hence on_null().
-  g <- on_null(grid::grid.grabExpr(print(p), warn = 0, width = size[["width"]],
+  g <- on_null(grid::grid.grabExpr({print(p); draw_dir()}, warn = 0,
+                                   width = size[["width"]],
                                    height = size[["height"]]))
   # ggplotify 0.1.2 builds its ggplot with aes_(), deprecated in ggplot2
   p <- withCallingHandlers(ggplotify::as.ggplot(g),

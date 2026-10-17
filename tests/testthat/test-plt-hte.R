@@ -483,7 +483,7 @@ test_that("plt_hte_sub recomputes the get_hte() subgroup estimates", {
   s90 <- attr(p90, "subgroup")
   expect_equal(s90$estimate, st$estimate)
   expect_equal(s90$conf.low, s90$estimate - stats::qnorm(0.95) * s90$std.error)
-  expect_identical(fp_headers(p90)[3], "Risk difference")
+  expect_identical(fp_headers(p90)[3], "Risk difference, % (90% CI)")
 })
 
 test_that("measure = 'ratio' averages the arm scores on a log axis", {
@@ -499,7 +499,7 @@ test_that("measure = 'ratio' averages the arm scores on a log axis", {
   ax <- fp_grobs(p, "xaxis")[[1L]]
   expect_equal(ax$at, log(as.numeric(ax$label)))
   expect_true("1" %in% ax$label)
-  expect_identical(fp_headers(p)[3], "Risk ratio")
+  expect_identical(fp_headers(p)[3], "Risk ratio (95% CI)")
 })
 
 test_that("overall, show_n, show_pvalue and show_pinter set the rows and columns", {
@@ -512,8 +512,8 @@ test_that("overall, show_n, show_pvalue and show_pinter set the rows and columns
                      "sex", "F", "M"))
   expect_length(fp_table(p), 3L)              # no P columns by default
   ov <- res$stats[res$stats$measure == "diff", ]
-  expect_identical(fp_col(p, 3)[2], sprintf("%.3f (%.3f, %.3f)", ov$estimate,
-                                            ov$conf.low, ov$conf.high))
+  expect_identical(fp_col(p, 3)[2], sprintf("%.1f (%.1f, %.1f)", 100 * ov$estimate,
+                                            100 * ov$conf.low, 100 * ov$conf.high))
   expect_length(fp_grobs(p, "polygon"), 6L)   # a diamond for every estimate
   # "All patients" is set like a variable name; the rest of its row is not
   font <- function(lab) {
@@ -530,7 +530,7 @@ test_that("overall, show_n, show_pvalue and show_pinter set the rows and columns
                    c("x", "sub_var", "measure", "conf_level", "effect",
                      "overall", "show_n", "show_pvalue", "show_pinter"))
   no_n <- plt_hte_sub(res, sub_var = "stage", show_n = FALSE)
-  expect_identical(fp_headers(no_n), c("Subgroup", "Risk difference"))
+  expect_identical(fp_headers(no_n), c("Subgroup", "Risk difference, % (95% CI)"))
 
   both <- plt_hte_sub(res, sub_var = "stage", show_pvalue = TRUE,
                       show_pinter = TRUE)
@@ -559,7 +559,7 @@ test_that("effect replaces the estimate of the rows it names", {
   expect_equal(sg$p_inter, st$p_inter)        # the forest's Wald test is kept
   lab <- trimws(fp_col(p, 1))
   expect_identical(fp_col(p, 3)[lab %in% c("All patients", "M")],
-                   c("0.100 (0.070, 0.130)", "0.120 (0.050, 0.190)"))
+                   c("10.0 (7.0, 13.0)", "12.0 (5.0, 19.0)"))
   expect_identical(fp_col(p, 4)[lab == "M"], "<0.001")
 
   # a ratio is read on the log scale, at the plot's conf_level, as given
@@ -591,9 +591,9 @@ test_that("effect replaces the estimate of the rows it names", {
                m0$estimate + c(-1, 1) * z75 * m0$std.error)
   ov <- res$stats[res$stats$measure == "diff", ]
   expect_identical(fp_col(pe, 3)[trimws(fp_col(pe, 1)) == "All patients"],
-                   sprintf("%.3f (%.3f, %.3f)", ov$estimate,
-                           ov$estimate - z75 * ov$std.error,
-                           ov$estimate + z75 * ov$std.error))
+                   sprintf("%.1f (%.1f, %.1f)", 100 * ov$estimate,
+                           100 * (ov$estimate - z75 * ov$std.error),
+                           100 * (ov$estimate + z75 * ov$std.error)))
   r0 <- attr(plt_hte_sub(res, sub_var = "sex", measure = "ratio"), "subgroup")
   r1 <- attr(plt_hte_sub(res, sub_var = "sex", measure = "ratio",
                          effect = list(sex = c(F = "1.20"))), "subgroup")
@@ -658,7 +658,7 @@ test_that("label_column_list renames rows; the SEER dictionary names variables o
   expect_identical(trimws(fp_col(q, 1))[2], "Age")
 
   expect_identical(names(formals(plt_hte_sub))[9:11],
-                   c("show_pinter", "label_column_list", "xlim"))
+                   c("show_pinter", "label_column_list", "est_label"))
   expect_error(plt_hte_sub(res, label_column_list = "Sex"), "label_column_list")
   expect_error(plt_hte_sub(res, label_column_list = list(sex = 1)), "label_column_list")
 })
@@ -705,11 +705,11 @@ test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
   expect_true(is.na(attr(p, "subgroup")$estimate[3]))
   expect_identical(fp_col(p, 3)[row], "\u2014")
   expect_length(fp_grobs(p, "polygon"), 3L)   # no diamond for III
-  expect_identical(fp_headers(p)[3], "St(5-year) difference")   # months
+  expect_identical(fp_headers(p)[3], "5-year DSS difference, % (95% CI)")   # months
   # effect fills the empty level in, diamond and all
   pf <- suppressWarnings(plt_hte_sub(res, sub_var = "stage",
                                      effect = list(stage = c(III = "-0.050 (-0.150, 0.050)"))))
-  expect_identical(fp_col(pf, 3)[row], "-0.050 (-0.150, 0.050)")
+  expect_identical(fp_col(pf, 3)[row], "-5.0 (-15.0, 5.0)")
   expect_length(fp_grobs(pf, "polygon"), 4L)
   # a bare estimate or a level needs the row's own estimate
   expect_error(suppressWarnings(plt_hte_sub(res, sub_var = "stage",
@@ -718,7 +718,7 @@ test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
   expect_identical(
     fp_headers(suppressWarnings(plt_hte_sub(res, sub_var = "stage",
                                             measure = "ratio")))[3],
-    "Event risk ratio")
+    "Event risk ratio (95% CI)")
 
   # plt_hte_cate(): that level keeps its curve but gets no subgroup line
   expect_warning(pc <- plt_hte_cate(res, sub_var = "stage", type = "density"),
@@ -771,8 +771,9 @@ test_that("fixed_size pins the plot to the size its text needs", {
   skip_if_not_installed("forestplot")
   skip_if_not_installed("ggplotify")
   res <- dep_res()
-  expect_identical(tail(names(formals(plt_hte_sub)), 3L),
-                   c("fixed_size", "row_height", "save"))
+  expect_identical(tail(names(formals(plt_hte_sub)), 6L),
+                   c("fixed_size", "row_height", "ci_shape", "overall_shape",
+                     "box_col", "save"))
 
   p <- plt_hte_sub(res, sub_var = "stage")
   size <- attr(p, "plot_size")
@@ -819,6 +820,101 @@ test_that("fixed_size pins the plot to the size its text needs", {
   grDevices::dev.off()
   expect_identical(pdf_pages(f), 3L)
   unlink(f)
+})
+
+# Every text the drawing writes, header cells, axis title and labels included.
+fp_texts <- function(p)
+  unname(vapply(fp_grobs(p, "text"), function(k) paste(k$label, collapse = ""), ""))
+fp_fills <- function(p, cls)
+  unname(vapply(fp_grobs(p, cls), function(k) paste(k$gp$fill, collapse = ","), ""))
+
+test_that("plt_hte_sub shows percentages, plain titles and direction labels", {
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  res <- dep_res()
+  ov  <- res$stats[res$stats$measure == "diff", ]
+  # a difference of risks reads in percentage points by default
+  p <- plt_hte_sub(res, sub_var = "stage")
+  expect_identical(fp_headers(p)[3], "Risk difference, % (95% CI)")
+  expect_identical(fp_col(p, 3)[2],
+                   sprintf("%.1f (%.1f, %.1f)", 100 * ov$estimate,
+                           100 * ov$conf.low, 100 * ov$conf.high))
+  ax <- fp_grobs(p, "xaxis")[[1L]]
+  expect_identical(ax$label, as.character(round(100 * ax$at, 8)))
+  # z is 0/1, so the arms are named after it
+  expect_true("Risk difference (%), z - no z" %in% fp_texts(p))
+  expect_true(all(c("Higher with no z", "Higher with z") %in% fp_texts(p)))
+  # the estimates themselves keep their scale
+  expect_equal(attr(p, "subgroup"), attr(plt_hte_sub(res, sub_var = "stage",
+                                                     percent = FALSE), "subgroup"))
+
+  p0 <- plt_hte_sub(res, sub_var = "stage", percent = FALSE,
+                    direction_labels = FALSE, conf_level = 0.9)
+  expect_identical(fp_headers(p0)[3], "Risk difference (90% CI)")
+  expect_identical(fp_col(p0, 3)[2],
+                   sprintf("%.3f (%.3f, %.3f)", ov$estimate,
+                           ov$estimate - stats::qnorm(0.95) * ov$std.error,
+                           ov$estimate + stats::qnorm(0.95) * ov$std.error))
+  expect_false(any(c("Higher with no z", "Higher with z") %in% fp_texts(p0)))
+  expect_true("Risk difference, z - no z" %in% fp_texts(p0))
+
+  p1 <- plt_hte_sub(res, sub_var = "stage", est_label = "ARD (95% CI)",
+                    xlab = "Absolute risk difference",
+                    direction_labels = c("Favours control", "Favours z"))
+  expect_identical(fp_headers(p1)[3], "ARD (95% CI)")
+  expect_true(all(c("Absolute risk difference", "Favours control",
+                    "Favours z") %in% fp_texts(p1)))
+  # ratios are no percentages
+  pr <- plt_hte_sub(res, sub_var = "stage", measure = "ratio")
+  expect_identical(fp_headers(pr)[3], "Risk ratio (95% CI)")
+
+  expect_error(plt_hte_sub(res, percent = NA), "`percent`")
+  expect_error(plt_hte_sub(res, est_label = 1), "`est_label`")
+  expect_error(plt_hte_sub(res, xlab = c("a", "b")), "`xlab`")
+  expect_error(plt_hte_sub(res, direction_labels = "left"), "`direction_labels`")
+})
+
+test_that("ci_shape, overall_shape and box_col draw a meta-analysis style", {
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  res <- dep_res()
+  # default: a blue4 diamond for every estimate
+  p <- plt_hte_sub(res, sub_var = "stage")
+  expect_identical(fp_fills(p, "polygon"), rep("blue4", 4L))
+
+  m <- plt_hte_sub(res, sub_var = "stage", ci_shape = "normal",
+                   overall_shape = "summary", box_col = c("blue4", "#B2182B"))
+  # one summary diamond for "All patients", squares for the levels
+  expect_identical(fp_fills(m, "polygon"), "#B2182B")
+  sq <- Filter(function(k) identical(k$gp$fill, "blue4"), fp_grobs(m, "rect"))
+  expect_length(sq, 3L)
+  # the most precise level gets the largest square
+  se <- attr(m, "subgroup")$std.error
+  side <- vapply(sq, function(k) grid::convertWidth(k$width, "in", TRUE), 0)
+  expect_identical(unname(which.max(side)), which.min(se))
+  # the summary row is bold across its columns
+  bold <- function(lab) Filter(function(k) identical(k$label, lab),
+                               fp_grobs(m, "text"))[[1L]]$gp$font
+  expect_identical(unname(bold(fp_col(m, 3)[2])), 2L)
+
+  # overall_shape follows ci_shape; a second colour marks the overall row
+  n <- plt_hte_sub(res, sub_var = "stage", ci_shape = "normal")
+  expect_length(fp_grobs(n, "polygon"), 0L)
+  expect_length(Filter(function(k) identical(k$gp$fill, "blue4"),
+                       fp_grobs(n, "rect")), 4L)
+  d2 <- plt_hte_sub(res, sub_var = "stage", box_col = c("blue4", "red"))
+  expect_identical(sort(fp_fills(d2, "polygon")), c(rep("blue4", 3L), "red"))
+
+  expect_error(plt_hte_sub(res, ci_shape = "square"), "`ci_shape`")
+  expect_error(plt_hte_sub(res, overall_shape = "box"), "`overall_shape`")
+  expect_error(plt_hte_sub(res, box_col = c("red", "blue", "green")), "`box_col`")
+  expect_error(plt_hte_sub(res, box_col = "notacolour"), "`box_col`")
+  expect_identical(names(formals(plt_hte_sub))[10:16],
+                   c("label_column_list", "est_label", "xlab", "xlim",
+                     "ticks_at", "percent", "direction_labels"))
+  expect_identical(tail(names(formals(plt_hte_sub)), 6L),
+                   c("fixed_size", "row_height", "ci_shape", "overall_shape",
+                     "box_col", "save"))
 })
 
 test_that("plt_hte_sub returns a ggplot patchwork can combine", {

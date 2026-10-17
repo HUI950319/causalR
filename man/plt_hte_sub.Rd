@@ -15,11 +15,18 @@ plt_hte_sub(
   show_pvalue = FALSE,
   show_pinter = FALSE,
   label_column_list = NULL,
+  est_label = NULL,
+  xlab = NULL,
   xlim = NULL,
   ticks_at = NULL,
+  percent = TRUE,
+  direction_labels = TRUE,
   title = NULL,
   fixed_size = TRUE,
   row_height = 0.3,
+  ci_shape = c("diamond", "normal"),
+  overall_shape = NULL,
+  box_col = "blue4",
   save = list()
 )
 }
@@ -40,8 +47,8 @@ otherwise add it with \code{get_hte(sub_var = )}.}
 an outcome probability, a binary outcome or \eqn{S(t)}.
 Relative effects do not support forests with sample weights or clusters.}
 
-\item{conf_level}{Confidence level of the intervals, not printed on the
-plot. Default \code{0.95}, whatever level \code{x} was computed with.}
+\item{conf_level}{Confidence level of the intervals, named in the default
+\code{est_label}. Default \code{0.95}, whatever level \code{x} was computed with.}
 
 \item{effect}{\code{NULL} (default) or rows to replace, e.g. with an estimate
 from a published study: a named list whose elements are named by a
@@ -84,6 +91,17 @@ renames variable rows only (its keys are variable names, so a level \code{M}
 stays \code{M}). Only the drawing changes: \code{sub_var}, \code{effect} and
 \code{attr(p, "subgroup")} keep the original names.}
 
+\item{est_label}{\code{NULL} (default) or a single string heading the estimate
+column. \code{NULL} names the measure, \verb{\%} when \code{percent} applies, and the
+interval, e.g. \code{"3-year DSS difference, \% (95\% CI)"} for a survival
+probability at \code{time = 36} or \code{"Risk ratio (95\% CI)"}.}
+
+\item{xlab}{\code{NULL} (default) or a single string for the axis title. \code{NULL}
+names the measure and the comparison, treated arm first, e.g.
+\code{"Difference in 3-year DSS (\%), NACT - no NACT"}. An exposure whose two
+levels read yes / no (\code{Yes}/\code{No}, \code{1}/\code{0}, \code{TRUE}/\code{FALSE}, in any case) is
+named after \code{cat_var}, as here; otherwise its levels name the arms.}
+
 \item{xlim}{\code{NULL} (default) or two increasing numbers giving the axis
 range, positive for \code{"ratio"} and \code{"OR"}; intervals running past it end
 in arrows.}
@@ -91,11 +109,31 @@ in arrows.}
 \item{ticks_at}{\code{NULL} (default) or the axis ticks, on the scale of the
 estimates.}
 
+\item{percent}{Logical. \code{TRUE} (default) shows a difference of
+probabilities -- a survival probability or a binary risk -- in percentage
+points with one decimal, in the table and on the axis. It changes the
+display only: \code{xlim}, \code{ticks_at}, \code{effect} and \code{attr(p, "subgroup")} stay
+on the scale of the estimates. It does not apply to RMST, continuous
+outcomes or ratios. \code{FALSE} shows probabilities with three decimals.}
+
+\item{direction_labels}{\code{TRUE} (default), \code{FALSE}, or two strings: the
+labels written left and right of the reference line, in the header row of
+the forest column. \code{TRUE} writes, for a survival outcome, which arm each
+side favours -- right of 0 the treated arm for a difference, left of 1 for
+an event risk or odds ratio, right of 1 for an RMST ratio -- e.g.
+\code{"Favours no NACT"} and \code{"Favours NACT"}; otherwise which arm has the
+higher value, e.g. \code{"Higher with no z"} and \code{"Higher with z"}. The arms
+are named as in \code{xlab}. A pinned plot (\code{fixed_size = TRUE}) widens the
+forest column so that both fit. With automatic ticks (\code{ticks_at} and
+\code{xlim} both \code{NULL}), an axis that would end at the reference line gets
+one more tick beyond it to make room.}
+
 \item{title}{Plot title, or \code{NULL} (default).}
 
 \item{fixed_size}{Size policy. \code{TRUE} (default) pins the plot to the size
 its text needs -- rows \code{row_height} tall, the graph column a quarter of the
-width and at least 2 in -- so it draws the same on every device: a larger
+width, at least 2 in and as wide as the axis title and the direction
+labels need -- so it draws the same on every device: a larger
 one only adds white space, a smaller one clips it. A single positive
 number pins the total width in inches instead, the graph column taking
 what the text leaves. \code{FALSE} stretches the plot over the device, or over
@@ -108,6 +146,20 @@ number; default \code{0.3}. A pinned plot (\code{fixed_size} not \code{FALSE}) d
 rows at this height and its height follows; with \code{fixed_size = FALSE}
 only the suggested height in \code{attr(p, "plot_size")} does. Text size is
 unchanged, so a value much below \code{0.2} crowds the rows.}
+
+\item{ci_shape}{Glyph of the subgroup rows: \code{"diamond"} (default) or
+\code{"normal"}, a square with whiskers whose size follows the inverse
+variance of its estimate, relative to the most precise square drawn, as
+in a meta-analysis forest plot.}
+
+\item{overall_shape}{Glyph of the "All patients" row: \code{NULL} (default)
+takes \code{ci_shape}; \code{"diamond"} or \code{"normal"} as in \code{ci_shape}; or
+\code{"summary"}, a meta-analysis summary diamond spanning the interval, with
+the whole row in bold.}
+
+\item{box_col}{One or two colours: of the glyphs and intervals of the
+subgroup rows, then of the "All patients" row. One colour serves both.
+Default \code{"blue4"}.}
 
 \item{save}{\code{NULL} or a list with \code{filename}, \code{width} and \code{height}, passed
 to \code{RegR::save_plt()} for PDF output. \code{list()} and \code{NULL} skip saving; a
@@ -146,9 +198,9 @@ retain the tree's AIPW or TMLE estimator.
 The counts are patients per arm, treated first. A level with fewer
 than two patients in either arm -- or, for a survival outcome, no patient
 in an arm followed beyond \code{time} -- has no estimate: it is drawn with a
-dash, with a warning. For a survival probability the \code{"diff"} column and
-axis read \verb{St(<time / 12>-year)}, e.g. \code{St(10-year)} for \code{time = 120}:
-\code{time} is taken in months, as in \pkg{RegR}.
+dash, with a warning. For a survival probability the default \code{est_label}
+and \code{xlab} read \verb{<time / 12>-year DSS}, e.g. \verb{10-year DSS} for
+\code{time = 120}: \code{time} is taken in months, as in \pkg{RegR}.
 }
 
 \section{Replaced rows}{
@@ -203,6 +255,10 @@ plt_hte_sub(res, sub_var = c("sex", "stage"), show_pvalue = TRUE,
             effect = list(sex = c(M = "0.150 (0.050, 0.250)", F = "0.05"),
                           III = "conf_0.9",
                           "All patients" = "0.100 (0.040, 0.160)"))
+
+# Meta-analysis style: squares by inverse variance, a summary diamond
+plt_hte_sub(res, sub_var = "stage", ci_shape = "normal",
+            overall_shape = "summary", box_col = c("blue4", "#B2182B"))
 }
 \dontshow{\}) # examplesIf}
 }
