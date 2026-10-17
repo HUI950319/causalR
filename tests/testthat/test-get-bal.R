@@ -313,11 +313,14 @@ test_that("a failing scheme is named in the error", {
     "`Bad PSM`.*not available")
 })
 
-# the red reference line fmt_ref() adds last, and the point layer's data
+# the red reference line fmt_ref() adds last, and the point layer's data;
+# fmt_ref() maps the line's position and style from helper columns, so the
+# built layer data holds xintercept and colour
 bal_ref  <- function(p) {
-  v <- Filter(function(l) inherits(l$geom, "GeomVline"), p$layers)
-  v <- v[[length(v)]]
-  c(as.list(v$data), v$aes_params)     # xintercept lives in the layer data
+  d <- ggplot2::layer_data(p, max(which(vapply(
+    p$layers, function(l) inherits(l$geom, "GeomVline"), TRUE))))
+  d$colour <- as.vector(d$colour)      # drop the AsIs class of the I() mapping
+  d
 }
 bal_pts <- function(p) ggplot2::layer_data(
   p, which(vapply(p$layers, function(l) inherits(l$geom, "GeomPoint"), TRUE)))
@@ -339,7 +342,7 @@ test_that("love_args defaults keep the RegR-style plot", {
                          TRUE)))
   expect_identical(p$theme$text$size, 16)
   expect_equal(p$theme$legend.position.inside, c(0.99, 0.02))
-  expect_equal(p$theme$legend.justification, c(1, 0))
+  expect_equal(p$theme$legend.justification.inside, c(1, 0))
 })
 
 test_that("love_args restyles points, lines, theme and legend", {
@@ -360,15 +363,21 @@ test_that("love_args restyles points, lines, theme and legend", {
   expect_identical(p$theme$text$size, 12)
   expect_identical(p$theme$legend.position, "bottom")
   # fmt_legend() centres an outside legend on its edge; the long scheme
-  # labels are wrapped into two columns rather than one clipped row
+  # labels are wrapped into two columns rather than one clipped row, which
+  # fmt_legend() sets when the guides are built, on the one legend that
+  # colour and shape merge into
   expect_equal(p$theme$legend.justification, c(0.5, 1))
-  expect_identical(p$guides$guides$colour$params$ncol, 2)
-  expect_identical(p$guides$guides$shape$params$ncol, 2)
+  guides <- ggplot2::ggplot_build(p)$plot$guides$params
+  expect_length(guides, 1)
+  expect_true(all(c("colour", "shape") %in% names(guides[[1]]$key)))
+  expect_identical(guides[[1]]$ncol, 2)
 
-  # an explicit justification survives fmt_legend(), which would overwrite it
+  # an explicit justification survives fmt_legend(), which would overwrite
+  # it, also for the default inside legend, which reads the .inside element
   p <- get_bal(bal_data(), "z", bal_adj, methods = "ATO",
                love_args = list(legend_justification = c(0, 0)))$plt
   expect_equal(p$theme$legend.justification, c(0, 0))
+  expect_equal(p$theme$legend.justification.inside, c(0, 0))
 })
 
 test_that("var_names relabels the plot, not $balance", {

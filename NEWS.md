@@ -6,6 +6,11 @@
   the column names instead of failing with "there is no package called
   'RegR'".
 
+* `get_bal()`'s `love_args$legend_justification` now also moves the default
+  legend inside the plot. It was set only as `legend.justification`, which an
+  inside legend reads after `legend.justification.inside`, so that legend
+  stayed anchored at its bottom-right corner.
+
 * `plt_hte_sub()` reads more plainly and can draw a meta-analysis forest.
   - `axis_args` gathers the axis settings, with the field names of
     `RegR::plt_eff2()`: `xlim`, `xticks` (formerly the argument `ticks_at`),

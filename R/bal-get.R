@@ -630,9 +630,10 @@ get_bal <- function(data,
   # rows are sorted by unadjusted SMD, so that corner is the one the
   # reference line leaves empty, and with many schemes RegR's c(0.8, 0.4)
   # covers it. fmt_legend() derives the justification from the position and
-  # overwrites one passed to it, so an explicit one is set afterwards. Scheme
-  # labels are long, so a legend above or below the panel takes two columns
-  # rather than one clipped row.
+  # overwrites one passed to it, so an explicit one is set afterwards, also
+  # as legend.justification.inside: fmt_legend() sets that one for an inside
+  # legend, which reads it in preference. Scheme labels are long, so a legend
+  # above or below the panel takes two columns rather than one clipped row.
   p <- UtilsR::fmt_legend(
     p, legend.position = la$legend_position,
     ncol = if (identical(la$legend_position, "top") ||
@@ -640,7 +641,9 @@ get_bal <- function(data,
     legend.background = ggplot2::element_rect(
       fill = "white", colour = "#D6D6D6", linewidth = 1))
   if (!is.null(la$legend_justification))
-    p <- p + ggplot2::theme(legend.justification = la$legend_justification)
+    p <- p + ggplot2::theme(
+      legend.justification = la$legend_justification,
+      legend.justification.inside = la$legend_justification)
   p <- p + ggplot2::labs(x = "Absolute standardized mean difference",
                          y = "Covariates")
 
