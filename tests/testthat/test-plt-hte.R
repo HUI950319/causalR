@@ -648,6 +648,71 @@ test_that("effect replaces the estimate of the rows it names", {
                "sex = M")
 })
 
+test_that("effect moves the All patients row with the subgroup rows it replaces", {
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  res <- dep_res()
+  N   <- nrow(res$data)
+  z   <- stats::qnorm(0.975)
+  s   <- .hte_arm_scores(res$fit)
+  iM  <- res$data$sex == "M"
+  pM  <- mean(iM)
+  ov_txt <- function(p) fp_col(p, 3)[trimws(fp_col(p, 1)) == "All patients"]
+  fmt <- function(e, l, h, f = "%.3f")
+    sprintf(paste0(f, " (", f, ", ", f, ")"), e, l, h)
+  one <- function(...) plt_hte_sub(res, sub_var = "sex", ...)
+  dif <- function(...) one(axis_args = list(percent = FALSE), ...)
+  ov <- res$stats[res$stats$measure == "diff", ]
+  st <- attr(one(), "subgroup")
+  m0 <- st[st$level == "M", ]
+
+  # diff: the overall AIPW estimate is the patient-weighted mean of its
+  # subgroups', so replacing every level gives that mean of the new values
+  e_all <- (sum(!iM) * 0.10 + sum(iM) * 0.40) / N
+  expect_identical(ov_txt(dif(effect = list(sex = c(F = "0.10", M = "0.40")))),
+                   fmt(e_all, e_all - z * ov$std.error, e_all + z * ov$std.error))
+  # a bare estimate shifts it by the row's share and keeps its SE ...
+  e1 <- ov$estimate + pM * (0.40 - m0$estimate)
+  expect_identical(ov_txt(dif(effect = list(M = "0.40"))),
+                   fmt(e1, e1 - z * ov$std.error, e1 + z * ov$std.error))
+  # ... an interval also changes its variance by the row's share squared
+  se2 <- sqrt(ov$std.error^2 + pM^2 * ((0.2 / (2 * z))^2 - m0$std.error^2))
+  expect_identical(ov_txt(dif(effect = list(M = "0.40 (0.30, 0.50)"))),
+                   fmt(e1, e1 - z * se2, e1 + z * se2))
+
+  # ratio and OR keep the row's control-arm mean and move its treated arm
+  grid <- function(m) data.frame(estimand = "ATE", measure = m)
+  A <- mean(s$g1); B <- mean(s$g0)
+  AM <- mean(s$g1[iM]); BM <- mean(s$g0[iM])
+  se_r <- .hte_estimate(res$fit, s, rep(TRUE, N), grid("ratio"), FALSE, z,
+                        "Overall")$std.error
+  th_r <- log((A + pM * (2 * BM - AM)) / B)
+  expect_identical(ov_txt(one(measure = "ratio", effect = list(M = "2.00"))),
+                   fmt(exp(th_r), exp(th_r - z * se_r), exp(th_r + z * se_r), "%.2f"))
+  se_o <- .hte_estimate(res$fit, s, rep(TRUE, N), grid("OR"), FALSE, z,
+                        "Overall")$std.error
+  A1   <- A + pM * (stats::plogis(stats::qlogis(BM) + log(2)) - AM)
+  th_o <- stats::qlogis(A1) - stats::qlogis(B)
+  expect_identical(ov_txt(one(measure = "OR", effect = list(M = "2.00"))),
+                   fmt(exp(th_o), exp(th_o - z * se_o), exp(th_o + z * se_o), "%.2f"))
+
+  # "conf_" rows leave it; an "All patients" entry of its own wins, so
+  # "conf_<conf_level>" keeps the forest's row
+  forest <- fmt(ov$estimate, ov$conf.low, ov$conf.high)
+  expect_identical(ov_txt(dif(effect = list(M = "conf_0.75"))), forest)
+  expect_identical(ov_txt(dif(effect = list(M = "0.40", "All patients" = "conf_0.95"))),
+                   forest)
+  # rows of two variables would move it two ways
+  expect_error(plt_hte_sub(res, sub_var = c("stage", "sex"),
+                           effect = list(M = "0.40", I = "0.10")),
+               "All patients")
+  expect_identical(
+    ov_txt(plt_hte_sub(res, sub_var = c("stage", "sex"),
+                       axis_args = list(percent = FALSE),
+                       effect = list(M = "0.40", I = "conf_0.75"))),
+    fmt(e1, e1 - z * ov$std.error, e1 + z * ov$std.error))
+})
+
 test_that("label_column_list renames rows; the SEER dictionary names variables only", {
   skip_if_not_installed("forestplot")
   skip_if_not_installed("ggplotify")
@@ -721,6 +786,13 @@ test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
                                      effect = list(stage = c(III = "-0.050 (-0.150, 0.050)"))))
   expect_identical(fp_col(pf, 3)[row], "-5.0 (-15.0, 5.0)")
   expect_length(fp_grobs(pf, "polygon"), 4L)
+  # ... and "All patients" follows it from the level's raw arm scores
+  s3 <- .hte_arm_scores(res$fit)
+  i3 <- res$data$stage == "III"
+  e3 <- res$stats$estimate[res$stats$measure == "diff"] +
+    mean(i3) * (-0.05 - mean((s3$g1 - s3$g0)[i3]))
+  expect_true(startsWith(fp_col(pf, 3)[trimws(fp_col(pf, 1)) == "All patients"],
+                         sprintf("%.1f (", 100 * e3)))
   # a bare estimate or a level needs the row's own estimate
   expect_error(suppressWarnings(plt_hte_sub(res, sub_var = "stage",
                                             effect = list(stage = c(III = "0.05")))),

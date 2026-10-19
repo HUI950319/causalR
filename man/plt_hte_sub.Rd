@@ -64,7 +64,8 @@ row's standard error;
 at that level.
 }
 
-See Replaced rows.}
+Unless \code{effect} names \code{"All patients"} as well, that row follows the
+rows given an estimate or an interval. See Replaced rows.}
 
 \item{overall}{Logical. \code{TRUE} (default) adds an "All patients" row with the
 overall ATE.}
@@ -232,6 +233,20 @@ the new estimate, on the log scale for a ratio, and \code{P} is recomputed.
 widens or narrows only that row's interval. Nothing on the plot marks such
 a row.
 
+Without an entry of its own, the "All patients" row follows the rows given
+an estimate or an interval. The overall AIPW estimate is the mean of its
+subgroups' estimates weighted by their share of the patients (of the
+observation weights, where the forest has them), so a difference moves by
+each row's share of its change. A ratio or odds ratio keeps the row's
+control-arm mean from the forest and moves its treated-arm mean to give
+the new value. The standard error moves by each row's change in variance
+times the squared derivative of the overall estimate (delta method), so a
+bare estimate leaves it as it is. A level the forest left without an
+estimate starts from its raw arm scores. Rows of two variables would move
+the overall row two ways: name \code{"All patients"} as well, where
+\code{"conf_<conf_level>"}, e.g. \code{"conf_0.95"}, keeps the forest's row. Rows of
+the other variables are left as they are.
+
 The "P for interaction" of a variable and its \code{cate_mean} keep the values
 from the forest: the Wald test cannot be redone from a replaced row.
 }
@@ -269,6 +284,10 @@ plt_hte_sub(res, sub_var = c("sex", "stage"), show_pvalue = TRUE,
             effect = list(sex = c(M = "0.150 (0.050, 0.250)", F = "0.05"),
                           III = "conf_0.9",
                           "All patients" = "0.100 (0.040, 0.160)"))
+
+# Left out, "All patients" follows the replaced row: it moves by the
+# share of men times the change of their estimate
+plt_hte_sub(res, sub_var = "sex", effect = list(sex = c(M = "0.150")))
 
 # Meta-analysis style: squares by inverse variance, a summary diamond
 plt_hte_sub(res, sub_var = "stage", ci_shape = c("normal", "summary"),

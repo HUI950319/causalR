@@ -603,7 +603,8 @@ plt_hte_dep <- function(x,
 #'   * `"conf_<level>"`, e.g. `"conf_0.9"`, which shows the row's own interval
 #'     at that level.
 #'
-#'   See Replaced rows.
+#'   Unless `effect` names `"All patients"` as well, that row follows the
+#'   rows given an estimate or an interval. See Replaced rows.
 #' @param overall Logical. `TRUE` (default) adds an "All patients" row with the
 #'   overall ATE.
 #' @param show_n Logical. `TRUE` (default) shows the column of patients per
@@ -734,6 +735,20 @@ plt_hte_dep <- function(x,
 #' widens or narrows only that row's interval. Nothing on the plot marks such
 #' a row.
 #'
+#' Without an entry of its own, the "All patients" row follows the rows given
+#' an estimate or an interval. The overall AIPW estimate is the mean of its
+#' subgroups' estimates weighted by their share of the patients (of the
+#' observation weights, where the forest has them), so a difference moves by
+#' each row's share of its change. A ratio or odds ratio keeps the row's
+#' control-arm mean from the forest and moves its treated-arm mean to give
+#' the new value. The standard error moves by each row's change in variance
+#' times the squared derivative of the overall estimate (delta method), so a
+#' bare estimate leaves it as it is. A level the forest left without an
+#' estimate starts from its raw arm scores. Rows of two variables would move
+#' the overall row two ways: name `"All patients"` as well, where
+#' `"conf_<conf_level>"`, e.g. `"conf_0.95"`, keeps the forest's row. Rows of
+#' the other variables are left as they are.
+#'
 #' The "P for interaction" of a variable and its `cate_mean` keep the values
 #' from the forest: the Wald test cannot be redone from a replaced row.
 #'
@@ -784,6 +799,10 @@ plt_hte_dep <- function(x,
 #'             effect = list(sex = c(M = "0.150 (0.050, 0.250)", F = "0.05"),
 #'                           III = "conf_0.9",
 #'                           "All patients" = "0.100 (0.040, 0.160)"))
+#'
+#' # Left out, "All patients" follows the replaced row: it moves by the
+#' # share of men times the change of their estimate
+#' plt_hte_sub(res, sub_var = "sex", effect = list(sex = c(M = "0.150")))
 #'
 #' # Meta-analysis style: squares by inverse variance, a summary diamond
 #' plt_hte_sub(res, sub_var = "stage", ci_shape = c("normal", "summary"),
@@ -1012,6 +1031,7 @@ plt_hte_sub <- function(x,
       stop(sprintf("`effect` names %s twice.",
                    paste(edits$var[dup], "=", edits$level[dup], collapse = ", ")),
            call. = FALSE)
+    arm <- s   # the arm scores, before `s` takes the strings
     # A string is an interval, drawn as given at conf_level; a bare estimate,
     # which keeps the row's SE; or "conf_<level>", which re-levels the row's
     # own interval. All of it is worked on the log scale for a ratio.
@@ -1065,6 +1085,74 @@ plt_hte_sub <- function(x,
         j <- sub$sub_var == edits$var[k] & sub$level == edits$level[k]
         sub[j, names(new)] <- new[k, ]
       }
+    }
+    # Without an entry of its own, the "All patients" row follows the rows
+    # given an estimate or an interval. The overall AIPW estimate averages
+    # the arm scores of its subgroups, so each such row moves it by its share
+    # of the patients: a difference directly, a ratio or OR through the row's
+    # treated-arm mean, its control-arm mean kept. The variance moves by the
+    # rows' change times the squared derivative of the overall estimate
+    # (delta method). A level the forest left without an estimate starts
+    # from its raw arm scores.
+    move <- !is.na(edits$level) & !is_conf
+    if (overall && !all_lab %in% edits$var && any(move) &&
+        is.finite(ov$std.error)) {
+      mv <- unique(edits$var[move])
+      if (length(mv) > 1L)
+        stop(sprintf("`effect` replaces rows of %s, which would move \"All patients\" two ways; give \"All patients\" as well, e.g. \"conf_%s\" to keep the forest's row.",
+                     paste(mv, collapse = " and "), format(conf_level)),
+             call. = FALSE)
+      k  <- which(move)
+      wt <- .hte_weights(fit)
+      g1 <- arm$g1
+      g0 <- arm$g0
+      if (log_x && event_risk) {
+        g1 <- 1 - g1
+        g0 <- 1 - g0
+      }
+      idx <- lapply(k, function(j) as.factor(d[[edits$var[j]]]) %in% edits$level[j])
+      p   <- vapply(idx, function(i) sum(wt[i]), numeric(1L)) / sum(wt)
+      th1 <- tr(new$estimate[k])
+      se0 <- vapply(seq_along(k), function(j) {
+        if (is.finite(cur[k[j], 2L])) return(cur[k[j], 2L])
+        i <- idx[[j]]
+        if (!log_x)
+          return(sqrt(.hte_score_summary(
+            g1 - g0, list(which(i)), wt,
+            if (length(fit$clusters)) fit$clusters else seq_along(wt))$vcov[1L]))
+        a <- mean(g1[i])
+        b <- mean(g0[i])
+        stats::sd(if (measure == "ratio") (g1[i] - a) / a - (g0[i] - b) / b
+                  else (g1[i] - a) / (a * (1 - a)) - (g0[i] - b) / (b * (1 - b))) /
+          sqrt(sum(i))
+      }, numeric(1L))
+      if (!log_x) {
+        th0 <- ifelse(is.finite(cur[k, 1L]), cur[k, 1L],
+                      vapply(idx, function(i) stats::weighted.mean((g1 - g0)[i], wt[i]),
+                             numeric(1L)))
+        th  <- ov$estimate + sum(p * (th1 - th0))
+        dk  <- p
+      } else {
+        Ak  <- vapply(idx, function(i) mean(g1[i]), numeric(1L))
+        Bk  <- vapply(idx, function(i) mean(g0[i]), numeric(1L))
+        # NaN where an arm mean leaves the range of the measure, caught below
+        Ak1 <- suppressWarnings(if (measure == "ratio") Bk * exp(th1)
+                                else stats::plogis(stats::qlogis(Bk) + th1))
+        A1  <- mean(g1) + sum(p * (Ak1 - Ak))
+        th  <- suppressWarnings(if (measure == "ratio") log(A1 / mean(g0))
+                                else stats::qlogis(A1) - stats::qlogis(mean(g0)))
+        dk  <- if (measure == "ratio") p * Ak1 / A1
+               else p * Ak1 * (1 - Ak1) / (A1 * (1 - A1))
+      }
+      v <- ov$std.error^2 + sum(dk^2 * (new$std.error[k]^2 - se0^2))
+      if (!is.finite(th) || !is.finite(v) || v <= 0)
+        stop(sprintf("`effect`: \"All patients\" cannot follow %s; give it as well.",
+                     paste(ids[k], collapse = "; ")), call. = FALSE)
+      se <- sqrt(v)
+      ov[names(new)] <- data.frame(estimate = bt(th), std.error = se,
+                                   conf.low = bt(th - z * se),
+                                   conf.high = bt(th + z * se),
+                                   p.value = 2 * stats::pnorm(-abs(th / se)))
     }
   }
 

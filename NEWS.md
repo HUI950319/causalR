@@ -1,5 +1,15 @@
 # causalR (development version)
 
+* `plt_hte_sub()`'s "All patients" row now follows the subgroup rows that
+  `effect` gives an estimate or an interval, unless `effect` names it as
+  well. The overall AIPW estimate is the patient-weighted mean of its
+  subgroups', so a difference moves by each row's share of its change; a
+  ratio or odds ratio moves through the row's treated-arm mean, its
+  control-arm mean kept. The standard error changes only where a replaced
+  row's does. Replacing rows of two variables now needs "All patients"
+  named; `"All patients" = "conf_<conf_level>"` keeps the forest's row, as
+  before.
+
 * `get_bal()` and `plt_hte_unihtee()` no longer need RegR for their default
   `var_names`, now `character()`. With RegR installed the labels of
   `RegR::name_map_seer` still apply, as before; without it the default keeps
