@@ -560,8 +560,9 @@ get_hte_unihtee <- function(data,
 #'   character vector such as `c(bmi = "Body mass index")`, as in
 #'   [get_bal()]; `character()` (default) gives none of your own. When RegR
 #'   is installed they are merged into `RegR::name_map_seer`, your labels
-#'   winning; a candidate in neither keeps its column name. `NULL` keeps
-#'   every column name. Two candidates may not share a label.
+#'   winning; a name given more than once keeps its first label. A candidate
+#'   in neither keeps its column name. `NULL` keeps every column name. Two
+#'   candidates may not share a label.
 #' @param title Plot title, or `NULL` (default).
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
@@ -674,16 +675,16 @@ plt_hte_unihtee <- function(x,
   rel <- measure != "diff"
 
   # var_names as in get_bal(): the caller's labels first, then
-  # RegR::name_map_seer; a candidate in neither keeps its column name.
+  # RegR::name_map_seer, the first of a repeated name winning; a candidate in
+  # neither keeps its column name.
   disp <- stats::setNames(v$variable, v$variable)
   if (!is.null(var_names)) {
     one_lab <- function(s) is.character(s) && length(s) == 1L && !is.na(s)
     if (!(is.list(var_names) || is.character(var_names)) ||
         (length(var_names) &&
          (is.null(names(var_names)) || any(!nzchar(names(var_names))) ||
-          anyDuplicated(names(var_names)) ||
           !all(vapply(var_names, one_lab, logical(1L))))))
-      stop("`var_names` must be NULL or a named list or character vector of single labels with unique names.",
+      stop("`var_names` must be NULL or a named list or character vector of single labels.",
            call. = FALSE)
     vn <- c(as.list(var_names),
             if (requireNamespace("RegR", quietly = TRUE)) RegR::name_map_seer)

@@ -731,6 +731,11 @@ test_that("label_column_list renames rows; the SEER dictionary names variables o
   q <- suppressMessages(plt_hte_sub(res, sub_var = "age_55", overall = FALSE,
                                     label_column_list = list(age_55 = "Age")))
   expect_identical(trimws(fp_col(q, 1))[2], "Age")
+  # a name given twice keeps its first label, as RegR's colname_map does
+  q2 <- suppressMessages(plt_hte_sub(res, sub_var = "age_55", overall = FALSE,
+                                     label_column_list = list(age_55 = "Age",
+                                                              age_55 = "Age group")))
+  expect_identical(trimws(fp_col(q2, 1))[2], "Age")
 
   expect_identical(names(formals(plt_hte_sub))[9:11],
                    c("show_pinter", "label_column_list", "header_list"))

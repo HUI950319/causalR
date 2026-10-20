@@ -306,6 +306,10 @@ test_that("var_names relabels every type and rejects clashing labels", {
                     as.character(b$label)))
   b0 <- uni_layer(plt_hte_unihtee(res, var_names = NULL), "GeomCol", "estimate")
   expect_true("w3 (+1 SD)" %in% as.character(b0$label))
+  # a name given twice keeps its first label
+  b2 <- uni_layer(plt_hte_unihtee(res, var_names = c(w3 = "Weight", w3 = "Mass")),
+                  "GeomCol", "estimate")
+  expect_true("Weight (+1 SD)" %in% as.character(b2$label))
   txt <- uni_layer(plt_hte_unihtee(res, type = "volcano", var_names = c(w3 = "Weight")),
                    "GeomText", "display")
   expect_true("Weight" %in% txt$display)

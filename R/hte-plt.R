@@ -621,8 +621,10 @@ plt_hte_dep <- function(x,
 #'   levels and "All patients". Its keys take precedence over the SEER
 #'   dictionary of `RegR::plt_eff2()`, which, when \pkg{RegR} is installed,
 #'   renames variable rows only (its keys are variable names, so a level `M`
-#'   stays `M`). Only the drawing changes: `sub_var`, `effect` and
-#'   `attr(p, "subgroup")` keep the original names.
+#'   stays `M`). A name given more than once keeps its first label, as in
+#'   the `colname_map` of `RegR::get_tb_gtsummary()`, so a dictionary
+#'   shared across studies can be passed whole. Only the drawing changes:
+#'   `sub_var`, `effect` and `attr(p, "subgroup")` keep the original names.
 #' @param header_list `NULL` (default) or a named list of single strings
 #'   replacing column headers, keyed as in `RegR::plt_eff2()`; a header left
 #'   out keeps its default. `"\n"` starts a new header line, e.g.
@@ -857,13 +859,14 @@ plt_hte_sub <- function(x,
         is.na(flags[[nm]]))
       stop(sprintf("`%s` must be TRUE or FALSE.", nm), call. = FALSE)
   log_x <- measure != "diff"
+  # A repeated name keeps its first label, as RegR's colname_map does: the
+  # lookup below indexes by name, which takes the first match
   if (length(label_column_list) &&
       (!(is.list(label_column_list) || is.character(label_column_list)) ||
        is.null(names(label_column_list)) || !all(nzchar(names(label_column_list))) ||
-       anyDuplicated(names(label_column_list)) ||
        !all(vapply(as.list(label_column_list), function(s)
          is.character(s) && length(s) == 1L && !is.na(s), logical(1L)))))
-    stop("`label_column_list` must be `NULL` or a list or character vector of single strings with unique names, e.g. c(age_55 = \"Age category (year)\").",
+    stop("`label_column_list` must be `NULL` or a named list or character vector of single strings, e.g. c(age_55 = \"Age category (year)\").",
          call. = FALSE)
   axis_args <- .merge_named_arg(
     axis_args, list(xlim = NULL, xticks = NULL, percent = TRUE,

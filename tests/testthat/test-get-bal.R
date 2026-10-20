@@ -414,7 +414,8 @@ test_that("var_names merges into RegR::name_map_seer; NULL keeps the names", {
   expect_setequal(lab(var_names = list(Age = "Age, y")), c("Age, y", "x2", "x3"))
   expect_setequal(lab(var_names = NULL), adj)
   expect_error(lab(var_names = "Age"), "`var_names` must be")
-  expect_error(lab(var_names = c(x2 = "A", x2 = "B")), "`var_names` must be")
+  # a name given twice keeps its first label, as RegR's colname_map does
+  expect_setequal(lab(var_names = c(x2 = "A", x2 = "B")), c("Age (year)", "A", "x3"))
   expect_error(lab(var_names = list(x2 = 1)), "`var_names` must be")
   # two covariates under one label would share one plot row
   expect_error(lab(var_names = c(x2 = "Age (year)")),

@@ -86,8 +86,10 @@ drawn, e.g. \code{c(age_55 = "Age category (year)", F = "Female", "All patients"
 levels and "All patients". Its keys take precedence over the SEER
 dictionary of \code{RegR::plt_eff2()}, which, when \pkg{RegR} is installed,
 renames variable rows only (its keys are variable names, so a level \code{M}
-stays \code{M}). Only the drawing changes: \code{sub_var}, \code{effect} and
-\code{attr(p, "subgroup")} keep the original names.}
+stays \code{M}). A name given more than once keeps its first label, as in
+the \code{colname_map} of \code{RegR::get_tb_gtsummary()}, so a dictionary
+shared across studies can be passed whole. Only the drawing changes:
+\code{sub_var}, \code{effect} and \code{attr(p, "subgroup")} keep the original names.}
 
 \item{header_list}{\code{NULL} (default) or a named list of single strings
 replacing column headers, keyed as in \code{RegR::plt_eff2()}; a header left

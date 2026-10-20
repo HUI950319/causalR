@@ -284,7 +284,9 @@
 #'   character vector such as `c(bmi = "Body mass index")`, used by the plot
 #'   and `$tbl`; `character()` (default) gives none of your own. When RegR is
 #'   installed they are merged into `RegR::name_map_seer`, your labels
-#'   winning; names not in `adj_var` are ignored, and a covariate in neither
+#'   winning; a name given more than once keeps its first label, as in the
+#'   `colname_map` of `RegR::get_tb_gtsummary()`. Names not in `adj_var` are
+#'   ignored, and a covariate in neither
 #'   keeps its column name. `NULL` keeps every column name. In the plot a
 #'   factor's label is applied to each of its level rows; `$balance` always
 #'   keeps the column names.
@@ -472,16 +474,16 @@ get_bal <- function(data,
   if (!is.null(la$legend_justification) && !place(la$legend_justification))
     bad("legend_justification", "must be NULL, one string, or two numbers.")
   # var_names: the caller's labels first, then RegR::name_map_seer, as
-  # RegR::get_tb_gtsummary() merges them; only adj_var entries are kept.
+  # RegR::get_tb_gtsummary() merges them, the first of a repeated name
+  # winning; only adj_var entries are kept.
   vn <- NULL
   if (!is.null(var_names)) {
     one_lab <- function(x) is.character(x) && length(x) == 1L && !is.na(x)
     if (!(is.list(var_names) || is.character(var_names)) ||
         (length(var_names) &&
          (is.null(names(var_names)) || any(!nzchar(names(var_names))) ||
-          anyDuplicated(names(var_names)) ||
           !all(vapply(var_names, one_lab, logical(1))))))
-      stop("`var_names` must be NULL or a named list or character vector of single labels with unique names.",
+      stop("`var_names` must be NULL or a named list or character vector of single labels.",
            call. = FALSE)
     vn <- c(as.list(var_names),
             if (requireNamespace("RegR", quietly = TRUE)) RegR::name_map_seer)

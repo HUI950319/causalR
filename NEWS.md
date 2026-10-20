@@ -1,5 +1,11 @@
 # causalR (development version)
 
+* `plt_hte_sub()`'s `label_column_list` and the `var_names` of `get_bal()`
+  and `plt_hte_unihtee()` accept a name given more than once and keep its
+  first label, as the `colname_map` of `RegR::get_tb_gtsummary()` does, so
+  a dictionary shared across studies can be passed whole. A repeated name
+  used to be an error.
+
 * `plt_hte_sub()`'s "All patients" row now follows the subgroup rows that
   `effect` gives an estimate or an interval, unless `effect` names it as
   well. The overall AIPW estimate is the patient-weighted mean of its
