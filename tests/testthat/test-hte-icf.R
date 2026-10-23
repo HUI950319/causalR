@@ -180,6 +180,8 @@ test_that("style = \"icf\" switches every step to the iCF code", {
   expect_true(any(both))
   expect_true(all(res$rules$estimate[both] > 1.2))
   expect_output(print(res), "style = \"icf\"")
+  expect_match(cli::ansi_strip(utils::capture.output(print(res)))[1],
+               "^ hte_icf  iterative causal forest")
   expect_output(print(res), "not honest")
 
   # A single field goes back to the causalR step
@@ -242,7 +244,7 @@ test_that("tree_var sets the only split variables and joins adj_var", {
   expect_setequal(res$importance$variable[res$importance$screened], c("X1", "X3"))
   both <- grepl("X1 = 1", res$rules$rule) & grepl("X3 = 1", res$rules$rule)
   expect_identical(sum(both), 1L)
-  expect_output(print(res), "split on: X1, X3")
+  expect_output(print(res), "split on +X1, X3")
 
   # Without X3 the rules can only use X1 and X2
   no3 <- get_hte_icf(d, "z", c("X1", "X2", "X3", "X4"),

@@ -1448,48 +1448,49 @@ print.hte_icf <- function(x, ...) {
   a  <- attr(x, "analysis")
   ra <- a$rule_args
   same <- identical(a$split_frac, 1)
-  cat(sprintf("<hte_icf> iterative causal forest (%s, grf %s)%s\n",
-              a$forest, a$backend_version,
-              if (identical(a$style, "icf")) "; style = \"icf\"" else ""))
-  cat(sprintf("  %s; %s; %d forests x %d trees per %s\n",
-              if (same) sprintf("n = %d, rules found and estimated on the same patients",
-                                nrow(x$est$data))
-              else sprintf("discovery n = %d, estimation n = %d",
-                           sum(x$rules$n_disc), nrow(x$est$data)),
-              if (length(a$depth) == 1L) "no CV"
-              else sprintf("%d-fold CV", ra$n_folds),
-              ra$n_forest, ra$num_trees,
-              if (is.numeric(ra$grow)) "depth" else "run"))
-  cat(sprintf("  %s: %s; discovery calibration p = %s\n",
-              # results before the rename hold `candidate_var`
-              if (is.null(c(a$tree_var, a$candidate_var))) "screened" else "split on",
-              paste(a$screened, collapse = ", "),
-              format(signif(a$calibration_p, 3))))
+  UtilsR::pr_head("hte_icf", "iterative causal forest", a$forest,
+                  paste("grf", a$backend_version),
+                  if (identical(a$style, "icf")) "style = \"icf\"")
   sel <- a$depth_selected
-  cat(sprintf("  selected depth = %d%s\n", sel,
-              if (sel > 0L) sprintf(" (vote share %s)",
-                                    format(x$vote$share[x$vote$depth == sel],
-                                           digits = 2))
-              else if (isTRUE(a$gated))
-                sprintf(" (no subgroups: calibration p above gate = %s)",
-                        format(ra$gate))
-              else " (no subgroups)"))
-  if (length(a$depth) == 1L)
-    cat(sprintf("\nDepth fixed at %d: no cross-validation and no calibration gate.\n",
-                a$depth))
-  else {
-    cat("\nCross-validated loss:\n")
+  settings <- list(
+    sample = if (same)
+      sprintf("n = %d, rules found and estimated on the same patients",
+              nrow(x$est$data))
+    else sprintf("discovery n = %d, estimation n = %d",
+                 sum(x$rules$n_disc), nrow(x$est$data)),
+    `cross-validation` = if (length(a$depth) == 1L) "none"
+    else sprintf("%d-fold", ra$n_folds),
+    forests = sprintf("%d forests x %d trees per %s", ra$n_forest, ra$num_trees,
+                      if (is.numeric(ra$grow)) "depth" else "run"),
+    variables = paste(a$screened, collapse = ", "),
+    `discovery calibration p` = format(signif(a$calibration_p, 3)),
+    `selected depth` = sprintf("%d%s", sel,
+      if (sel > 0L) sprintf(" (vote share %s)",
+                            format(x$vote$share[x$vote$depth == sel], digits = 2))
+      else if (isTRUE(a$gated))
+        sprintf(" (no subgroups: calibration p above gate = %s)", format(ra$gate))
+      else " (no subgroups)")
+  )
+  # results before the rename hold `candidate_var`
+  names(settings)[4L] <- if (is.null(c(a$tree_var, a$candidate_var))) "screened"
+                         else "split on"
+  UtilsR::pr_kv(settings)
+  if (length(a$depth) == 1L) {
+    UtilsR::pr_note("Depth fixed at {a$depth}: no cross-validation and no ",
+                    "calibration gate.")
+  } else {
+    UtilsR::pr_section("Cross-validated loss")
     print(as.data.frame(x$cv), row.names = FALSE, digits = 4)
   }
-  cat(sprintf("\nRules, estimated on %s (%sATE difference, 95%% CI):\n",
-              if (same) "the patients they were found on (not honest)"
-              else "the estimation part",
-              if (identical(ra$estimate, "iptw")) "IPTW " else ""))
+  where <- if (same) "the patients they were found on (not honest)"
+           else "the estimation part"
+  iptw  <- if (identical(ra$estimate, "iptw")) "IPTW " else ""
+  UtilsR::pr_section("Rules")
+  UtilsR::pr_note("Estimated on {where} ({iptw}ATE difference, 95% CI).")
   print(as.data.frame(x$rules[c("rule", if (!same) "n_disc", "n", "estimate",
                                 "conf.low", "conf.high", "p.value")]),
         row.names = FALSE, digits = 3)
   if (nrow(x$rules) > 1L && !is.na(x$rules$p_inter[1L]))
-    cat(sprintf("P for interaction = %s\n",
-                format(signif(x$rules$p_inter[1L], 3))))
+    UtilsR::pr_kv(list(`P for interaction` = format(signif(x$rules$p_inter[1L], 3))))
   invisible(x)
 }
