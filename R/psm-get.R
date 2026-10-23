@@ -530,21 +530,26 @@ get_PSM <- function(data,
 #' @noRd
 print.psm_res <- function(x, ...) {
   a <- attr(x, "analysis")
-  cat(sprintf("<psm_res> n = %d, treat = %s (treated = %s), estimand = %s, score %s\n",
-              a$n, a$treat, a$treated, a$estimand,
-              if (is.na(a$ps_method)) paste0("supplied (", a$ps, ")")
-              else paste0("from ps_method = \"", a$ps_method, "\"")))
-  cat(sprintf("  range %s, ratio = %s, caliper = %s%s\n",
-              .sens_fmt_vec(a$ps_range), format(a$ratio),
-              if (is.null(a$caliper)) "none" else
-                paste0(format(a$caliper), " SD of the score"),
-              if (isTRUE(a$replace)) ", with replacement" else ""))
-  cat("\n")
+  UtilsR::pr_head("psm_res", sprintf("n = %d", a$n),
+                  sprintf("estimand = %s", a$estimand))
+  UtilsR::pr_kv(list(
+    treat         = sprintf("%s (treated = %s)", a$treat, a$treated),
+    score         = if (is.na(a$ps_method)) paste0("supplied (", a$ps, ")")
+                    else paste0("from ps_method = \"", a$ps_method, "\""),
+    `score range` = .sens_fmt_vec(a$ps_range),
+    ratio         = format(a$ratio),
+    caliper       = if (is.null(a$caliper)) "none"
+                    else paste0(format(a$caliper), " SD of the score"),
+    replace       = format(isTRUE(a$replace))
+  ))
+  UtilsR::pr_section("Matching by method")
   print(x$stats)
-  cat("\n# Weights are unnormalised, so an ATT control column sums to the",
-      "number of treated units.\n")
-  cat("# n_unmatched (no partner) and n_discarded (outside common support)",
-      "are different things.\n")
-  cat("# plt_PSM: type = \"", .psm_plt_spec(x)$type, "\"\n", sep = "")
+  cat("\n")
+  UtilsR::pr_note("Weights are unnormalised, so an ATT control column sums to ",
+                  "the number of treated units.")
+  UtilsR::pr_note("n_unmatched (no partner) and n_discarded (outside common ",
+                  "support) are different things.")
+  type <- .psm_plt_spec(x)$type
+  UtilsR::pr_note("plt_PSM: type = \"{type}\"")
   invisible(x)
 }

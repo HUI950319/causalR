@@ -407,7 +407,7 @@ test_that("factor and character exposures take the second level as treated", {
   expect_identical(attr(num, "analysis")$treated, "1")
   expect_identical(attr(fct, "analysis")$treated, "yes")
   expect_match(paste(utils::capture.output(print(chr)), collapse = "\n"),
-               "treat = zc (treated = yes)", fixed = TRUE)
+               "\n  treat +zc \\(treated = yes\\)")
 
   # alphabetical order puts "control" second; the label makes that visible
   d$zr <- ifelse(d$z == 1, "active", "control")
@@ -464,7 +464,9 @@ test_that("print reports the table and echoes a plt_PSM call", {
   res <- get_PSM(d, treat = "z", adj_var = psm_adj, balance = FALSE)
   out <- paste(utils::capture.output(print(res)), collapse = "\n")
 
-  expect_match(out, "<psm_res>")
+  expect_match(out, "^ psm_res  n = ")
+  expect_match(out, "\n  caliper +")
+  expect_match(out, "Matching by method")
   expect_match(out, "plt_PSM: type = \"ess\"")
   expect_match(out, "nearest")
 })
