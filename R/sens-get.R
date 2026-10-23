@@ -724,28 +724,26 @@ get_sens <- function(data,
 #' @noRd
 print.sens_res <- function(x, ...) {
   a <- attr(x, "analysis")
-  cat(sprintf("<sens_res> method = \"%s\" (%s %s), n = %d, conf_level = %s, q = %s\n",
-              a$method, a$backend, a$backend_version, a$n,
-              format(a$conf_level), format(a$q)))
-  cat(sprintf("  treat = %s, outcome = %s%s%s\n",
-              a$treat, a$outcome,
-              if (is.null(a$time)) "" else paste0(", time = ", a$time),
-              if (is.null(a$instrument)) "" else
-                paste0(", instrument = ", a$instrument)))
-  cat("\n")
+  UtilsR::pr_head("sens_res", sprintf("method = \"%s\"", a$method),
+                  paste(a$backend, a$backend_version), sprintf("n = %d", a$n))
+  # NULL settings (time, instrument) drop out of the block
+  UtilsR::pr_kv(list(treat = a$treat, outcome = a$outcome, time = a$time,
+                     instrument = a$instrument,
+                     conf_level = format(a$conf_level), q = format(a$q)))
+  UtilsR::pr_section("Sensitivity statistics")
   print(x$stats)
   if (!is.null(x$bounds)) {
-    cat("\nConfounding scenarios:\n")
+    UtilsR::pr_section("Confounding scenarios")
     print(x$bounds)
   }
-  cat("\n# RV / xRV are partial R2 in [0, 1); E-values are risk-ratio",
-      "multipliers in [1, Inf). Not comparable.\n")
+  cat("\n")
+  UtilsR::pr_note("RV / xRV are partial R2 in [0, 1); E-values are risk-ratio ",
+                  "multipliers in [1, Inf). Not comparable.")
   spec <- .sens_plt_spec(x)
-  cat("# plt_sens: type = \"", spec$type, "\", lim = ",
-      .sens_fmt_vec(spec$lim),
-      if (is.null(spec$estimand)) "" else
-        paste0(", estimand = \"", spec$estimand, "\""),
-      "\n", sep = "")
+  lim  <- .sens_fmt_vec(spec$lim)
+  est  <- if (is.null(spec$estimand)) "" else
+    paste0(", estimand = \"", spec$estimand, "\"")
+  UtilsR::pr_note("plt_sens: type = \"{spec$type}\", lim = {lim}{est}")
   invisible(x)
 }
 

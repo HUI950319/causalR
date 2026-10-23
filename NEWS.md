@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* Printing a `get_sens()` result uses UtilsR's print helpers: a class label
+  with the method, backend and sample size, an aligned block of the settings
+  (time and instrument only when given), section rules above the statistics
+  and the confounding scenarios, and grey notes. Needs UtilsR 0.6.9.
+
 * The print methods of `get_sens()`, `get_PSM()` and `get_PSW()` results
   write vectors without padding: the suggested `plt_sens()` call reads
   `lim = c(0.8, 1.05)` instead of `lim = c( 0.8, 1.05)`.
