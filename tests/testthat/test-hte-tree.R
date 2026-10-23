@@ -33,6 +33,10 @@ test_that("rpart_cate distils CATE predictions with CART controls", {
   expect_identical(attr(res, "analysis")$tree_args$xval, 10L)
   expect_identical(sum(res$rules$n), nrow(res$est$data))
   expect_output(print(res), "rpart tree on out-of-bag CATE predictions")
+  shown <- cli::ansi_strip(utils::capture.output(print(res)))
+  expect_match(shown[1], "^ hte_tree  rpart tree on out-of-bag CATE predictions")
+  expect_true(any(grepl("^  split on +X", shown)))
+  expect_false(any(grepl("alpha", shown, fixed = TRUE)))
   expect_error(tree_call(tree_data(), method = "rpart_cate", alpha = 0.1),
                "alpha.*cross-validation")
 })

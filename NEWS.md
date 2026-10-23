@@ -7,7 +7,8 @@
   A `get_hte()` result prints the same way, with rules above the overall
   effect, the subgroups and the calibration test, and so does a
   `get_hte_icf()` result, with rules above the cross-validated loss and the
-  rules table.
+  rules table, and a `get_hte_tree()` result, with rules above the nodes
+  and the rules.
 
 * The print methods of `get_sens()`, `get_PSM()` and `get_PSW()` results
   write vectors without padding: the suggested `plt_sens()` call reads

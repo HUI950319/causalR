@@ -1638,36 +1638,41 @@ print.hte_tree <- function(x, ...) {
   a    <- attr(x, "analysis")
   same <- isTRUE(a$split_frac == 1)
   what <- if (a$method == "maxt") "max-t test" else sub("_.*$", "", a$method)
-  cat(sprintf("<hte_tree> %s tree on %s (%s, grf %s)\n", what,
-              if (!is.null(a$node_model))
-                sprintf("the scores of %s node models", a$node_model)
-              else if (endsWith(a$method, "_cate")) "out-of-bag CATE predictions"
-              else if (endsWith(a$method, "_r")) "R-learner residuals"
-              else "doubly robust scores", a$forest, a$backend_version))
-  cat(sprintf("  %s\n", if (same)
-    sprintf("n = %d, tree grown and estimated on the same patients",
-            nrow(x$est$data))
+  on   <- if (!is.null(a$node_model))
+    sprintf("the scores of %s node models", a$node_model)
+  else if (endsWith(a$method, "_cate")) "out-of-bag CATE predictions"
+  else if (endsWith(a$method, "_r")) "R-learner residuals"
+  else "doubly robust scores"
+  UtilsR::pr_head("hte_tree", sprintf("%s tree on %s", what, on), a$forest,
+                  paste("grf", a$backend_version))
+  # alpha only for the methods that test splits
+  UtilsR::pr_kv(list(
+    sample = if (same)
+      sprintf("n = %d, tree grown and estimated on the same patients",
+              nrow(x$est$data))
     else sprintf("discovery n = %d, estimation n = %d", x$nodes$n_disc[1L],
-                 nrow(x$est$data))))
-  cat(sprintf("  max_depth = %s, %smin_leaf = %s; split on: %s\n",
-              format(a$max_depth),
-              if (is.na(a$alpha)) "" else sprintf("alpha = %s, ", format(a$alpha)),
-              format(a$min_leaf), paste(a$split_var, collapse = ", ")))
-  cat("\nNodes (split tests on the discovery part, effects on the estimation part):\n")
+                 nrow(x$est$data)),
+    max_depth  = format(a$max_depth),
+    alpha      = if (!is.na(a$alpha)) format(a$alpha),
+    min_leaf   = format(a$min_leaf),
+    `split on` = paste(a$split_var, collapse = ", ")
+  ))
+  UtilsR::pr_section("Nodes")
+  UtilsR::pr_note("Split tests on the discovery part, effects on the estimation part.")
   shown <- c("node", "parent", "split",
              if (!all(is.na(x$nodes$split_p))) "split_p", "n", "estimate",
              "conf.low", "conf.high")
   print(as.data.frame(x$nodes[shown]), row.names = FALSE, digits = 3)
-  cat(sprintf("\nRules, estimated on %s (ATE difference%s, 95%% CI):\n",
-              if (same) "the patients they were found on (not honest)"
-              else "the estimation part",
-              if (identical(a$estimator, "tmle")) " by TMLE" else ""))
+  where <- if (same) "the patients they were found on (not honest)"
+           else "the estimation part"
+  tmle  <- if (identical(a$estimator, "tmle")) " by TMLE" else ""
+  UtilsR::pr_section("Rules")
+  UtilsR::pr_note("Estimated on {where} (ATE difference{tmle}, 95% CI).")
   print(as.data.frame(x$rules[c("rule", if (!same) "n_disc", "n", "estimate",
                                 "conf.low", "conf.high", "p.value",
                                 if (a$method == "policy") "action")]),
         row.names = FALSE, digits = 3)
   if (nrow(x$rules) > 1L && !is.na(x$rules$p_inter[1L]))
-    cat(sprintf("P for interaction = %s\n",
-                format(signif(x$rules$p_inter[1L], 3))))
+    UtilsR::pr_kv(list(`P for interaction` = format(signif(x$rules$p_inter[1L], 3))))
   invisible(x)
 }
