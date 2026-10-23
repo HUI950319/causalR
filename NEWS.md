@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* The print methods of `get_sens()`, `get_PSM()` and `get_PSW()` results
+  write vectors without padding: the suggested `plt_sens()` call reads
+  `lim = c(0.8, 1.05)` instead of `lim = c( 0.8, 1.05)`.
+
 * `plt_hte_sub()`'s `label_column_list` and the `var_names` of `get_bal()`
   and `plt_hte_unihtee()` accept a name given more than once and keep its
   first label, as the `colname_map` of `RegR::get_tb_gtsummary()` does, so

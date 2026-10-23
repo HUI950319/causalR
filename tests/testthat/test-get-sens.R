@@ -315,6 +315,12 @@ test_that("print.sens_res echoes a copy-pasteable plt_sens call", {
   expect_true(any(grepl("sensemakr", out)))
 })
 
+test_that(".sens_fmt_vec writes vectors without formatC padding", {
+  expect_identical(causalR:::.sens_fmt_vec(c(0.8, 1.05)), "c(0.8, 1.05)")
+  expect_identical(causalR:::.sens_fmt_vec(0.174), "0.174")
+  expect_identical(causalR:::.sens_fmt_vec(NULL), "NULL")
+})
+
 evalue_cols <- c("term", "measure", "est", "lo", "hi", "rare", "rr", "rr_lo",
                  "rr_hi", "evalue_point", "evalue_ci")
 

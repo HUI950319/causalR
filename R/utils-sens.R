@@ -122,7 +122,8 @@
 #' @noRd
 .sens_fmt_vec <- function(x, digits = 3L) {
   if (is.null(x) || !length(x)) return("NULL")
-  v <- paste(formatC(x, format = "g", digits = digits), collapse = ", ")
+  # formatC() pads a vector to a common width: c(0.8, 1.05) gave "c( 0.8, 1.05)"
+  v <- paste(trimws(formatC(x, format = "g", digits = digits)), collapse = ", ")
   if (length(x) == 1L) v else paste0("c(", v, ")")
 }
 
