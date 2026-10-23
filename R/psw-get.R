@@ -736,10 +736,7 @@ get_PSW <- function(data,
 #' @noRd
 print.psw_res <- function(x, ...) {
   a <- attr(x, "analysis")
-  cat(sprintf("<psw_res> n = %d (%d trimmed), treat = %s (treated = %s), score %s\n",
-              a$n, a$n_trimmed, a$treat, a$treated,
-              if (is.na(a$method)) paste0("supplied (", a$ps, ")")
-              else paste0("from method = \"", a$method, "\"")))
+  UtilsR::pr_head("psw_res", sprintf("n = %d (%d trimmed)", a$n, a$n_trimmed))
   # The processing steps come first and the range last, because a refit can
   # move retained scores outside the trimming window.
   steps <- c(
@@ -749,14 +746,21 @@ print.psw_res <- function(x, ...) {
     if (!is.null(a$trunc_bounds))
       paste0("truncate ", a$trunc$method, " ", .sens_fmt_vec(a$trunc_bounds)),
     if (isTRUE(a$stabilize)) "stabilized")
-  cat(sprintf("  %sscore range %s\n",
-              if (length(steps)) paste0(paste(steps, collapse = ", "),
-                                        "; final ") else "",
-              .sens_fmt_vec(a$ps_range)))
-  cat("\n")
+  settings <- list(
+    treat      = sprintf("%s (treated = %s)", a$treat, a$treated),
+    score      = if (is.na(a$method)) paste0("supplied (", a$ps, ")")
+                 else paste0("from method = \"", a$method, "\""),
+    processing = if (length(steps)) paste(steps, collapse = ", "),
+    range      = .sens_fmt_vec(a$ps_range)
+  )
+  names(settings)[4L] <- if (length(steps)) "final score range" else "score range"
+  UtilsR::pr_kv(settings)
+  UtilsR::pr_section("Weights by estimand")
   print(x$stats)
-  cat("\n# ESS is (sum w)^2 / sum w^2.",
-      "smd_max / smd_over are NA unless balance = TRUE.\n")
-  cat("# plt_PSW: type = \"", .psw_plt_spec(x)$type, "\"\n", sep = "")
+  cat("\n")
+  UtilsR::pr_note("ESS is (sum w)^2 / sum w^2. smd_max / smd_over are NA unless ",
+                  "balance = TRUE.")
+  type <- .psw_plt_spec(x)$type
+  UtilsR::pr_note("plt_PSW: type = \"{type}\"")
   invisible(x)
 }

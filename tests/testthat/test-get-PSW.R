@@ -399,7 +399,7 @@ test_that("factor and character exposures take the second level as treated", {
   expect_identical(attr(num, "analysis")$treated, "1")
   expect_identical(attr(fct, "analysis")$treated, "yes")
   expect_match(paste(utils::capture.output(print(chr)), collapse = "\n"),
-               "treat = zc (treated = yes)", fixed = TRUE)
+               "\n  treat +zc \\(treated = yes\\)")
 
   # alphabetical order puts "control" second; the label makes that visible
   d$zr <- ifelse(d$z == 1, "active", "control")
@@ -548,15 +548,17 @@ test_that("print reports the table and echoes a plt_PSW call", {
   res <- get_PSW(d, treat = "z", adj_var = psw_adj, balance = FALSE)
   out <- paste(utils::capture.output(print(res)), collapse = "\n")
 
-  expect_match(out, "<psw_res>")
+  expect_match(out, "^ psw_res  n = ")
+  expect_match(out, "Weights by estimand")
   expect_match(out, "plt_PSW: type = \"ess\"")
   expect_match(out, "ATO")
-  expect_match(out, "\n  score range c\\(")
+  expect_match(out, "\n  score range +c\\(")
+  expect_false(grepl("processing", out, fixed = TRUE))
 
   # after trimming the window is listed before the final range, which the
   # refit can push outside it
   tr <- get_PSW(d, treat = "z", adj_var = psw_adj, balance = FALSE,
                 trim_args = list(method = "ps", lower = 0.3, upper = 0.7))
   out <- paste(utils::capture.output(print(tr)), collapse = "\n")
-  expect_match(out, "trim ps c\\(.*\\) \\+ refit; final score range c\\(")
+  expect_match(out, "\n  processing +trim ps c\\(.*\\) \\+ refit\n  final score range +c\\(")
 })
