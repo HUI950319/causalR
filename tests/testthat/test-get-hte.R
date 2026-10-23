@@ -470,8 +470,8 @@ test_that("grf's overlap warnings collapse into one per call", {
   expect_length(w, 1L)
   expect_match(w, "Estimated propensities of `z` range from 0.020 to 0.980")
   expect_equal(attr(res, "analysis")$ps_range, c(0.02, 0.98))
-  expect_true(any(grepl("propensity range 0.020 to 0.980",
-                        capture.output(print(res)), fixed = TRUE)))
+  expect_true(any(grepl("^  propensity +range 0.020 to 0.980$",
+                        cli::ansi_strip(capture.output(print(res))))))
 })
 
 test_that("grf_args naming a field get_hte() sets points to the argument", {
@@ -563,9 +563,11 @@ test_that("invalid requests stop before any forest is grown", {
 
 test_that("print shows the analysis header and the event-risk note", {
   res <- hte_surv()
-  out <- capture.output(print(res))
-  expect_match(out[1], "<hte_res> causal_survival_forest")
-  expect_true(any(grepl("Calibration (one-sided p):", out, fixed = TRUE)))
+  out <- cli::ansi_strip(capture.output(print(res)))
+  expect_match(out[1], "^ hte_res  causal_survival_forest")
+  expect_true(any(grepl("Overall effect", out, fixed = TRUE)))
+  expect_true(any(grepl("Calibration (one-sided p)", out, fixed = TRUE)))
+  expect_true(any(grepl("^  target +survival.probability at time = ", out)))
   expect_true(any(grepl("differential.forest.prediction", out, fixed = TRUE)))
   expect_true(any(grepl("1 - S(t)", out, fixed = TRUE)))
   expect_true(any(grepl(".dr_score", out, fixed = TRUE)))

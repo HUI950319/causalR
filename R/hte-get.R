@@ -1068,33 +1068,37 @@ get_hte <- function(data,
 #' @noRd
 print.hte_res <- function(x, ...) {
   a <- attr(x, "analysis")
-  cat(sprintf("<hte_res> %s (grf %s), n = %d (treated = %d), conf_level = %s\n",
-              a$forest, a$backend_version, a$n, a$n_treat,
-              format(a$conf_level)))
-  cat(sprintf("  cat_var = %s (treated: %s), outcome = %s%s\n",
-              a$cat_var, a$treated, paste(a$outcome, collapse = " / "),
-              if (is.null(a$time)) "" else
-                sprintf(", target = %s at time = %s", a$target, format(a$time))))
-  cat(sprintf("  propensity range %.3f to %.3f\n", a$ps_range[1L],
-              a$ps_range[2L]))
-  cat("\n")
+  UtilsR::pr_head("hte_res", a$forest, paste("grf", a$backend_version),
+                  sprintf("n = %d (treated = %d)", a$n, a$n_treat))
+  # target and time only for survival outcomes
+  UtilsR::pr_kv(list(
+    cat_var    = sprintf("%s (treated: %s)", a$cat_var, a$treated),
+    outcome    = paste(a$outcome, collapse = " / "),
+    target     = if (!is.null(a$time))
+      sprintf("%s at time = %s", a$target, format(a$time)),
+    conf_level = format(a$conf_level),
+    propensity = sprintf("range %.3f to %.3f", a$ps_range[1L], a$ps_range[2L])
+  ))
+  UtilsR::pr_section("Overall effect")
   print(x$stats)
   if (!is.null(x$subgroup)) {
-    cat("\nSubgroups:\n")
+    UtilsR::pr_section("Subgroups")
     print(x$subgroup)
   }
   if (!is.null(x$calibration)) {
-    cat("\nCalibration (one-sided p):\n")
+    UtilsR::pr_section("Calibration (one-sided p)")
     print(x$calibration)
   }
   cat("\n")
   if (identical(a$target, "survival.probability") &&
       any(x$stats$measure != "diff"))
-    cat("# ratio / OR compare the event risk 1 - S(t); diff is S1(t) - S0(t).\n")
-  cat("# $data: .cate = out-of-bag CATE, .dr_score = AIPW score (diff scale).\n")
-  cat("# $importance: grf split frequency by covariate (not a test) + p_het; plt_bar_per()-ready.\n")
+    UtilsR::pr_note("ratio / OR compare the event risk 1 - S(t); diff is S1(t) - S0(t).")
+  UtilsR::pr_note("$data: .cate = out-of-bag CATE, .dr_score = AIPW score (diff scale).")
+  UtilsR::pr_note("$importance: grf split frequency by covariate (not a test) + p_het; ",
+                  "plt_bar_per()-ready.")
   if (!is.null(x$calibration))
-    cat("# Calibration: 1 = well calibrated; differential.forest.prediction > 0 = heterogeneity.\n")
-  cat("# plt_hte_dep(x) draws the CATE against each covariate.\n")
+    UtilsR::pr_note("Calibration: 1 = well calibrated; ",
+                    "differential.forest.prediction > 0 = heterogeneity.")
+  UtilsR::pr_note("plt_hte_dep(x) draws the CATE against each covariate.")
   invisible(x)
 }

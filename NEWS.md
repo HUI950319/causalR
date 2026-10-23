@@ -4,6 +4,8 @@
   with the method, backend and sample size, an aligned block of the settings
   (time and instrument only when given), section rules above the statistics
   and the confounding scenarios, and grey notes. Needs UtilsR 0.6.9.
+  A `get_hte()` result prints the same way, with rules above the overall
+  effect, the subgroups and the calibration test.
 
 * The print methods of `get_sens()`, `get_PSM()` and `get_PSW()` results
   write vectors without padding: the suggested `plt_sens()` call reads
