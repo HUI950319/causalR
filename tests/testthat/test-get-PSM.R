@@ -464,7 +464,7 @@ test_that("print reports the table and echoes a plt_PSM call", {
   res <- get_PSM(d, treat = "z", adj_var = psm_adj, balance = FALSE)
   out <- paste(utils::capture.output(print(res)), collapse = "\n")
 
-  expect_match(out, "^ psm_res  n = ")
+  expect_match(out, "^<psm_res> n = ")
   expect_match(out, "\n  caliper +")
   expect_match(out, "Matching by method")
   expect_match(out, "plt_PSM: type = \"ess\"")

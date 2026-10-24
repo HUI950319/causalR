@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* The print methods follow UtilsR 0.6.10 (now required): without colour, as
+  in knitted documents and log files, a class label reads `<class>`, and
+  long settings and notes wrap at the console width.
+
 * Printing a `get_sens()` result uses UtilsR's print helpers: a class label
   with the method, backend and sample size, an aligned block of the settings
   (time and instrument only when given), section rules above the statistics

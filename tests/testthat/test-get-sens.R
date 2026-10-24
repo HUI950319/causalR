@@ -314,7 +314,7 @@ test_that("print.sens_res echoes a copy-pasteable plt_sens call", {
   expect_true(any(grepl("Not comparable", out)))
   expect_true(any(grepl("sensemakr", out)))
   # header chip, aligned settings and section rules from UtilsR's print helpers
-  expect_match(cli::ansi_strip(out[1]), "^ sens_res  method = \"lm\"")
+  expect_match(cli::ansi_strip(out[1]), "^<sens_res> method = \"lm\"")
   expect_true(any(grepl("^  treat +directlyharmed$", cli::ansi_strip(out))))
   expect_true(any(grepl("Sensitivity statistics", out, fixed = TRUE)))
   expect_true(any(grepl("Confounding scenarios", out, fixed = TRUE)))

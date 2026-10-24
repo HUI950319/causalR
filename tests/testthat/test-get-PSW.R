@@ -548,7 +548,7 @@ test_that("print reports the table and echoes a plt_PSW call", {
   res <- get_PSW(d, treat = "z", adj_var = psw_adj, balance = FALSE)
   out <- paste(utils::capture.output(print(res)), collapse = "\n")
 
-  expect_match(out, "^ psw_res  n = ")
+  expect_match(out, "^<psw_res> n = ")
   expect_match(out, "Weights by estimand")
   expect_match(out, "plt_PSW: type = \"ess\"")
   expect_match(out, "ATO")

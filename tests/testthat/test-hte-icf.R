@@ -181,7 +181,7 @@ test_that("style = \"icf\" switches every step to the iCF code", {
   expect_true(all(res$rules$estimate[both] > 1.2))
   expect_output(print(res), "style = \"icf\"")
   expect_match(cli::ansi_strip(utils::capture.output(print(res)))[1],
-               "^ hte_icf  iterative causal forest")
+               "^<hte_icf> iterative causal forest")
   expect_output(print(res), "not honest")
 
   # A single field goes back to the causalR step
