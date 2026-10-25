@@ -121,7 +121,8 @@ this seed. The caller's random-number state is restored, also on error.}
 steps as they are fitted.}
 }
 \value{
-A plain named list:
+A named list of class \code{c("hte_select", "list")}, printed as its
+settings and the top of the ranking:
 \describe{
 \item{ranking}{Data frame with \code{rank}, \code{variable}, \code{n} (training rows),
 \code{n_eval} (validation rows), \code{score_sd},

@@ -1380,7 +1380,9 @@ get_hte_tree <- function(data,
 #' @param seed Nonnegative whole number, default `123`. Seeds the repetitions;
 #'   the caller's random-number state is restored, including on error.
 #' @param verbose Logical, default `FALSE`; reports completed repetitions.
-#' @return A list with `variable_frequency` (proportion of successful trees
+#' @return A list of class `c("hte_tree_stability", "list")`, printed as its
+#'   agreement and split frequencies, with `variable_frequency`
+#'   (proportion of successful trees
 #'   using each variable), `cutpoints` (each split, its level, boundary and
 #'   direction), `agreement` (pairwise patient co-grouping Jaccard indices),
 #'   `reference_agreement` (each repetition versus `x`) and `replicates`

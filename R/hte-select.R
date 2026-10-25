@@ -388,7 +388,8 @@
 #' variable/step context. This object is not an `hte_res` and is not input to
 #' the grf-specific HTE plotting or RATE functions.
 #'
-#' @return A plain named list:
+#' @return A named list of class `c("hte_select", "list")`, printed as its
+#'   settings and the top of the ranking:
 #' \describe{
 #'   \item{ranking}{Data frame with `rank`, `variable`, `n` (training rows),
 #'     `n_eval` (validation rows), `score_sd`,

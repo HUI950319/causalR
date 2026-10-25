@@ -33,7 +33,9 @@ the caller's random-number state is restored, including on error.}
 \item{verbose}{Logical, default \code{FALSE}; reports completed repetitions.}
 }
 \value{
-A list with \code{variable_frequency} (proportion of successful trees
+A list of class \code{c("hte_tree_stability", "list")}, printed as its
+agreement and split frequencies, with \code{variable_frequency}
+(proportion of successful trees
 using each variable), \code{cutpoints} (each split, its level, boundary and
 direction), \code{agreement} (pairwise patient co-grouping Jaccard indices),
 \code{reference_agreement} (each repetition versus \code{x}) and \code{replicates}

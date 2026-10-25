@@ -112,7 +112,8 @@ the table even when \code{tbl = FALSE}. Unknown or duplicated fields are an
 error. Neither save changes the return value.}
 }
 \value{
-A list of
+A list of class \code{c("bal_res", "list")}, printed as the largest
+SMD of each method, of
 \describe{
 \item{\code{plt}}{The love plot, a \code{ggplot} carrying its pinned size in
 \code{attr(., "plot_size")}.}

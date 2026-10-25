@@ -333,7 +333,8 @@
 #'   the table even when `tbl = FALSE`. Unknown or duplicated fields are an
 #'   error. Neither save changes the return value.
 #'
-#' @return A list of
+#' @return A list of class `c("bal_res", "list")`, printed as the largest
+#'   SMD of each method, of
 #'   \describe{
 #'     \item{`plt`}{The love plot, a `ggplot` carrying its pinned size in
 #'       `attr(., "plot_size")`.}

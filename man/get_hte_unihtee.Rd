@@ -78,7 +78,8 @@ afterwards) or seeds the forest when \code{grf_args} has no \code{seed}.}
 \code{FALSE}.}
 }
 \value{
-A list of
+A list of class \code{c("hte_unihtee", "list")}, printed as the
+effect-modifier table, of
 \describe{
 \item{\code{vip}}{Tibble with one row per candidate and measure, sorted by
 \code{p.value} within each measure: \code{variable}, \code{type} (\code{"continuous"} or

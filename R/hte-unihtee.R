@@ -204,7 +204,8 @@
 #' continuous outcomes are not rescaled to \eqn{[0, 1]}, so `"ratio"` is a
 #' ratio of means.
 #'
-#' @return A list of
+#' @return A list of class `c("hte_unihtee", "list")`, printed as the
+#'   effect-modifier table, of
 #'   \describe{
 #'     \item{`vip`}{Tibble with one row per candidate and measure, sorted by
 #'       `p.value` within each measure: `variable`, `type` (`"continuous"` or
