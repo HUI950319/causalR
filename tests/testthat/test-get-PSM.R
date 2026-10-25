@@ -466,6 +466,9 @@ test_that("print reports the table and echoes a plt_PSM call", {
 
   expect_match(out, "^<psm_res> n = ")
   expect_match(out, "\n  caliper +")
+  # the last note names the parts to take out
+  expect_match(out, "\n# Components: data, stats, balance")
+  expect_match(out, "UtilsR::pr_tree()", fixed = TRUE)
   expect_match(out, "Matching by method")
   expect_match(out, "plt_PSM: type = \"ess\"")
   expect_match(out, "nearest")

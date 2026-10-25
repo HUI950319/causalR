@@ -1492,5 +1492,6 @@ print.hte_icf <- function(x, ...) {
         row.names = FALSE, digits = 3)
   if (nrow(x$rules) > 1L && !is.na(x$rules$p_inter[1L]))
     UtilsR::pr_kv(list(`P for interaction` = format(signif(x$rules$p_inter[1L], 3))))
+  UtilsR::pr_note("Components: {names(x)}; see {.code UtilsR::pr_tree()}.")
   invisible(x)
 }

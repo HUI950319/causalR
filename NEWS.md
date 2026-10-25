@@ -1,5 +1,11 @@
 # causalR (development version)
 
+* The `get_PSM()`, `get_PSW()`, `get_hte()`, `get_hte_tree()` and
+  `get_hte_icf()` print methods end with a note naming the components,
+  e.g. `# Components: data, stats, balance, and fit; see
+  UtilsR::pr_tree().`, as the summary leaves the data, fits and nested
+  estimates unprinted.
+
 * `get_hte_select()`, `get_hte_tree_stability()` and `get_hte_unihtee()`
   return their lists with classes `"hte_select"`, `"hte_tree_stability"`
   and `"hte_unihtee"`, ahead of `"list"`, and print a summary instead of

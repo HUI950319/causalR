@@ -762,5 +762,6 @@ print.psw_res <- function(x, ...) {
                   "balance = TRUE.")
   type <- .psw_plt_spec(x)$type
   UtilsR::pr_note("plt_PSW: type = \"{type}\"")
+  UtilsR::pr_note("Components: {names(x)}; see {.code UtilsR::pr_tree()}.")
   invisible(x)
 }

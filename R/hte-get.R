@@ -1100,5 +1100,6 @@ print.hte_res <- function(x, ...) {
     UtilsR::pr_note("Calibration: 1 = well calibrated; ",
                     "differential.forest.prediction > 0 = heterogeneity.")
   UtilsR::pr_note("plt_hte_dep(x) draws the CATE against each covariate.")
+  UtilsR::pr_note("Components: {names(x)}; see {.code UtilsR::pr_tree()}.")
   invisible(x)
 }

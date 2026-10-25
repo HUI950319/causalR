@@ -550,6 +550,8 @@ test_that("print reports the table and echoes a plt_PSW call", {
 
   expect_match(out, "^<psw_res> n = ")
   expect_match(out, "Weights by estimand")
+  expect_match(out, "\n# Components: data, stats, balance")
+  expect_match(out, "UtilsR::pr_tree()", fixed = TRUE)
   expect_match(out, "plt_PSW: type = \"ess\"")
   expect_match(out, "ATO")
   expect_match(out, "\n  score range +c\\(")

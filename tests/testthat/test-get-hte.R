@@ -565,6 +565,8 @@ test_that("print shows the analysis header and the event-risk note", {
   res <- hte_surv()
   out <- cli::ansi_strip(capture.output(print(res)))
   expect_match(out[1], "^<hte_res> causal_survival_forest")
+  expect_true(any(grepl("^# Components: stats, subgroup, importance", out)))
+  expect_true(any(grepl("UtilsR::pr_tree()", out, fixed = TRUE)))
   expect_true(any(grepl("Overall effect", out, fixed = TRUE)))
   expect_true(any(grepl("Calibration (one-sided p)", out, fixed = TRUE)))
   expect_true(any(grepl("^  target +survival.probability at time = ", out)))
