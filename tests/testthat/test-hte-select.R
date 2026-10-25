@@ -49,6 +49,7 @@ test_that("a selection result prints its settings and ranking", {
   expect_true(any(grepl("^  ranked by +score_sd \\(maximize\\)$", out)))
   expect_true(any(out == paste0("  selected   ", res$selected)))
   expect_true(any(grepl("^ +1 +\\S+ +-?[0-9.]+$", out)))
+  expect_true(any(grepl("^# Components: ", out)))
 })
 
 test_that("all outcomes and adjustment routes agree with direct personalized fits", {

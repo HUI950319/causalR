@@ -34,9 +34,10 @@ test_that("glm route returns the documented table and recovers the truth", {
   expect_null(res$hte)  # no forest on the glm route
   expect_s3_class(res, "hte_unihtee")
   out <- sub(" +$", "", capture.output(print(res)))
-  expect_lt(length(out), 16L)
+  expect_lt(length(out), 18L)
   expect_match(out[1], "^<hte_unihtee> Univariate effect modification \u00b7 glm")
   expect_true(any(grepl("^  w3 +\\+1 SD +", out)))
+  expect_true(any(grepl("^# Components: vip, data, and hte", out)))
   expect_named(res$vip, c("variable", "type", "contrast", "n", "sd", "measure",
                           "estimate", "std.error", "conf.low", "conf.high",
                           "p.value", "p.adj"))

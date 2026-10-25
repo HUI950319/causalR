@@ -1703,5 +1703,6 @@ print.hte_tree_stability <- function(x, ...) {
   UtilsR::pr_section("Variables used")
   UtilsR::pr_table(as.data.frame(x$variable_frequency), n = NULL, digits = 2)
   UtilsR::pr_note("<result>$cutpoints lists every split, $replicates every run")
+  UtilsR::pr_note("Components: {names(x)}; see {.code UtilsR::pr_tree()}.")
   invisible(x)
 }

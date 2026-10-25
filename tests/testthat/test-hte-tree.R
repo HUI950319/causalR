@@ -884,6 +884,7 @@ test_that("tree stability bootstraps fixed scores and full mode refits", {
   out <- capture.output(print(b))
   expect_match(out[1], "^<hte_tree_stability> Tree stability \u00b7 tree mode \u00b7 3 of 3 replicates")
   expect_true(any(grepl("^  agreement +mean Jaccard [0-9.]+ between replicates$", out)))
+  expect_true(any(grepl("^# Components: variable_frequency, cutpoints", out)))
   expect_true(any(grepl("^  X1 +[0-9]+ +[0-9.]+", out)))
   expect_error(get_hte_tree_stability(res, d, n_rep = 1), "n_rep")
   d$y[1L] <- 0

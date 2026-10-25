@@ -6,6 +6,10 @@
   UtilsR::pr_tree().`, as the summary leaves the data, fits and nested
   estimates unprinted.
 
+* The `get_bal()`, `get_hte_select()`, `get_hte_tree_stability()`,
+  `get_hte_unihtee()` and `get_sens()` prints end with the same note, after
+  the hint they already gave.
+
 * `get_hte_select()`, `get_hte_tree_stability()` and `get_hte_unihtee()`
   return their lists with classes `"hte_select"`, `"hte_tree_stability"`
   and `"hte_unihtee"`, ahead of `"list"`, and print a summary instead of

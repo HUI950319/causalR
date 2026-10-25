@@ -744,6 +744,7 @@ print.sens_res <- function(x, ...) {
   est  <- if (is.null(spec$estimand)) "" else
     paste0(", estimand = \"", spec$estimand, "\"")
   UtilsR::pr_note("plt_sens: type = \"{spec$type}\", lim = {lim}{est}")
+  UtilsR::pr_note("Components: {names(x)}; see {.code UtilsR::pr_tree()}.")
   invisible(x)
 }
 

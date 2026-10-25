@@ -949,5 +949,6 @@ print.hte_unihtee <- function(x, ...) {
                    digits = 3)
   UtilsR::pr_note("plt_hte_unihtee(<result>) draws them; $data holds the ",
                   "pseudo-outcomes")
+  UtilsR::pr_note("Components: {names(x)}; see {.code UtilsR::pr_tree()}.")
   invisible(x)
 }

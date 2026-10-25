@@ -318,6 +318,7 @@ test_that("print.sens_res echoes a copy-pasteable plt_sens call", {
   expect_true(any(grepl("^  treat +directlyharmed$", cli::ansi_strip(out))))
   expect_true(any(grepl("Sensitivity statistics", out, fixed = TRUE)))
   expect_true(any(grepl("Confounding scenarios", out, fixed = TRUE)))
+  expect_true(any(grepl("^# Components: stats, bounds, fit, and sens", out)))
 })
 
 test_that(".sens_fmt_vec writes vectors without formatC padding", {

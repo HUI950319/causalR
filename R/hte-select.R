@@ -830,5 +830,6 @@ print.hte_select <- function(x, ...) {
   UtilsR::pr_section("Ranking")
   UtilsR::pr_table(as.data.frame(x$ranking)[shown], n = 10, digits = 3)
   UtilsR::pr_note("<result>$plots$combined draws the ranking with the forward steps")
+  UtilsR::pr_note("Components: {names(x)}; see {.code UtilsR::pr_tree()}.")
   invisible(x)
 }

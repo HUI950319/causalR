@@ -745,5 +745,6 @@ print.bal_res <- function(x, ...) {
   if (any(over)) UtilsR::pr_note("Highlighted: an |SMD| above 0.1.")
   UtilsR::pr_note("<result>$plt is the love plot, $balance every SMD, $data the ",
                   "weights", if (!is.null(x$tbl)) ", $tbl the table")
+  UtilsR::pr_note("Components: {names(x)}; see {.code UtilsR::pr_tree()}.")
   invisible(x)
 }
