@@ -46,6 +46,16 @@ test_that("get_bal expands shorthand into labelled schemes", {
                  estimand = "ATT", ratio = 1, caliper = 0.2, balance = FALSE)
   expect_identical(res$data[["PS matching (nearest, ATT)"]],
                    ref$data$w_nearest)
+
+  # printing gave the plot, the long table and the weighted data
+  expect_s3_class(res, "bal_res")
+  out <- sub(" +$", "", capture.output(ret <- print(res)))
+  expect_identical(ret, res)
+  expect_lt(length(out), 15L)
+  expect_match(out[1], "^<bal_res> Covariate balance \u00b7 3 schemes \u00b7 n = 400$")
+  expect_true(any(grepl("^. *Unadjusted +[0-9.]+ +[0-9]+$", out)))
+  # overlap weights balance exactly: a zero, or rounding noise in more digits
+  expect_true(any(grepl("^  Overlap weighting \\(ATO\\) +0\\.0+ +0$", out)))
 })
 
 test_that("the default compares matching with all six weights", {

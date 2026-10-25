@@ -716,5 +716,33 @@ get_bal <- function(data,
   }
   out <- list(plt = plt, balance = bal, data = data)
   if (tbl) out$tbl <- tb
+  class(out) <- c("bal_res", "list")
   out
+}
+
+
+# ---- print -------------------------------------------------------------------
+
+#' @export
+#' @noRd
+print.bal_res <- function(x, ...) {
+  b   <- x$balance
+  lv  <- unique(b$method)
+  m   <- factor(b$method, lv)
+  tab <- data.frame(method = lv,
+                    max = as.numeric(tapply(abs(b$smd), m, max, na.rm = TRUE)),
+                    over = as.integer(tapply(abs(b$smd) > 0.1, m, sum, na.rm = TRUE)))
+  names(tab) <- c("method", "max |SMD|", "over 0.1")
+  k <- sum(lv != "Unadjusted")
+  UtilsR::pr_head("bal_res", "Covariate balance",
+                  sprintf("%d scheme%s", k, if (k == 1L) "" else "s"),
+                  sprintf("n = %d", NROW(x$data)))
+  UtilsR::pr_kv(list(covariates = unique(b$variable)))
+  UtilsR::pr_section("Largest standardised mean difference")
+  over <- tab[["max |SMD|"]] > 0.1
+  UtilsR::pr_table(tab, highlight = over, n = NULL, digits = 3)
+  if (any(over)) UtilsR::pr_note("Highlighted: an |SMD| above 0.1.")
+  UtilsR::pr_note("<result>$plt is the love plot, $balance every SMD, $data the ",
+                  "weights", if (!is.null(x$tbl)) ", $tbl the table")
+  invisible(x)
 }

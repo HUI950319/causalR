@@ -1,5 +1,11 @@
 # causalR (development version)
 
+* `get_bal()` returns its list with class `c("bal_res", "list")`, and
+  printing it gives the schemes, the sample size and covariates, and one row
+  a method with its largest absolute SMD and how many exceed 0.1, rows above
+  0.1 highlighted, instead of the plot, the long table and the weighted data
+  (1615 lines on 800 rows). The elements are unchanged.
+
 * The print methods follow UtilsR 0.6.10 (now required): without colour, as
   in knitted documents and log files, a class label reads `<class>`, and
   long settings and notes wrap at the console width.
