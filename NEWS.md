@@ -1,5 +1,14 @@
 # causalR (development version)
 
+* `get_hte_select()`, `get_hte_tree_stability()` and `get_hte_unihtee()`
+  return their lists with classes `"hte_select"`, `"hte_tree_stability"`
+  and `"hte_unihtee"`, ahead of `"list"`, and print a summary instead of
+  every table, plot and fitted object: the ranking metric, the selected
+  variables and the top of the ranking; the replicates, the mean Jaccard
+  agreement and how often each variable splits; or the design and the
+  effect-modifier table with P values coloured by significance. The
+  elements are unchanged.
+
 * `get_bal()` returns its list with class `c("bal_res", "list")`, and
   printing it gives the schemes, the sample size and covariates, and one row
   a method with its largest absolute SMD and how many exceed 0.1, rows above

@@ -39,6 +39,18 @@ test_that("validation metrics agree with RATE and effect-scale loss formulas", {
   expect_true(is.na(value$dr_loss))
 })
 
+test_that("a selection result prints its settings and ranking", {
+  skip_if_not_installed("personalized")
+  res <- hte_select_call(n_select = 1L)
+  expect_s3_class(res, "hte_select")
+  out <- sub(" +$", "", capture.output(ret <- print(res)))
+  expect_identical(ret, res)
+  expect_match(out[1], "^<hte_select> Effect-modifier selection \u00b7 personalized")
+  expect_true(any(grepl("^  ranked by +score_sd \\(maximize\\)$", out)))
+  expect_true(any(out == paste0("  selected   ", res$selected)))
+  expect_true(any(grepl("^ +1 +\\S+ +-?[0-9.]+$", out)))
+})
+
 test_that("all outcomes and adjustment routes agree with direct personalized fits", {
   skip_if_not_installed("personalized")
   d <- hte_select_data()

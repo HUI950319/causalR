@@ -504,6 +504,7 @@ get_hte_unihtee <- function(data,
   structure(
     list(vip = tibble::as_tibble(vip), data = d,
          hte = if (method == "grf") res),
+    class = c("hte_unihtee", "list"),
     analysis = list(
       method = method, outcome_type = type, cat_var = cat_var,
       treated = treated, surv = surv, tree_var = tree_var,
@@ -921,4 +922,31 @@ plt_hte_unihtee <- function(x,
     do.call(RegR::save_plt, c(list(plot = p), save))
   }
   p
+}
+
+
+# ---- print -------------------------------------------------------------------
+
+#' @export
+#' @noRd
+print.hte_unihtee <- function(x, ...) {
+  a <- attr(x, "analysis")
+  v <- as.data.frame(x$vip)
+  UtilsR::pr_head("hte_unihtee", "Univariate effect modification", a$method,
+                  a$outcome_type, sprintf("n = %d", a$n))
+  UtilsR::pr_kv(list(
+    treated  = a$n_treat,
+    measure  = a$measure,
+    time     = a$time,
+    adjusted = sprintf("%d covariates", length(a$covariates))
+  ))
+  shown <- intersect(c("variable", "contrast", "measure", "estimate", "conf.low",
+                       "conf.high", "p.value", "p.adj"), names(v))
+  if (length(unique(v$measure)) == 1L) shown <- setdiff(shown, "measure")
+  UtilsR::pr_section("Effect modifiers")
+  UtilsR::pr_table(v[shown], p_col = intersect(c("p.value", "p.adj"), shown),
+                   digits = 3)
+  UtilsR::pr_note("plt_hte_unihtee(<result>) draws them; $data holds the ",
+                  "pseudo-outcomes")
+  invisible(x)
 }

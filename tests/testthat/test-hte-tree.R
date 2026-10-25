@@ -879,6 +879,11 @@ test_that("tree stability bootstraps fixed scores and full mode refits", {
   expect_true(all(b$variable_frequency$frequency >= 0 &
                    b$variable_frequency$frequency <= 1))
   expect_true(all(b$cutpoints$variable %in% b$variable_frequency$variable))
+  expect_s3_class(b, "hte_tree_stability")
+  out <- capture.output(print(b))
+  expect_match(out[1], "^<hte_tree_stability> Tree stability \u00b7 tree mode \u00b7 3 of 3 replicates")
+  expect_true(any(grepl("^  agreement +mean Jaccard [0-9.]+ between replicates$", out)))
+  expect_true(any(grepl("^  X1 +[0-9]+ +[0-9.]+", out)))
   expect_error(get_hte_tree_stability(res, d, n_rep = 1), "n_rep")
   d$y[1L] <- 0
   expect_error(get_hte_tree_stability(res, d, n_rep = 3L), "original data")

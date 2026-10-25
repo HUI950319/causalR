@@ -1512,15 +1512,17 @@ get_hte_tree_stability <- function(x, data, n_rep = 50L,
   frequency <- vapply(a$split_var, function(v)
     sum(vapply(selected[ok], function(s) v %in% s, logical(1L))), integer(1L))
   reference <- predict(x, patients, type = "node")
-  list(variable_frequency = tibble::tibble(variable = a$split_var,
-         n_selected = unname(frequency), frequency = unname(frequency) / length(ok)),
-       cutpoints = tibble::as_tibble(do.call(rbind, cuts[ok])),
-       agreement = agreement,
-       reference_agreement = tibble::tibble(replicate = ok,
-         jaccard = vapply(groups[ok], function(g) jaccard(reference, g), numeric(1L))),
-       replicates = tibble::as_tibble(runs),
-       analysis = list(mode = mode, n_rep = n_rep, seed = seed, n = nrow(patients),
-                       method = a$method))
+  res <- list(variable_frequency = tibble::tibble(variable = a$split_var,
+                n_selected = unname(frequency), frequency = unname(frequency) / length(ok)),
+              cutpoints = tibble::as_tibble(do.call(rbind, cuts[ok])),
+              agreement = agreement,
+              reference_agreement = tibble::tibble(replicate = ok,
+                jaccard = vapply(groups[ok], function(g) jaccard(reference, g), numeric(1L))),
+              replicates = tibble::as_tibble(runs),
+              analysis = list(mode = mode, n_rep = n_rep, seed = seed, n = nrow(patients),
+                              method = a$method))
+  class(res) <- c("hte_tree_stability", "list")
+  res
 }
 
 
@@ -1674,5 +1676,29 @@ print.hte_tree <- function(x, ...) {
         row.names = FALSE, digits = 3)
   if (nrow(x$rules) > 1L && !is.na(x$rules$p_inter[1L]))
     UtilsR::pr_kv(list(`P for interaction` = format(signif(x$rules$p_inter[1L], 3))))
+  invisible(x)
+}
+
+
+#' @export
+#' @noRd
+print.hte_tree_stability <- function(x, ...) {
+  a  <- x$analysis
+  ok <- sum(x$replicates$status == "ok")
+  UtilsR::pr_head("hte_tree_stability", "Tree stability", paste(a$mode, "mode"),
+                  sprintf("%d of %d replicates", ok, a$n_rep), sprintf("n = %d", a$n))
+  jaccard <- function(d, what) {
+    if (NROW(d)) sprintf("mean Jaccard %.2f%s", mean(d$jaccard, na.rm = TRUE), what)
+  }
+  UtilsR::pr_kv(list(
+    agreement     = jaccard(x$agreement, " between replicates"),
+    `vs the tree` = jaccard(x$reference_agreement, ""),
+    failed        = if (ok < NROW(x$replicates)) {
+      sprintf("%d replicates, see $replicates", NROW(x$replicates) - ok)
+    }
+  ))
+  UtilsR::pr_section("Variables used")
+  UtilsR::pr_table(as.data.frame(x$variable_frequency), n = NULL, digits = 2)
+  UtilsR::pr_note("<result>$cutpoints lists every split, $replicates every run")
   invisible(x)
 }

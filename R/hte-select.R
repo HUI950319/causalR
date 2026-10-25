@@ -773,34 +773,61 @@ get_hte_select <- function(data, cat_var, tree_var, surv = TRUE,
   versions <- vapply(c("personalized", "glmnet", "survival", if (use_eval) "grf"), function(pkg) {
     as.character(utils::packageVersion(pkg))
   }, character(1))
-  list(ranking = ranking, forward = forward,
-       selected = if (!is.null(selected_step)) ranking$variable[seq_len(selected_step)] else NULL,
-       plots = .hte_select_plots(ranking, forward, selected_step, imp_metric, sel_metric,
-                                 best_step),
-       analysis = list(backend = "personalized", outcome_type = type,
-                       outcome = outcome, cat_var = cat_var,
-                       treatment_mapping = unique(data.frame(
-                         original = as.character(data[[cat_var]]), encoded = trt)),
-                       loss = loss, method = "weighting", n = nrow(data),
-                       tree_var = tree_var, match_var = match_var,
-                       ps_var = ps_var, n_select = n_select,
-                       imp_metric = imp_metric, sel_metric = sel_metric,
-                       best_step = best_step, sel_baseline = sel_baseline,
-                       selected_step = selected_step,
-                       rank_direction = if (.hte_select_direction(imp_metric) == 1) "minimize" else "maximize",
-                       select_direction = if (is.null(sel_metric)) NULL else
-                         if (.hte_select_direction(sel_metric) == 1) "minimize" else "maximize",
-                       design_columns = lapply(columns, function(idx) colnames(x)[idx]),
-                       seed = seed, fit_args = fit_args, foldid = foldid,
-                       eval_args = eval_args, training_rows = train,
-                       evaluation_rows = validation,
-                       evaluation = if (use_eval) list(backend = "grf", n = length(validation),
-                         adjust_var = model_vars, target = if (type == "survival") eval_args$target else
-                           if (type == "binary") "risk.difference" else "mean.difference",
-                         time = if (type == "survival") eval_args$time else NULL,
-                         propensity = if (is.null(ps)) "matched 1:1: 0.5" else "fixed ps_var",
-                         nuisance_prediction = "out-of-bag", metric_source = "validation",
-                         effect_conversion = if (type == "continuous") "2 * benefit.score" else NULL) else NULL,
-                       score_source = "training", versions = versions,
-                       warnings = warning_table))
+  res <- list(ranking = ranking, forward = forward,
+              selected = if (!is.null(selected_step)) ranking$variable[seq_len(selected_step)] else NULL,
+              plots = .hte_select_plots(ranking, forward, selected_step, imp_metric, sel_metric,
+                                        best_step),
+              analysis = list(backend = "personalized", outcome_type = type,
+                              outcome = outcome, cat_var = cat_var,
+                              treatment_mapping = unique(data.frame(
+                                original = as.character(data[[cat_var]]), encoded = trt)),
+                              loss = loss, method = "weighting", n = nrow(data),
+                              tree_var = tree_var, match_var = match_var,
+                              ps_var = ps_var, n_select = n_select,
+                              imp_metric = imp_metric, sel_metric = sel_metric,
+                              best_step = best_step, sel_baseline = sel_baseline,
+                              selected_step = selected_step,
+                              rank_direction = if (.hte_select_direction(imp_metric) == 1) "minimize" else "maximize",
+                              select_direction = if (is.null(sel_metric)) NULL else
+                                if (.hte_select_direction(sel_metric) == 1) "minimize" else "maximize",
+                              design_columns = lapply(columns, function(idx) colnames(x)[idx]),
+                              seed = seed, fit_args = fit_args, foldid = foldid,
+                              eval_args = eval_args, training_rows = train,
+                              evaluation_rows = validation,
+                              evaluation = if (use_eval) list(backend = "grf", n = length(validation),
+                                adjust_var = model_vars, target = if (type == "survival") eval_args$target else
+                                  if (type == "binary") "risk.difference" else "mean.difference",
+                                time = if (type == "survival") eval_args$time else NULL,
+                                propensity = if (is.null(ps)) "matched 1:1: 0.5" else "fixed ps_var",
+                                nuisance_prediction = "out-of-bag", metric_source = "validation",
+                                effect_conversion = if (type == "continuous") "2 * benefit.score" else NULL) else NULL,
+                              score_source = "training", versions = versions,
+                              warnings = warning_table))
+  class(res) <- c("hte_select", "list")
+  res
+}
+
+
+# ---- print -------------------------------------------------------------------
+
+#' @export
+#' @noRd
+print.hte_select <- function(x, ...) {
+  a <- x$analysis
+  UtilsR::pr_head("hte_select", "Effect-modifier selection", a$backend,
+                  a$outcome_type, sprintf("n = %d", a$n))
+  selected <- if (is.null(x$selected)) "not requested" else
+    if (!length(x$selected)) "none" else paste(x$selected, collapse = ", ")
+  UtilsR::pr_kv(list(
+    `ranked by`   = sprintf("%s (%s)", a$imp_metric, a$rank_direction),
+    `selected by` = if (!is.null(a$sel_metric)) {
+      sprintf("%s (%s)", a$sel_metric, a$select_direction)
+    },
+    selected      = selected
+  ))
+  shown <- intersect(c("rank", "variable", a$imp_metric), names(x$ranking))
+  UtilsR::pr_section("Ranking")
+  UtilsR::pr_table(as.data.frame(x$ranking)[shown], n = 10, digits = 3)
+  UtilsR::pr_note("<result>$plots$combined draws the ranking with the forward steps")
+  invisible(x)
 }
