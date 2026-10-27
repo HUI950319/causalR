@@ -3,6 +3,13 @@
 
 uni_args <- list(num.trees = 300, seed = 1)
 
+uni_layer <- function(q, geom, col) {
+  for (l in q$layers)
+    if (inherits(l$geom, geom) && is.data.frame(l$data) && col %in% names(l$data))
+      return(l$data)
+  NULL
+}
+
 # tau = w3 + 1{sex = M}, sd(w3) = 2: the TEM-VIP is 2 per SD of w3, 1 for
 # M vs F and 0 for w1, w2 and w4.
 uni_cont_data <- function(n = 800L, seed = 510) {
@@ -459,13 +466,6 @@ uni_plot_res <- local({
     cache
   }
 })
-
-uni_layer <- function(q, geom, col) {
-  for (l in q$layers)
-    if (inherits(l$geom, geom) && is.data.frame(l$data) && col %in% names(l$data))
-      return(l$data)
-  NULL
-}
 
 test_that("bar draws every signed estimate with its interval, coloured by p.adj", {
   res <- uni_plot_res()
