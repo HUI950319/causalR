@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* `get_hte()` converts exactly representable `integer64` inputs through bit64
+  (now in Suggests), and uses labelled columns' underlying values. SPSS
+  user-defined missing values become `NA` before complete-case selection and
+  forest encoding, following the same missingness policy as ordinary `NA`.
+
 * `get_hte()` rejects existing `.cate` and `.dr_score` columns before fitting,
   so its output cannot overwrite a treatment, outcome or covariate and alter
   the subsequent heterogeneity tests.

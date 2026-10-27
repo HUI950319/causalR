@@ -797,6 +797,54 @@ hte_repair_data <- function(n = 240L) {
 hte_repair_args <- list(num.trees = 100L, num.threads = 1L, seed = 41L,
                         W.hat = 0.5, Y.hat = 0)
 
+test_that("HTE repair: integer64 values retain their numeric meaning", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("bit64")
+  d <- hte_repair_data()
+  d$x <- rep(c(-3:3, NA_real_), length.out = nrow(d))
+  d$y <- round(d$y)
+  typed <- d
+  for (v in c("z", "x", "y")) typed[[v]] <- bit64::as.integer64(d[[v]])
+  for (encoding in c("integer", "onehot")) {
+    ref <- get_hte(d, "z", adj_var = c("x", "g"), surv = "y",
+                    factor_encoding = encoding, grf_args = hte_repair_args)
+    r <- get_hte(typed, "z", adj_var = c("x", "g"), surv = "y",
+                  factor_encoding = encoding, grf_args = hte_repair_args)
+    expect_equal(r$fit$X.orig, ref$fit$X.orig)
+    expect_equal(r$data, ref$data)
+    expect_equal(r$stats, ref$stats)
+    expect_equal(r$importance, ref$importance)
+  }
+  typed$x[1L] <- bit64::as.integer64("9007199254740993")
+  expect_error(get_hte(typed, "z", adj_var = "x", surv = "y",
+                        grf_args = hte_repair_args), "integer64.*exact|exact.*integer64")
+})
+
+test_that("HTE repair: labelled SPSS missing values follow the NA policy", {
+  skip_if_not_installed("grf")
+  d <- hte_repair_data()
+  d$x[1:4] <- c(999, 97, 99, NA)
+  d$y[5:6] <- 999
+  typed <- d
+  typed$x <- structure(d$x, class = c("haven_labelled_spss", "haven_labelled"),
+                        na_values = 999, na_range = c(97, 99))
+  typed$y <- structure(d$y, class = c("haven_labelled_spss", "haven_labelled"),
+                        na_values = 999)
+  typed$z <- structure(d$z, class = "haven_labelled")
+  d$x[1:4] <- NA_real_
+  d$y[5:6] <- NA_real_
+  ref <- get_hte(d, "z", adj_var = c("x", "g"), surv = "y",
+                  grf_args = hte_repair_args)
+  r <- get_hte(typed, "z", adj_var = c("x", "g"), surv = "y",
+                grf_args = hte_repair_args)
+  expect_equal(r$fit$X.orig, ref$fit$X.orig)
+  expect_equal(r$data, ref$data)
+  expect_equal(r$stats, ref$stats)
+  expect_equal(r$importance, ref$importance)
+  expect_identical(r$stats$n, 238L)
+  expect_true(all(is.na(r$data$x[1:4])))
+})
+
 test_that("HTE repair: reserved output names stop before fitting", {
   skip_if_not_installed("grf")
   d <- hte_repair_data()

@@ -488,6 +488,9 @@
 #'   a constant column, preserving its missing values. Other column types,
 #'   such as dates, are rejected:
 #'   convert them to numbers first.
+#'   Labelled columns use their underlying values; SPSS user-defined missing
+#'   values become `NA`. `integer64` columns need the optional bit64 package
+#'   and must lie in the exactly representable range from -2^53 to 2^53.
 #' @param surv Outcome selector, following [RegR::get_eff()]:
 #'   \itemize{
 #'     \item `TRUE` (default): survival outcome in the fixed columns `time`
@@ -817,6 +820,30 @@ get_hte <- function(data,
     stop(sprintf("`adj_var` / `sub_var` must not include the outcome column(s) %s.",
                  paste0("`", intersect(covars, outcome), "`", collapse = ", ")),
          call. = FALSE)
+  # model.matrix() would otherwise reinterpret integer64 storage as doubles,
+  # and complete.cases() does not recognise SPSS user-defined missing values.
+  for (v in unique(c(cat_var, outcome, covars))) {
+    x <- data[[v]]
+    if (inherits(x, "integer64")) {
+      if (!requireNamespace("bit64", quietly = TRUE))
+        stop("Package 'bit64' is required for integer64 columns.", call. = FALSE)
+      if (any(x < -(2^53) | x > 2^53, na.rm = TRUE))
+        stop(sprintf("Column `%s` has integer64 values outside the exact double range [-2^53, 2^53].",
+                     v), call. = FALSE)
+      data[[v]] <- as.double(x)
+    } else if (inherits(x, "haven_labelled")) {
+      na_values <- attr(x, "na_values", exact = TRUE)
+      na_range <- attr(x, "na_range", exact = TRUE)
+      attributes(x) <- NULL
+      if (inherits(data[[v]], "haven_labelled_spss")) {
+        miss <- is.na(x) | x %in% na_values
+        if (length(na_range) == 2L)
+          miss <- miss | (x >= na_range[1L] & x <= na_range[2L])
+        x[miss] <- NA
+      }
+      data[[v]] <- x
+    }
+  }
   # Anything else -- a Date is not is.numeric() -- would be one-hot encoded
   # into one column per distinct value.
   odd <- covars[!vapply(data[covars], function(x) is.numeric(x) ||

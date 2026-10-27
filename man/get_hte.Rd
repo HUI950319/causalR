@@ -44,7 +44,10 @@ splits on missingness; a missing factor value leaves its column or
 columns missing. A categorical covariate with one observed level becomes
 a constant column, preserving its missing values. Other column types,
 such as dates, are rejected:
-convert them to numbers first.}
+convert them to numbers first.
+Labelled columns use their underlying values; SPSS user-defined missing
+values become \code{NA}. \code{integer64} columns need the optional bit64 package
+and must lie in the exactly representable range from -2^53 to 2^53.}
 
 \item{surv}{Outcome selector, following \code{\link[RegR:get_eff]{RegR::get_eff()}}:
 \itemize{
