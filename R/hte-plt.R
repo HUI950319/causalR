@@ -1526,6 +1526,8 @@ plt_hte_sub <- function(x,
 #'   three per row, coloured by level. The columns follow the rules of
 #'   [plt_hte_sub()]; a patient missing the value is left out of that panel.
 #'   SPSS user-defined missing values are treated as missing too.
+#'   Columns with no non-missing values are omitted with a warning; an error
+#'   is raised if none of the requested subgroup columns remain.
 #' @param type `"waterfall"` (default) draws one bar per patient, sorted by
 #'   the CATE; `"density"` draws the density of the CATE per level.
 #' @param show_ci Logical. `TRUE` adds grf's pointwise confidence interval of
@@ -1637,6 +1639,18 @@ plt_hte_cate <- function(x,
     }
   }
   if (!is.null(sub_var)) sub_var <- .hte_sub_var(sub_var, d, a)
+  if (length(sub_var)) {
+    empty <- sub_var[vapply(d[sub_var], function(v) all(is.na(v)), logical(1L))]
+    if (length(empty)) {
+      cols <- paste0("`", empty, "`", collapse = ", ")
+      if (length(empty) == length(sub_var))
+        stop(sprintf("No non-missing observations for `sub_var`: %s.", cols),
+             call. = FALSE)
+      warning(sprintf("Omitted %s from `sub_var`: no non-missing observations.",
+                      cols), call. = FALSE)
+      sub_var <- setdiff(sub_var, empty)
+    }
+  }
   if (length(sub_var) > 1L && !requireNamespace("patchwork", quietly = TRUE))
     stop("Package 'patchwork' is required to combine several panels.",
          call. = FALSE)

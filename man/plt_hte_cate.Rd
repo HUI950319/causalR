@@ -22,7 +22,9 @@ plt_hte_cate(
 character vector of categorical columns of \code{x$data}: one panel each,
 three per row, coloured by level. The columns follow the rules of
 \code{\link[=plt_hte_sub]{plt_hte_sub()}}; a patient missing the value is left out of that panel.
-SPSS user-defined missing values are treated as missing too.}
+SPSS user-defined missing values are treated as missing too.
+Columns with no non-missing values are omitted with a warning; an error
+is raised if none of the requested subgroup columns remain.}
 
 \item{type}{\code{"waterfall"} (default) draws one bar per patient, sorted by
 the CATE; \code{"density"} draws the density of the CATE per level.}

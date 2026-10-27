@@ -1,5 +1,8 @@
 # causalR (development version)
 
+* `plt_hte_cate()` warns and omits subgroup columns with no usable values,
+  preserving the valid panels. It gives an explicit error when none remain.
+
 * `plt_hte_unihtee()` rejects an empty candidate selection before creating
   any plot, avoiding dependence plots with invalid dimensions that cannot
   be printed or saved.

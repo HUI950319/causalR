@@ -1233,6 +1233,42 @@ test_that("CATE plots exclude SPSS user-missing subgroup values", {
   }
 })
 
+test_that("CATE plots diagnose empty subgroups and retain usable panels", {
+  skip_if_not_installed("patchwork")
+  res <- dep_res()
+  res$data$empty <- NA
+  for (type in c("waterfall", "density")) {
+    expect_error(suppressMessages(plt_hte_cate(res, sub_var = "empty", type = type)),
+                 "No non-missing observations.*empty")
+    expect_warning(p <- suppressMessages(plt_hte_cate(
+      res, sub_var = c("stage", "empty", "sex"), type = type)),
+      "Omitted.*empty.*no non-missing observations")
+    ref <- plt_hte_cate(res, sub_var = c("stage", "sex"), type = type)
+    expect_s3_class(p, "patchwork")
+    expect_identical(vapply(panels_of(p), strip_of, ""), c("stage", "sex"))
+    expect_equal(attr(p, "subgroup"), attr(ref, "subgroup"))
+    expect_equal(attr(p, "plot_size"), attr(ref, "plot_size"))
+    expect_no_error(patchwork::patchworkGrob(p))
+    expect_warning(single <- suppressMessages(plt_hte_cate(
+      res, sub_var = c("empty", "stage"), type = type)), "Omitted.*empty")
+    expect_false(inherits(single, "patchwork"))
+    expect_identical(strip_of(single), "stage")
+  }
+  for (value in list(rep(NA_character_, nrow(res$data)),
+                     factor(rep(NA_character_, nrow(res$data)), levels = "unused"),
+                     structure(rep(99, nrow(res$data)),
+                               class = c("haven_labelled_spss", "haven_labelled"),
+                               na_values = 99))) {
+    res$data$empty <- value
+    expect_error(suppressMessages(plt_hte_cate(res, sub_var = "empty")),
+                 "No non-missing observations.*empty")
+  }
+  # An explicit NA factor level is a group, not a missing factor code.
+  res$data$empty <- factor(rep(NA_character_, nrow(res$data)), exclude = NULL)
+  p <- suppressMessages(plt_hte_cate(res, sub_var = "empty"))
+  expect_identical(nrow(layer_data_of(p, "GeomCol")), nrow(res$data))
+})
+
 # The fonts and line widths a theme draws with.
 look_of <- function(th) {
   el <- function(name) ggplot2::calc_element(name, th)
