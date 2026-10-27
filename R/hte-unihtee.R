@@ -53,6 +53,8 @@
       if (!isTRUE(fit$converged))
         stop("GLM did not converge.", call. = FALSE)
       pred <- stats::predict(fit, te, type = "response")
+      if (length(attr(pred, "non-estim")))
+        stop("GLM returned non-estimable validation predictions.", call. = FALSE)
       if (length(pred) != nrow(te) || any(!is.finite(pred)))
         stop("GLM returned non-finite or incomplete predictions.", call. = FALSE)
       pred
@@ -200,7 +202,7 @@
 #'   }
 #'   Each training fold must support its factor levels and, for a binomial
 #'   model, contain events and non-events. An unestimable fold, failed GLM or
-#'   non-finite prediction stops with the fold and model role identified;
+#'   non-finite or non-estimable prediction stops with the fold and model role identified;
 #'   folds are not redrawn and no fallback model is substituted.
 #' @param seed Nonnegative whole number, default `123`. It draws the
 #'   cross-fitting folds (the global random-number state is restored

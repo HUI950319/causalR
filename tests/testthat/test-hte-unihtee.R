@@ -92,6 +92,24 @@ test_that("unihtee projections are stable under changes of origin and units", {
   }
 })
 
+test_that("unihtee rejects finite but non-estimable GLM predictions", {
+  d <- uni_cont_data(n = 200L)
+  d$arm_x <- d$a * d$w1
+  for (binary in c(FALSE, TRUE)) {
+    if (binary) d$y <- as.integer(d$y > median(d$y))
+    expect_error(get_hte_unihtee(d, "a", tree_var = "w3", adj_var = "arm_x",
+                                 surv = "y", method = "glm"),
+                  "Fold [0-9]+ control outcome:.*non-estimable")
+  }
+  d <- uni_cont_data(n = 200L)
+  d$duplicate <- d$w3
+  expect_warning(out <- get_hte_unihtee(d, "a", tree_var = "w3", adj_var = "duplicate",
+                                        surv = "y", method = "glm"), NA)
+  ref <- get_hte_unihtee(d, "a", tree_var = "w3", surv = "y", method = "glm")
+  expect_equal(out$vip, ref$vip)
+  expect_equal(out$data$.score_diff, ref$data$.score_diff)
+})
+
 test_that("unihtee protects input columns from internal names", {
   d <- uni_cont_data(n = 200L)
   for (nm in c(".ps", ".mu1", ".mu0", ".score_diff", ".score_ratio",

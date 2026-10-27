@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* The unihtee GLM backend rejects non-estimable validation predictions even
+  when their numeric values are finite, reporting the fold and model role.
+  Redundant covariates remain supported when validation predictions are estimable.
+
 * Univariate TEM-VIP projections internally center and scale continuous
   candidates to avoid numerical rank and HC3 errors from large offsets.
   Per-SD estimates and dependence plots retain their original definitions.

@@ -79,7 +79,7 @@ counts the clipped rows.}
 }
 Each training fold must support its factor levels and, for a binomial
 model, contain events and non-events. An unestimable fold, failed GLM or
-non-finite prediction stops with the fold and model role identified;
+non-finite or non-estimable prediction stops with the fold and model role identified;
 folds are not redrawn and no fallback model is substituted.}
 
 \item{seed}{Nonnegative whole number, default \code{123}. It draws the
