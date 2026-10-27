@@ -150,6 +150,14 @@
         else if (length(cl) && isTRUE(fit$equalize.cluster.weights))
           1 / as.numeric(table(cl)[as.character(cl)])
         else rep(1, length(tau))
+  # lm() omits zero weights from its QR decomposition; sandwich's scores can
+  # retain those rows. Align the regression and its covariance up front.
+  keep <- wt > 0
+  tau <- tau[keep]
+  wc <- wc[keep]
+  r <- r[keep]
+  if (length(cl)) cl <- cl[keep]
+  wt <- wt[keep]
   wt <- wt / sum(wt)
   mp <- stats::weighted.mean(tau, wt)
   m  <- stats::lm(r ~ 0 + mean.forest.prediction +
@@ -638,9 +646,11 @@
 #' around that average is well calibrated, and one significantly above 0 is
 #' an omnibus test that the effect varies at all. `p.value` is one-sided
 #' (coefficient > 0), as in grf. grf runs the test on a `causal_forest` only,
-#' where `$calibration` equals `grf::test_calibration(res$fit)`; for a
+#' where, with positive observation weights, `$calibration` equals
+#' `grf::test_calibration(res$fit)`; for a
 #' survival outcome the same regression runs on the censoring-adjusted
 #' residual the `causal_survival_forest` keeps.
+#' Zero-weight patients are excluded from this regression and its covariance.
 #'
 #' @return An object of class `hte_res`: a list of
 #'   \describe{

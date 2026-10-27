@@ -1,5 +1,14 @@
 # causalR (development version)
 
+* `get_hte_unihtee()` rejects reserved output column names before fitting,
+  preventing overwritten inputs and inconsistent projection plots. Its GLM
+  response columns now avoid collisions with covariates named `.w` or `.y`.
+
+* `get_hte()` excludes zero-weight patients from the calibration regression
+  and its HC3 covariance together. Retaining them in the covariance could
+  underestimate the standard errors, sometimes without a warning. Average
+  effects and the rows returned in `data` are unchanged.
+
 * The `get_PSM()`, `get_PSW()`, `get_hte()`, `get_hte_tree()` and
   `get_hte_icf()` print methods end with a note naming the components,
   e.g. `# Components: data, stats, balance, and fit; see

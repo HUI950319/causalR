@@ -785,3 +785,45 @@ test_that("heterogeneity inherits weights and clusters from the forest", {
     }
   }
 })
+
+hte_repair_data <- function(n = 240L) {
+  withr::local_seed(1027)
+  d <- data.frame(z = rep(0:1, length.out = n), x = stats::rnorm(n),
+                  g = factor(rep(c("A", "B", "C"), length.out = n)))
+  d$y <- d$x + d$z * (0.5 + (d$g == "B")) + stats::rnorm(n)
+  d
+}
+
+hte_repair_args <- list(num.trees = 100L, num.threads = 1L, seed = 41L,
+                        W.hat = 0.5, Y.hat = 0)
+
+test_that("HTE repair: zero weights leave calibration on positive rows", {
+  skip_if_not_installed("grf")
+  d <- hte_repair_data()
+  for (nzero in c(20L, 120L)) for (clustered in c(FALSE, TRUE)) {
+    wt <- c(rep(0, nzero), rep(1, nrow(d) - nzero))
+    cl <- if (clustered) rep(1:24, each = 10)
+    ga <- c(hte_repair_args, list(sample.weights = wt),
+            if (clustered) list(clusters = cl))
+    expect_no_warning(r <- get_hte(d, "z", adj_var = c("x", "g"),
+                                   surv = "y", grf_args = ga))
+    f <- r$fit
+    i <- wt > 0
+    tau <- as.numeric(predict(f)$predictions)
+    wc <- f$W.orig - f$W.hat
+    mu <- stats::weighted.mean(tau, wt)
+    dd <- data.frame(y = f$Y.orig - f$Y.hat,
+                      mean.forest.prediction = wc * mu,
+                      differential.forest.prediction = wc * (tau - mu), wt = wt)
+    m <- stats::lm(y ~ 0 + mean.forest.prediction + differential.forest.prediction,
+                    data = dd[i, ], weights = wt)
+    V <- sandwich::vcovCL(m, cluster = if (clustered) f$clusters[i] else which(i),
+                           type = "HC3")
+    expect_equal(r$calibration$estimate, unname(stats::coef(m)))
+    expect_equal(r$calibration$std.error, unname(sqrt(diag(V))))
+    expect_equal(r$calibration$p.value,
+                   unname(stats::pt(stats::coef(m) / sqrt(diag(V)),
+                                     m$df.residual, lower.tail = FALSE)))
+    expect_identical(r$stats$n, nrow(d))
+  }
+})

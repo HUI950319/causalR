@@ -274,9 +274,11 @@ coefficient of 1 says the average CATE is right; a
 around that average is well calibrated, and one significantly above 0 is
 an omnibus test that the effect varies at all. \code{p.value} is one-sided
 (coefficient > 0), as in grf. grf runs the test on a \code{causal_forest} only,
-where \verb{$calibration} equals \code{grf::test_calibration(res$fit)}; for a
+where, with positive observation weights, \verb{$calibration} equals
+\code{grf::test_calibration(res$fit)}; for a
 survival outcome the same regression runs on the censoring-adjusted
 residual the \code{causal_survival_forest} keeps.
+Zero-weight patients are excluded from this regression and its covariance.
 }
 
 \examples{
