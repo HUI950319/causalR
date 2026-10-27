@@ -194,7 +194,8 @@
 #' @noRd
 .hte_estimate <- function(fit, s, idx, grid, event_risk, z, label,
                           beyond = NULL, estimator = "aipw") {
-  w <- fit$W.orig[idx]
+  active <- idx & .hte_weights(fit) > 0
+  w <- fit$W.orig[active]
   one <- function(estimand, measure) {
     if (estimand != "ATO" && any(!is.finite(s$g1[idx] - s$g0[idx]))) {
       warning(sprintf("%s: AIPW scores are unavailable; `%s` set to NA.",
@@ -238,8 +239,13 @@
     warning(sprintf("%s: fewer than two units in one arm; estimates set to NA.",
                     label), call. = FALSE)
     matrix(NA_real_, nrow(grid), 5L)
+  } else if (length(fit$clusters) &&
+             length(unique(fit$clusters[active])) < 2L) {
+    warning(sprintf("%s: fewer than two positive-weight clusters; estimates set to NA.",
+                    label), call. = FALSE)
+    matrix(NA_real_, nrow(grid), 5L)
   } else if (!is.null(beyond) &&
-             (!any(beyond[idx] & w == 1) || !any(beyond[idx] & w == 0))) {
+             (!any(beyond[active] & w == 1) || !any(beyond[active] & w == 0))) {
     warning(sprintf("%s: no patient in one arm is followed past `time`; estimates set to NA.",
                     label), call. = FALSE)
     matrix(NA_real_, nrow(grid), 5L)
@@ -611,6 +617,9 @@
 #' variances retain grf's convention (including its plug-in variance for
 #' ATT/ATC). A subgroup in which an arm has no patient followed beyond
 #' `time` gets `NA`, like one with fewer than two patients in an arm.
+#' These support checks count positive-weight patients only. A subgroup with
+#' fewer than two positive-weight clusters is also unavailable, with a warning;
+#' valid overall and other subgroup estimates are retained.
 #'
 #' @section CATE curves:
 #' `$data` supports two univariate curves over a covariate `x`. Regressing

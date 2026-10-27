@@ -797,6 +797,38 @@ hte_repair_data <- function(n = 240L) {
 hte_repair_args <- list(num.trees = 100L, num.threads = 1L, seed = 41L,
                         W.hat = 0.5, Y.hat = 0)
 
+test_that("HTE repair: unsupported subgroups preserve the overall estimate", {
+  skip_if_not_installed("grf")
+  d <- hte_repair_data()
+  cl <- rep(1:24, each = 10)
+  d$g <- factor(ifelse(cl == 1L, "A", "B"))
+  ga <- c(hte_repair_args, list(clusters = cl))
+  ref <- get_hte(d, "z", adj_var = c("x", "g"), surv = "y", grf_args = ga)
+  expect_warning(r <- get_hte(d, "z", sub_var = "g", adj_var = c("x", "g"),
+                               surv = "y", grf_args = ga), "g = A:.*cluster")
+  expect_equal(r$stats, ref$stats)
+  expect_true(all(is.na(r$subgroup$estimate[r$subgroup$level == "A"])))
+  expect_true(all(is.finite(r$subgroup$estimate[r$subgroup$level == "B"])))
+  expect_true(all(is.na(r$subgroup$p_inter)))
+  want <- grf::average_treatment_effect(r$fit, subset = which(d$g == "B"))
+  expect_equal(r$subgroup$estimate[r$subgroup$level == "B"],
+                 unname(want[["estimate"]]))
+})
+
+test_that("HTE repair: zero-weight-only subgroups are unavailable", {
+  skip_if_not_installed("grf")
+  d <- hte_repair_data()
+  d$g <- factor(ifelse(seq_len(nrow(d)) <= 20L, "A", "B"))
+  wt <- c(rep(0, 20L), rep(1, nrow(d) - 20L))
+  ga <- c(hte_repair_args, list(sample.weights = wt))
+  expect_warning(r <- get_hte(d, "z", sub_var = "g", adj_var = c("x", "g"),
+                               surv = "y", grf_args = ga), "g = A:.*fewer than two")
+  expect_true(is.finite(r$stats$estimate))
+  expect_identical(r$subgroup$n, c(20L, 220L))
+  expect_true(is.na(r$subgroup$estimate[r$subgroup$level == "A"]))
+  expect_false(is.nan(r$subgroup$estimate[r$subgroup$level == "A"]))
+})
+
 test_that("HTE repair: integer64 values retain their numeric meaning", {
   skip_if_not_installed("grf")
   skip_if_not_installed("bit64")

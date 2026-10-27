@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* `get_hte()` retains valid overall and subgroup results when one subgroup
+  has fewer than two positive-weight clusters. That subgroup is reported as
+  unavailable with a warning. Arm and follow-up support checks also exclude
+  zero-weight patients, so an all-zero-weight subgroup returns `NA`, not NaN.
+
 * `get_hte()` converts exactly representable `integer64` inputs through bit64
   (now in Suggests), and uses labelled columns' underlying values. SPSS
   user-defined missing values become `NA` before complete-case selection and

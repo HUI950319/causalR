@@ -233,6 +233,9 @@ and \code{"OR"}). Shared clusters contribute cross-group covariance; marginal
 variances retain grf's convention (including its plug-in variance for
 ATT/ATC). A subgroup in which an arm has no patient followed beyond
 \code{time} gets \code{NA}, like one with fewer than two patients in an arm.
+These support checks count positive-weight patients only. A subgroup with
+fewer than two positive-weight clusters is also unavailable, with a warning;
+valid overall and other subgroup estimates are retained.
 }
 
 \section{CATE curves}{
