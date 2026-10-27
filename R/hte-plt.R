@@ -1679,9 +1679,12 @@ plt_hte_cate <- function(x,
   # ggplot2's default hues, so the lines take the colour of their level
   hue  <- function(k) grDevices::hcl(h = seq(15, 375, length.out = k + 1L)[seq_len(k)],
                                      c = 100, l = 65)
+  environment(hue) <- baseenv()
+  groups <- stats::setNames(lapply(sub_var, function(v)
+    droplevels(as.factor(d[[v]]))), sub_var)
 
   panel <- function(v) {
-    g <- if (!is.null(v)) droplevels(as.factor(d[[v]]))
+    g <- if (!is.null(v)) groups[[v]]
     o <- order(cate)
     if (!is.null(g)) o <- o[!is.na(g[o])]
     pd <- data.frame(rank = seq_along(o), cate = cate[o])
@@ -1770,6 +1773,11 @@ plt_hte_cate <- function(x,
     }
     q
   }
+  # aes() and facet formulas capture this environment, so keep only plot data.
+  environment(panel) <- list2env(
+    list(groups = groups, cate = cate, se = se, z = z, sub = sub, ate = ate,
+         type = type, show_ci = show_ci, overall = overall, lab = lab, hue = hue),
+    parent = baseenv())
   plots <- lapply(if (length(sub_var)) sub_var else list(NULL), panel)
 
   caption <- paste(c(

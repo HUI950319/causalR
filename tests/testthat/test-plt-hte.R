@@ -1269,6 +1269,38 @@ test_that("CATE plots diagnose empty subgroups and retain usable panels", {
   expect_identical(nrow(layer_data_of(p, "GeomCol")), nrow(res$data))
 })
 
+test_that("CATE plot serialization does not retain unrelated analysis contents", {
+  skip_if_not_installed("patchwork")
+  res <- dep_res()
+  make_plot <- function(res, payload, type, sub_var) {
+    set.seed(37)
+    res$unused <- stats::rnorm(payload)
+    args <- list(x = res, sub_var = sub_var, type = type, title = "CATE")
+    if (type == "waterfall") args$show_ci <- TRUE
+    p <- do.call(causalR::plt_hte_cate, args)
+    path <- tempfile(fileext = ".rds")
+    on.exit(unlink(path))
+    saveRDS(p, path)
+    restored <- readRDS(path)
+    panels <- if (inherits(restored, "patchwork"))
+      c(restored$patches$plots, list(restored)) else list(restored)
+    list(bytes = file.info(path)$size,
+         layers = lapply(panels, function(q) ggplot2::ggplot_build(q)$data),
+         labels = lapply(panels, function(q) q$labels),
+         subgroup = attr(restored, "subgroup"), size = attr(restored, "plot_size"))
+  }
+  # Do not let the test fixture environment become part of the comparison.
+  environment(make_plot) <- globalenv()
+  for (type in c("waterfall", "density")) {
+    for (vars in list(NULL, "stage", c("stage", "sex"))) {
+      small <- make_plot(res, 0L, type, vars)
+      large <- make_plot(res, 250000L, type, vars)
+      expect_lt(large$bytes - small$bytes, 100000)
+      expect_equal(large[names(large) != "bytes"], small[names(small) != "bytes"])
+    }
+  }
+})
+
 # The fonts and line widths a theme draws with.
 look_of <- function(th) {
   el <- function(name) ggplot2::calc_element(name, th)

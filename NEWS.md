@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `plt_hte_cate()` keeps only plotting data in captured environments, so
+  saved plots no longer retain the full analysis object and forest. Estimates,
+  layers, colours and layouts are unchanged.
+
 * `plt_hte_cate()` warns and omits subgroup columns with no usable values,
   preserving the valid panels. It gives an explicit error when none remain.
 
