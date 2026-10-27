@@ -13,6 +13,7 @@
 #   L2  .uni_glm_fit()     cross-fitted propensity and per-arm outcome GLMs
 #   L2  .uni_project()     the projection on one candidate, shared by the
 #                          table and its plotted line
+#   L2  .uni_draw()        construct plots from prepared data without forests
 #
 # =============================================================================
 
@@ -135,6 +136,125 @@
     sandwich::vcovHC(fit, type = "HC3")
   list(fit = fit, V = V, i = i, range = range(x[i]), sd = sd,
        center = center, scale = scale)
+}
+
+
+# Construct returned plots in an environment containing only plot data.
+# Evaluating the specification releases promises to the analysis frame.
+#' @keywords internal
+#' @noRd
+.uni_draw <- function(spec) {
+  force(spec)
+  with(spec, {
+    if (type != "dep") {
+      # About 10 caption characters fit per inch of the 6.5-inch figure, as in
+      # plt_hte_dep().
+      wrap <- function(s) paste(strwrap(s, width = 65L), collapse = "\n")
+      if (type == "bar") {
+        pd$label <- factor(pd$label, levels = pd$label[order(
+          if (rel) log(pd$estimate) else pd$estimate)])
+        p <- ggplot2::ggplot() +
+          ggplot2::geom_col(data = pd, ggplot2::aes(x = estimate, y = label,
+                                                    fill = sig), width = 0.7) +
+          ggplot2::geom_errorbar(data = pd, ggplot2::aes(xmin = conf.low,
+                                                         xmax = conf.high,
+                                                         y = label),
+                                 width = 0.25, orientation = "y") +
+          ggplot2::geom_vline(xintercept = null, colour = "grey40") +
+          ggplot2::scale_fill_manual(values = cols, name = NULL) +
+          ggplot2::labs(x = xlab, y = NULL, title = title,
+                        caption = wrap(sprintf("Bars: estimate with %g%% CI; coloured: BH p.adj < %g",
+                                               conf, sig_level)))
+        size <- c(6.5, max(3, 1.2 + 0.35 * nrow(pd)))
+      } else {
+        p <- ggplot2::ggplot() +
+          ggplot2::geom_vline(xintercept = null, colour = "grey40")
+        if (any(pass))
+          p <- p + ggplot2::geom_hline(yintercept = p_cut,
+                                       linetype = 2, colour = "grey40")
+        p <- p +
+          ggplot2::geom_point(data = pd, ggplot2::aes(x = estimate, y = neglog10p,
+                                                      colour = sig), size = 2.5) +
+          ggplot2::geom_text(data = pd[pd$sig != "n.s.", , drop = FALSE],
+                             ggplot2::aes(x = estimate, y = neglog10p,
+                                          label = display),
+                             vjust = -0.8, size = 3.2) +
+          ggplot2::scale_colour_manual(values = cols, name = NULL) +
+          # room above the top point for its label
+          ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.05, 0.12))) +
+          ggplot2::labs(x = xlab, y = "-log10(p)", title = title,
+                        caption = wrap(sprintf("Coloured and labelled: BH p.adj < %g%s",
+                                               sig_level, if (any(pass))
+                                                 "; dashed: the largest raw p that passes" else "")))
+        size <- c(6.5, 5)
+      }
+      if (rel) p <- p + ggplot2::scale_x_log10()
+      p <- p + UtilsR::theme_my(base_rect_size = 1.5)
+    } else {
+      plots <- Map(function(b, r) {
+        label <- b$label
+        cont <- b$cont
+        ln <- b$ln
+        sc <- b$sc
+        bn <- b$bn
+        q  <- ggplot2::ggplot(data.frame(panel = label)) +
+          ggplot2::geom_hline(yintercept = 0, colour = "grey75") +
+          ggplot2::geom_hline(yintercept = mid, linetype = 2)
+        if (!is.null(ln)) {
+          q <- q + if (cont) list(
+            ggplot2::geom_ribbon(data = ln, ggplot2::aes(x = x, ymin = conf.low,
+                                                         ymax = conf.high),
+                                 fill = "firebrick", alpha = 0.15),
+            ggplot2::geom_line(data = ln, ggplot2::aes(x = x, y = estimate),
+                               colour = "firebrick", linewidth = 0.8)) else
+            ggplot2::geom_pointrange(data = ln, ggplot2::aes(x = x, y = estimate,
+                                                             ymin = conf.low,
+                                                             ymax = conf.high),
+                                     colour = "firebrick")
+        }
+        if (!is.null(sc)) {
+          q  <- q + ggplot2::geom_line(data = sc, ggplot2::aes(x = x, y = spline),
+                                       colour = "grey30", linetype = "longdash",
+                                       linewidth = 0.7)
+        }
+        if (!is.null(bn)) {
+          q <- q + ggplot2::geom_pointrange(
+            data = bn, ggplot2::aes(x = x, y = estimate, ymin = conf.low,
+                                    ymax = conf.high),
+            colour = "grey20", size = 0.3)
+        }
+        q + ggplot2::facet_wrap(~panel) +
+          ggplot2::labs(x = b$xlab, y = ylab) +
+          UtilsR::theme_my(base_rect_size = 1.5) +
+          ggplot2::coord_cartesian(ylim = r)
+      }, built, rng)
+      caption <- paste(c(
+        sprintf("red: projection on the candidate with %g%% CI (level means for a binary one)",
+                conf),
+        if (has_spline) sprintf("grey dashed: natural spline, df = %d",
+                                spline_df),
+        if (has_bins) sprintf("grey points: pseudo-outcome mean per quantile bin with %g%% CI",
+                              conf),
+        sprintf("dashed: mean pseudo-outcome%s", if (rel) "" else " (ATE)")),
+        collapse = "; ")
+      caption <- paste0(toupper(substr(caption, 1L, 1L)), substring(caption, 2L))
+      ncol <- min(3L, length(plots))
+      size <- if (length(plots) == 1L) c(5, 4.2) else
+        c(3.4 * ncol + 0.6, 3 * ceiling(length(plots) / ncol) + 0.8)
+      caption <- paste(strwrap(caption, width = floor(10 * size[1L])),
+                       collapse = "\n")
+      p <- if (length(plots) == 1L) {
+        plots[[1L]] + ggplot2::labs(title = title, caption = caption)
+      } else {
+        patchwork::wrap_plots(plots, ncol = ncol) +
+          patchwork::plot_layout(axis_titles = "collect") +
+          patchwork::plot_annotation(title = title, caption = caption,
+                                     theme = UtilsR::theme_my(base_rect_size = 1.5))
+      }
+    }
+    attr(p, "plot_size") <- stats::setNames(size, c("width", "height"))
+    p
+  })
 }
 
 
@@ -866,50 +986,11 @@ plt_hte_unihtee <- function(x,
                      sig = sig, stringsAsFactors = FALSE)[ok, , drop = FALSE]
     xlab <- sprintf("%s the %s per SD or between levels",
                     if (rel) "Factor on" else "Change in", scale)
-    # About 10 caption characters fit per inch of the 6.5-inch figure, as in
-    # plt_hte_dep().
-    wrap <- function(s) paste(strwrap(s, width = 65L), collapse = "\n")
-    if (type == "bar") {
-      pd$label <- factor(pd$label, levels = pd$label[order(
-        if (rel) log(pd$estimate) else pd$estimate)])
-      p <- ggplot2::ggplot() +
-        ggplot2::geom_col(data = pd, ggplot2::aes(x = estimate, y = label,
-                                                  fill = sig), width = 0.7) +
-        ggplot2::geom_errorbar(data = pd, ggplot2::aes(xmin = conf.low,
-                                                       xmax = conf.high,
-                                                       y = label),
-                               width = 0.25, orientation = "y") +
-        ggplot2::geom_vline(xintercept = null, colour = "grey40") +
-        ggplot2::scale_fill_manual(values = cols, name = NULL) +
-        ggplot2::labs(x = xlab, y = NULL, title = title,
-                      caption = wrap(sprintf("Bars: estimate with %g%% CI; coloured: BH p.adj < %g",
-                                             conf, sig_level)))
-      size <- c(6.5, max(3, 1.2 + 0.35 * nrow(pd)))
-    } else {
-      pass <- !is.na(v$p.adj[ok]) & v$p.adj[ok] < sig_level
-      p <- ggplot2::ggplot() +
-        ggplot2::geom_vline(xintercept = null, colour = "grey40")
-      if (any(pass))
-        p <- p + ggplot2::geom_hline(yintercept = -log10(max(v$p.value[ok][pass])),
-                                     linetype = 2, colour = "grey40")
-      p <- p +
-        ggplot2::geom_point(data = pd, ggplot2::aes(x = estimate, y = neglog10p,
-                                                    colour = sig), size = 2.5) +
-        ggplot2::geom_text(data = pd[pd$sig != "n.s.", , drop = FALSE],
-                           ggplot2::aes(x = estimate, y = neglog10p,
-                                        label = display),
-                           vjust = -0.8, size = 3.2) +
-        ggplot2::scale_colour_manual(values = cols, name = NULL) +
-        # room above the top point for its label
-        ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0.05, 0.12))) +
-        ggplot2::labs(x = xlab, y = "-log10(p)", title = title,
-                      caption = wrap(sprintf("Coloured and labelled: BH p.adj < %g%s",
-                                             sig_level, if (any(pass))
-                                               "; dashed: the largest raw p that passes" else "")))
-      size <- c(6.5, 5)
-    }
-    if (rel) p <- p + ggplot2::scale_x_log10()
-    p <- p + UtilsR::theme_my(base_rect_size = 1.5)
+    pass <- !is.na(v$p.adj[ok]) & v$p.adj[ok] < sig_level
+    p <- .uni_draw(list(type = type, pd = pd, rel = rel, null = null,
+                        cols = cols, xlab = xlab, title = title, conf = conf,
+                        sig_level = sig_level, pass = pass,
+                        p_cut = if (any(pass)) -log10(max(v$p.value[ok][pass])) else NA_real_))
 
   # ---- One panel per candidate ---------------------------------------------
   } else {
@@ -944,9 +1025,7 @@ plt_hte_unihtee <- function(x,
       # two strip lines, so a long display label is not cut off
       label <- sprintf("%s:\n%s %s, p.adj %s", disp[[vn]], v$contrast[j],
                        format(signif(v$estimate[j], 3)), fmt_p(v$p.adj[j]))
-      q  <- ggplot2::ggplot(data.frame(panel = label)) +
-        ggplot2::geom_hline(yintercept = 0, colour = "grey75") +
-        ggplot2::geom_hline(yintercept = mid, linetype = 2)
+      ln <- sc <- bn <- NULL
       yv  <- c(0, mid)
       yci <- numeric(0)
       if (is.null(pr$why)) {
@@ -959,24 +1038,11 @@ plt_hte_unihtee <- function(x,
                           conf.high = est + z * se, panel = label)
         yv  <- c(yv, est)
         yci <- c(ln$conf.low, ln$conf.high)
-        q <- q + if (cont) list(
-          ggplot2::geom_ribbon(data = ln, ggplot2::aes(x = x, ymin = conf.low,
-                                                       ymax = conf.high),
-                               fill = "firebrick", alpha = 0.15),
-          ggplot2::geom_line(data = ln, ggplot2::aes(x = x, y = estimate),
-                             colour = "firebrick", linewidth = 0.8)) else
-          ggplot2::geom_pointrange(data = ln, ggplot2::aes(x = x, y = estimate,
-                                                           ymin = conf.low,
-                                                           ymax = conf.high),
-                                   colour = "firebrick")
         if (cont && .hte_is_num(d[[vn]])) {
           sp <- .hte_dr_var(dd, vn, W, z, dr_args$spline_df, beyond, wt,
                             a$clusters)$curve
           if (NROW(sp)) {
             sc <- data.frame(x = sp$x, spline = sp$estimate, panel = label)
-            q  <- q + ggplot2::geom_line(data = sc, ggplot2::aes(x = x, y = spline),
-                                         colour = "grey30", linetype = "longdash",
-                                         linewidth = 0.7)
             yv <- c(yv, sc$spline)
             has_spline <<- TRUE
           }
@@ -1000,20 +1066,14 @@ plt_hte_unihtee <- function(x,
               estimate = sm$estimate, conf.low = sm$estimate - z * bse,
               conf.high = sm$estimate + z * bse, bin = seq_along(grp),
               panel = label, row.names = NULL)
-            q <- q + ggplot2::geom_pointrange(
-              data = bn, ggplot2::aes(x = x, y = estimate, ymin = conf.low,
-                                      ymax = conf.high),
-              colour = "grey20", size = 0.3)
             yv  <- c(yv, bn$estimate)
             yci <- c(yci, bn$conf.low, bn$conf.high)
             has_bins <<- TRUE
           }
         }
       }
-      q <- q + ggplot2::facet_wrap(~panel) +
-        ggplot2::labs(x = disp[[vn]], y = ylab) +
-        UtilsR::theme_my(base_rect_size = 1.5)
-      list(plot = q, yv = yv, yci = yci)
+      list(ln = ln, sc = sc, bn = bn, cont = cont, label = label,
+           xlab = disp[[vn]], yv = yv, yci = yci)
     }
 
     built <- lapply(seq_along(vars), panel)
@@ -1023,34 +1083,13 @@ plt_hte_unihtee <- function(x,
     } else {
       lapply(built, function(b) range(c(b$yv, b$yci), na.rm = TRUE))
     }
-    plots <- Map(function(b, r) b$plot + ggplot2::coord_cartesian(ylim = r),
-                 built, rng)
-    caption <- paste(c(
-      sprintf("red: projection on the candidate with %g%% CI (level means for a binary one)",
-              conf),
-      if (has_spline) sprintf("grey dashed: natural spline, df = %d",
-                              as.integer(dr_args$spline_df)),
-      if (has_bins) sprintf("grey points: pseudo-outcome mean per quantile bin with %g%% CI",
-                            conf),
-      sprintf("dashed: mean pseudo-outcome%s", if (rel) "" else " (ATE)")),
-      collapse = "; ")
-    caption <- paste0(toupper(substr(caption, 1L, 1L)), substring(caption, 2L))
-    ncol <- min(3L, length(plots))
-    size <- if (length(plots) == 1L) c(5, 4.2) else
-      c(3.4 * ncol + 0.6, 3 * ceiling(length(plots) / ncol) + 0.8)
-    caption <- paste(strwrap(caption, width = floor(10 * size[1L])),
-                     collapse = "\n")
-    p <- if (length(plots) == 1L) {
-      plots[[1L]] + ggplot2::labs(title = title, caption = caption)
-    } else {
-      patchwork::wrap_plots(plots, ncol = ncol) +
-        patchwork::plot_layout(axis_titles = "collect") +
-        patchwork::plot_annotation(title = title, caption = caption,
-                                   theme = UtilsR::theme_my(base_rect_size = 1.5))
-    }
+    p <- .uni_draw(list(type = type, built = built, rng = rng, mid = mid,
+                        ylab = ylab, conf = conf, rel = rel, title = title,
+                        has_spline = has_spline, has_bins = has_bins,
+                        spline_df = as.integer(dr_args$spline_df)))
   }
 
-  attr(p, "plot_size") <- stats::setNames(size, c("width", "height"))
+  size <- attr(p, "plot_size")
   if (!is.null(save) && length(save) > 0L) {
     if (!requireNamespace("RegR", quietly = TRUE))
       stop("Package 'RegR' is required for a non-empty `save`.", call. = FALSE)

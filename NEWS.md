@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `plt_hte_unihtee()` constructs bar, volcano and dependence plots from
+  prepared plot data, so saving a plot no longer retains the full analysis
+  data and forest through plotting environments. Layers and layout are unchanged.
+
 * The unihtee GLM backend rejects non-estimable validation predictions even
   when their numeric values are finite, reporting the fold and model role.
   Redundant covariates remain supported when validation predictions are estimable.

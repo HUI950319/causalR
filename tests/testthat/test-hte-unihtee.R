@@ -110,6 +110,35 @@ test_that("unihtee rejects finite but non-estimable GLM predictions", {
   expect_equal(out$data$.score_diff, ref$data$.score_diff)
 })
 
+test_that("unihtee plots do not retain unused forest contents", {
+  make_plot <- function(payload, type, multiple) {
+    set.seed(37)
+    n <- 200L
+    d <- data.frame(a = rep(0:1, n / 2L), x = rnorm(n), v = rnorm(n))
+    d$y <- d$a * d$x + rnorm(n)
+    res <- causalR::get_hte_unihtee(d, "a", tree_var = c("x", "v"),
+                                   surv = "y", method = "glm")
+    res$hte <- list(fit = list(unused = rnorm(payload)))
+    p <- causalR::plt_hte_unihtee(res, type = type,
+                                 x_var = if (multiple) c("x", "v") else "x")
+    path <- tempfile(fileext = ".rds")
+    on.exit(unlink(path))
+    saveRDS(p, path)
+    list(bytes = file.info(path)$size,
+         layers = ggplot2::ggplot_build(p)$data)
+  }
+  # A fresh caller avoids retaining testthat fixtures through plot environments.
+  environment(make_plot) <- globalenv()
+  for (type in c("bar", "volcano", "dep")) {
+    for (multiple in c(FALSE, TRUE)) {
+      small <- make_plot(0L, type, multiple)
+      large <- make_plot(250000L, type, multiple)
+      expect_lt(large$bytes - small$bytes, 100000)
+      expect_equal(large$layers, small$layers)
+    }
+  }
+})
+
 test_that("unihtee protects input columns from internal names", {
   d <- uni_cont_data(n = 200L)
   for (nm in c(".ps", ".mu1", ".mu0", ".score_diff", ".score_ratio",
