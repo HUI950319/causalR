@@ -238,6 +238,8 @@ ATT/ATC). A subgroup in which an arm has no patient followed beyond
 These support checks count positive-weight patients only. A subgroup with
 fewer than two positive-weight clusters is also unavailable, with a warning;
 valid overall and other subgroup estimates are retained.
+Zero-weight patients are excluded before estimating differences and their
+covariance, including the overlap regression for ATO.
 }
 
 \section{CATE curves}{

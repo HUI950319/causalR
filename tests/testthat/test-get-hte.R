@@ -797,6 +797,35 @@ hte_repair_data <- function(n = 240L) {
 hte_repair_args <- list(num.trees = 100L, num.threads = 1L, seed = 41L,
                         W.hat = 0.5, Y.hat = 0)
 
+test_that("HTE follow-up: zero weights leave ATO inference on positive rows", {
+  skip_if_not_installed("grf")
+  d <- hte_repair_data(480L)
+  wt <- c(rep(0, 240L), rep(1, 240L))
+  for (clustered in c(FALSE, TRUE)) {
+    ga <- c(hte_repair_args, list(sample.weights = wt),
+            if (clustered) list(clusters = rep(1:24, each = 20L)))
+    r <- get_hte(d, "z", sub_var = "g", adj_var = c("x", "g"), surv = "y",
+                   estimand = c("ATE", "ATT", "ATC", "ATO"), grf_args = ga)
+    for (e in r$stats$estimand) {
+      ref <- grf::average_treatment_effect(r$fit, target.sample =
+                 c(ATE = "all", ATT = "treated", ATC = "control", ATO = "overlap")[[e]],
+                 subset = which(wt > 0))
+      row <- r$stats[r$stats$estimand == e, ]
+      expect_equal(row$estimate, unname(ref[["estimate"]]))
+      expect_equal(row$std.error, unname(ref[["std.err"]]))
+    }
+    for (lv in levels(d$g)) {
+      ref <- grf::average_treatment_effect(r$fit, target.sample = "overlap",
+                                            subset = which(d$g == lv & wt > 0))
+      row <- r$subgroup[r$subgroup$estimand == "ATO" & r$subgroup$level == lv, ]
+      expect_equal(row$std.error, unname(ref[["std.err"]]))
+      expect_equal(row$conf.low, row$estimate - stats::qnorm(0.975) * ref[["std.err"]])
+    }
+    expect_identical(r$stats$n, rep(480L, 4L))
+    expect_identical(r$subgroup$n, rep(160L, 12L))
+  }
+})
+
 test_that("HTE repair: sparse factor levels skip an unavailable covariance", {
   skip_if_not_installed("grf")
   d <- hte_repair_data()

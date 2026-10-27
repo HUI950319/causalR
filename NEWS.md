@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte()` excludes zero-weight patients from the subset passed to grf's
+  effect estimation, correcting ATO standard errors and intervals overall and
+  within subgroups. Descriptive patient counts retain all analysed rows.
+
 * With `method = "glm"` and the default `surv = TRUE`, `get_hte_unihtee()`
   again explains that the GLM backend does not support survival before
   checking for the survival columns. Defaults are unchanged.

@@ -205,7 +205,7 @@
     if (measure == "diff") {
       a  <- grf::average_treatment_effect(
         fit, target.sample = .HTE_ESTIMANDS[[estimand]],
-        method = toupper(estimator), subset = which(idx))
+        method = toupper(estimator), subset = which(active))
       est <- a[["estimate"]]
       se  <- a[["std.err"]]
       return(c(est, se, est - z * se, est + z * se,
@@ -625,6 +625,8 @@
 #' These support checks count positive-weight patients only. A subgroup with
 #' fewer than two positive-weight clusters is also unavailable, with a warning;
 #' valid overall and other subgroup estimates are retained.
+#' Zero-weight patients are excluded before estimating differences and their
+#' covariance, including the overlap regression for ATO.
 #'
 #' @section CATE curves:
 #' `$data` supports two univariate curves over a covariate `x`. Regressing
