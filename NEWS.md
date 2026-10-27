@@ -1,5 +1,16 @@
 # causalR (development version)
 
+* `get_hte_unihtee()` normalizes Haven labels and SPSS user-missing values
+  before fitting, and rejects unsupported column storage and infinite values.
+  Cross-fitting failures now identify the fold and model role; numerical
+  boundary, non-finite score and exponentiation warnings leave the estimand,
+  clipping defaults and formulas unchanged. Inactive backend arguments are
+  rejected and the recorded seed is the one actually used.
+
+* `get_hte_unihtee()` retains candidate levels only for binary variables.
+  Continuous entries are `NULL`, reducing result size without changing the
+  effect-modifier table or its plots.
+
 * `get_hte()` rejects duplicate data column names, a missing treatment name,
   matrix/array/list columns, complex values and infinite values before fitting.
   Matrix columns previously entered the forest but were not represented

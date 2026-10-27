@@ -269,7 +269,9 @@
 #'       example by [plt_hte_sub()]; `NULL` with `method = "glm"`.}
 #'   }
 #'   Analysis metadata is attached as `attr(x, "analysis")`, including the
-#'   covariates adjusted for and the arguments of the backend.
+#'   covariates adjusted for and the arguments of the backend. The named
+#'   `candidate_levels` list stores levels for binary candidates and `NULL`
+#'   for continuous candidates, avoiding a copy of every unique numeric value.
 #'
 #' @references
 #' Boileau P, Leng N, Hejazi NS, van der Laan M, Dudoit S (2025). A
@@ -405,8 +407,9 @@ get_hte_unihtee <- function(data,
     stop(sprintf("`tree_var` column `%s` has %d levels, but a categorical candidate needs exactly two levels: code the others as 0/1 indicators, or read its joint test in get_hte()$importance$p_het.",
                  v, k), call. = FALSE)
   }, character(1L), USE.NAMES = FALSE)
-  levs <- lapply(tree_var, function(v) {
-    x <- data[[v]]
+  levs <- lapply(seq_along(tree_var), function(j) {
+    if (kind[j] == "continuous") return(NULL)
+    x <- data[[tree_var[j]]]
     if (is.factor(x)) levels(droplevels(x)) else
       as.character(sort(unique(x[!is.na(x)])))
   })

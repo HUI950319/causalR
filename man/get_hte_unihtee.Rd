@@ -110,7 +110,9 @@ come from, so its forest can be reused without refitting, for
 example by \code{\link[=plt_hte_sub]{plt_hte_sub()}}; \code{NULL} with \code{method = "glm"}.}
 }
 Analysis metadata is attached as \code{attr(x, "analysis")}, including the
-covariates adjusted for and the arguments of the backend.
+covariates adjusted for and the arguments of the backend. The named
+\code{candidate_levels} list stores levels for binary candidates and \code{NULL}
+for continuous candidates, avoiding a copy of every unique numeric value.
 }
 \description{
 For each candidate covariate \eqn{W_j}, estimates the treatment effect

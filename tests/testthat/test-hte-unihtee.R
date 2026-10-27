@@ -156,6 +156,20 @@ test_that("unihtee rejects inactive arguments and records the effective seed", {
   expect_equal(attr(r, "analysis")$seed, 7L)
 })
 
+test_that("unihtee keeps levels only for binary candidates", {
+  d <- uni_cont_data(n = 200L)
+  r <- get_hte_unihtee(d, "a", tree_var = c("w3", "sex"), surv = "y", method = "glm")
+  expect_null(attr(r, "analysis")$candidate_levels$w3)
+  expect_identical(attr(r, "analysis")$candidate_levels$sex, c("F", "M"))
+  old_metadata <- r
+  attr(old_metadata, "analysis")$candidate_levels$w3 <- as.character(sort(unique(d$w3)))
+  for (v in c("w3", "sex")) {
+    actual <- ggplot2::ggplot_build(plt_hte_unihtee(r, type = "dep", x_var = v))$data
+    reference <- ggplot2::ggplot_build(plt_hte_unihtee(old_metadata, type = "dep", x_var = v))$data
+    expect_equal(actual, reference)
+  }
+})
+
 test_that("glm route returns the documented table and recovers the truth", {
   skip_if_not_installed("sandwich")
   d   <- uni_cont_data()
