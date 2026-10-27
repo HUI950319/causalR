@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte()` identifies factor groups by their integer codes, including
+  explicit `NA` levels in heterogeneity and clustered interaction tests while
+  keeping genuinely missing factor codes out of those groups.
+
 * `get_hte()` excludes zero-weight patients from the subset passed to grf's
   effect estimation, correcting ATO standard errors and intervals overall and
   within subgroups. Descriptive patient counts retain all analysed rows.

@@ -304,6 +304,15 @@
   V
 }
 
+# Drop unused levels without merging missing codes into an explicit NA level,
+# as droplevels.factor() does when it rebuilds the factor from its labels.
+.hte_drop_levels <- function(x) {
+  g <- as.factor(x)
+  codes <- as.integer(g)
+  used <- sort(unique(codes[!is.na(codes)]))
+  structure(match(codes, used), levels = levels(g)[used], class = "factor")
+}
+
 #' @keywords internal
 #' @noRd
 .hte_subgroup <- function(fit, s, data, sub_var, grid, event_risk, z,
@@ -315,9 +324,11 @@
   obs_wt <- .hte_weights(fit)
   h <- lapply(h, function(wt) wt * obs_wt)
   tbl <- do.call(rbind, lapply(sub_var, function(v) {
-    g <- droplevels(as.factor(data[[v]]))
-    rows <- do.call(rbind, lapply(levels(g), function(lv) {
-      idx <- g %in% lv                 # FALSE where `v` is missing
+    g <- .hte_drop_levels(data[[v]])
+    codes <- as.integer(g)
+    rows <- do.call(rbind, lapply(seq_along(levels(g)), function(j) {
+      lv <- levels(g)[j]
+      idx <- codes %in% j             # FALSE for genuinely missing codes
       est <- .hte_estimate(fit, s, idx, grid, event_risk, z,
                            sprintf("%s = %s", v, lv), beyond, estimator)
       cate_mean <- vapply(seq_len(nrow(est)), function(i) {
@@ -346,7 +357,8 @@
         next
       }
       if (sum(ok) >= 2L) {
-        groups <- lapply(rows$level[j][ok], function(lv) which(g == lv))
+        groups <- lapply(match(rows$level[j][ok], levels(g)),
+                          function(k) which(codes == k))
         V <- .hte_subgroup_vcov(fit, s, groups, rows$estimand[j[1L]], se[ok])
         rows$p_inter[j] <- .hte_equal_p(th[ok], V)
       }
@@ -433,9 +445,11 @@
       curve = data.frame(x = g$x, estimate = est, conf.low = est - z * se,
                          conf.high = est + z * se)))
   }
-  g  <- droplevels(as.factor(x))
+  g  <- .hte_drop_levels(x)
+  codes <- as.integer(g)
   if (!length(clusters)) clusters <- seq_along(s)
-  groups <- lapply(levels(g), function(l) which(g == l & weights > 0))
+  groups <- lapply(seq_along(levels(g)),
+                    function(j) which(codes == j & weights > 0))
   # No level with fewer than four patients can have two in each arm. Its
   # estimates below are already NA, so no dense influence matrix is needed.
   summary <- if (any(lengths(groups) >= 4L))
@@ -627,6 +641,8 @@
 #' valid overall and other subgroup estimates are retained.
 #' Zero-weight patients are excluded before estimating differences and their
 #' covariance, including the overlap regression for ATO.
+#' Explicit `NA` factor levels are included in subgroup and categorical
+#' heterogeneity tests; genuinely missing factor codes are excluded.
 #'
 #' @section CATE curves:
 #' `$data` supports two univariate curves over a covariate `x`. Regressing

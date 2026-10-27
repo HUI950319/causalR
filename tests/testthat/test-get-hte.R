@@ -797,6 +797,48 @@ hte_repair_data <- function(n = 240L) {
 hte_repair_args <- list(num.trees = 100L, num.threads = 1L, seed = 41L,
                         W.hat = 0.5, Y.hat = 0)
 
+test_that("HTE follow-up: explicit NA levels enter all categorical tests", {
+  skip_if_not_installed("grf")
+  d <- hte_repair_data(480L)
+  d$g <- factor(rep(c("A", "B", NA_character_), 160L), exclude = NULL)
+  d$y <- d$x + d$z * (0.5 + 2 * (as.integer(d$g) == 3L)) +
+    withr::with_seed(1028, stats::rnorm(nrow(d)))
+  # An actual missing code is distinct from an observed NA factor level.
+  is.na(d$g)[1L] <- TRUE
+  groups <- lapply(seq_len(nlevels(d$g)), function(j) which(as.integer(d$g) == j))
+  for (clustered in c(FALSE, TRUE)) {
+    ga <- c(hte_repair_args,
+            if (clustered) list(clusters = rep(1:24, each = 20L)))
+    r <- get_hte(d, "z", sub_var = "g", adj_var = c("x", "g"), surv = "y",
+                   estimand = c("ATE", "ATT", "ATC", "ATO"), grf_args = ga)
+    dr <- causalR:::.hte_dr_var(r$data, "g", d$z, stats::qnorm(0.975), 2L,
+                                 clusters = r$fit$clusters)
+    expect_identical(dr$levels$level, levels(d$g))
+    expect_identical(dr$levels$n, c(159L, 160L, 160L))
+    expect_identical(r$subgroup$n, rep(c(159L, 160L, 160L), each = 4L))
+    expect_identical(dr$df, 2L)
+    s <- r$data$.dr_score
+    cl <- if (clustered) r$fit$clusters else seq_along(s)
+    mu <- vapply(groups, function(i) mean(s[i]), numeric(1L))
+    influence <- vapply(seq_along(groups), function(j) {
+      i <- groups[[j]]
+      u <- numeric(length(s))
+      u[i] <- (s[i] - mu[j]) / length(i)
+      k <- length(unique(cl[i]))
+      as.numeric(rowsum(u, cl)) * sqrt(k / (k - 1))
+    }, numeric(length(unique(cl))))
+    C <- cbind(-1, diag(2L))
+    b <- C %*% mu
+    V <- C %*% crossprod(influence) %*% t(C)
+    p <- stats::pchisq(drop(t(b) %*% solve(V, b)), 2L, lower.tail = FALSE)
+    expect_equal(dr$p_het, p)
+    expect_equal(r$importance$p_het[r$importance$variable == "g"], p)
+    expect_equal(r$subgroup$p_inter[r$subgroup$estimand == "ATE"], rep(p, 3L))
+    expect_true(all(is.finite(r$subgroup$p_inter)))
+    expect_equal(dr$levels$estimate, mu)
+  }
+})
+
 test_that("HTE follow-up: zero weights leave ATO inference on positive rows", {
   skip_if_not_installed("grf")
   d <- hte_repair_data(480L)
