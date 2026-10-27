@@ -774,14 +774,14 @@ test_that("heterogeneity inherits weights and clusters from the forest", {
     })
     S <- crossprod(influence)
     expect_equal(res$importance$p_het[res$importance$variable == "sex"],
-                 stats::pchisq(diff(mu)^2 / (S[1, 1] + S[2, 2] - 2 * S[1, 2]),
-                               1, lower.tail = FALSE), ignore_attr = TRUE)
+                 unname(stats::pchisq(diff(mu)^2 / (S[1, 1] + S[2, 2] - 2 * S[1, 2]),
+                                      1, lower.tail = FALSE)))
     if (requireNamespace("patchwork", quietly = TRUE)) {
       p <- plt_hte_dep(res, x_var = "sex", display = "dr")
       layer <- Filter(function(l) inherits(l$geom, "GeomPointrange"), p$layers)[[1]]
       expect_equal(layer$data$estimate, as.numeric(mu))
       expect_equal((layer$data$conf.high - layer$data$conf.low) /
-                     (2 * stats::qnorm(0.975)), sqrt(diag(S)), ignore_attr = TRUE)
+                     (2 * stats::qnorm(0.975)), unname(sqrt(diag(S))))
     }
   }
 })
