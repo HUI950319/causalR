@@ -142,6 +142,20 @@ test_that("unihtee reports non-finite scores before projection", {
   expect_equal(sum(!is.finite(r$data$.score_diff)), 2L)
 })
 
+test_that("unihtee rejects inactive arguments and records the effective seed", {
+  d <- uni_cont_data(n = 200L)
+  expect_error(get_hte_unihtee(d, "a", tree_var = "w1", surv = "y", method = "glm",
+                               grf_args = list(clusters = rep(1:20, 10))),
+               "grf_args.*only.*grf")
+  expect_error(get_hte_unihtee(d, "a", tree_var = "w1", surv = "y", method = "grf",
+                               glm_args = list(folds = 3)), "glm_args.*only.*glm")
+  skip_if_not_installed("grf")
+  r <- get_hte_unihtee(d, "a", tree_var = "w1", surv = "y", seed = 123,
+                       grf_args = list(num.trees = 100, seed = 7))
+  expect_equal(attr(r, "analysis")$seed, r$hte$fit$seed)
+  expect_equal(attr(r, "analysis")$seed, 7L)
+})
+
 test_that("glm route returns the documented table and recovers the truth", {
   skip_if_not_installed("sandwich")
   d   <- uni_cont_data()

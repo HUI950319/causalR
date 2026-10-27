@@ -171,9 +171,10 @@
 #' @param time Time point of a survival outcome, as in [get_hte()]. Default
 #'   `120`. Only accepted with `surv = TRUE`.
 #' @param grf_args Named list forwarded to [get_hte()] and so to grf, for
-#'   example `num.trees`. Without `seed`, `seed` below is used.
+#'   example `num.trees`. Without `seed`, `seed` below is used. Non-empty
+#'   arguments are accepted only for `method = "grf"`.
 #' @param glm_args Named list for `method = "glm"`; partial overrides keep the
-#'   other defaults.
+#'   other defaults. Non-empty arguments are accepted only for this method.
 #'   \describe{
 #'     \item{`folds`}{Whole number from 2 to 100, default `5`: cross-fitting
 #'       folds, drawn within each arm.}
@@ -187,7 +188,9 @@
 #'   folds are not redrawn and no fallback model is substituted.
 #' @param seed Nonnegative whole number, default `123`. It draws the
 #'   cross-fitting folds (the global random-number state is restored
-#'   afterwards) or seeds the forest when `grf_args` has no `seed`.
+#'   afterwards) or seeds the forest when `grf_args` has no `seed`. The
+#'   analysis metadata records the seed actually used, including an override
+#'   in `grf_args`.
 #' @param verbose Logical. `TRUE` reports dropped incomplete rows. Default
 #'   `FALSE`.
 #'
@@ -319,6 +322,10 @@ get_hte_unihtee <- function(data,
                             verbose    = FALSE) {
 
   method  <- match.arg(method)
+  if (method == "glm" && length(grf_args))
+    stop("Non-empty `grf_args` apply only to method = \"grf\".", call. = FALSE)
+  if (method == "grf" && length(glm_args))
+    stop("Non-empty `glm_args` apply only to method = \"glm\".", call. = FALSE)
   measure <- .HTE_MEASURES[.HTE_MEASURES %in%
                              match.arg(measure, .HTE_MEASURES, several.ok = TRUE)]
   if (!is.numeric(conf_level) || length(conf_level) != 1L ||
@@ -431,6 +438,7 @@ get_hte_unihtee <- function(data,
     treated <- an$treated
     outcome <- an$outcome
     backend_args <- an$grf_args
+    seed <- fit$seed
     beyond <- if (is_surv) {
       if (identical(target, "RMST")) d$time >= time else d$time > time
     }

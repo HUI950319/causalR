@@ -65,10 +65,11 @@ skipped, with a message, for a continuous outcome or RMST.}
 \code{120}. Only accepted with \code{surv = TRUE}.}
 
 \item{grf_args}{Named list forwarded to \code{\link[=get_hte]{get_hte()}} and so to grf, for
-example \code{num.trees}. Without \code{seed}, \code{seed} below is used.}
+example \code{num.trees}. Without \code{seed}, \code{seed} below is used. Non-empty
+arguments are accepted only for \code{method = "grf"}.}
 
 \item{glm_args}{Named list for \code{method = "glm"}; partial overrides keep the
-other defaults.
+other defaults. Non-empty arguments are accepted only for this method.
 \describe{
 \item{\code{folds}}{Whole number from 2 to 100, default \code{5}: cross-fitting
 folds, drawn within each arm.}
@@ -83,7 +84,9 @@ folds are not redrawn and no fallback model is substituted.}
 
 \item{seed}{Nonnegative whole number, default \code{123}. It draws the
 cross-fitting folds (the global random-number state is restored
-afterwards) or seeds the forest when \code{grf_args} has no \code{seed}.}
+afterwards) or seeds the forest when \code{grf_args} has no \code{seed}. The
+analysis metadata records the seed actually used, including an override
+in \code{grf_args}.}
 
 \item{verbose}{Logical. \code{TRUE} reports dropped incomplete rows. Default
 \code{FALSE}.}
