@@ -791,7 +791,8 @@ get_hte_unihtee <- function(data,
 #' @param type `"bar"` (default), `"volcano"` or `"dep"`.
 #' @param x_var Candidates to draw: `NULL` (default) for every candidate, in
 #'   the `p.value` order of the table, or a character vector of candidate
-#'   names in the order to draw. Rows whose estimate is `NA` are left out of
+#'   names in the order to draw; an empty selection is rejected.
+#'   Rows whose estimate is `NA` are left out of
 #'   `"bar"` and `"volcano"`.
 #' @param measure The measure to draw, one of those in `x`; `NULL` (default)
 #'   takes the first.
@@ -934,6 +935,8 @@ plt_hte_unihtee <- function(x,
                    paste0("`", v$variable, "`", collapse = ", ")), call. = FALSE)
     unique(x_var)
   }
+  if (!length(vars))
+    stop("`x_var` must select at least one candidate.", call. = FALSE)
   v   <- v[match(vars, v$variable), , drop = FALSE]
   rel <- measure != "diff"
 

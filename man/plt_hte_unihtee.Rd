@@ -24,7 +24,8 @@ plt_hte_unihtee(
 
 \item{x_var}{Candidates to draw: \code{NULL} (default) for every candidate, in
 the \code{p.value} order of the table, or a character vector of candidate
-names in the order to draw. Rows whose estimate is \code{NA} are left out of
+names in the order to draw; an empty selection is rejected.
+Rows whose estimate is \code{NA} are left out of
 \code{"bar"} and \code{"volcano"}.}
 
 \item{measure}{The measure to draw, one of those in \code{x}; \code{NULL} (default)

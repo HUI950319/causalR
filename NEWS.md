@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `plt_hte_unihtee()` rejects an empty candidate selection before creating
+  any plot, avoiding dependence plots with invalid dimensions that cannot
+  be printed or saved.
+
 * Unihtee volcano plots recover finite log-probabilities from finite Wald
   statistics when p-values underflow to zero. Points, labels and the BH
   threshold stay on the plotting scale without changing the reported table.

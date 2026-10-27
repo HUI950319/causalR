@@ -127,6 +127,16 @@ test_that("unihtee volcano keeps finite coordinates when Wald p values underflow
   expect_identical(out$vip, original)
 })
 
+test_that("unihtee rejects empty candidate selections before drawing", {
+  d <- uni_cont_data(n = 200L)
+  r <- get_hte_unihtee(d, "a", tree_var = "w3", surv = "y", method = "glm")
+  for (type in c("bar", "volcano", "dep")) {
+    expect_error(plt_hte_unihtee(r, type = type, x_var = character()),
+                  "`x_var` must select at least one candidate")
+    expect_s3_class(plt_hte_unihtee(r, type = type), "ggplot")
+  }
+})
+
 test_that("unihtee detects loss of projection support after deleting a cluster", {
   set.seed(21)
   n <- 200L
