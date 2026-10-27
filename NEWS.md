@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte()` rejects existing `.cate` and `.dr_score` columns before fitting,
+  so its output cannot overwrite a treatment, outcome or covariate and alter
+  the subsequent heterogeneity tests.
+
 * `get_hte_unihtee()` rejects reserved output column names before fitting,
   preventing overwritten inputs and inconsistent projection plots. Its GLM
   response columns now avoid collisions with covariates named `.w` or `.y`.

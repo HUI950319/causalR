@@ -467,7 +467,8 @@
 #' per-row CATE and doubly robust scores for drawing CATE curves, and the
 #' fitted forest. Arguments follow [RegR::get_eff()] where the two overlap.
 #'
-#' @param data A data frame holding every column named below.
+#' @param data A data frame holding every column named below. The output names
+#'   `.cate` and `.dr_score` are reserved and must not already be columns.
 #' @param cat_var Length-1 character. The binary exposure column: `0`/`1`,
 #'   logical, or a two-level factor or character column whose **second** level
 #'   is the treated arm, as in [get_PSW()]. Unlike [RegR::get_eff()], exactly
@@ -776,6 +777,10 @@ get_hte <- function(data,
 
   if (!is.data.frame(data) || !nrow(data))
     stop("`data` must be a non-empty data frame.", call. = FALSE)
+  clash <- intersect(c(".cate", ".dr_score"), names(data))
+  if (length(clash))
+    stop(sprintf("`data` already has column(s) %s, which get_hte() writes. Rename them first.",
+                 paste0("`", clash, "`", collapse = ", ")), call. = FALSE)
   cat_var <- .sens_check_col(cat_var, data, "cat_var", n = 1L)
   sub_var <- setdiff(.sens_check_col(sub_var, data, "sub_var"), cat_var)
   adj_var <- setdiff(.sens_check_col(adj_var, data, "adj_var"), cat_var)

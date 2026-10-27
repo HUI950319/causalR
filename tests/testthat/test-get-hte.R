@@ -797,6 +797,21 @@ hte_repair_data <- function(n = 240L) {
 hte_repair_args <- list(num.trees = 100L, num.threads = 1L, seed = 41L,
                         W.hat = 0.5, Y.hat = 0)
 
+test_that("HTE repair: reserved output names stop before fitting", {
+  skip_if_not_installed("grf")
+  d <- hte_repair_data()
+  for (nm in c(".cate", ".dr_score")) {
+    dd <- d
+    dd[[nm]] <- dd$x
+    expect_error(get_hte(dd, "z", adj_var = c("x", "g"), surv = "y",
+                          grf_args = hte_repair_args),
+                   "reserved.*get_hte|already.*writes")
+    names(dd)[names(dd) == nm] <- "x_copy"
+    expect_no_error(get_hte(dd, "z", adj_var = c("x_copy", "g"), surv = "y",
+                             grf_args = hte_repair_args))
+  }
+})
+
 test_that("HTE repair: zero weights leave calibration on positive rows", {
   skip_if_not_installed("grf")
   d <- hte_repair_data()

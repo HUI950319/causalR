@@ -21,7 +21,8 @@ get_hte(
 )
 }
 \arguments{
-\item{data}{A data frame holding every column named below.}
+\item{data}{A data frame holding every column named below. The output names
+\code{.cate} and \code{.dr_score} are reserved and must not already be columns.}
 
 \item{cat_var}{Length-1 character. The binary exposure column: \code{0}/\code{1},
 logical, or a two-level factor or character column whose \strong{second} level
