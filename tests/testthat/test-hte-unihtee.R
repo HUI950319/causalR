@@ -25,6 +25,29 @@ uni_bin_data <- function(n = 1500L, seed = 511) {
   d
 }
 
+test_that("unihtee protects input columns from internal names", {
+  d <- uni_cont_data(n = 200L)
+  for (nm in c(".ps", ".mu1", ".mu0", ".score_diff", ".score_ratio",
+               ".score_OR", ".cate", ".dr_score")) {
+    z <- d
+    names(z)[names(z) == "w1"] <- nm
+    for (method in c("glm", "grf"))
+      expect_error(get_hte_unihtee(z, "a", tree_var = nm, surv = "y",
+                                   method = method), "reserved.*Rename")
+  }
+  reference <- get_hte_unihtee(d, "a", tree_var = "w1", adj_var = "w3",
+                               surv = "y", method = "glm")
+  for (nm in c(".w", ".y")) {
+    z <- d
+    names(z)[names(z) == "w1"] <- nm
+    out <- get_hte_unihtee(z, "a", tree_var = nm, adj_var = "w3",
+                           surv = "y", method = "glm")
+    expect_identical(out$data[[nm]], d$w1)
+    expect_equal(out$vip$estimate, reference$vip$estimate)
+    expect_equal(out$data$.score_diff, reference$data$.score_diff)
+  }
+})
+
 test_that("glm route returns the documented table and recovers the truth", {
   skip_if_not_installed("sandwich")
   d   <- uni_cont_data()

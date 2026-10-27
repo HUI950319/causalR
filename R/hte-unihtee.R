@@ -28,20 +28,21 @@
   for (a in 0:1) fold[W == a] <- sample(rep_len(seq_len(folds), sum(W == a)))
   rhs <- .sens_quote_names(covars)
   dd  <- data[covars]
-  dd$.w <- W
-  dd$.y <- Y
+  response <- tail(make.unique(c(covars, ".w", ".y")), 2L)
+  dd[[response[1L]]] <- W
+  dd[[response[2L]]] <- Y
   e <- mu1 <- mu0 <- numeric(n)
   for (k in seq_len(folds)) {
     tr <- fold != k
     te <- dd[!tr, , drop = FALSE]
     e[!tr] <- stats::predict(
-      stats::glm(stats::reformulate(rhs, ".w"), family = stats::binomial(),
+      stats::glm(stats::reformulate(rhs, response[1L]), family = stats::binomial(),
                  data = dd[tr, , drop = FALSE]), te, type = "response")
     mu1[!tr] <- stats::predict(
-      stats::glm(stats::reformulate(rhs, ".y"), family = family,
+      stats::glm(stats::reformulate(rhs, response[2L]), family = family,
                  data = dd[tr & W == 1L, , drop = FALSE]), te, type = "response")
     mu0[!tr] <- stats::predict(
-      stats::glm(stats::reformulate(rhs, ".y"), family = family,
+      stats::glm(stats::reformulate(rhs, response[2L]), family = family,
                  data = dd[tr & W == 0L, , drop = FALSE]), te, type = "response")
   }
   list(e = pmin(pmax(e, ps_trim), 1 - ps_trim), mu1 = mu1, mu0 = mu0,
@@ -108,7 +109,10 @@
 #' (`method = "grf"`) or from cross-fitted generalized linear models
 #' (`method = "glm"`). The `unihtee` package itself is not used.
 #'
-#' @param data A data frame holding every column named below.
+#' @param data A data frame holding every column named below. The output
+#'   column names `.ps`, `.mu1`, `.mu0`, `.score_diff`, `.score_ratio`,
+#'   `.score_OR`, `.cate` and `.dr_score` are reserved; rename any existing
+#'   columns with these names before calling.
 #' @param cat_var Length-1 character. The binary exposure column, coded as in
 #'   [get_hte()]: `0`/`1`, logical, or a two-level factor or character column
 #'   whose second level is the treated arm.
@@ -287,6 +291,11 @@ get_hte_unihtee <- function(data,
          call. = FALSE)
   if (!is.data.frame(data) || !nrow(data))
     stop("`data` must be a non-empty data frame.", call. = FALSE)
+  reserved <- intersect(names(data), c(".ps", ".mu1", ".mu0", ".score_diff",
+                                       ".score_ratio", ".score_OR", ".cate", ".dr_score"))
+  if (length(reserved))
+    stop(sprintf("`data` contains reserved output columns: %s. Rename them before calling.",
+                 paste(reserved, collapse = ", ")), call. = FALSE)
   cat_var <- .sens_check_col(cat_var, data, "cat_var", n = 1L)
   adj_var <- setdiff(.sens_check_col(adj_var, data, "adj_var"), cat_var)
   tree_var <- .sens_check_col(tree_var, data, "tree_var")
