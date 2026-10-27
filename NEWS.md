@@ -1,5 +1,8 @@
 # causalR (development version)
 
+* `plt_hte_cate()` excludes SPSS user-defined missing subgroup values from
+  both panels and subgroup estimates, including variables selected after fitting.
+
 * Failed or non-finite HC3 covariances no longer abort unihtee projections,
   `get_hte()` spline diagnostics or calibration. The affected inference is
   unavailable with a diagnostic while valid candidates and effects remain.

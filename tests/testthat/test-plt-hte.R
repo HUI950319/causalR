@@ -1211,6 +1211,28 @@ test_that("plt_hte_cate adds grf's pointwise intervals and checks its input", {
 
 # ---- Theme ------------------------------------------------------------------
 
+test_that("CATE plots exclude SPSS user-missing subgroup values", {
+  res <- dep_res()
+  values <- as.numeric(res$data$stage)
+  values[1:8] <- c(999, 95:99, NA, 999)
+  res$data$aux <- structure(values,
+                            class = c("haven_labelled_spss", "haven_labelled"),
+                            na_values = 999, na_range = c(95, 99))
+  original <- res$data$aux
+  ref <- res
+  values[1:8] <- NA_real_
+  ref$data$aux <- values
+  for (type in c("waterfall", "density")) {
+    p <- suppressMessages(plt_hte_cate(res, sub_var = "aux", type = type))
+    want <- suppressMessages(plt_hte_cate(ref, sub_var = "aux", type = type))
+    geom <- if (type == "waterfall") "GeomCol" else "GeomDensity"
+    expect_identical(nrow(layer_data_of(p, geom)), nrow(res$data) - 8L)
+    expect_equal(ggplot2::ggplot_build(p)$data, ggplot2::ggplot_build(want)$data)
+    expect_equal(attr(p, "subgroup"), attr(want, "subgroup"))
+    expect_identical(res$data$aux, original)
+  }
+})
+
 # The fonts and line widths a theme draws with.
 look_of <- function(th) {
   el <- function(name) ggplot2::calc_element(name, th)

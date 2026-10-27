@@ -1525,6 +1525,7 @@ plt_hte_sub <- function(x,
 #'   character vector of categorical columns of `x$data`: one panel each,
 #'   three per row, coloured by level. The columns follow the rules of
 #'   [plt_hte_sub()]; a patient missing the value is left out of that panel.
+#'   SPSS user-defined missing values are treated as missing too.
 #' @param type `"waterfall"` (default) draws one bar per patient, sorted by
 #'   the CATE; `"density"` draws the density of the CATE per level.
 #' @param show_ci Logical. `TRUE` adds grf's pointwise confidence interval of
@@ -1621,6 +1622,20 @@ plt_hte_cate <- function(x,
 
   a <- attr(x, "analysis")
   d <- x$data
+  if (is.character(sub_var)) {
+    for (v in intersect(setdiff(sub_var, a$cat_var), names(d))) {
+      value <- d[[v]]
+      if (!inherits(value, "haven_labelled_spss")) next
+      na_values <- attr(value, "na_values", exact = TRUE)
+      na_range <- attr(value, "na_range", exact = TRUE)
+      attributes(value) <- NULL
+      miss <- is.na(value) | value %in% na_values
+      if (length(na_range) == 2L)
+        miss <- miss | (value >= na_range[1L] & value <= na_range[2L])
+      value[miss] <- NA
+      d[[v]] <- value
+    }
+  }
   if (!is.null(sub_var)) sub_var <- .hte_sub_var(sub_var, d, a)
   if (length(sub_var) > 1L && !requireNamespace("patchwork", quietly = TRUE))
     stop("Package 'patchwork' is required to combine several panels.",
