@@ -691,6 +691,9 @@
 #' survival outcome the same regression runs on the censoring-adjusted
 #' residual the `causal_survival_forest` keeps.
 #' Zero-weight patients are excluded from this regression and its covariance.
+#' Clustered analyses require at least two positive-weight clusters after
+#' dropping patients with missing exposure or outcome; this is checked before
+#' growing the forest.
 #'
 #' @return An object of class `hte_res`: a list of
 #'   \describe{
@@ -977,6 +980,16 @@ get_hte <- function(data,
       stop("`grf_args$sample.weights` must be nonnegative and without missing or infinite values.",
            call. = FALSE)
     positive <- wt > 0
+  }
+  cl <- grf_args$clusters
+  if (length(cl)) {
+    if (mode(cl) != "numeric" || length(cl) != length(W) ||
+        any(!is.finite(cl)) || any(cl != floor(cl)))
+      stop("`grf_args$clusters` must contain one finite integer per analysed row.",
+           call. = FALSE)
+    if (length(unique(cl[positive])) < 2L)
+      stop("`grf_args$clusters` requires at least two positive-weight clusters among the analysed rows.",
+           call. = FALSE)
   }
   # grf grows 2000 trees by default. Above 10,000 rows a call that sets no
   # num.trees grows 200: at 100,000 survival rows 13 s instead of 83 s, the

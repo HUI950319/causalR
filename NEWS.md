@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte()` rejects analyses with fewer than two positive-weight clusters
+  before fitting, after aligning row-level arguments with complete outcomes
+  and exposures. This replaces a downstream calibration regression error.
+
 * `get_hte()` counts only positive-weight patients for survival follow-up
   support and continuous CATE common support. Zero-weight extremes no longer
   change the curve or its heterogeneity test, or identify an unsupported horizon.

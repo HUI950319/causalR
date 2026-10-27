@@ -797,6 +797,35 @@ hte_repair_data <- function(n = 240L) {
 hte_repair_args <- list(num.trees = 100L, num.threads = 1L, seed = 41L,
                         W.hat = 0.5, Y.hat = 0)
 
+test_that("HTE follow-up: fewer than two effective clusters stop before fitting", {
+  skip_if_not_installed("grf")
+  d <- hte_repair_data(480L)
+  ga <- c(hte_repair_args, list(clusters = rep(1:24, each = 20L),
+                                 sample.weights = c(rep(1, 20L), rep(0, 460L))))
+  expect_error(suppressWarnings(get_hte(d, "z", adj_var = c("x", "g"),
+                                         surv = "y", grf_args = ga)),
+                 "at least two positive-weight clusters")
+  testthat::local_mocked_bindings(
+    .sens_model_matrix = function(...) stop("Forest design was reached."),
+    .package = "causalR")
+  for (wt in list(rep(0, 480L), c(rep(1, 20L), rep(0, 460L)))) {
+    ga$sample.weights <- wt
+    expect_error(get_hte(d, "z", adj_var = "x", surv = "y", grf_args = ga),
+                   "at least two positive-weight clusters")
+  }
+  ga$sample.weights <- NULL
+  ga$clusters <- rep(1L, 480L)
+  expect_error(get_hte(d, "z", adj_var = "x", surv = "y", grf_args = ga),
+                 "at least two positive-weight clusters")
+  ga$clusters <- rep(1:24, each = 20L)
+  ga$sample.weights <- c(rep(1, 40L), rep(0, 440L))
+  expect_error(get_hte(d, "z", adj_var = "x", surv = "y", grf_args = ga),
+                 "Forest design was reached")
+  d$y[21:40] <- NA_real_
+  expect_error(get_hte(d, "z", adj_var = "x", surv = "y", grf_args = ga),
+                 "at least two positive-weight clusters")
+})
+
 test_that("HTE follow-up: zero weights do not extend survival support", {
   skip_if_not_installed("grf")
   withr::local_seed(1030)
