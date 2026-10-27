@@ -1,5 +1,12 @@
 # causalR (development version)
 
+* `get_hte_unihtee()` excludes zero-weight patients from survival follow-up
+  support and continuous common support, matching `get_hte()`. Unsupported
+  candidates remain unavailable in the table and its dependence plot.
+
+* `plt_hte_cate()` draws pointwise confidence intervals over waterfall bars,
+  keeping both sides visible without changing their numerical values.
+
 * `get_hte()` reuses one internal out-of-bag prediction when the backend's
   `compute.oob.predictions` cache is disabled. Summaries and diagnostics are
   unchanged, and the returned forest retains its original cache state.

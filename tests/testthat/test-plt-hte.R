@@ -1181,6 +1181,14 @@ test_that("plt_hte_cate adds grf's pointwise intervals and checks its input", {
   expect_equal(ci$cate, as.numeric(pr$predictions)[o])
   expect_equal(ci$conf.high - ci$cate,
                stats::qnorm(0.95) * sqrt(as.numeric(pr$variance.estimates))[o])
+  # Intervals must be drawn over the opaque bars, including without groups.
+  for (q in list(p, plt_hte_cate(res, show_ci = TRUE, overall = FALSE))) {
+    geoms <- vapply(q$layers, function(l) class(l$geom)[1L], "")
+    expect_gt(which(geoms == "GeomLinerange"), which(geoms == "GeomCol"))
+    built <- ggplot2::ggplot_build(q)$data
+    expect_equal(built[[which(geoms == "GeomLinerange")]]$ymin,
+                 layer_data_of(q, "GeomLinerange")$conf.low)
+  }
   expect_null(layer_data_of(plt_hte_cate(res, sub_var = "stage"), "GeomLinerange"))
 
   expect_error(plt_hte_cate(res, type = "density", show_ci = TRUE), "only applies")

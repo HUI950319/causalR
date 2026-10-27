@@ -1673,10 +1673,6 @@ plt_hte_cate <- function(x,
     q <- ggplot2::ggplot()
     if (type == "waterfall") {
       q <- q + ggplot2::geom_hline(yintercept = 0, colour = "grey75")
-      if (show_ci)
-        q <- q + ggplot2::geom_linerange(
-          data = pd, ggplot2::aes(x = rank, ymin = conf.low, ymax = conf.high),
-          colour = "grey70", linewidth = 0.3)
       # Outlined in their own colour: side by side, bare bars leave hairline
       # gaps once rasterised.
       q <- q + if (is.null(g)) {
@@ -1695,6 +1691,10 @@ plt_hte_cate <- function(x,
                                                   fill = level, colour = level),
                           width = 1, linewidth = 0.3)
       }
+      if (show_ci)
+        q <- q + ggplot2::geom_linerange(
+          data = pd, ggplot2::aes(x = rank, ymin = conf.low, ymax = conf.high),
+          colour = "grey70", linewidth = 0.3)
       if (overall)
         q <- q + ggplot2::geom_hline(data = ref, ggplot2::aes(yintercept = ate),
                                      linetype = 2)
