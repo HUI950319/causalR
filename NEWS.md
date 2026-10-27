@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* `get_hte()` rejects duplicate data column names, a missing treatment name,
+  matrix/array/list columns, complex values and infinite values before fitting.
+  Matrix columns previously entered the forest but were not represented
+  consistently in the subsequent univariate heterogeneity test.
+
 * `get_hte()` retains valid overall and subgroup results when one subgroup
   has fewer than two positive-weight clusters. That subgroup is reported as
   unavailable with a warning. Arm and follow-up support checks also exclude

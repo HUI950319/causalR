@@ -21,7 +21,9 @@ get_hte(
 )
 }
 \arguments{
-\item{data}{A data frame holding every column named below. The output names
+\item{data}{A data frame with unique column names holding every column named
+below. Used columns must be vectors; matrix, array, complex and infinite
+values are rejected. The output names
 \code{.cate} and \code{.dr_score} are reserved and must not already be columns.}
 
 \item{cat_var}{Length-1 character. The binary exposure column: \code{0}/\code{1},

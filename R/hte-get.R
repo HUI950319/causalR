@@ -473,7 +473,9 @@
 #' per-row CATE and doubly robust scores for drawing CATE curves, and the
 #' fitted forest. Arguments follow [RegR::get_eff()] where the two overlap.
 #'
-#' @param data A data frame holding every column named below. The output names
+#' @param data A data frame with unique column names holding every column named
+#'   below. Used columns must be vectors; matrix, array, complex and infinite
+#'   values are rejected. The output names
 #'   `.cate` and `.dr_score` are reserved and must not already be columns.
 #' @param cat_var Length-1 character. The binary exposure column: `0`/`1`,
 #'   logical, or a two-level factor or character column whose **second** level
@@ -787,13 +789,15 @@ get_hte <- function(data,
   measure  <- .HTE_MEASURES[.HTE_MEASURES %in%
                               match.arg(measure, .HTE_MEASURES, several.ok = TRUE)]
 
-  if (!is.data.frame(data) || !nrow(data))
-    stop("`data` must be a non-empty data frame.", call. = FALSE)
+  if (!is.data.frame(data) || !nrow(data) || anyDuplicated(names(data)))
+    stop("`data` must be a non-empty data frame with unique column names.",
+         call. = FALSE)
   clash <- intersect(c(".cate", ".dr_score"), names(data))
   if (length(clash))
     stop(sprintf("`data` already has column(s) %s, which get_hte() writes. Rename them first.",
                  paste0("`", clash, "`", collapse = ", ")), call. = FALSE)
   cat_var <- .sens_check_col(cat_var, data, "cat_var", n = 1L)
+  if (is.null(cat_var)) stop("`cat_var` is required.", call. = FALSE)
   sub_var <- setdiff(.sens_check_col(sub_var, data, "sub_var"), cat_var)
   adj_var <- setdiff(.sens_check_col(adj_var, data, "adj_var"), cat_var)
   if (!length(sub_var)) sub_var <- NULL
@@ -833,6 +837,11 @@ get_hte <- function(data,
   # and complete.cases() does not recognise SPSS user-defined missing values.
   for (v in unique(c(cat_var, outcome, covars))) {
     x <- data[[v]]
+    if (!is.null(dim(x)) || is.list(x))
+      stop(sprintf("Column `%s` must be a vector, not a matrix, array or list column.",
+                   v), call. = FALSE)
+    if (is.complex(x))
+      stop(sprintf("Column `%s` must not contain complex values.", v), call. = FALSE)
     if (inherits(x, "integer64")) {
       if (!requireNamespace("bit64", quietly = TRUE))
         stop("Package 'bit64' is required for integer64 columns.", call. = FALSE)
@@ -852,6 +861,9 @@ get_hte <- function(data,
       }
       data[[v]] <- x
     }
+    if (is.numeric(data[[v]]) && any(is.infinite(data[[v]])))
+      stop(sprintf("Column `%s` must not contain infinite values; use NA for missingness.",
+                   v), call. = FALSE)
   }
   # Anything else -- a Date is not is.numeric() -- would be one-hot encoded
   # into one column per distinct value.

@@ -797,6 +797,30 @@ hte_repair_data <- function(n = 240L) {
 hte_repair_args <- list(num.trees = 100L, num.threads = 1L, seed = 41L,
                         W.hat = 0.5, Y.hat = 0)
 
+test_that("HTE repair: invalid column shape and values stop before fitting", {
+  skip_if_not_installed("grf")
+  d <- hte_repair_data()
+  expect_error(get_hte(d, NULL, adj_var = "x", surv = "y"), "cat_var.*required")
+  dup <- d
+  names(dup)[3L] <- "x"
+  expect_error(get_hte(dup, "z", adj_var = "x", surv = "y"), "unique column names")
+  for (v in c("z", "x", "y")) {
+    dd <- d
+    dd[[v]] <- cbind(d[[v]], d[[v]])
+    expect_error(get_hte(dd, "z", adj_var = c("x", "g"), surv = "y"),
+                   "Column.*vector")
+  }
+  for (v in c("x", "y")) {
+    dd <- d
+    dd[[v]][1L] <- Inf
+    expect_error(get_hte(dd, "z", adj_var = c("x", "g"), surv = "y"),
+                   "Column.*infinite")
+  }
+  dd <- d
+  dd$x <- d$x + 1i
+  expect_error(get_hte(dd, "z", adj_var = "x", surv = "y"), "Column.*complex")
+})
+
 test_that("HTE repair: unsupported subgroups preserve the overall estimate", {
   skip_if_not_installed("grf")
   d <- hte_repair_data()
