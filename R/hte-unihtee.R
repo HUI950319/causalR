@@ -32,18 +32,45 @@
   dd[[response[1L]]] <- W
   dd[[response[2L]]] <- Y
   e <- mu1 <- mu0 <- numeric(n)
+  fit_predict <- function(rows, response, family, role) {
+    context <- sprintf("Fold %d %s", k, role)
+    y <- dd[[response]][rows]
+    if (family$family == "binomial" && length(unique(y)) < 2L)
+      stop(sprintf("%s needs both events and non-events in its training rows.",
+                   context), call. = FALSE)
+    for (v in covars) {
+      if (is.factor(dd[[v]]) || is.character(dd[[v]])) {
+        seen <- unique(as.character(dd[[v]][rows]))
+        if (length(seen) < 2L || any(!as.character(te[[v]]) %in% seen))
+          stop(sprintf("%s: column `%s` has fewer than two training levels or an unseen validation level.",
+                       context, v), call. = FALSE)
+      }
+    }
+    notes <- character()
+    result <- tryCatch(withCallingHandlers({
+      fit <- stats::glm(stats::reformulate(rhs, response), family = family,
+                         data = dd[rows, , drop = FALSE])
+      if (!isTRUE(fit$converged))
+        stop("GLM did not converge.", call. = FALSE)
+      pred <- stats::predict(fit, te, type = "response")
+      if (length(pred) != nrow(te) || any(!is.finite(pred)))
+        stop("GLM returned non-finite or incomplete predictions.", call. = FALSE)
+      pred
+    }, warning = function(w) {
+      notes <<- c(notes, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }), error = function(e)
+      stop(sprintf("%s: %s", context, conditionMessage(e)), call. = FALSE))
+    for (note in unique(notes))
+      warning(sprintf("%s: %s", context, note), call. = FALSE)
+    result
+  }
   for (k in seq_len(folds)) {
     tr <- fold != k
     te <- dd[!tr, , drop = FALSE]
-    e[!tr] <- stats::predict(
-      stats::glm(stats::reformulate(rhs, response[1L]), family = stats::binomial(),
-                 data = dd[tr, , drop = FALSE]), te, type = "response")
-    mu1[!tr] <- stats::predict(
-      stats::glm(stats::reformulate(rhs, response[2L]), family = family,
-                 data = dd[tr & W == 1L, , drop = FALSE]), te, type = "response")
-    mu0[!tr] <- stats::predict(
-      stats::glm(stats::reformulate(rhs, response[2L]), family = family,
-                 data = dd[tr & W == 0L, , drop = FALSE]), te, type = "response")
+    e[!tr] <- fit_predict(tr, response[1L], stats::binomial(), "propensity")
+    mu1[!tr] <- fit_predict(tr & W == 1L, response[2L], family, "treated outcome")
+    mu0[!tr] <- fit_predict(tr & W == 0L, response[2L], family, "control outcome")
   }
   list(e = pmin(pmax(e, ps_trim), 1 - ps_trim), mu1 = mu1, mu0 = mu0,
        n_clip = sum(e < ps_trim | e > 1 - ps_trim))
@@ -154,6 +181,10 @@
 #'       are clipped to \eqn{[ps\_trim, 1 - ps\_trim]}, with a warning that
 #'       counts the clipped rows.}
 #'   }
+#'   Each training fold must support its factor levels and, for a binomial
+#'   model, contain events and non-events. An unestimable fold, failed GLM or
+#'   non-finite prediction stops with the fold and model role identified;
+#'   folds are not redrawn and no fallback model is substituted.
 #' @param seed Nonnegative whole number, default `123`. It draws the
 #'   cross-fitting folds (the global random-number state is restored
 #'   afterwards) or seeds the forest when `grf_args` has no `seed`.

@@ -75,7 +75,11 @@ folds, drawn within each arm.}
 \item{\code{ps_trim}}{Number in \eqn{[0, 0.5)}, default \code{0.01}: propensities
 are clipped to \eqn{[ps\_trim, 1 - ps\_trim]}, with a warning that
 counts the clipped rows.}
-}}
+}
+Each training fold must support its factor levels and, for a binomial
+model, contain events and non-events. An unestimable fold, failed GLM or
+non-finite prediction stops with the fold and model role identified;
+folds are not redrawn and no fallback model is substituted.}
 
 \item{seed}{Nonnegative whole number, default \code{123}. It draws the
 cross-fitting folds (the global random-number state is restored

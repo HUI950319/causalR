@@ -88,6 +88,26 @@ test_that("unihtee normalizes labelled missing values and validates storage", {
                "cat_var")
 })
 
+test_that("unihtee diagnoses unestimable cross-fitting folds", {
+  d <- uni_cont_data(n = 200L)
+  d$rare <- factor(c("rare", rep("common", nrow(d) - 1L)))
+  expect_error(get_hte_unihtee(d, "a", tree_var = "w3", adj_var = "rare",
+                               surv = "y", method = "glm"),
+               "Fold [0-9]+.*(propensity|outcome).*`rare`.*level")
+  d$y <- 0L
+  d$y[c(which(d$a == 0L)[1L], which(d$a == 1L)[1L])] <- 1L
+  before <- .Random.seed
+  expect_error(get_hte_unihtee(d, "a", tree_var = "w3", surv = "y",
+                               method = "glm", measure = c("diff", "ratio", "OR")),
+               "Fold [0-9]+.*outcome.*(events|converge)")
+  expect_identical(.Random.seed, before)
+  d <- uni_cont_data(n = 400L)
+  d$a <- as.integer(d$w1 > 0)
+  expect_error(get_hte_unihtee(d, "a", tree_var = c("w1", "w3"),
+                               surv = "y", method = "glm"),
+               "Fold [0-9]+ propensity: GLM did not converge")
+})
+
 test_that("glm route returns the documented table and recovers the truth", {
   skip_if_not_installed("sandwich")
   d   <- uni_cont_data()
