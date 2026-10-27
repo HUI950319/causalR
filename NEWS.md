@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte()` reuses one internal out-of-bag prediction when the backend's
+  `compute.oob.predictions` cache is disabled. Summaries and diagnostics are
+  unchanged, and the returned forest retains its original cache state.
+
 * `get_hte()` computes categorical influence covariance only for levels
   meeting the existing arm and follow-up support requirements. Mixed common
   and sparse levels retain identical reported results with smaller allocations.

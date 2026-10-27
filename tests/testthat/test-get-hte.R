@@ -797,6 +797,33 @@ hte_repair_data <- function(n = 240L) {
 hte_repair_args <- list(num.trees = 100L, num.threads = 1L, seed = 41L,
                         W.hat = 0.5, Y.hat = 0)
 
+test_that("HTE follow-up: uncached OOB predictions are reused within one analysis", {
+  skip_if_not_installed("grf")
+  d <- hte_repair_data(480L)
+  counter <- new.env(parent = emptyenv())
+  counter$n <- 0L
+  spy <- grf:::causal_predict_oob
+  env <- new.env(parent = environment(spy))
+  env$counter <- counter
+  environment(spy) <- env
+  body(spy) <- substitute({counter$n <- counter$n + 1L; BODY},
+                           list(BODY = body(spy)))
+  testthat::local_mocked_bindings(causal_predict_oob = spy, .package = "grf")
+  ga <- hte_repair_args
+  ga$compute.oob.predictions <- TRUE
+  ref <- get_hte(d, "z", sub_var = "g", adj_var = c("x", "g"), surv = "y",
+                   estimand = c("ATE", "ATT", "ATC", "ATO"), grf_args = ga)
+  expect_identical(counter$n, 0L)
+  ga$compute.oob.predictions <- FALSE
+  r <- get_hte(d, "z", sub_var = "g", adj_var = c("x", "g"), surv = "y",
+                 estimand = c("ATE", "ATT", "ATC", "ATO"), grf_args = ga)
+  expect_identical(counter$n, 1L)
+  for (slot in c("stats", "subgroup", "importance", "calibration", "data"))
+    expect_identical(r[[slot]], ref[[slot]])
+  expect_null(r$fit$predictions)
+  expect_false(attr(r, "analysis")$grf_args$compute.oob.predictions)
+})
+
 test_that("HTE follow-up: mixed sparse levels use only eligible covariance groups", {
   skip_if_not_installed("grf")
   d <- hte_repair_data(480L)

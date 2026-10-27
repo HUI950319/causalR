@@ -578,8 +578,11 @@
 #'   `clusters`) may be given for every row of `data` -- rows dropped for a
 #'   missing `cat_var` or outcome are dropped from them too -- or for the
 #'   rows analysed only. `clusters` and `sample.weights` are only supported
-#'   with `measure = "diff"`. Without `num.trees`, grf grows its default 2000
-#'   trees, or 200 when more than 10,000 rows are analysed, with a message:
+#'   with `measure = "diff"`. Required out-of-bag predictions are computed once
+#'   and reused internally if grf has not cached them; the returned forest
+#'   retains the backend's original cache setting.
+#'   Without `num.trees`, grf grows its default 2000 trees, or 200 when more
+#'   than 10,000 rows are analysed, with a message:
 #'   at 100,000 survival rows that took 13 s instead of 83 s with the same
 #'   ATE, while the per-patient CATE is noisier. For a survival outcome with
 #'   many distinct times, a coarse `failure.times` grid (for example `0:120`
@@ -1108,6 +1111,14 @@ get_hte <- function(data,
   if (any(bad))
     warning("ATO is estimated, but ordinary AIPW scores are unavailable at boundary propensities; p_het is set to NA.",
             call. = FALSE)
+  # Keep the requested backend result while sharing one OOB prediction pass
+  # among scores, average effects and calibration when the cache was disabled.
+  raw_fit <- fit
+  if (is.null(fit$predictions)) {
+    oob <- stats::predict(fit)
+    for (f in intersect(c("predictions", "debiased.error", "excess.error"), names(oob)))
+      fit[[f]] <- oob[[f]]
+  }
   s  <- .hte_arm_scores(fit)
   z  <- stats::qnorm(1 - (1 - conf_level) / 2)
   event_risk <- identical(target, "survival.probability")
@@ -1164,7 +1175,7 @@ get_hte <- function(data,
 
   structure(
     list(stats = stats_tbl, subgroup = sub_tbl, importance = imp_tbl,
-         calibration = .test_calibration(fit), data = data, fit = fit),
+         calibration = .test_calibration(fit), data = data, fit = raw_fit),
     class = c("hte_res", "list"),
     analysis = list(
       method = method, backend = "grf",
