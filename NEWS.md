@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* Univariate TEM-VIP projections internally center and scale continuous
+  candidates to avoid numerical rank and HC3 errors from large offsets.
+  Per-SD estimates and dependence plots retain their original definitions.
+
 * `get_hte_unihtee()` checks leave-one-cluster-out support before computing
   HC3. An unsupported candidate returns `NA` with a warning, while other
   candidates remain available; its dependence plot uses the same check.

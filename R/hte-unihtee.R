@@ -77,9 +77,9 @@
 }
 
 # Least-squares projection of a pseudo-outcome `phi` on one candidate `x`
-# (numeric, or 0/1 for a binary candidate) on its own scale. The table
-# rescales the slope to per SD -- HC3 errors rescale with it -- and the plot
-# draws the line, so both rest on the same rows, weights and covariance.
+# (numeric, or 0/1 for a binary candidate). Continuous designs are centered
+# and scaled internally; the table reports the slope per SD and the plot
+# restores the original x scale, with the same rows, weights and covariance.
 # With `beyond` (survival) a continuous candidate keeps the values both arms
 # reach among patients followed past `time`, and a binary one needs both
 # levels in both arms there, as .hte_dr_var() does. Returns the fit, its
@@ -106,8 +106,12 @@
   if (!enough)
     return(list(why = if (cont) "fewer than three distinct values remain"
                 else "a level has fewer than two patients in one arm"))
+  sd <- if (cont) sqrt(stats::cov.wt(cbind(x[i]), wt[i])$cov[1L, 1L]) else NA_real_
+  center <- if (cont) stats::weighted.mean(x[i], wt[i]) else 0
+  scale <- if (cont) sd else 1
   fit <- stats::lm(p ~ x, weights = w,
-                   data = data.frame(p = phi[i], x = x[i], w = wt[i]))
+                   data = data.frame(p = phi[i], x = (x[i] - center) / scale,
+                                     w = wt[i]))
   if (fit$rank < 2L || fit$df.residual <= 0L ||
       (length(cl) && length(unique(cl[i])) < 2L))
     return(list(why = "the regression is rank deficient or has too few clusters"))
@@ -127,9 +131,8 @@
   V <- if (length(cl))
     sandwich::vcovCL(fit, cluster = cl[i], type = "HC3") else
     sandwich::vcovHC(fit, type = "HC3")
-  list(fit = fit, V = V, i = i, range = range(x[i]),
-       sd = if (cont) sqrt(stats::cov.wt(cbind(x[i]), wt[i])$cov[1L, 1L])
-            else NA_real_)
+  list(fit = fit, V = V, i = i, range = range(x[i]), sd = sd,
+       center = center, scale = scale)
 }
 
 
@@ -592,7 +595,7 @@ get_hte_unihtee <- function(data,
                       m, pr$why), call. = FALSE)
       return(rep(NA_real_, 4L))
     }
-    k <- if (cont) pr$sd else 1
+    k <- (if (cont) pr$sd else 1) / pr$scale
     c(length(pr$i), pr$sd, stats::coef(pr$fit)[[2L]] * k,
       sqrt(pr$V[2L, 2L]) * k)
   }
@@ -946,7 +949,7 @@ plt_hte_unihtee <- function(x,
       yci <- numeric(0)
       if (is.null(pr$why)) {
         g   <- if (cont) seq(pr$range[1L], pr$range[2L], length.out = 100L) else 0:1
-        M   <- cbind(1, g)
+        M   <- cbind(1, (g - pr$center) / pr$scale)
         est <- drop(M %*% stats::coef(pr$fit))
         se  <- sqrt(rowSums((M %*% pr$V) * M))
         ln  <- data.frame(x = if (cont) g else factor(lv, levels = lv),

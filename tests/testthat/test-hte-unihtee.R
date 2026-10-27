@@ -55,6 +55,43 @@ test_that("unihtee detects loss of projection support after deleting a cluster",
                 "deleting a cluster")
 })
 
+test_that("unihtee projections are stable under changes of origin and units", {
+  d <- uni_cont_data(n = 200L)
+  testthat::local_mocked_bindings(
+    .uni_glm_fit = function(data, ...) list(e = rep(0.5, nrow(data)),
+      mu1 = rep(0, nrow(data)), mu0 = rep(0, nrow(data)), n_clip = 0L),
+    .package = "causalR")
+  run <- function(d) get_hte_unihtee(d, "a", tree_var = "w3",
+                                     surv = "y", method = "glm")
+  reference <- run(d)
+  reference_line <- uni_layer(plt_hte_unihtee(reference, type = "dep"),
+                               "GeomLine", "estimate")
+  for (change in list(c(1e8, 1), c(0, 1e-8), c(0, 1e8))) {
+    shifted <- d
+    shifted$w3 <- change[1L] + change[2L] * d$w3
+    expect_warning(out <- run(shifted), NA)
+    keep <- c("estimate", "std.error", "conf.low", "conf.high", "p.value")
+    expect_equal(out$vip[keep], reference$vip[keep], tolerance = 1e-7)
+    line <- uni_layer(plt_hte_unihtee(out, type = "dep"), "GeomLine", "estimate")
+    expect_equal(line[c("estimate", "conf.low", "conf.high")],
+                  reference_line[c("estimate", "conf.low", "conf.high")], tolerance = 1e-7)
+    expect_equal((line$x - change[1L]) / change[2L], reference_line$x,
+                  tolerance = 1e-7)
+  }
+  wt <- rep(c(0, 1, 2, 3), 50L)
+  cl <- rep(seq_len(10L), each = 20L)
+  i <- wt > 0
+  fit <- lm(y ~ w3, data = d[i, ], weights = wt[i])
+  expected <- sandwich::vcovCL(fit, cluster = cl[i], type = "HC3")
+  for (offset in c(0, 1e8)) {
+    pr <- .uni_project(d$w3 + offset, d$y, d$a, wt, cl, NULL, TRUE)
+    expect_equal(unname(coef(pr$fit)[2L]), unname(coef(fit)[2L]) * pr$sd,
+                  tolerance = 1e-7)
+    expect_equal(unname(pr$V[2L, 2L]), unname(expected[2L, 2L]) * pr$sd^2,
+                  tolerance = 1e-7)
+  }
+})
+
 test_that("unihtee protects input columns from internal names", {
   d <- uni_cont_data(n = 200L)
   for (nm in c(".ps", ".mu1", ".mu0", ".score_diff", ".score_ratio",
