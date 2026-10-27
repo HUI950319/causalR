@@ -111,6 +111,19 @@
   if (fit$rank < 2L || fit$df.residual <= 0L ||
       (length(cl) && length(unique(cl[i])) < 2L))
     return(list(why = "the regression is rank deficient or has too few clusters"))
+  if (length(cl)) {
+    # HC3 inverts I - H for each cluster; this requires the design left
+    # after deleting that cluster to retain both intercept and slope.
+    ranges <- vapply(split(x[i], cl[i]), range, numeric(2L))
+    lo <- order(ranges[1L, ])
+    hi <- order(ranges[2L, ], decreasing = TRUE)
+    left_lo <- rep(ranges[1L, lo[1L]], ncol(ranges))
+    left_hi <- rep(ranges[2L, hi[1L]], ncol(ranges))
+    left_lo[lo[1L]] <- ranges[1L, lo[2L]]
+    left_hi[hi[1L]] <- ranges[2L, hi[2L]]
+    if (any(left_lo == left_hi))
+      return(list(why = "deleting a cluster removes all candidate variation needed for HC3"))
+  }
   V <- if (length(cl))
     sandwich::vcovCL(fit, cluster = cl[i], type = "HC3") else
     sandwich::vcovHC(fit, type = "HC3")
@@ -226,7 +239,8 @@
 #' `method = "grf"` and `"diff"` the row of a continuous candidate equals
 #' `grf::best_linear_projection(res$fit, A = x / sd(x))` on the [get_hte()]
 #' forest. `p.adj` is Benjamini-Hochberg across the candidates of one
-#' measure.
+#' measure. A candidate is reported as `NA` with a warning if deleting any
+#' positive-weight cluster removes all of its variation, making HC3 undefined.
 #'
 #' @section Reading the table:
 #' Each \eqn{\Psi_j} is marginal, not partial: a covariate correlated with a

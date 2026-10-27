@@ -25,6 +25,36 @@ uni_bin_data <- function(n = 1500L, seed = 511) {
   d
 }
 
+test_that("unihtee detects loss of projection support after deleting a cluster", {
+  set.seed(21)
+  n <- 200L
+  cl <- rep(seq_len(5L), each = n / 5L)
+  d <- data.frame(a = rep(0:1, n / 2L), x = as.integer(cl == 1L),
+                  v = rnorm(n))
+  d$y <- d$v + d$a + rnorm(n)
+  expect_warning(out <- get_hte_unihtee(
+    d, "a", tree_var = c("x", "v"), surv = "y",
+    grf_args = list(num.trees = 100, seed = 1, num.threads = 1,
+                    clusters = cl, W.hat = rep(0.5, n), Y.hat = rep(0, n))),
+    "`x`.*deleting a cluster")
+  expect_true(is.na(out$vip$estimate[out$vip$variable == "x"]))
+  expect_true(is.finite(out$vip$std.error[out$vip$variable == "v"]))
+  phi <- d$y
+  reference <- .uni_project(d$v, phi, d$a, rep(1, n), cl, NULL, TRUE)
+  for (j in seq_len(3L)) {
+    i <- sample.int(n)
+    bad <- .uni_project(d$x[i], phi[i], d$a[i], rep(1, n), cl[i], NULL, FALSE)
+    expect_match(bad$why, "deleting a cluster")
+    good <- .uni_project(d$v[i], phi[i], d$a[i], rep(1, n), cl[i], NULL, TRUE)
+    expect_equal(unname(coef(good$fit)), unname(coef(reference$fit)))
+    expect_equal(unname(good$V), unname(reference$V), tolerance = 1e-10)
+  }
+  # Only one cluster carries variation after zero-weight rows are excluded.
+  x <- rep(0, n); x[cl <= 2L] <- seq_len(sum(cl <= 2L))
+  expect_match(.uni_project(x, phi, d$a, as.numeric(cl != 2L), cl, NULL, TRUE)$why,
+                "deleting a cluster")
+})
+
 test_that("unihtee protects input columns from internal names", {
   d <- uni_cont_data(n = 200L)
   for (nm in c(".ps", ".mu1", ".mu0", ".score_diff", ".score_ratio",

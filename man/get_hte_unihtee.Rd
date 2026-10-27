@@ -160,7 +160,8 @@ Standard errors are HC3 heteroskedasticity-robust (cluster-robust with
 \code{method = "grf"} and \code{"diff"} the row of a continuous candidate equals
 \code{grf::best_linear_projection(res$fit, A = x / sd(x))} on the \code{\link[=get_hte]{get_hte()}}
 forest. \code{p.adj} is Benjamini-Hochberg across the candidates of one
-measure.
+measure. A candidate is reported as \code{NA} with a warning if deleting any
+positive-weight cluster removes all of its variation, making HC3 undefined.
 }
 
 \section{Reading the table}{

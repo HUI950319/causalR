@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte_unihtee()` checks leave-one-cluster-out support before computing
+  HC3. An unsupported candidate returns `NA` with a warning, while other
+  candidates remain available; its dependence plot uses the same check.
+
 * `get_hte()` skips the dense categorical influence covariance when every
   level has fewer than four positive-weight patients and therefore cannot
   support two patients per arm. The reported estimates and diagnostics are
