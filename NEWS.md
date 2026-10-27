@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* Unihtee volcano plots recover finite log-probabilities from finite Wald
+  statistics when p-values underflow to zero. Points, labels and the BH
+  threshold stay on the plotting scale without changing the reported table.
+
 * `plt_hte_cate()` excludes SPSS user-defined missing subgroup values from
   both panels and subgroup estimates, including variables selected after fitting.
 

@@ -98,6 +98,35 @@ test_that("shared HTE calibration failure leaves point estimates available", {
   expect_true(all(is.na(out$calibration$std.error)))
 })
 
+test_that("unihtee volcano keeps finite coordinates when Wald p values underflow", {
+  set.seed(1027)
+  n <- 400L
+  d <- data.frame(a = rep(0:1, n / 2L), x = rnorm(n), v = runif(n))
+  set.seed(11)
+  d$y <- d$a * (1 + 5 * d$x) + rnorm(n)
+  out <- get_hte_unihtee(d, "a", tree_var = c("x", "v"), surv = "y", method = "glm")
+  expect_true(any(out$vip$p.value == 0))
+  original <- out$vip
+  for (measure in c("diff", "ratio")) {
+    r <- out
+    if (measure == "ratio") {
+      for (nm in c("estimate", "conf.low", "conf.high")) r$vip[[nm]] <- exp(r$vip[[nm]])
+      r$vip$measure <- measure
+      attr(r, "analysis")$measure <- measure
+    }
+    q <- plt_hte_unihtee(r, type = "volcano")
+    pts <- uni_layer(q, "GeomPoint", "neglog10p")
+    b <- if (measure == "diff") r$vip$estimate else log(r$vip$estimate)
+    expected <- -(log(2) + pnorm(-abs(b / r$vip$std.error), log.p = TRUE)) / log(10)
+    expect_equal(pts$neglog10p, expected)
+    expect_true(all(is.finite(pts$neglog10p)))
+    cut <- uni_layer(q, "GeomHline", "yintercept")$yintercept
+    expect_equal(cut, min(expected[r$vip$p.adj < 0.05]))
+    expect_true(all(is.finite(ggplot2::ggplot_build(q)$layout$panel_params[[1L]]$y.range)))
+  }
+  expect_identical(out$vip, original)
+})
+
 test_that("unihtee detects loss of projection support after deleting a cluster", {
   set.seed(21)
   n <- 200L

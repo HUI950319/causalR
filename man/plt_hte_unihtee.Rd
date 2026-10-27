@@ -33,7 +33,10 @@ takes the first.}
 \item{sig_level}{Threshold on \code{p.adj}, strictly between 0 and 1. Default
 \code{0.05}. Candidates below it are red (positive) or blue (negative) and, in
 the volcano plot, labelled; the volcano's dashed line marks the largest
-raw p-value that passes it.}
+raw p-value that passes it.
+If a finite Wald statistic has a p-value that underflows to zero, its
+plotted height is computed directly on the log-probability scale;
+the table's p-values and BH decisions are unchanged.}
 
 \item{dr_args}{Named list for \code{type = "dep"} only; partial overrides keep
 the other defaults:

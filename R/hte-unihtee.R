@@ -799,6 +799,9 @@ get_hte_unihtee <- function(data,
 #'   `0.05`. Candidates below it are red (positive) or blue (negative) and, in
 #'   the volcano plot, labelled; the volcano's dashed line marks the largest
 #'   raw p-value that passes it.
+#'   If a finite Wald statistic has a p-value that underflows to zero, its
+#'   plotted height is computed directly on the log-probability scale;
+#'   the table's p-values and BH decisions are unchanged.
 #' @param dr_args Named list for `type = "dep"` only; partial overrides keep
 #'   the other defaults:
 #'   \describe{
@@ -981,10 +984,16 @@ plt_hte_unihtee <- function(x,
     ok <- is.finite(v$estimate)
     if (!any(ok))
       stop("No candidate of `x` has an estimate for this measure.", call. = FALSE)
+    neglog10p <- -log10(v$p.value)
+    b <- if (rel) log(v$estimate) else v$estimate
+    underflow <- !is.na(v$p.value) & v$p.value == 0 &
+      is.finite(b) & is.finite(v$std.error) & v$std.error > 0
+    neglog10p[underflow] <- -(log(2) + stats::pnorm(
+      -abs(b[underflow] / v$std.error[underflow]), log.p = TRUE)) / log(10)
     pd <- data.frame(variable = v$variable, display = unname(disp[v$variable]),
                      label = paste0(disp[v$variable], " (", v$contrast, ")"),
                      estimate = v$estimate, conf.low = v$conf.low,
-                     conf.high = v$conf.high, neglog10p = -log10(v$p.value),
+                     conf.high = v$conf.high, neglog10p = neglog10p,
                      sig = sig, stringsAsFactors = FALSE)[ok, , drop = FALSE]
     xlab <- sprintf("%s the %s per SD or between levels",
                     if (rel) "Factor on" else "Change in", scale)
@@ -992,7 +1001,7 @@ plt_hte_unihtee <- function(x,
     p <- .uni_draw(list(type = type, pd = pd, rel = rel, null = null,
                         cols = cols, xlab = xlab, title = title, conf = conf,
                         sig_level = sig_level, pass = pass,
-                        p_cut = if (any(pass)) -log10(max(v$p.value[ok][pass])) else NA_real_))
+                        p_cut = if (any(pass)) min(pd$neglog10p[pass]) else NA_real_))
 
   # ---- One panel per candidate ---------------------------------------------
   } else {
