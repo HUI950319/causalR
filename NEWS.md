@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* With `method = "glm"` and the default `surv = TRUE`, `get_hte_unihtee()`
+  again explains that the GLM backend does not support survival before
+  checking for the survival columns. Defaults are unchanged.
+
 * `plt_hte_unihtee()` constructs bar, volcano and dependence plots from
   prepared plot data, so saving a plot no longer retains the full analysis
   data and forest through plotting environments. Layers and layout are unchanged.

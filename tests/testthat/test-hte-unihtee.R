@@ -139,6 +139,20 @@ test_that("unihtee plots do not retain unused forest contents", {
   }
 })
 
+test_that("unihtee reports unsupported GLM survival before requiring outcome columns", {
+  d <- uni_cont_data(n = 200L)
+  for (has_survival in c(FALSE, TRUE)) {
+    if (has_survival) { d$time <- seq_len(nrow(d)); d$DSS <- d$a }
+    expect_error(get_hte_unihtee(d, "a", tree_var = "w3", method = "glm"),
+                  'method = "glm" does not handle survival outcomes; use method = "grf"')
+  }
+  d$time <- d$DSS <- NULL
+  expect_error(get_hte_unihtee(d, "a", tree_var = "w3"), "time|DSS")
+  expect_warning(out <- get_hte_unihtee(d, "a", tree_var = "w3", surv = "y",
+                                        method = "glm"), NA)
+  expect_true(is.finite(out$vip$estimate))
+})
+
 test_that("unihtee protects input columns from internal names", {
   d <- uni_cont_data(n = 200L)
   for (nm in c(".ps", ".mu1", ".mu0", ".score_diff", ".score_ratio",

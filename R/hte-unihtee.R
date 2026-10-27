@@ -501,6 +501,9 @@ get_hte_unihtee <- function(data,
          call. = FALSE)
   covars <- unique(c(adj_var, tree_var))
   is_surv <- isTRUE(surv)
+  if (is_surv && method == "glm")
+    stop("method = \"glm\" does not handle survival outcomes; use method = \"grf\", which fits a causal survival forest.",
+         call. = FALSE)
   if (!is_surv && !missing(time))
     stop("`time` only applies to survival outcomes (`surv = TRUE`).",
          call. = FALSE)
@@ -588,9 +591,6 @@ get_hte_unihtee <- function(data,
     if (type == "continuous" || identical(target, "RMST"))
       measure <- setdiff(measure, "OR")
   } else {
-    if (is_surv)
-      stop("method = \"glm\" does not handle survival outcomes; use method = \"grf\", which fits a causal survival forest.",
-           call. = FALSE)
     if (!is.character(surv) || length(surv) != 1L || is.na(surv))
       stop("`surv` must be TRUE (columns `time` / `DSS`) or a single outcome column name.",
            call. = FALSE)
