@@ -797,6 +797,32 @@ hte_repair_data <- function(n = 240L) {
 hte_repair_args <- list(num.trees = 100L, num.threads = 1L, seed = 41L,
                         W.hat = 0.5, Y.hat = 0)
 
+test_that("HTE follow-up: zero-weight boundary propensities retain inference", {
+  skip_if_not_installed("grf")
+  d <- hte_repair_data(480L)
+  wt <- c(0, 0, rep(1, 478L))
+  for (clustered in c(FALSE, TRUE)) for (e in c("ATE", "ATT", "ATC", "ATO")) {
+    ga <- hte_repair_args
+    ga$W.hat <- c(0, 1, rep(0.5, 478L))
+    ga$sample.weights <- wt
+    if (clustered) ga$clusters <- rep(1:24, each = 20L)
+    expect_no_warning(r <- get_hte(d, "z", sub_var = "g", adj_var = c("x", "g"),
+                                    surv = "y", estimand = e, grf_args = ga))
+    ref <- grf::average_treatment_effect(r$fit, target.sample =
+               c(ATE = "all", ATT = "treated", ATC = "control", ATO = "overlap")[[e]],
+               subset = which(wt > 0))
+    expect_equal(r$stats$estimate, unname(ref[["estimate"]]))
+    expect_equal(r$stats$std.error, unname(ref[["std.err"]]))
+    expect_true(all(is.finite(r$importance$p_het)))
+    expect_true(all(is.finite(r$subgroup$p_inter)))
+    dr <- causalR:::.hte_dr_var(r$data, "g", d$z, stats::qnorm(0.975), 2L,
+                                 weights = wt, clusters = r$fit$clusters)
+    expect_equal(r$importance$p_het[r$importance$variable == "g"], dr$p_het)
+    expect_true(all(is.na(r$data$.dr_score[wt == 0])))
+    expect_identical(r$stats$n, 480L)
+  }
+})
+
 test_that("HTE follow-up: explicit NA levels enter all categorical tests", {
   skip_if_not_installed("grf")
   d <- hte_repair_data(480L)

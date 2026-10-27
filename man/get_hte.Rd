@@ -210,6 +210,8 @@ If a propensity (\code{W.hat}, estimated or supplied) is exactly 0 or 1, ordinar
 AIPW scores are undefined. A call requesting only \code{ATO} on the difference
 scale still returns grf's overlap estimate: boundary \code{.dr_score} values and
 all \code{p_het} values are \code{NA}, with a warning. Other requests stop.
+Boundary propensities on zero-weight patients do not invalidate inference
+for the positive-weight patients; their own \code{.dr_score} remains \code{NA}.
 Propensities at or beyond 0.05 and 0.95 give
 one warning with their range, which grf itself would repeat for every
 estimand and subgroup.

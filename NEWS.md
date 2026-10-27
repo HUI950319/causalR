@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte()` applies boundary-propensity and AIPW availability checks to
+  positive-weight patients. Zero-weight boundary rows retain unavailable
+  scores without blocking average effects, heterogeneity or interactions.
+
 * `get_hte()` identifies factor groups by their integer codes, including
   explicit `NA` levels in heterogeneity and clustered interaction tests while
   keeping genuinely missing factor codes out of those groups.

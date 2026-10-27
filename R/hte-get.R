@@ -197,7 +197,7 @@
   active <- idx & .hte_weights(fit) > 0
   w <- fit$W.orig[active]
   one <- function(estimand, measure) {
-    if (estimand != "ATO" && any(!is.finite(s$g1[idx] - s$g0[idx]))) {
+    if (estimand != "ATO" && any(!is.finite(s$g1[active] - s$g0[active]))) {
       warning(sprintf("%s: AIPW scores are unavailable; `%s` set to NA.",
                       label, estimand), call. = FALSE)
       return(rep(NA_real_, 5L))
@@ -273,10 +273,10 @@
   cl <- fit$clusters
   if (!length(cl)) return(diag(se^2, length(se)))
   wt <- .hte_weights(fit)
+  groups <- lapply(groups, function(i) i[wt[i] > 0])
   if (estimand == "ATE")
     return(.hte_score_summary(s$g1 - s$g0, groups, wt, cl)$vcov)
   influence <- vapply(groups, function(i) {
-    i <- i[wt[i] > 0]
     w <- fit$W.orig[i]
     e <- fit$W.hat[i]
     a <- wt[i]
@@ -613,6 +613,8 @@
 #' AIPW scores are undefined. A call requesting only `ATO` on the difference
 #' scale still returns grf's overlap estimate: boundary `.dr_score` values and
 #' all `p_het` values are `NA`, with a warning. Other requests stop.
+#' Boundary propensities on zero-weight patients do not invalidate inference
+#' for the positive-weight patients; their own `.dr_score` remains `NA`.
 #' Propensities at or beyond 0.05 and 0.95 give
 #' one warning with their range, which grf itself would repeat for every
 #' estimand and subgroup.
@@ -1063,7 +1065,8 @@ get_hte <- function(data,
   # covariate region holds one arm only -- divides the AIPW score by zero:
   # ordinary AIPW and ratio scores fail, while overlap regression is still
   # available. This also checks a W.hat passed through grf_args.
-  bad <- !is.finite(fit$W.hat) | fit$W.hat <= 0 | fit$W.hat >= 1
+  obs_wt <- .hte_weights(fit)
+  bad <- (!is.finite(fit$W.hat) | fit$W.hat <= 0 | fit$W.hat >= 1) & obs_wt > 0
   if (any(!is.finite(fit$W.hat) | fit$W.hat < 0 | fit$W.hat > 1))
     stop("Estimated propensities must be finite and between 0 and 1.", call. = FALSE)
   if (any(bad) && !all(grid$estimand == "ATO" & grid$measure == "diff"))
@@ -1113,7 +1116,6 @@ get_hte <- function(data,
   # plt_hte_dep() prints in its strips.
   src <- covars[attr(X, "assign")]
   vi  <- as.numeric(grf::variable_importance(fit))
-  obs_wt <- .hte_weights(fit)
   dr  <- if (any(bad)) lapply(covars, function(v)
     list(df = NA_integer_, p_het = NA_real_)) else
     lapply(covars, function(v) .hte_dr_var(data, v, W, z, .HTE_SPLINE_DF,
