@@ -32,6 +32,38 @@ uni_bin_data <- function(n = 1500L, seed = 511) {
   d
 }
 
+test_that("unihtee survival support excludes zero-weight patients", {
+  set.seed(321)
+  n <- 400L
+  d <- data.frame(a = rep(0:1, n / 2L), b = rep(c(0, 0, 1, 1), n / 4L),
+                  v = rnorm(n), time = runif(n, 1, 15), DSS = rbinom(n, 1, 0.7))
+  no <- d$a == 1 & d$b == 1
+  d$time[no] <- runif(sum(no), 1, 4)
+  j <- which(no)[1L]
+  d$time[j] <- 12
+  wt <- rep(1, n); wt[j] <- 0
+  for (target in c("survival.probability", "RMST")) {
+    expect_warning(out <- get_hte_unihtee(d, "a", tree_var = c("b", "v"), time = 5,
+      grf_args = list(num.trees = 100, seed = 7, num.threads = 1, target = target,
+                      sample.weights = wt, W.hat = rep(0.5, n))),
+      "`b`.*no patient.*followed past")
+    expect_true(is.na(out$vip$estimate[out$vip$variable == "b"]))
+    expect_true(is.finite(out$vip$estimate[out$vip$variable == "v"]))
+    expect_true(is.na(out$hte$importance$p_het[out$hte$importance$variable == "b"]))
+    q <- plt_hte_unihtee(out, type = "dep", x_var = "b")
+    expect_null(uni_layer(q, "GeomPointrange", "estimate"))
+  }
+  # A zero-weight extreme must not expand continuous common support.
+  x <- seq_len(n); wt[1:4] <- 0
+  beyond <- seq_len(n) %in% c(1, 2, 101, 102, 201, 202)
+  actual <- .uni_project(x, d$v, d$a, wt, NULL, beyond, TRUE)
+  expected <- .uni_project(x, d$v, d$a, wt, NULL, beyond & wt > 0, TRUE)
+  expect_equal(actual$i, expected$i)
+  expect_equal(actual$range, c(102, 201))
+  expect_equal(coef(actual$fit), coef(expected$fit))
+  expect_equal(actual$V, expected$V)
+})
+
 test_that("unihtee detects loss of projection support after deleting a cluster", {
   set.seed(21)
   n <- 200L

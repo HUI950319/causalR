@@ -152,8 +152,8 @@ outcomes or RMST), without clipping or removing them. Non-finite scores
 and zero or non-finite exponentiated estimates or bounds are reported;
 these warnings do not change the scores or the estimation formula.
 Survival candidates keep only values (continuous)
-or require levels (binary) that both arms reach among patients followed
-past \code{time}, as \code{p_het} in \code{\link[=get_hte]{get_hte()}} does.
+or require levels (binary) that both arms reach among positive-weight
+patients followed past \code{time}, as \code{p_het} in \code{\link[=get_hte]{get_hte()}} does.
 
 Standard errors are HC3 heteroskedasticity-robust (cluster-robust with
 \code{grf_args$clusters}) errors of the least-squares slope, so for

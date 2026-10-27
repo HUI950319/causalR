@@ -91,6 +91,7 @@
 #' @noRd
 .uni_project <- function(x, phi, W, wt, cl, beyond, cont) {
   if (!is.null(beyond)) {
+    beyond <- beyond & wt > 0
     if (cont) {
       x1  <- x[beyond & W == 1 & !is.na(x)]
       x0  <- x[beyond & W == 0 & !is.na(x)]
@@ -356,8 +357,8 @@
 #' and zero or non-finite exponentiated estimates or bounds are reported;
 #' these warnings do not change the scores or the estimation formula.
 #' Survival candidates keep only values (continuous)
-#' or require levels (binary) that both arms reach among patients followed
-#' past `time`, as `p_het` in [get_hte()] does.
+#' or require levels (binary) that both arms reach among positive-weight
+#' patients followed past `time`, as `p_het` in [get_hte()] does.
 #'
 #' Standard errors are HC3 heteroskedasticity-robust (cluster-robust with
 #' `grf_args$clusters`) errors of the least-squares slope, so for
