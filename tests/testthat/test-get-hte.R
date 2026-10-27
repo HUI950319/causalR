@@ -797,6 +797,20 @@ hte_repair_data <- function(n = 240L) {
 hte_repair_args <- list(num.trees = 100L, num.threads = 1L, seed = 41L,
                         W.hat = 0.5, Y.hat = 0)
 
+test_that("HTE repair: sparse factor levels skip an unavailable covariance", {
+  skip_if_not_installed("grf")
+  d <- hte_repair_data()
+  d$g <- factor(rep(seq_len(80L), each = 3L))
+  testthat::local_mocked_bindings(
+    .hte_score_summary = function(...) stop("Unnecessary dense covariance."),
+    .package = "causalR")
+  r <- get_hte(d, "z", adj_var = c("x", "g"), surv = "y",
+                 grf_args = hte_repair_args)
+  expect_true(is.finite(r$stats$estimate))
+  expect_true(is.na(r$importance$p_het[r$importance$variable == "g"]))
+  expect_true(is.na(r$importance$df[r$importance$variable == "g"]))
+})
+
 test_that("HTE repair: invalid column shape and values stop before fitting", {
   skip_if_not_installed("grf")
   d <- hte_repair_data()

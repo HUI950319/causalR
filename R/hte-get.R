@@ -436,7 +436,10 @@
   g  <- droplevels(as.factor(x))
   if (!length(clusters)) clusters <- seq_along(s)
   groups <- lapply(levels(g), function(l) which(g == l & weights > 0))
-  summary <- .hte_score_summary(s, groups, weights, clusters)
+  # No level with fewer than four patients can have two in each arm. Its
+  # estimates below are already NA, so no dense influence matrix is needed.
+  summary <- if (any(lengths(groups) >= 4L))
+    .hte_score_summary(s, groups, weights, clusters)
   lv <- do.call(rbind, lapply(levels(g), function(l) {
     j <- match(l, levels(g))
     i  <- groups[[j]]

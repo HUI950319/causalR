@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* `get_hte()` skips the dense categorical influence covariance when every
+  level has fewer than four positive-weight patients and therefore cannot
+  support two patients per arm. The reported estimates and diagnostics are
+  unchanged, including those drawn by `plt_hte_dep()`.
+
 * `get_hte_unihtee()` normalizes Haven labels and SPSS user-missing values
   before fitting, and rejects unsupported column storage and infinite values.
   Cross-fitting failures now identify the fold and model role; numerical
