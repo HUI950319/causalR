@@ -22,6 +22,10 @@
   `get_hte()` spline diagnostics or calibration. The affected inference is
   unavailable with a diagnostic while valid candidates and effects remain.
 
+* Clustered HC3 inference in unihtee projections and shared HTE diagnostics
+  uses low-rank linear algebra to avoid cluster-sized dense matrices, preserving
+  the existing weighted covariance and finite-cluster adjustments.
+
 * `get_hte_unihtee()` excludes zero-weight patients from survival follow-up
   support and continuous common support, matching `get_hte()`. Unsupported
   candidates remain unavailable in the table and its dependence plot.

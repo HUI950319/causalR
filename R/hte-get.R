@@ -91,9 +91,35 @@
 #' @noRd
 .hte_vcov_hc3 <- function(fit, clusters = NULL) {
   tryCatch({
-    V <- if (length(clusters))
-      sandwich::vcovCL(fit, cluster = clusters, type = "HC3") else
+    V <- if (!length(clusters)) {
       sandwich::vcovHC(fit, type = "HC3")
+    } else if (length(unique(clusters)) == stats::nobs(fit) || anyNA(clusters)) {
+      sandwich::vcovCL(fit, cluster = clusters, type = "HC3")
+    } else {
+      X <- stats::model.matrix(fit)
+      X <- X[, !is.na(stats::coef(fit)), drop = FALSE]
+      w <- stats::weights(fit)
+      if (is.null(w)) w <- rep(1, nrow(X))
+      B <- chol2inv(qr.R(qr(X * sqrt(w))))
+      ef <- sandwich::estfun(fit)
+      res <- rowMeans(ef / X, na.rm = TRUE)
+      res[apply(abs(ef) < .Machine$double.eps, 1L, all)] <- 0
+      groups <- split(seq_len(nrow(X)), clusters, drop = TRUE)
+      # Match meatCL's weighted residual adjustment exactly. Woodbury replaces
+      # the cluster-sized inverse (I - Xg B Xg' Wg)^-1 by a p x p solve.
+      # Its HC3 cluster adjustment cancels with the default cadjust = TRUE.
+      S <- vapply(groups, function(i) {
+        A <- X[i, , drop = FALSE]
+        U <- A %*% B
+        adjusted <- res[i] + drop(U %*% solve(
+          diag(ncol(X)) - crossprod(A, w[i] * U),
+          crossprod(A, w[i] * res[i])))
+        colSums(A * adjusted)
+      }, numeric(ncol(X)))
+      V <- B %*% tcrossprod(matrix(S, nrow = ncol(X))) %*% B
+      dimnames(V) <- list(colnames(X), colnames(X))
+      V
+    }
     if (any(!is.finite(V))) stop("non-finite HC3 covariance", call. = FALSE)
     V
   }, error = identity)

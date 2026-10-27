@@ -137,6 +137,45 @@ test_that("unihtee rejects empty candidate selections before drawing", {
   }
 })
 
+test_that("shared HC3 matches sandwich for projection spline and calibration designs", {
+  set.seed(52)
+  n <- 200L
+  d <- data.frame(x = rnorm(n), v = rnorm(n), b = rep(0:1, n / 2L), y = rnorm(n))
+  cl <- sample(rep(1:4, c(20, 40, 60, 80)))
+  d$w <- runif(n, 0.2, 2)
+  d$equal <- 1 / as.numeric(table(cl)[as.character(cl)])
+  d$duplicate <- d$x
+  fits <- list(lm(y ~ x, d), lm(y ~ x, d, weights = w),
+    lm(y ~ x, d, weights = equal), lm(y ~ b, d, weights = w),
+    lm(y ~ splines::ns(x, df = 2), d, weights = w),
+    lm(y ~ 0 + x + v, d, weights = w), lm(y ~ x + duplicate, d, weights = w),
+    lm(y ~ 1, d, weights = w), lm(y ~ 0 + x, d, weights = w))
+  for (fit in fits) {
+    for (groups in list(cl, seq_len(n)))
+      expect_equal(.hte_vcov_hc3(fit, groups),
+                    sandwich::vcovCL(fit, cluster = groups, type = "HC3"), tolerance = 1e-10)
+    expect_equal(.hte_vcov_hc3(fit), sandwich::vcovHC(fit, type = "HC3"))
+  }
+})
+
+test_that("shared HC3 avoids cluster-sized dense allocations", {
+  skip_if_not(capabilities("profmem"))
+  set.seed(53)
+  n <- 1200L
+  d <- data.frame(x = rnorm(n), y = rnorm(n), w = runif(n, 0.2, 2))
+  cl <- rep(1:4, each = n / 4L)
+  fit <- lm(y ~ x, d, weights = w)
+  expected <- sandwich::vcovCL(fit, cluster = cl, type = "HC3")
+  path <- tempfile()
+  on.exit({ Rprofmem(NULL); unlink(path) }, add = TRUE)
+  Rprofmem(path)
+  actual <- .hte_vcov_hc3(fit, cl)
+  Rprofmem(NULL)
+  bytes <- suppressWarnings(as.numeric(sub(" .*", "", readLines(path))))
+  expect_equal(actual, expected, tolerance = 1e-10)
+  expect_lt(max(bytes, na.rm = TRUE), 200000)
+})
+
 test_that("unihtee detects loss of projection support after deleting a cluster", {
   set.seed(21)
   n <- 200L
