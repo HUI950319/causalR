@@ -8,6 +8,7 @@
 #   L2  .hte_surv_yd()     survival times and events as grf gets them
 #                          (shared with plt_hte_rate())
 #   L2  .hte_arm_scores()  arm-specific AIPW scores backed out of the forest
+#   L2  .hte_vcov_hc3()    HC3 covariance or a diagnostic for unavailable inference
 #   L2  .test_calibration()
 #                          grf's calibration test, for either forest
 #   L2  .hte_estimate()    one row per estimand x measure for a set of units
@@ -82,6 +83,20 @@
     as.numeric(rowsum(u, clusters)) * sqrt(k / (k - 1))
   }, numeric(length(unique(clusters))))
   list(estimate = mu, vcov = crossprod(influence))
+}
+
+# Shared covariance boundary for projections, spline diagnostics and calibration.
+# Keep upstream warnings, but let each caller report a failed candidate or term.
+#' @keywords internal
+#' @noRd
+.hte_vcov_hc3 <- function(fit, clusters = NULL) {
+  tryCatch({
+    V <- if (length(clusters))
+      sandwich::vcovCL(fit, cluster = clusters, type = "HC3") else
+      sandwich::vcovHC(fit, type = "HC3")
+    if (any(!is.finite(V))) stop("non-finite HC3 covariance", call. = FALSE)
+    V
+  }, error = identity)
 }
 
 .hte_wald_p <- function(b, V) {
@@ -167,13 +182,15 @@
                                       wc * (tau - mp)))
   b  <- stats::coef(m)
   se <- stats::setNames(rep(NA_real_, length(b)), names(b))
+  cov_error <- NULL
   if (m$rank > 0L && m$df.residual > 0L) {
-    V <- sandwich::vcovCL(m, cluster = if (length(cl)) cl
-                          else seq_along(r), type = "HC3")
-    se[rownames(V)] <- sqrt(diag(V))
+    V <- .hte_vcov_hc3(m, if (length(cl)) cl else seq_along(r))
+    if (inherits(V, "error")) cov_error <- conditionMessage(V)
+    else se[rownames(V)] <- sqrt(diag(V))
   }
   if (any(!is.finite(b)) || any(!is.finite(se) | se <= 0))
-    warning("Calibration inference is unavailable for one or more degenerate terms.",
+    warning(paste0("Calibration inference is unavailable for one or more degenerate terms",
+                   if (!is.null(cov_error)) paste0(" (", cov_error, ")"), "."),
             call. = FALSE)
   se[!is.finite(se) | se <= 0] <- NA_real_
   tibble::tibble(term = names(b), estimate = unname(b),
@@ -426,9 +443,8 @@
     if (fit$rank < length(stats::coef(fit)) || fit$df.residual <= 0L ||
         (length(clusters) && length(unique(clusters[i])) < 2L))
       return(unavailable("insufficient rank, residual degrees of freedom or clusters"))
-    V <- if (length(clusters))
-      sandwich::vcovCL(fit, cluster = clusters[i], type = "HC3") else
-      sandwich::vcovHC(fit, type = "HC3")
+    V <- .hte_vcov_hc3(fit, if (length(clusters)) clusters[i])
+    if (inherits(V, "error")) return(unavailable(conditionMessage(V)))
     b   <- stats::coef(fit)[-1L]
     p_het <- .hte_wald_p(b, V[-1L, -1L, drop = FALSE])
     if (is.na(p_het)) return(unavailable("singular or non-finite covariance"))
@@ -665,7 +681,8 @@
 #' out-of-bag estimates, whose smoother bands are not confidence intervals.
 #' `p_het` and the doubly robust layer of [plt_hte_dep()] use the forest's
 #' observation weights and cluster-robust covariance when clusters are supplied.
-#' A degenerate spline or calibration regression gives an unavailable diagnostic
+#' A degenerate spline or calibration regression, or a failed or non-finite
+#' HC3 covariance calculation, gives an unavailable diagnostic
 #' (`NA`, with a warning) without discarding valid average-effect estimates.
 #'
 #' @section Interpreting heterogeneity tests:

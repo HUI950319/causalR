@@ -1,5 +1,13 @@
 # causalR (development version)
 
+* Failed or non-finite HC3 covariances no longer abort unihtee projections,
+  `get_hte()` spline diagnostics or calibration. The affected inference is
+  unavailable with a diagnostic while valid candidates and effects remain.
+
+* `get_hte_unihtee()` excludes zero-weight patients from survival follow-up
+  support and continuous common support, matching `get_hte()`. Unsupported
+  candidates remain unavailable in the table and its dependence plot.
+
 * `plt_hte_cate()` draws pointwise confidence intervals over waterfall bars,
   keeping both sides visible without changing their numerical values.
 

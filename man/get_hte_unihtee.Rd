@@ -162,6 +162,8 @@ Standard errors are HC3 heteroskedasticity-robust (cluster-robust with
 forest. \code{p.adj} is Benjamini-Hochberg across the candidates of one
 measure. A candidate is reported as \code{NA} with a warning if deleting any
 positive-weight cluster removes all of its variation, making HC3 undefined.
+A failed or non-finite HC3 covariance also makes only that candidate
+unavailable; valid candidates and average-effect results are retained.
 }
 
 \section{Reading the table}{

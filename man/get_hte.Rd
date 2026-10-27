@@ -263,7 +263,8 @@ Plotting \code{.cate} against \code{x} shows the forest's own
 out-of-bag estimates, whose smoother bands are not confidence intervals.
 \code{p_het} and the doubly robust layer of \code{\link[=plt_hte_dep]{plt_hte_dep()}} use the forest's
 observation weights and cluster-robust covariance when clusters are supplied.
-A degenerate spline or calibration regression gives an unavailable diagnostic
+A degenerate spline or calibration regression, or a failed or non-finite
+HC3 covariance calculation, gives an unavailable diagnostic
 (\code{NA}, with a warning) without discarding valid average-effect estimates.
 }
 

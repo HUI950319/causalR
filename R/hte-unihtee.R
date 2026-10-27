@@ -132,9 +132,8 @@
     if (any(left_lo == left_hi))
       return(list(why = "deleting a cluster removes all candidate variation needed for HC3"))
   }
-  V <- if (length(cl))
-    sandwich::vcovCL(fit, cluster = cl[i], type = "HC3") else
-    sandwich::vcovHC(fit, type = "HC3")
+  V <- .hte_vcov_hc3(fit, if (length(cl)) cl[i])
+  if (inherits(V, "error")) return(list(why = conditionMessage(V)))
   list(fit = fit, V = V, i = i, range = range(x[i]), sd = sd,
        center = center, scale = scale)
 }
@@ -367,6 +366,8 @@
 #' forest. `p.adj` is Benjamini-Hochberg across the candidates of one
 #' measure. A candidate is reported as `NA` with a warning if deleting any
 #' positive-weight cluster removes all of its variation, making HC3 undefined.
+#' A failed or non-finite HC3 covariance also makes only that candidate
+#' unavailable; valid candidates and average-effect results are retained.
 #'
 #' @section Reading the table:
 #' Each \eqn{\Psi_j} is marginal, not partial: a covariate correlated with a

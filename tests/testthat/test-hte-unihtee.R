@@ -64,6 +64,40 @@ test_that("unihtee survival support excludes zero-weight patients", {
   expect_equal(actual$V, expected$V)
 })
 
+test_that("unihtee and shared HTE paths retain results after covariance failures", {
+  set.seed(1)
+  n <- 200L
+  cl <- rep(1:4, each = n / 4L)
+  d <- data.frame(a = rep(0:1, n / 2L), x = rnorm(n), v = rnorm(n))
+  d$x[cl == 1] <- d$x[cl == 1] * 1e8
+  d$y <- d$a + d$v + rnorm(n)
+  notes <- character()
+  out <- withCallingHandlers(get_hte_unihtee(d, "a", tree_var = c("x", "v"),
+    surv = "y", grf_args = list(num.trees = 100, seed = 7, num.threads = 1,
+      clusters = cl, W.hat = rep(0.5, n), Y.hat = rep(0, n))),
+    warning = function(w) { notes <<- c(notes, conditionMessage(w)); invokeRestart("muffleWarning") })
+  expect_true(any(grepl("`x`.*(covariance|singular)", notes)))
+  expect_true(is.finite(out$vip$std.error[out$vip$variable == "v"]))
+  expect_true(is.finite(out$hte$importance$p_het[out$hte$importance$variable == "v"]))
+  expect_true(all(is.finite(out$hte$stats$estimate)))
+  set.seed(42)
+  x <- rnorm(n); x[1L] <- 1e10
+  bad <- suppressWarnings(.uni_project(x, d$y, d$a, rep(1, n), NULL, NULL, TRUE))
+  expect_match(bad$why, "non-finite HC3 covariance")
+})
+
+test_that("shared HTE calibration failure leaves point estimates available", {
+  d <- uni_cont_data(n = 200L)
+  testthat::local_mocked_bindings(vcovCL = function(...) stop("test covariance failure"),
+                                  .package = "sandwich")
+  expect_warning(out <- get_hte(d, "a", adj_var = "w3", surv = "y",
+    grf_args = list(num.trees = 100, seed = 7, num.threads = 1)),
+    "Calibration.*unavailable")
+  expect_true(all(is.finite(out$stats$estimate)))
+  expect_true(all(is.finite(out$calibration$estimate)))
+  expect_true(all(is.na(out$calibration$std.error)))
+})
+
 test_that("unihtee detects loss of projection support after deleting a cluster", {
   set.seed(21)
   n <- 200L
