@@ -797,6 +797,34 @@ hte_repair_data <- function(n = 240L) {
 hte_repair_args <- list(num.trees = 100L, num.threads = 1L, seed = 41L,
                         W.hat = 0.5, Y.hat = 0)
 
+test_that("HTE follow-up: mixed sparse levels use only eligible covariance groups", {
+  skip_if_not_installed("grf")
+  d <- hte_repair_data(480L)
+  d$g <- factor(c(rep("A", 120L), rep("B", 120L),
+                    rep(paste0("rare", seq_len(80L)), each = 3L)))
+  seen <- integer(0)
+  original <- causalR:::.hte_score_summary
+  testthat::local_mocked_bindings(.hte_score_summary = function(s, groups, weights, clusters) {
+    seen <<- c(seen, length(groups))
+    original(s, groups, weights, clusters)
+  }, .package = "causalR")
+  r <- get_hte(d, "z", adj_var = c("x", "g"), surv = "y", grf_args = hte_repair_args)
+  expect_identical(seen, 2L)
+  dr <- causalR:::.hte_dr_var(r$data, "g", d$z, stats::qnorm(0.975), 2L)
+  expect_identical(seen, c(2L, 2L))
+  good <- dr$levels$level %in% c("A", "B")
+  expect_true(all(is.na(dr$levels$estimate[!good])))
+  expect_identical(dr$levels$n[!good], rep(3L, 80L))
+  for (lv in c("A", "B")) {
+    i <- which(d$g == lv)
+    row <- dr$levels[dr$levels$level == lv, ]
+    expect_equal(row$estimate, mean(r$data$.dr_score[i]))
+    expect_equal(row$std.error, stats::sd(r$data$.dr_score[i]) / sqrt(length(i)))
+  }
+  expect_identical(dr$df, 1L)
+  expect_equal(r$importance$p_het[r$importance$variable == "g"], dr$p_het)
+})
+
 test_that("HTE follow-up: fewer than two effective clusters stop before fitting", {
   skip_if_not_installed("grf")
   d <- hte_repair_data(480L)

@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte()` computes categorical influence covariance only for levels
+  meeting the existing arm and follow-up support requirements. Mixed common
+  and sparse levels retain identical reported results with smaller allocations.
+
 * `get_hte()` rejects analyses with fewer than two positive-weight clusters
   before fitting, after aligning row-level arguments with complete outcomes
   and exposures. This replaces a downstream calibration regression error.

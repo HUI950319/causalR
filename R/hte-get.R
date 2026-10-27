@@ -450,21 +450,24 @@
   if (!length(clusters)) clusters <- seq_along(s)
   groups <- lapply(seq_along(levels(g)),
                     function(j) which(codes == j & weights > 0))
-  # No level with fewer than four patients can have two in each arm. Its
-  # estimates below are already NA, so no dense influence matrix is needed.
-  summary <- if (any(lengths(groups) >= 4L))
-    .hte_score_summary(s, groups, weights, clusters)
+  # Apply the existing support floors before allocating the joint covariance.
+  # Unsupported levels retain their rows below without an influence column.
+  eligible <- vapply(groups, function(i) {
+    nt <- sum(w[i])
+    nt >= 2 && length(i) - nt >= 2 &&
+      (is.null(beyond) || (any(beyond[i] & w[i] == 1) &&
+                             any(beyond[i] & w[i] == 0)))
+  }, logical(1L))
+  position <- cumsum(eligible)
+  summary <- if (any(eligible))
+    .hte_score_summary(s, groups[eligible], weights, clusters)
   lv <- do.call(rbind, lapply(levels(g), function(l) {
     j <- match(l, levels(g))
     i  <- groups[[j]]
     nt <- sum(w[i])
-    # the same floors as the get_hte() subgroup rows: two patients per arm
-    # and, for survival, someone in each arm followed past `time`
-    ok  <- nt >= 2 && length(i) - nt >= 2 &&
-      (is.null(beyond) || (any(beyond[i] & w[i] == 1) &&
-                             any(beyond[i] & w[i] == 0)))
-    est <- if (ok) summary$estimate[j] else NA_real_
-    se  <- if (ok) sqrt(summary$vcov[j, j]) else NA_real_
+    k <- position[j]
+    est <- if (eligible[j]) summary$estimate[k] else NA_real_
+    se  <- if (eligible[j]) sqrt(summary$vcov[k, k]) else NA_real_
     data.frame(level = l, n = length(i), n_treat = nt, estimate = est,
                std.error = se, conf.low = est - z * se,
                conf.high = est + z * se, stringsAsFactors = FALSE)
@@ -475,7 +478,7 @@
                 levels = lv))
   th <- lv$estimate[ok]
   list(type = "categorical", df = sum(ok) - 1L,
-       p_het = .hte_equal_p(th, summary$vcov[ok, ok, drop = FALSE]),
+       p_het = .hte_equal_p(th, summary$vcov[ok[eligible], ok[eligible], drop = FALSE]),
        levels = lv)
 }
 
