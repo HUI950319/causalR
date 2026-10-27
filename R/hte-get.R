@@ -409,8 +409,8 @@
       empty
     }
     if (!is.null(beyond)) {
-      x1 <- x[beyond & w == 1 & !is.na(x)]
-      x0 <- x[beyond & w == 0 & !is.na(x)]
+      x1 <- x[beyond & w == 1 & !is.na(x) & weights > 0]
+      x0 <- x[beyond & w == 0 & !is.na(x) & weights > 0]
       lim <- if (length(x1) && length(x0))
         c(max(min(x1), min(x0)), min(max(x1), max(x0))) else c(Inf, -Inf)
       x[!is.na(x) & (x < lim[1L] | x > lim[2L])] <- NA
@@ -643,6 +643,8 @@
 #' valid overall and other subgroup estimates are retained.
 #' Zero-weight patients are excluded before estimating differences and their
 #' covariance, including the overlap regression for ATO.
+#' They also do not contribute to follow-up support or the common covariate
+#' range of survival CATE curves.
 #' Explicit `NA` factor levels are included in subgroup and categorical
 #' heterogeneity tests; genuinely missing factor codes are excluded.
 #'
@@ -965,6 +967,17 @@ get_hte <- function(data,
                       names(grf_args)))
     if (!all(keep) && length(grf_args[[f]]) == length(keep))
       grf_args[[f]] <- grf_args[[f]][keep]
+  # Support checks below need the same valid observation weights as grf.
+  positive <- rep(TRUE, length(W))
+  if (!is.null(grf_args$sample.weights)) {
+    wt <- grf_args$sample.weights
+    if (length(wt) != length(W))
+      stop("`grf_args$sample.weights` has incorrect length.", call. = FALSE)
+    if (anyNA(wt) || any(wt < 0) || any(is.infinite(wt)))
+      stop("`grf_args$sample.weights` must be nonnegative and without missing or infinite values.",
+           call. = FALSE)
+    positive <- wt > 0
+  }
   # grf grows 2000 trees by default. Above 10,000 rows a call that sets no
   # num.trees grows 200: at 100,000 survival rows 13 s instead of 83 s, the
   # same ATE, and a per-patient CATE correlated 0.95 with 2000 trees'.
@@ -994,12 +1007,15 @@ get_hte <- function(data,
     arms    <- c(1L, 0L)
     arm_lab <- c(tz$treated,
                  setdiff(levels(factor(data[[cat_var]])), tz$treated)[1L])
-    n_after <- vapply(arms, function(a) sum(beyond & W == a), integer(1L))
+    n_after <- vapply(arms, function(a) sum(beyond & W == a & positive), integer(1L))
     if (any(n_after == 0L)) {
       k <- which(n_after == 0L)[1L]
-      stop(sprintf("No patient with `%s` = %s is followed %s `time` = %s (longest follow-up %s), so the effect at that time is not identified; choose a smaller `time`.",
+      followup <- Y[W == arms[k] & positive]
+      stop(sprintf("No %spatient with `%s` = %s is followed %s `time` = %s (longest follow-up %s), so the effect at that time is not identified; choose a smaller `time`.",
+                   if (is.null(grf_args$sample.weights)) "" else "positive-weight ",
                    cat_var, arm_lab[k], past, format(time),
-                   format(max(Y[W == arms[k]]))), call. = FALSE)
+                   format(if (length(followup)) max(followup) else NA_real_)),
+           call. = FALSE)
     }
     if (any(n_after < 10L))
       warning(sprintf("Few patients are followed %s `time` = %s: %s. The estimate at that time rests on them.",

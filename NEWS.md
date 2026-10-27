@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte()` counts only positive-weight patients for survival follow-up
+  support and continuous CATE common support. Zero-weight extremes no longer
+  change the curve or its heterogeneity test, or identify an unsupported horizon.
+
 * `get_hte()` applies boundary-propensity and AIPW availability checks to
   positive-weight patients. Zero-weight boundary rows retain unavailable
   scores without blocking average effects, heterogeneity or interactions.

@@ -797,6 +797,52 @@ hte_repair_data <- function(n = 240L) {
 hte_repair_args <- list(num.trees = 100L, num.threads = 1L, seed = 41L,
                         W.hat = 0.5, Y.hat = 0)
 
+test_that("HTE follow-up: zero weights do not extend survival support", {
+  skip_if_not_installed("grf")
+  withr::local_seed(1030)
+  n <- 480L
+  d <- data.frame(z = rep(0:1, n / 2L))
+  d$x <- ifelse(d$z == 1, stats::runif(n, 0, 2), stats::runif(n, 1, 3))
+  d$time <- stats::runif(n, 5, 20)
+  d$DSS <- stats::rbinom(n, 1, 0.6)
+  zero <- (n - 1L):n
+  d$x[zero] <- 1.5
+  d$time[zero] <- 20
+  wt <- rep(1, n)
+  wt[zero] <- 0
+  ga <- hte_repair_args
+  ga$Y.hat <- NULL
+  ga$sample.weights <- wt
+  ga$failure.times <- 0:21
+  r <- get_hte(d, "z", adj_var = "x", time = 10, grf_args = ga)
+  changed <- r$data
+  changed$x[zero] <- c(-10, 10)
+  for (target in c("survival.probability", "RMST")) {
+    beyond <- if (target == "RMST") d$time >= 10 else d$time > 10
+    ref <- causalR:::.hte_dr_var(r$data[wt > 0, ], "x", d$z[wt > 0],
+                                  stats::qnorm(0.975), 2L, beyond[wt > 0])
+    a <- causalR:::.hte_dr_var(r$data, "x", d$z, stats::qnorm(0.975), 2L,
+                                beyond, wt)
+    b <- causalR:::.hte_dr_var(changed, "x", d$z, stats::qnorm(0.975), 2L,
+                                beyond, wt)
+    expect_equal(a, ref)
+    expect_equal(b, ref)
+  }
+  # Only zero-weight treated patients reach the horizon: stop before fitting.
+  d$time[d$z == 1 & wt > 0] <- 5
+  for (target in c("survival.probability", "RMST")) {
+    ga$target <- target
+    expect_error(get_hte(d, "z", adj_var = "x", time = 10, grf_args = ga),
+                   "No positive-weight patient.*not identified")
+  }
+  ga$sample.weights <- rep(1, n - 1L)
+  expect_error(get_hte(d, "z", adj_var = "x", time = 10, grf_args = ga),
+                 "sample.weights.*incorrect length")
+  ga$sample.weights <- rep(-1, n)
+  expect_error(get_hte(d, "z", adj_var = "x", time = 10, grf_args = ga),
+                 "sample.weights.*nonnegative")
+})
+
 test_that("HTE follow-up: zero-weight boundary propensities retain inference", {
   skip_if_not_installed("grf")
   d <- hte_repair_data(480L)

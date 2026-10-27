@@ -242,6 +242,8 @@ fewer than two positive-weight clusters is also unavailable, with a warning;
 valid overall and other subgroup estimates are retained.
 Zero-weight patients are excluded before estimating differences and their
 covariance, including the overlap regression for ATO.
+They also do not contribute to follow-up support or the common covariate
+range of survival CATE curves.
 Explicit \code{NA} factor levels are included in subgroup and categorical
 heterogeneity tests; genuinely missing factor codes are excluded.
 }
