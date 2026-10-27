@@ -108,6 +108,40 @@ test_that("unihtee diagnoses unestimable cross-fitting folds", {
                "Fold [0-9]+ propensity: GLM did not converge")
 })
 
+test_that("unihtee warns about relative-scale instability without clipping", {
+  d <- uni_cont_data(n = 200L)
+  d$y <- as.integer(d$w1 > 0)
+  testthat::local_mocked_bindings(
+    .uni_glm_fit = function(data, ...) list(e = rep(0.5, nrow(data)),
+      mu1 = rep(1e-12, nrow(data)), mu0 = rep(0.5, nrow(data)), n_clip = 0L),
+    .package = "causalR")
+  notes <- character()
+  r <- withCallingHandlers(get_hte_unihtee(d, "a", tree_var = "w1", surv = "y",
+                                           method = "glm", measure = c("ratio", "OR")),
+    warning = function(w) {notes <<- c(notes, conditionMessage(w)); invokeRestart("muffleWarning")})
+  expect_true(any(grepl("ratio.*near.*boundary", notes)))
+  expect_true(any(grepl("OR.*near.*boundary", notes)))
+  expect_true(any(grepl("exponentiat", notes)))
+  expect_identical(r$data$.mu1, rep(1e-12, nrow(d)))
+  g1 <- 1e-12 + d$a / 0.5 * (d$y - 1e-12)
+  g0 <- 0.5 + (1 - d$a) / 0.5 * (d$y - 0.5)
+  expect_equal(r$data$.score_ratio, log(1e-12 / 0.5) +
+                 (g1 - 1e-12) / 1e-12 - (g0 - 0.5) / 0.5)
+  expect_equal(r$vip$n, rep(nrow(d), 2L))
+})
+
+test_that("unihtee reports non-finite scores before projection", {
+  d <- uni_cont_data(n = 200L)
+  testthat::local_mocked_bindings(
+    .uni_glm_fit = function(data, ...) list(e = c(0, 0, rep(0.5, nrow(data) - 2L)),
+      mu1 = rep(0.7, nrow(data)), mu0 = rep(0.5, nrow(data)), n_clip = 0L),
+    .package = "causalR")
+  expect_warning(r <- get_hte_unihtee(d, "a", tree_var = "w1", surv = "y", method = "glm"),
+                  "2 non-finite pseudo-outcomes")
+  expect_equal(r$vip$n, 198L)
+  expect_equal(sum(!is.finite(r$data$.score_diff)), 2L)
+})
+
 test_that("glm route returns the documented table and recovers the truth", {
   skip_if_not_installed("sandwich")
   d   <- uni_cont_data()

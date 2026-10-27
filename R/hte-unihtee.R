@@ -209,7 +209,12 @@
 #' the factor by which the ratio changes per SD or between the two levels --
 #' while `std.error` stays on the log scale. Rows whose arm prediction falls
 #' outside the range a log ratio or log odds needs are left out of that
-#' measure, with a warning. Survival candidates keep only values (continuous)
+#' measure, with a warning. Predictions within square-root machine precision
+#' of a boundary also warn (relative to the largest arm mean for continuous
+#' outcomes or RMST), without clipping or removing them. Non-finite scores
+#' and zero or non-finite exponentiated estimates or bounds are reported;
+#' these warnings do not change the scores or the estimation formula.
+#' Survival candidates keep only values (continuous)
 #' or require levels (binary) that both arms reach among patients followed
 #' past `time`, as `p_het` in [get_hte()] does.
 #'
@@ -526,11 +531,28 @@ get_hte_unihtee <- function(data,
               call. = FALSE)
     a1[!ok] <- NA_real_
     a0[!ok] <- NA_real_
+    if (any(ok)) {
+      tol <- sqrt(.Machine$double.eps) *
+        if (type == "continuous" || identical(target, "RMST"))
+          max(abs(c(a1[ok], a0[ok]))) else 1
+      near <- pmin(a1[ok], a0[ok]) <= tol |
+        (m == "OR" & pmax(a1[ok], a0[ok]) >= 1 - tol)
+      if (any(near))
+        warning(sprintf("`%s`: %d arm-prediction pairs are near a numerical boundary; relative-effect scores may be unstable. Predictions are unchanged.",
+                         m, sum(near)), call. = FALSE)
+    }
     if (m == "ratio")
       log(a1 / a0) + (b1 - a1) / a1 - (b0 - a0) / a0
     else stats::qlogis(a1) - stats::qlogis(a0) +
       (b1 - a1) / (a1 * (1 - a1)) - (b0 - a0) / (a0 * (1 - a0))
   })
+
+  for (m in measure) {
+    n_bad <- sum(is.infinite(scores[[m]]) | is.nan(scores[[m]]))
+    if (n_bad)
+      warning(sprintf("`%s`: %d non-finite pseudo-outcomes cannot enter the projections; inspect the arm predictions and propensities.",
+                       m, n_bad), call. = FALSE)
+  }
 
   # ---- One least-squares projection per candidate x measure ----------------
   # n, sd, and the slope with its HC3 standard error -- per SD for a
@@ -568,6 +590,15 @@ get_hte_unihtee <- function(data,
                       conf.high = tr(b + z * se), p.value = p,
                       p.adj = stats::p.adjust(p, method = "BH"),
                       stringsAsFactors = FALSE)
+    if (m != "diff") {
+      bad_scale <- !is.na(b) &
+        (!is.finite(out$estimate) | out$estimate == 0 |
+         !is.finite(out$conf.low) | out$conf.low == 0 |
+         !is.finite(out$conf.high) | out$conf.high == 0)
+      if (any(bad_scale))
+        warning(sprintf("`%s`: %d candidates have zero or non-finite estimates or confidence bounds after exponentiation; inspect relative-effect instability.",
+                         m, sum(bad_scale)), call. = FALSE)
+    }
     out[order(out$p.value), , drop = FALSE]
   }))
   rownames(vip) <- NULL

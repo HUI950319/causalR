@@ -141,7 +141,12 @@ As in \code{\link[=get_hte]{get_hte()}}, \code{estimate} and the interval are th
 the factor by which the ratio changes per SD or between the two levels --
 while \code{std.error} stays on the log scale. Rows whose arm prediction falls
 outside the range a log ratio or log odds needs are left out of that
-measure, with a warning. Survival candidates keep only values (continuous)
+measure, with a warning. Predictions within square-root machine precision
+of a boundary also warn (relative to the largest arm mean for continuous
+outcomes or RMST), without clipping or removing them. Non-finite scores
+and zero or non-finite exponentiated estimates or bounds are reported;
+these warnings do not change the scores or the estimation formula.
+Survival candidates keep only values (continuous)
 or require levels (binary) that both arms reach among patients followed
 past \code{time}, as \code{p_het} in \code{\link[=get_hte]{get_hte()}} does.
 
