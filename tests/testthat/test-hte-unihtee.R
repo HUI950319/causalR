@@ -48,6 +48,46 @@ test_that("unihtee protects input columns from internal names", {
   }
 })
 
+test_that("unihtee normalizes labelled missing values and validates storage", {
+  d <- uni_cont_data(n = 200L)
+  f <- function(z, method = "glm") get_hte_unihtee(
+    z, "a", tree_var = c("w1", "w3"), surv = "y", method = method,
+    grf_args = if (method == "grf") list(num.trees = 100, seed = 1) else list())
+  for (nm in c("w1", "a", "y")) {
+    z <- d
+    z[[nm]][1:2] <- c(999, 850)
+    z[[nm]] <- structure(z[[nm]], class = c("haven_labelled_spss", "haven_labelled"),
+                          na_values = 999, na_range = c(800, 900))
+    correct <- d
+    correct[[nm]][1:2] <- NA
+    for (method in c("glm", "grf")) {
+      got <- f(z, method)
+      ref <- f(correct, method)
+      expect_equal(got$vip, ref$vip)
+      expect_equal(got$data$.score_diff, ref$data$.score_diff)
+      expect_equal(nrow(got$data), nrow(ref$data))
+      expect_equal(got$data[[nm]], ref$data[[nm]])
+    }
+  }
+  z <- d
+  z$w1 <- structure(z$w1, class = "haven_labelled", labels = c(label = 1))
+  expect_equal(f(z)$vip, f(d)$vip)
+  z <- d; z$w1 <- factor(replace(d$w1 > 0, 1:2, NA), exclude = NULL)
+  correct <- z; correct$w1 <- factor(as.character(z$w1))
+  expect_equal(f(z)$vip, f(correct)$vip)
+  bad <- list(integer64 = structure(as.double(seq_len(nrow(d))), class = "integer64"),
+              matrix = I(cbind(d$w1, d$w3)), infinite = replace(d$w1, 1, Inf),
+              list = as.list(d$w1), date = as.Date(seq_len(nrow(d)), origin = "2000-01-01"))
+  for (x in bad) {
+    z <- d; z$w1 <- x
+    expect_error(f(z), "Column `w1`")
+  }
+  z <- d; names(z)[2] <- "w1"
+  expect_error(f(z), "unique")
+  expect_error(get_hte_unihtee(d, NULL, tree_var = "w1", surv = "y", method = "glm"),
+               "cat_var")
+})
+
 test_that("glm route returns the documented table and recovers the truth", {
   skip_if_not_installed("sandwich")
   d   <- uni_cont_data()

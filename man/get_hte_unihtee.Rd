@@ -24,7 +24,11 @@ get_hte_unihtee(
 \item{data}{A data frame holding every column named below. The output
 column names \code{.ps}, \code{.mu1}, \code{.mu0}, \code{.score_diff}, \code{.score_ratio},
 \code{.score_OR}, \code{.cate} and \code{.dr_score} are reserved; rename any existing
-columns with these names before calling.}
+columns with these names before calling. Analysis columns must be
+one-dimensional numeric, logical, factor or character vectors. Haven
+labels are removed for analysis and SPSS user-missing values become \code{NA};
+other classed numeric storage (such as \code{integer64}) and infinite values
+must be converted explicitly before calling.}
 
 \item{cat_var}{Length-1 character. The binary exposure column, coded as in
 \code{\link[=get_hte]{get_hte()}}: \code{0}/\code{1}, logical, or a two-level factor or character column

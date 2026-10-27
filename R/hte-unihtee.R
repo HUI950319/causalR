@@ -112,7 +112,11 @@
 #' @param data A data frame holding every column named below. The output
 #'   column names `.ps`, `.mu1`, `.mu0`, `.score_diff`, `.score_ratio`,
 #'   `.score_OR`, `.cate` and `.dr_score` are reserved; rename any existing
-#'   columns with these names before calling.
+#'   columns with these names before calling. Analysis columns must be
+#'   one-dimensional numeric, logical, factor or character vectors. Haven
+#'   labels are removed for analysis and SPSS user-missing values become `NA`;
+#'   other classed numeric storage (such as `integer64`) and infinite values
+#'   must be converted explicitly before calling.
 #' @param cat_var Length-1 character. The binary exposure column, coded as in
 #'   [get_hte()]: `0`/`1`, logical, or a two-level factor or character column
 #'   whose second level is the treated arm.
@@ -291,12 +295,16 @@ get_hte_unihtee <- function(data,
          call. = FALSE)
   if (!is.data.frame(data) || !nrow(data))
     stop("`data` must be a non-empty data frame.", call. = FALSE)
+  if (anyNA(names(data)) || any(!nzchar(names(data))) || anyDuplicated(names(data)))
+    stop("`data` must have unique, non-empty column names.", call. = FALSE)
   reserved <- intersect(names(data), c(".ps", ".mu1", ".mu0", ".score_diff",
                                        ".score_ratio", ".score_OR", ".cate", ".dr_score"))
   if (length(reserved))
     stop(sprintf("`data` contains reserved output columns: %s. Rename them before calling.",
                  paste(reserved, collapse = ", ")), call. = FALSE)
   cat_var <- .sens_check_col(cat_var, data, "cat_var", n = 1L)
+  if (length(cat_var) != 1L)
+    stop("`cat_var` must name one exposure column.", call. = FALSE)
   adj_var <- setdiff(.sens_check_col(adj_var, data, "adj_var"), cat_var)
   tree_var <- .sens_check_col(tree_var, data, "tree_var")
   if (cat_var %in% tree_var)
@@ -312,6 +320,33 @@ get_hte_unihtee <- function(data,
   if (!is_surv && !missing(time))
     stop("`time` only applies to survival outcomes (`surv = TRUE`).",
          call. = FALSE)
+
+  outcome_cols <- .sens_check_col(if (is_surv) c("time", "DSS") else surv,
+                                  data, "surv", n = if (is_surv) 2L else 1L)
+  for (v in unique(c(cat_var, covars, outcome_cols))) {
+    x <- data[[v]]
+    if (inherits(x, "haven_labelled")) {
+      na_values <- attr(x, "na_values", exact = TRUE)
+      na_range <- attr(x, "na_range", exact = TRUE)
+      x <- unclass(x)
+      attributes(x) <- NULL
+      user_na <- x %in% na_values
+      if (length(na_range) == 2L)
+        user_na <- user_na | (!is.na(x) & x >= na_range[1L] & x <= na_range[2L])
+      x[user_na] <- NA
+    }
+    if (!is.null(dim(x)) ||
+        !(is.factor(x) || (!is.object(x) &&
+          (is.numeric(x) || is.logical(x) || is.character(x)))))
+      stop(sprintf("Column `%s` has unsupported storage (%s); convert it to a numeric, logical, factor or character vector before calling.",
+                   v, paste(class(x), collapse = "/")), call. = FALSE)
+    if (is.numeric(x) && any(!is.na(x) & !is.finite(x)))
+      stop(sprintf("Column `%s` contains infinite values; replace them before calling.",
+                   v), call. = FALSE)
+    if (is.factor(x) && anyNA(levels(x)))
+      x <- droplevels(x, exclude = NA)
+    data[[v]] <- x
+  }
 
   # Candidate type and levels are fixed on the full data, before any fit.
   kind <- vapply(tree_var, function(v) {
