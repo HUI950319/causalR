@@ -1344,6 +1344,40 @@ test_that("HTE subgroup plots load integer64 methods after an RDS round trip", {
   }
 })
 
+test_that("CATE plots reuse uncached OOB predictions without changing results", {
+  skip_if_not_installed("patchwork")
+  ref <- dep_res()
+  res <- ref
+  res$fit[c("predictions", "debiased.error", "excess.error")] <- NULL
+  original <- serialize(res, NULL)
+  counter <- new.env(parent = emptyenv())
+  counter$n <- 0L
+  spy <- grf:::causal_predict_oob
+  env <- new.env(parent = environment(spy))
+  env$counter <- counter
+  environment(spy) <- env
+  body(spy) <- substitute({counter$n <- counter$n + 1L; BODY},
+                           list(BODY = body(spy)))
+  local_mocked_bindings(causal_predict_oob = spy, .package = "grf")
+  cases <- list(list(overall = FALSE), list(sub_var = "stage"),
+                list(sub_var = "stage", type = "density"),
+                list(sub_var = c("stage", "sex")),
+                list(sub_var = "stage", show_ci = TRUE),
+                list(overall = FALSE, show_ci = TRUE))
+  expected_calls <- c(0L, 1L, 1L, 1L, 2L, 1L)
+  for (i in seq_along(cases)) {
+    want <- do.call(plt_hte_cate, c(list(x = ref), cases[[i]]))
+    counter$n <- 0L
+    p <- do.call(plt_hte_cate, c(list(x = res), cases[[i]]))
+    expect_identical(counter$n, expected_calls[i])
+    expect_identical(attr(p, "subgroup"), attr(want, "subgroup"))
+    actual <- lapply(panels_of(p), function(q) ggplot2::ggplot_build(q)$data)
+    expected <- lapply(panels_of(want), function(q) ggplot2::ggplot_build(q)$data)
+    expect_identical(actual, expected)
+    expect_identical(serialize(res, NULL), original)
+  }
+})
+
 test_that("CATE plot serialization does not retain unrelated analysis contents", {
   skip_if_not_installed("patchwork")
   res <- dep_res()

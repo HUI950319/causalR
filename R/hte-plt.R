@@ -1663,6 +1663,12 @@ plt_hte_cate <- function(x,
 
   # ---- Estimates: the lines as plt_hte_sub() computes them -------------------
   fit    <- x$fit
+  # Share OOB predictions across scores and reference lines on a local copy.
+  if ((length(sub_var) || overall) && is.null(fit$predictions)) {
+    oob <- stats::predict(fit)
+    for (f in intersect(c("predictions", "debiased.error", "excess.error"), names(oob)))
+      fit[[f]] <- oob[[f]]
+  }
   s      <- if (length(sub_var) || overall) .hte_arm_scores(fit)
   z      <- stats::qnorm(1 - (1 - conf_level) / 2)
   grid   <- data.frame(estimand = "ATE", measure = "diff",

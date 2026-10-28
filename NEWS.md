@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `plt_hte_cate()` reuses one local OOB prediction cache for scores and
+  reference lines when the forest was fitted without cached predictions.
+  Plot data, inference and the original forest remain unchanged.
+
 * `get_bal()` constructs its love plot outside the analysis frame, so
   saved plot objects no longer retain unused input columns or fitted models.
   Balance statistics, plot layers and appearance are unchanged.
