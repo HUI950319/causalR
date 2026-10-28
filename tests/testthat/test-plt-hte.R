@@ -1441,6 +1441,55 @@ test_that("CATE plots retain panels when every subgroup reference is unavailable
   expect_identical(serialize(res, NULL), original)
 })
 
+test_that("HTE subgroup plots normalize ordinary labelled columns in a fresh session", {
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  skip_if_not_installed("patchwork")
+  res <- dep_res()
+  values <- rep(c(1, 1, 2, 2, NA, NaN), length.out = nrow(res$data))
+  res$data$label_num <- structure(values, labels = c(A = 1, B = 2),
+    class = c("haven_labelled", "vctrs_vctr", "double"))
+  res$data$label_chr <- structure(ifelse(is.na(values), NA_character_, as.character(values)),
+    labels = c(A = "1", B = "2"),
+    class = c("haven_labelled", "vctrs_vctr", "character"))
+  reference <- res
+  for (v in c("label_num", "label_chr")) attributes(reference$data[[v]]) <- NULL
+  path <- tempfile(fileext = ".rds")
+  script <- tempfile(fileext = ".R")
+  output <- tempfile(fileext = ".rds")
+  on.exit(unlink(c(path, script, output)), add = TRUE)
+  saveRDS(res, path)
+  pkg <- getNamespaceInfo(asNamespace("causalR"), "path")
+  for (fun in c("plt_hte_cate", "plt_hte_sub")) {
+    code <- bquote({
+      options(device = function(...) grDevices::pdf(NULL, ...))
+      .libPaths(.(.libPaths()))
+      pkg <- .(pkg)
+      if (file.exists(file.path(pkg, "Meta", "package.rds"))) {
+        library("causalR", lib.loc = dirname(pkg))
+      } else {
+        pkgload::load_all(pkg, quiet = TRUE)
+      }
+      stopifnot(!isNamespaceLoaded("haven"))
+      x <- readRDS(.(path))
+      original <- serialize(x, NULL)
+      p <- getExportedValue("causalR", .(fun))(
+        x, sub_var = c("label_num", "label_chr"))
+      stopifnot(!isNamespaceLoaded("haven"), identical(original, serialize(x, NULL)))
+      if (inherits(p, "patchwork")) patchwork::patchworkGrob(p)
+      else ggplot2::ggplotGrob(p)
+      saveRDS(attr(p, "subgroup"), .(output))
+    })
+    writeLines(deparse(code, width.cutoff = 500L), script)
+    log <- system2(file.path(R.home("bin"), "Rscript"),
+                   c("--vanilla", shQuote(script)), stdout = TRUE, stderr = TRUE)
+    expect_null(attr(log, "status"), info = paste(log, collapse = "\n"))
+    if (!is.null(attr(log, "status"))) next
+    want <- suppressMessages(get(fun)(reference, sub_var = c("label_num", "label_chr")))
+    expect_identical(readRDS(output), attr(want, "subgroup"))
+  }
+})
+
 test_that("CATE plot serialization does not retain unrelated analysis contents", {
   skip_if_not_installed("patchwork")
   res <- dep_res()

@@ -38,6 +38,8 @@ be cut into groups first. \code{integer64} columns require the optional bit64
 package and retain their exact integer labels.
 List, multi-column matrix and S4 columns must first be explicitly
 converted to categorical vectors with one value per patient.
+Ordinary labelled columns use their underlying values for grouping,
+independently of whether haven is loaded.
 A column the forest does not condition on is
 accepted with a message: its subgroup estimates hold when it is a
 function of the covariates (as \code{age_55} is of \code{Age}) or no confounder;

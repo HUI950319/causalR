@@ -14,6 +14,7 @@
 #   L2  .hte_pdp()        forest CATE averaged with covariates set to grid values
 #   L2  .hte_beyond()     survival patients followed past `time`
 #   L2  .hte_cate_label() axis label of the CATE
+#   L2  .hte_sub_data()   normalises labelled subgroup columns for both plots
 #   L2  .hte_sub_var()    `sub_var` checks of plt_hte_sub() and plt_hte_cate()
 #   L2  .hte_muffle_ps()  silences grf's overlap warning in recomputed estimates
 #
@@ -81,6 +82,23 @@
                  binary     = "risk",
                  continuous = "mean")
   sprintf("CATE: %s %s - %s", what, a$treated, ref)
+}
+
+# Ordinary labelled columns use their storage values, as get_hte() does,
+# without relying on haven's methods being loaded after reading an RDS.
+#' @keywords internal
+#' @noRd
+.hte_sub_data <- function(d, sub_var, cat_var) {
+  if (is.character(sub_var)) {
+    for (v in intersect(setdiff(sub_var, cat_var), names(d))) {
+      value <- d[[v]]
+      if (!inherits(value, "haven_labelled") ||
+          inherits(value, "haven_labelled_spss")) next
+      attributes(value) <- NULL
+      d[[v]] <- value
+    }
+  }
+  d
 }
 
 # The `sub_var` a caller names, checked against `x$data`: categorical columns
@@ -593,6 +611,8 @@ plt_hte_dep <- function(x,
 #'   package and retain their exact integer labels.
 #'   List, multi-column matrix and S4 columns must first be explicitly
 #'   converted to categorical vectors with one value per patient.
+#'   Ordinary labelled columns use their underlying values for grouping,
+#'   independently of whether haven is loaded.
 #'   A column the forest does not condition on is
 #'   accepted with a message: its subgroup estimates hold when it is a
 #'   function of the covariates (as `age_55` is of `Age`) or no confounder;
@@ -955,7 +975,7 @@ plt_hte_sub <- function(x,
            call. = FALSE)
 
   a <- attr(x, "analysis")
-  d <- x$data
+  d <- .hte_sub_data(x$data, sub_var, a$cat_var)
   scale <- if (identical(a$outcome_type, "survival")) {
     if (identical(a$target, "RMST")) "RMST" else "S"
   } else {
@@ -1638,7 +1658,7 @@ plt_hte_cate <- function(x,
     stop("Package 'grf' is required for plt_hte_cate().", call. = FALSE)
 
   a <- attr(x, "analysis")
-  d <- x$data
+  d <- .hte_sub_data(x$data, sub_var, a$cat_var)
   if (is.character(sub_var)) {
     for (v in intersect(setdiff(sub_var, a$cat_var), names(d))) {
       value <- d[[v]]

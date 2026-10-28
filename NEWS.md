@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `plt_hte_cate()` and `plt_hte_sub()` use the underlying values of ordinary
+  labelled subgroup columns without requiring haven to be loaded. Results
+  read from RDS in a fresh session preserve grouping and missing values.
+
 * `plt_hte_cate()` retains patient distributions when every subgroup ATE
   reference line is unavailable, instead of failing while constructing an
   empty line table. Existing warnings and available overall lines are kept.
