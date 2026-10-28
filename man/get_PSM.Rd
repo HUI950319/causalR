@@ -22,7 +22,11 @@ get_PSM(
 )
 }
 \arguments{
-\item{data}{A data frame holding every column named below.}
+\item{data}{A data frame holding every column named below. Analysis columns
+use the storage and missing-value normalisation described in \code{\link[=get_bal]{get_bal()}}:
+exact-range \code{integer64} values become doubles, and SPSS user-defined
+missing values and explicit missing factor levels become \code{NA} before
+complete-case selection. Unsupported column shapes fail before fitting.}
 
 \item{treat}{Length-1 character. The binary exposure column: \code{0}/\code{1},
 logical, or a two-level factor or character column whose \strong{second} level

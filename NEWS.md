@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* Propensity and sensitivity inputs use the same stored-type normalisation
+  as `get_bal()`. Integer64 covariates no longer cause spurious row deletion,
+  and SPSS user-defined missingness is handled before PSM, PSW or sensitivity
+  fitting independently of whether haven was preloaded.
+
 * HTE models accept formula-special column names such as `.`, `...` and
   `..1` through internal aliases. GLM nuisances no longer expand `.` into
   internal responses; shared design matrices retain original column names,

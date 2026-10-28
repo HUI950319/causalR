@@ -407,7 +407,11 @@
 #' processed score, because weight columns built on different analysis
 #' populations could not be compared.
 #'
-#' @param data A data frame holding every column named below.
+#' @param data A data frame holding every column named below. Analysis columns
+#'   use the storage and missing-value normalisation described in [get_bal()]:
+#'   exact-range `integer64` values become doubles, and SPSS user-defined
+#'   missing values and explicit missing factor levels become `NA` before
+#'   complete-case selection. Unsupported column shapes fail before fitting.
 #' @param treat Length-1 character. The binary exposure column: `0`/`1`,
 #'   logical, or a two-level factor or character column whose **second** level
 #'   is the treated one. A character column is ordered alphabetically, so
@@ -643,6 +647,7 @@ get_PSW <- function(data,
 
   # Trimming keeps its rows, so incomplete cases are the only rows dropped.
   used <- c(treat, adj_var, ps)
+  data <- .sens_normalize(data, used)
   data <- .sens_complete(data, used, verbose)
 
   wcols <- paste0("w_", tolower(estimand))

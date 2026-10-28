@@ -44,6 +44,27 @@ bounds_cols <- c("method", "estimand", "bound_label", "r2_treat", "r2_out",
                  "adj_estimate", "adj_low", "adj_high", "adj_conf.low",
                  "adj_conf.high", "adj_se", "adj_statistic")
 
+test_that("sensitivity normalises stored types independently of loaded methods", {
+  skip_if_not_installed("bit64")
+  skip_if_not_installed("sensemakr")
+  set.seed(2810)
+  d <- data.frame(z = rep(0:1, 60), x = rep(c(-5, -4, 0, 1, 2, 3), each = 20))
+  d$y <- 0.8 * d$z + 1.3 * d$x + stats::rnorm(120)
+  run <- function(d) get_sens(d, "z", "y", adj_var = "x")
+  typed <- d
+  typed$x <- bit64::as.integer64(typed$x)
+  expect_identical(run(typed)$stats, run(d)$stats)
+  typed$x <- I(as.matrix(d$x))
+  typed$y <- I(as.matrix(d$y))
+  expect_identical(run(typed)$stats, run(d)$stats)
+  typed <- d
+  typed$x <- structure(replace(d$x, 1:6, 999),
+                         class = c("haven_labelled_spss", "haven_labelled"), na_values = 999)
+  actual <- run(typed)
+  expect_identical(attr(actual, "analysis")$n, 114L)
+  expect_identical(actual$stats, run(d[-(1:6), ])$stats)
+})
+
 test_that("get_sens returns sensemakr robustness values for the linear backend", {
   sens_test_deps("sensemakr")
   res <- get_sens(lm_data(), treat = "directlyharmed", outcome = "peacefactor",

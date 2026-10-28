@@ -27,7 +27,12 @@ get_sens(
 )
 }
 \arguments{
-\item{data}{A data frame holding every column named below.}
+\item{data}{A data frame holding every column named below. Analysis columns
+use the storage and missing-value normalisation described in \code{\link[=get_bal]{get_bal()}}:
+exact-range \code{integer64} values become doubles, and SPSS user-defined
+missing values and explicit missing factor levels become \code{NA} before
+model fitting, independently of which class packages were loaded.
+Single-column matrix inputs are converted to vectors.}
 
 \item{treat, outcome}{Length-1 character. The treatment and outcome columns.
 \code{treat} must resolve to exactly one model coefficient: numeric, or a

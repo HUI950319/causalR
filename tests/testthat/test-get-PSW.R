@@ -23,6 +23,34 @@ all_wcols <- c("w_ate", "w_att", "w_atc", "w_ato", "w_atm", "w_ew")
 wmean <- function(v, w, g) sum(v[g] * w[g]) / sum(w[g])
 
 
+test_that("PSM and PSW normalise analysis storage before selecting rows", {
+  skip_if_not_installed("bit64")
+  d <- data.frame(z = rep(0:1, 60), x = rep(c(-5, -4, 0, 1, 2, 3), each = 20), p = 0.5)
+  for (f in list(get_PSW, get_PSM)) {
+    run <- function(d) f(d, "z", adj_var = "x", ps = "p", balance = FALSE)
+    expected <- run(d)
+    typed <- d
+    typed$x <- bit64::as.integer64(typed$x)
+    actual <- run(typed)
+    expect_identical(actual$data, expected$data)
+    expect_identical(actual$stats, expected$stats)
+    typed$x[1] <- bit64::as.integer64("9007199254740993")
+    expect_error(run(typed), "exact double range")
+    typed <- d
+    typed$x[1:6] <- 999
+    typed$x <- structure(typed$x, class = c("haven_labelled_spss", "haven_labelled"),
+                         na_values = 999, label = "Age")
+    actual <- run(typed)
+    expect_identical(nrow(actual$data), 114L)
+    expect_equal(actual$stats, run(d[-(1:6), ])$stats)
+    typed <- d
+    typed$x <- factor(rep(c("a", "b", NA), 40), exclude = NULL)
+    expected <- typed
+    expected$x <- factor(as.character(expected$x))
+    expect_equal(run(typed)$stats, run(expected)$stats)
+  }
+})
+
 test_that("get_PSW returns the documented structure", {
   d   <- psw_data()
   res <- get_PSW(d, treat = "z", adj_var = psw_adj, balance = FALSE)

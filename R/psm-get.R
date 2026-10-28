@@ -247,7 +247,11 @@
 #' to the number of treated units, as the textbook weight does. The effective
 #' sample size is scale-free and is the same under either setting.
 #'
-#' @param data A data frame holding every column named below.
+#' @param data A data frame holding every column named below. Analysis columns
+#'   use the storage and missing-value normalisation described in [get_bal()]:
+#'   exact-range `integer64` values become doubles, and SPSS user-defined
+#'   missing values and explicit missing factor levels become `NA` before
+#'   complete-case selection. Unsupported column shapes fail before fitting.
 #' @param treat Length-1 character. The binary exposure column: `0`/`1`,
 #'   logical, or a two-level factor or character column whose **second** level
 #'   is the treated one. A character column is ordered alphabetically, so
@@ -449,6 +453,7 @@ get_PSM <- function(data,
          call. = FALSE)
 
   used <- c(treat, adj_var, ps)
+  data <- .sens_normalize(data, used)
   data <- .sens_complete(data, used, verbose)
 
   wcols <- paste0("w_", method)

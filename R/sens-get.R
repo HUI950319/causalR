@@ -410,7 +410,12 @@
 #' shape, so that a linear model, a Cox model, a double machine learning fit
 #' and an instrumental-variable fit can be reported side by side.
 #'
-#' @param data A data frame holding every column named below.
+#' @param data A data frame holding every column named below. Analysis columns
+#'   use the storage and missing-value normalisation described in [get_bal()]:
+#'   exact-range `integer64` values become doubles, and SPSS user-defined
+#'   missing values and explicit missing factor levels become `NA` before
+#'   model fitting, independently of which class packages were loaded.
+#'   Single-column matrix inputs are converted to vectors.
 #' @param treat,outcome Length-1 character. The treatment and outcome columns.
 #'   `treat` must resolve to exactly one model coefficient: numeric, or a
 #'   two-level factor.
@@ -648,6 +653,7 @@ get_sens <- function(data,
          call. = FALSE)
 
   used <- c(treat, outcome, time, instrument, adj_var)
+  data <- .sens_normalize(data, used, single_matrix = TRUE)
   if (method %in% c("dml", "iv")) data <- .sens_complete(data, used, verbose)
 
   res <- switch(
