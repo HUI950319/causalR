@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte_unihtee()` reuses the OOB predictions computed by `get_hte()`
+  when forest caching is disabled, avoiding a second prediction pass for
+  continuous and survival outcomes. Results and returned cache settings agree.
+
 * HTE subgroup plots reject unsupported list, multi-column matrix and S4
   columns with a named-column diagnostic before estimating subgroups.
   Supported categorical vectors and single-column matrices keep their behavior.

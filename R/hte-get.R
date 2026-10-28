@@ -151,7 +151,8 @@
 #' @keywords internal
 #' @noRd
 .hte_arm_scores <- function(fit) {
-  tau <- as.numeric(stats::predict(fit)$predictions)
+  tau <- as.numeric(if (!is.null(fit$predictions)) fit$predictions
+                    else stats::predict(fit)$predictions)
   e   <- fit$W.hat
   # Boundary observations have no ordinary AIPW score, but do not prevent
   # grf's division-free overlap regression from estimating the ATO.

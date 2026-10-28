@@ -66,7 +66,9 @@ skipped, with a message, for a continuous outcome or RMST.}
 
 \item{grf_args}{Named list forwarded to \code{\link[=get_hte]{get_hte()}} and so to grf, for
 example \code{num.trees}. Without \code{seed}, \code{seed} below is used. Non-empty
-arguments are accepted only for \code{method = "grf"}.}
+arguments are accepted only for \code{method = "grf"}. Arm scores reuse the
+OOB predictions from \code{get_hte()} when the forest cache is disabled;
+the returned forest retains the requested cache setting.}
 
 \item{glm_args}{Named list for \code{method = "glm"}; partial overrides keep the
 other defaults. Non-empty arguments are accepted only for this method.

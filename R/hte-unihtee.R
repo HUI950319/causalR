@@ -310,7 +310,9 @@
 #'   `120`. Only accepted with `surv = TRUE`.
 #' @param grf_args Named list forwarded to [get_hte()] and so to grf, for
 #'   example `num.trees`. Without `seed`, `seed` below is used. Non-empty
-#'   arguments are accepted only for `method = "grf"`.
+#'   arguments are accepted only for `method = "grf"`. Arm scores reuse the
+#'   OOB predictions from `get_hte()` when the forest cache is disabled;
+#'   the returned forest retains the requested cache setting.
 #' @param glm_args Named list for `method = "glm"`; partial overrides keep the
 #'   other defaults. Non-empty arguments are accepted only for this method.
 #'   \describe{
@@ -573,6 +575,8 @@ get_hte_unihtee <- function(data,
     fit  <- res$fit
     an   <- attr(res, "analysis")
     d    <- res$data
+    # get_hte() already computed the OOB CATE, even without a forest cache.
+    if (is.null(fit$predictions)) fit$predictions <- matrix(d$.cate, ncol = 1L)
     s    <- .hte_arm_scores(fit)
     W    <- fit$W.orig
     e    <- fit$W.hat

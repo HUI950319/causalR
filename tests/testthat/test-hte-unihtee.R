@@ -125,6 +125,52 @@ test_that("unihtee follow-up: positive-weight arm support is checked before fitt
   check(d, wt[!is.na(d$y)])
 })
 
+test_that("unihtee follow-up: uncached OOB predictions are reused across entry points", {
+  skip_if_not_installed("grf")
+  counter <- new.env(parent = emptyenv())
+  counter$n <- 0L
+  spy <- function(name) {
+    f <- get(name, asNamespace("grf"))
+    env <- new.env(parent = environment(f))
+    env$counter <- counter
+    environment(f) <- env
+    body(f) <- substitute({ counter$n <- counter$n + 1L; BODY },
+                           list(BODY = body(f)))
+    f
+  }
+  testthat::local_mocked_bindings(
+    causal_predict_oob = spy("causal_predict_oob"),
+    causal_survival_predict_oob = spy("causal_survival_predict_oob"), .package = "grf")
+  d <- uni_cont_data(n = 400L)
+  d$y[1L] <- NA
+  d$time <- runif(nrow(d), 1, 15)
+  d$DSS <- rbinom(nrow(d), 1, 0.7)
+  d$time[1L] <- NA
+  for (target in c("continuous", "survival.probability", "RMST")) {
+    ga <- list(num.trees = 100, seed = 7, num.threads = 1,
+               W.hat = rep(0.5, nrow(d)), compute.oob.predictions = TRUE)
+    args <- list(data = d, cat_var = "a", tree_var = c("w3", "w1"))
+    if (target == "continuous") {
+      args$surv <- "y"
+      ga$Y.hat <- rep(0, nrow(d))
+    } else {
+      args$time <- 5
+      ga$target <- target
+    }
+    ref <- do.call(get_hte_unihtee, c(args, list(grf_args = ga)))
+    counter$n <- 0L
+    ga$compute.oob.predictions <- FALSE
+    out <- do.call(get_hte_unihtee, c(args, list(grf_args = ga)))
+    expect_identical(counter$n, 1L)
+    expect_null(out$hte$fit$predictions)
+    expect_false(attr(out, "analysis")$backend_args$compute.oob.predictions)
+    expect_equal(out$vip, ref$vip, tolerance = 1e-12)
+    expect_equal(out$data, ref$data, tolerance = 1e-12)
+    expect_equal(out$hte$stats, ref$hte$stats, tolerance = 1e-12)
+    expect_equal(out$hte$calibration, ref$hte$calibration, tolerance = 1e-12)
+  }
+})
+
 test_that("unihtee survival support excludes zero-weight patients", {
   set.seed(321)
   n <- 400L
