@@ -199,6 +199,38 @@ test_that("overlap weights balance exactly and stabilizing changes nothing", {
   expect_equal(b$smd[b$method == "Stabilized IPTW"], b$smd[b$method == "IPTW"])
 })
 
+test_that("matching and weighting reuse only the identical default GLM score", {
+  d <- bal_data(120L)
+  count <- 0L
+  fit <- .psw_fit
+  testthat::local_mocked_bindings(.psw_fit = function(...) {
+    count <<- count + 1L
+    fit(...)
+  })
+  methods <- list(M1 = list(design = "matching", ratio = 1),
+                   M2 = list(design = "matching", ratio = 2),
+                   A = list(design = "weighting", estimand = "ATE"))
+  result <- get_bal(d, "z", bal_adj, methods = methods)
+  expect_identical(count, 1L)
+  expect_identical(result$data$M1, get_PSM(d, "z", bal_adj, balance = FALSE)$data$w_nearest)
+  expect_identical(result$data$M2, get_PSM(d, "z", bal_adj, ratio = 2, balance = FALSE)$data$w_nearest)
+  expect_identical(result$data$A, get_PSW(d, "z", bal_adj, estimand = "ATE", balance = FALSE)$data$w_ate)
+  count <- 0L
+  methods$M1$ps_args <- methods$M2$ps_args <- methods$A$ps_args <- list(link = "probit")
+  get_bal(d, "z", bal_adj, methods = methods)
+  expect_identical(count, 3L)
+  count <- 0L
+  methods <- list(M = list(design = "matching"),
+                   A = list(design = "weighting", estimand = "ATE",
+                            trim_args = list(method = "pctl", lower = 0.1, upper = 0.9)))
+  result <- get_bal(d, "z", bal_adj, methods = methods)
+  expect_identical(count, 2L)
+  reference <- get_PSW(d, "z", bal_adj, estimand = "ATE", balance = FALSE,
+                       trim_args = methods$A$trim_args)$data$w_ate
+  reference[is.na(reference)] <- 0
+  expect_identical(result$data$A, reference)
+})
+
 test_that("weighting schemes that differ only in estimand share one fit", {
   d  <- bal_data()
   tr <- list(method = "ps", lower = 0.1, upper = 0.9)

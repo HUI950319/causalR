@@ -21,7 +21,7 @@ get_bal(
 \arguments{
 \item{data}{A data frame holding every column named below. Analysis
 columns stored as \code{integer64} are converted through bit64 within the
-exact double range [-2^53, 2^53]. Labelled storage is unwrapped; SPSS
+exact double range \verb{[-2^53, 2^53]}. Labelled storage is unwrapped; SPSS
 user-defined missing values and explicit missing factor levels become
 \code{NA} before complete-case selection. Matrix, list, complex and S4
 analysis columns require explicit conversion. Grouped/rowwise frames
@@ -196,6 +196,10 @@ here and rejected in a scheme. Omitted fields take the defaults of
 \code{\link[=get_PSM]{get_PSM()}} / \code{\link[=get_PSW]{get_PSW()}}; note that in a scheme \code{method} means the
 matching algorithm for \code{"matching"} and the propensity model for
 \code{"weighting"}, exactly as in those two functions.
+
+Schemes using the default GLM without custom \code{ps_args} share the initial
+propensity score when their model data are identical. Customised models
+and models refitted after trimming are fitted independently.
 }
 
 \section{Balance measure}{

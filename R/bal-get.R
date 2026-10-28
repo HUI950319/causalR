@@ -8,7 +8,8 @@
 #               love_args, save_plt, save_tbl)
 #         |
 #         +-- .bal_specs          shorthand or named list -> validated specs
-#         +-- get_PSM / get_PSW   one call per matching scheme, one per group
+#         +-- get_PSM / get_PSW   reuse identical default GLM initial scores;
+#         |                       one call per matching scheme, one per group
 #         |                       of weighting schemes differing in estimand
 #         +-- cobalt::bal.tab    one shared denominator
 #         +-- .bal_love          construct plot outside the analysis frame
@@ -279,6 +280,10 @@
 #' matching algorithm for `"matching"` and the propensity model for
 #' `"weighting"`, exactly as in those two functions.
 #'
+#' Schemes using the default GLM without custom `ps_args` share the initial
+#' propensity score when their model data are identical. Customised models
+#' and models refitted after trimming are fitted independently.
+#'
 #' @section Balance measure:
 #' Every scheme, and the unadjusted sample, is summarised by the weighted
 #' mean difference between arms divided by the **unadjusted pooled** standard
@@ -315,7 +320,7 @@
 #'
 #' @param data A data frame holding every column named below. Analysis
 #'   columns stored as `integer64` are converted through bit64 within the
-#'   exact double range [-2^53, 2^53]. Labelled storage is unwrapped; SPSS
+#'   exact double range `[-2^53, 2^53]`. Labelled storage is unwrapped; SPSS
 #'   user-defined missing values and explicit missing factor levels become
 #'   `NA` before complete-case selection. Matrix, list, complex and S4
 #'   analysis columns require explicit conversion. Grouped/rowwise frames
@@ -632,15 +637,32 @@ get_bal <- function(data,
     stop(sprintf("Column(s) %s already exist in `data`; get_bal() writes one weight column per scheme label. Rename them, or relabel the scheme.",
                  paste0("`", hit, "`", collapse = ", ")), call. = FALSE)
 
-  # Weighting schemes that differ only in `estimand` share one score, trimming
-  # and truncation, so each such group is one get_PSW() call, whose weights
-  # are those of separate calls; a matching scheme is fitted on its own.
-  fit <- function(nms, fn, args) tryCatch(
-    do.call(fn, c(list(data = data, treat = treat, adj_var = adj_var,
-                       balance = FALSE), args)),
-    error = function(e)
-      stop(sprintf("Scheme %s: %s", paste0("`", nms, "`", collapse = ", "),
-                   conditionMessage(e)), call. = FALSE))
+  # Cache only the deterministic default GLM on these complete cases.
+  # Trimmed refits and customised backends retain independent fitting.
+  cached <- NULL
+  original_n <- nrow(data)
+  score <- function(data, treat, adj_var, ps, method, ps_args) {
+    reuse <- is.null(ps) && identical(method, "glm") && !length(ps_args) &&
+      nrow(data) == original_n
+    if (!reuse) return(.psw_score(data, treat, adj_var, ps, method, ps_args))
+    input <- data[c(treat, adj_var)]
+    if (!is.null(cached) && identical(input, cached$data)) return(cached$score)
+    result <- .psw_score(data, treat, adj_var, ps, method, ps_args)
+    cached <<- list(data = input, score = result)
+    result
+  }
+  # Local function copies preserve public argument checks and processing;
+  # no namespace bindings or external calls are changed by this cache.
+  fit <- function(nms, fn, args) {
+    environment(fn) <- list2env(list(.psw_score = score), parent = environment(fn))
+    tryCatch(
+      do.call(fn, c(list(data = data, treat = treat, adj_var = adj_var,
+                         balance = FALSE), args)),
+      error = function(e)
+        stop(sprintf("Scheme %s: %s", paste0("`", nms, "`", collapse = ", "),
+                     conditionMessage(e)), call. = FALSE))
+  }
+  # Weighting schemes differing only in estimand also share processing.
   key <- vapply(labs, function(nm) {
     s <- specs[[nm]]
     if (s$design == "matching") return(paste0("matching:", nm))
