@@ -211,6 +211,14 @@ processed score, because weight columns built on different analysis
 populations could not be compared.
 }
 
+\section{Numerical stability}{
+
+Extreme finite weights use scaled calculations for ESS and weight-spread
+summaries. If a retained unit's weight is non-finite, fitting stops with
+the estimand identified; use the existing trimming or truncation controls
+to address inadequate overlap before using an outcome model.
+}
+
 \examples{
 set.seed(20260921)
 n <- 400

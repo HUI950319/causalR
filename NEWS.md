@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* Weight summaries rescale extreme finite weights to avoid overflow or
+  underflow in ESS, standard deviation and coefficient of variation.
+  `get_PSW()` rejects non-finite generated weights before reporting results,
+  with the affected estimand identified.
+
 * Continuous HTE projections and shared spline diagnostics rescale extreme
   covariate units internally to avoid variance underflow or overflow. Failed
   univariate fits retain other candidates with a diagnostic; estimates keep

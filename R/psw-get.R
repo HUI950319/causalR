@@ -105,8 +105,12 @@
 #' @keywords internal
 #' @noRd
 .psw_ess <- function(w) {
+  if (any(is.infinite(w))) return(NA_real_)
   w <- w[is.finite(w) & w > 0]
   if (!length(w)) return(NA_real_)
+  scale <- max(w)
+  if (scale > sqrt(.Machine$double.xmax) / length(w) ||
+      scale < sqrt(.Machine$double.xmin)) w <- w / scale
   sum(w)^2 / sum(w^2)
 }
 
@@ -128,6 +132,14 @@
 .psw_stats_row <- function(estimand, w, z, keep, smd_max = NA_real_,
                            smd_over = NA_real_) {
   wk <- w[keep]
+  w_sd <- stats::sd(wk)
+  w_cv <- w_sd / mean(wk)
+  if (!is.finite(w_sd) || (w_sd == 0 && any(wk != wk[1L]))) {
+    scale <- max(wk)
+    normalised <- wk / scale
+    w_sd <- stats::sd(normalised) * scale
+    w_cv <- stats::sd(normalised) / mean(normalised)
+  }
   tibble::tibble(
     estimand  = estimand,
     n         = sum(keep),
@@ -140,8 +152,8 @@
     w_min     = min(wk),
     w_max     = max(wk),
     w_mean    = mean(wk),
-    w_sd      = stats::sd(wk),
-    w_cv      = stats::sd(wk) / mean(wk),
+    w_sd      = w_sd,
+    w_cv      = w_cv,
     smd_max   = as.numeric(smd_max),
     smd_over  = as.numeric(smd_over))
 }
@@ -406,6 +418,12 @@
 #' weights; stabilisation is applied last. Every estimand shares that one
 #' processed score, because weight columns built on different analysis
 #' populations could not be compared.
+#'
+#' @section Numerical stability:
+#' Extreme finite weights use scaled calculations for ESS and weight-spread
+#' summaries. If a retained unit's weight is non-finite, fitting stops with
+#' the estimand identified; use the existing trimming or truncation controls
+#' to address inadequate overlap before using an outcome model.
 #'
 #' @param data A data frame holding every column named below. Analysis columns
 #'   use the storage and missing-value normalisation described in [get_bal()]:
@@ -707,6 +725,9 @@ get_PSW <- function(data,
     w <- .psw_tilt(estimand[[i]], e) / den
     if (isTRUE(stabilize) && estimand[[i]] %in% .PSW_STABILIZE)
       w <- w * (z * p1 + (1 - z) * (1 - p1))
+    if (any(!is.finite(w[keep])))
+      stop(sprintf("Non-finite weights for estimand \"%s\"; propensity scores are too extreme. Use trimming or truncation to address overlap.",
+                   estimand[[i]]), call. = FALSE)
     data[[wcols[[i]]]] <- w
   }
 

@@ -51,6 +51,33 @@ test_that("PSM and PSW normalise analysis storage before selecting rows", {
   }
 })
 
+test_that("PSW summaries are scale invariant for extreme finite weights", {
+  for (scale in c(1, 1e200, 1e-200))
+    expect_equal(.psw_ess(rep(scale, 60)), 60)
+  d <- data.frame(z = rep(0:1, 60), p = 1e-200)
+  for (estimand in c("ATE", "ATT")) {
+    res <- get_PSW(d, "z", ps = "p", estimand = estimand, balance = FALSE)
+    w <- res$data[[paste0("w_", tolower(estimand))]]
+    normalised <- w / max(w)
+    expect_equal(res$stats$ess, 60)
+    expect_equal(res$stats$ess_treat, 60)
+    expect_equal(res$stats$ess_ctrl, 60)
+    expect_true(all(is.finite(unlist(res$stats[c("w_mean", "w_sd", "w_cv")]))))
+    expect_equal(res$stats$w_sd / max(w), stats::sd(normalised))
+    expect_equal(res$stats$w_cv, stats::sd(normalised) / mean(normalised))
+  }
+})
+
+test_that("PSW refuses non-finite generated weights before reporting summaries", {
+  d <- data.frame(z = rep(0:1, 60), p = 1e-320)
+  expect_error(get_PSW(d, "z", ps = "p", estimand = "ATE", balance = FALSE),
+               "Non-finite weights.*ATE")
+  res <- get_PSW(d, "z", ps = "p", estimand = "ATO", balance = FALSE)
+  expect_true(all(is.finite(res$data$w_ato)))
+  expect_equal(res$stats$ess_ctrl, 60)
+  expect_true(is.na(.psw_ess(c(1, Inf))))
+})
+
 test_that("get_PSW returns the documented structure", {
   d   <- psw_data()
   res <- get_PSW(d, treat = "z", adj_var = psw_adj, balance = FALSE)
