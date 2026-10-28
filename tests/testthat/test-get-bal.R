@@ -549,6 +549,18 @@ skip_if_no_tbl <- function() {
   for (p in c("gtsummary", "survey", "cardx", "smd")) skip_if_not_installed(p)
 }
 
+test_that("balance tables ignore unused treatment factor levels", {
+  skip_if_no_tbl()
+  d <- bal_data(120L)
+  d$z <- factor(d$z, levels = c(0, 1, 2))
+  run <- function(d) get_bal(d, "z", bal_adj, methods = "ATO", tbl = TRUE, cores = 1)
+  actual <- run(d)
+  expected <- run(droplevels(d))
+  expect_identical(actual$tbl$table_body, expected$tbl$table_body)
+  expect_identical(actual$balance, expected$balance)
+  expect_identical(levels(actual$data$z), c("0", "1", "2"))
+})
+
 test_that("tbl = TRUE merges one gtsummary table per scheme; FALSE skips it", {
   skip_if_no_tbl()
   d   <- stage_data()

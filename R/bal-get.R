@@ -736,8 +736,10 @@ get_bal <- function(data,
     }
     # Only what a table needs travels to a PSOCK worker, not this frame; the
     # stats namespace is where gtsummary finds "{mean} ({sd})".
+    dd <- data[c(treat, adj_var)]
+    if (is.factor(dd[[treat]])) dd[[treat]] <- droplevels(dd[[treat]])
     environment(one) <- list2env(
-      list(dd = data[c(treat, adj_var)], lb = if (!is.null(vn)) as.list(vn),
+      list(dd = dd, lb = if (!is.null(vn)) as.list(vn),
            treat = treat), parent = asNamespace("stats"))
     W  <- c(list(NULL), as.list(w))
     dc <- parallel::detectCores()

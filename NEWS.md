@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_bal()` removes unused treatment levels from its table input, so
+  weighted summaries use the same two observed arms as the balance plot.
+  The returned analysis data retains the original factor levels.
+
 * `get_bal()` normalises integer64 storage, SPSS user-defined missingness
   and explicit missing factor levels before selecting complete cases. Unsafe
   integer64 ranges and unsupported column shapes fail before fitting.
