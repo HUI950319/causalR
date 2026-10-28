@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* Weighted HTE analyses require at least two positive-weight complete rows
+  in each arm before fitting. Both public entry points check support after
+  aligning row weights, while preserving existing cluster-error precedence.
+
 * `plt_hte_cate()` reuses one local OOB prediction cache for scores and
   reference lines when the forest was fitted without cached predictions.
   Plot data, inference and the original forest remain unchanged.

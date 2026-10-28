@@ -99,6 +99,32 @@ test_that("unihtee follow-up: unavailable OOB calibration preserves the result",
   expect_identical(direct$data, out$hte$data)
 })
 
+test_that("unihtee follow-up: positive-weight arm support is checked before fitting", {
+  skip_if_not_installed("grf")
+  d <- uni_cont_data(n = 200L)
+  testthat::local_mocked_bindings(
+    .sens_model_matrix = function(...) stop("Forest design was reached."), .package = "causalR")
+  check <- function(data, wt) {
+    ga <- list(sample.weights = wt)
+    expect_error(get_hte(data, "a", adj_var = "w3", surv = "y", grf_args = ga),
+                  "at least two positive-weight complete rows")
+    expect_error(get_hte_unihtee(data, "a", tree_var = "w3", surv = "y", grf_args = ga),
+                  "at least two positive-weight complete rows")
+  }
+  for (arm in 0:1) for (count in 0:1) {
+    wt <- as.numeric(d$a != arm)
+    if (count) wt[which(d$a == arm)[1L]] <- 1
+    check(d, wt)
+  }
+  wt <- as.numeric(d$a == 0)
+  wt[which(d$a == 1)[1:2]] <- 1
+  expect_error(get_hte(d, "a", adj_var = "w3", surv = "y",
+                       grf_args = list(sample.weights = wt)), "Forest design was reached")
+  d$y[which(d$a == 1)[1L]] <- NA
+  check(d, wt)
+  check(d, wt[!is.na(d$y)])
+})
+
 test_that("unihtee survival support excludes zero-weight patients", {
   set.seed(321)
   n <- 400L

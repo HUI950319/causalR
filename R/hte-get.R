@@ -631,7 +631,8 @@
 #'   `clusters`) may be given for every row of `data` -- rows dropped for a
 #'   missing `cat_var` or outcome are dropped from them too -- or for the
 #'   rows analysed only. `clusters` and `sample.weights` are only supported
-#'   with `measure = "diff"`. Required out-of-bag predictions are computed once
+#'   with `measure = "diff"`. Each arm needs at least two positive-weight
+#'   complete rows. Required out-of-bag predictions are computed once
 #'   and reused internally if grf has not cached them; the returned forest
 #'   retains the backend's original cache setting.
 #'   Without `num.trees`, grf grows its default 2000 trees, or 200 when more
@@ -1057,6 +1058,9 @@ get_hte <- function(data,
       stop("`grf_args$clusters` requires at least two positive-weight clusters among the analysed rows.",
            call. = FALSE)
   }
+  if (sum(W[positive] == 1L) < 2L || sum(W[positive] == 0L) < 2L)
+    stop("Both arms of `cat_var` need at least two positive-weight complete rows.",
+         call. = FALSE)
   # grf grows 2000 trees by default. Above 10,000 rows a call that sets no
   # num.trees grows 200: at 100,000 survival rows 13 s instead of 83 s, the
   # same ATE, and a per-patient CATE correlated 0.95 with 2000 trees'.

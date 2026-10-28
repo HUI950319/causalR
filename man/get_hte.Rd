@@ -117,7 +117,8 @@ to \code{time}. Per-row fields (\code{W.hat}, \code{Y.hat}, \code{sample.weights
 \code{clusters}) may be given for every row of \code{data} -- rows dropped for a
 missing \code{cat_var} or outcome are dropped from them too -- or for the
 rows analysed only. \code{clusters} and \code{sample.weights} are only supported
-with \code{measure = "diff"}. Required out-of-bag predictions are computed once
+with \code{measure = "diff"}. Each arm needs at least two positive-weight
+complete rows. Required out-of-bag predictions are computed once
 and reused internally if grf has not cached them; the returned forest
 retains the backend's original cache setting.
 Without \code{num.trees}, grf grows its default 2000 trees, or 200 when more
