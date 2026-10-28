@@ -532,6 +532,23 @@ test_that("a single balance scheme can sort by its label", {
   expect_s3_class(ggplot2::ggplot_build(actual$plt), "ggplot_built")
 })
 
+test_that("balance rejects invalid finite and column arguments before fitting", {
+  d <- bal_data(120L)
+  testthat::local_mocked_bindings(.psw_fit = function(...) stop("fitting started"))
+  run <- function(...) get_bal(d, "z", bal_adj, methods = "ATE", ...)
+  for (x in c(Inf, -Inf, 2^31)) expect_error(run(cores = x), "`cores`")
+  for (x in c(Inf, -Inf, -0.1))
+    expect_error(run(love_args = list(threshold = x)), "threshold")
+  for (field in c("size", "base_size"))
+    expect_error(run(love_args = stats::setNames(list(Inf), field)), field)
+  expect_error(run(love_args = list(ref_color = NA_character_)), "ref_color")
+  expect_error(run(love_args = list(legend_position = c(Inf, 0))), "legend_position")
+  expect_error(run(love_args = list(var_order = NA_character_)), "var_order")
+  expect_error(get_bal(d, NULL, bal_adj), "`treat`")
+  expect_error(get_bal(d, "z", character()), "`adj_var`")
+  expect_error(get_bal(d, "z", c("x1", "x1")), "`adj_var`.*duplicated")
+})
+
 test_that("love_args is validated before anything is fitted", {
   d <- bal_data()
   run <- function(love_args, methods = c("PSM", "ATE"))

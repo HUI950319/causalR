@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_bal()` rejects non-finite or overflowing core counts, invalid
+  numeric plot controls, missing styling values and empty or duplicated
+  covariate selections before model fitting.
+
 * `get_bal()` avoids process startup for small automatic table workloads
   (one adjusted scheme, at most 1000 rows and two covariates). Explicit `cores`
   settings still select the requested serial or parallel path.

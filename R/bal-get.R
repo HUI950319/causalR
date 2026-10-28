@@ -363,7 +363,7 @@
 #' @param love_args Named list of love plot settings; `list()` (default)
 #'   keeps every default. Unknown or duplicated fields are an error.
 #'   \describe{
-#'     \item{`threshold`}{Single number, default `0.1`. Where the reference
+#'     \item{`threshold`}{Finite non-negative number, default `0.1`. Where the reference
 #'       line is drawn.}
 #'     \item{`colors`}{Character vector, or `NULL` (default) for
 #'       `UtilsR::pal_lancet`. The first colour is the unadjusted sample's,
@@ -496,8 +496,8 @@ get_bal <- function(data,
   if (!is.logical(tbl) || length(tbl) != 1L || is.na(tbl))
     stop("`tbl` must be TRUE or FALSE.", call. = FALSE)
   if (!is.null(cores) &&
-      !(is.numeric(cores) && length(cores) == 1L && !is.na(cores) &&
-        cores >= 1 && cores == round(cores)))
+      !(is.numeric(cores) && length(cores) == 1L && is.finite(cores) &&
+        cores >= 1 && cores <= .Machine$integer.max && cores == round(cores)))
     stop("`cores` must be NULL or a positive whole number.", call. = FALSE)
   save_plt <- .merge_named_arg(save_plt, list(), "save_plt",
                                c("filename", "width", "height"))
@@ -509,9 +509,13 @@ get_bal <- function(data,
                    pkg), call. = FALSE)
   treat   <- .sens_check_col(treat, data, "treat", n = 1L)
   adj_var <- .sens_check_col(adj_var, data, "adj_var")
-  if (is.null(adj_var))
+  if (!length(treat))
+    stop("`treat` must name exactly one column.", call. = FALSE)
+  if (!length(adj_var))
     stop("`adj_var` is required: it is what every scheme adjusts for and the plot reports.",
          call. = FALSE)
+  if (anyDuplicated(adj_var))
+    stop("`adj_var` must not contain duplicated column names.", call. = FALSE)
   specs <- .bal_specs(methods)
   labs  <- names(specs)
   k     <- length(labs) + 1L          # the unadjusted sample, then each scheme
@@ -519,16 +523,18 @@ get_bal <- function(data,
   la  <- .merge_named_arg(love_args, .BAL_LOVE_DEFAULTS, "love_args")
   bad <- function(field, msg)
     stop(sprintf("`love_args$%s` %s", field, msg), call. = FALSE)
-  one_num <- function(x) is.numeric(x) && length(x) == 1L && !is.na(x)
+  one_num <- function(x) is.numeric(x) && length(x) == 1L && is.finite(x)
   place   <- function(x) (is.character(x) && length(x) == 1L && !is.na(x)) ||
-    (is.numeric(x) && length(x) == 2L && !anyNA(x))
-  if (!one_num(la$threshold)) bad("threshold", "must be a single number.")
+    (is.numeric(x) && length(x) == 2L && all(is.finite(x)))
+  if (!one_num(la$threshold) || la$threshold < 0)
+    bad("threshold", "must be a single number that is finite and non-negative.")
   for (f in c("size", "base_size"))
     if (!one_num(la[[f]]) || la[[f]] <= 0)
       bad(f, "must be a single positive number.")
   if (!is.logical(la$line) || length(la$line) != 1L || is.na(la$line))
     bad("line", "must be TRUE or FALSE.")
-  if (!is.character(la$ref_color) || length(la$ref_color) != 1L)
+  if (!is.character(la$ref_color) || length(la$ref_color) != 1L ||
+      is.na(la$ref_color) || !nzchar(la$ref_color))
     bad("ref_color", "must be a single colour string.")
   if (is.null(la$colors)) la$colors <- UtilsR::pal_lancet
   if (is.null(la$shapes)) la$shapes <- .BAL_SHAPES
@@ -537,7 +543,7 @@ get_bal <- function(data,
       bad(f, sprintf("needs at least %d values, one for the unadjusted sample and one per scheme; got %d.",
                      k, length(la[[f]])))
   if (!is.null(la$var_order) &&
-      !(is.character(la$var_order) && length(la$var_order) == 1L &&
+      !(is.character(la$var_order) && length(la$var_order) == 1L && !is.na(la$var_order) &&
         la$var_order %in% c("unadjusted", "alphabetical", labs)))
     bad("var_order", "must be NULL, \"unadjusted\", \"alphabetical\" or one scheme label.")
   if (!place(la$legend_position))

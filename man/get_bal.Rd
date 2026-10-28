@@ -77,7 +77,7 @@ keeps the column names.}
 \item{love_args}{Named list of love plot settings; \code{list()} (default)
 keeps every default. Unknown or duplicated fields are an error.
 \describe{
-\item{\code{threshold}}{Single number, default \code{0.1}. Where the reference
+\item{\code{threshold}}{Finite non-negative number, default \code{0.1}. Where the reference
 line is drawn.}
 \item{\code{colors}}{Character vector, or \code{NULL} (default) for
 \code{UtilsR::pal_lancet}. The first colour is the unadjusted sample's,
