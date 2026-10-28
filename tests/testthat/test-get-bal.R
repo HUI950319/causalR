@@ -500,6 +500,26 @@ test_that("no argument default needs RegR, a Suggests package", {
     expect_false("RegR" %in% unlist(lapply(formals(f), all.names)))
 })
 
+test_that("balance plots do not retain unrelated analysis columns", {
+  make <- function(extra) {
+    set.seed(105)
+    d <- data.frame(z = rep(0:1, 60), x = stats::rnorm(120), p = 0.5)
+    if (extra) d$unused <- I(matrix(stats::rnorm(120000), 120))
+    causalR::get_bal(d, "z", "x", var_names = NULL,
+                     methods = list(W = list(design = "weighting", estimand = "ATE", ps = "p")))$plt
+  }
+  environment(make) <- globalenv()
+  a <- make(FALSE)
+  b <- make(TRUE)
+  f <- withr::local_tempfile()
+  saveRDS(a, f)
+  small <- file.size(f)
+  saveRDS(b, f)
+  expect_lt(file.size(f) - small, 100 * 1024)
+  expect_identical(a$data, b$data)
+  expect_identical(ggplot2::ggplot_build(a)$data, ggplot2::ggplot_build(b)$data)
+})
+
 test_that("a single balance scheme can sort by its label", {
   d <- bal_data(120L)
   one <- list(W = list(design = "weighting", estimand = "ATE"))

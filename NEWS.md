@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_bal()` constructs its love plot outside the analysis frame, so
+  saved plot objects no longer retain unused input columns or fitted models.
+  Balance statistics, plot layers and appearance are unchanged.
+
 * `plt_hte_cate()` and `plt_hte_sub()` load bit64 methods for integer64
   subgroup columns, including results read from RDS in a new session.
   Large integer labels and missing values retain their exact meaning.

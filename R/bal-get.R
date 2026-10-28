@@ -10,7 +10,8 @@
 #         +-- .bal_specs          shorthand or named list -> validated specs
 #         +-- get_PSM / get_PSW   one call per matching scheme, one per group
 #         |                       of weighting schemes differing in estimand
-#         +-- cobalt::bal.tab / cobalt::love.plot   one shared denominator
+#         +-- cobalt::bal.tab    one shared denominator
+#         +-- .bal_love          construct plot outside the analysis frame
 #         +-- gtsummary::tbl_merge   tbl = TRUE, one svysummary per scheme,
 #         |                          built on `cores` workers
 #         +-- .psw_save           pin the size, save through RegR::save_plt()
@@ -167,6 +168,64 @@
                    nm), call. = FALSE)
   }
   specs
+}
+
+
+# Construct returned layers outside the analysis frame. Force every input
+# so ggproto callbacks cannot retain promises back to the caller's data.
+#' @keywords internal
+#' @noRd
+.bal_love <- function(bt, labs, pn, la) {
+  force(bt)
+  force(labs)
+  force(pn)
+  force(la)
+  k <- length(labs) + 1L
+  order <- la$var_order
+  if (length(labs) == 1L && identical(order, labs[[1L]]) &&
+      !order %in% c("unadjusted", "alphabetical")) order <- "adjusted"
+
+  # cobalt refuses an entirely unavailable statistic. Keep the variable
+  # labels on an empty panel, without inventing zero-valued points.
+  p <- if (all(is.na(bt$Balance[grep("^Diff\\.", names(bt$Balance))]))) {
+    empty <- data.frame(variable = factor(rownames(bt$Balance),
+                        levels = rev(rownames(bt$Balance))), smd = NA_real_)
+    ggplot2::ggplot(empty, ggplot2::aes(x = smd, y = variable)) +
+      ggplot2::geom_blank(na.rm = TRUE) +
+      ggplot2::scale_x_continuous(limits = c(0, max(0.1, la$threshold))) +
+      ggplot2::labs(x = "Absolute Standardized Mean Differences", y = NULL,
+                    subtitle = "Overall SMD unavailable: singular covariance")
+  } else cobalt::love.plot(
+    bt, stats = "mean.diffs", abs = TRUE, var.order = order,
+    line = la$line, thresholds = c(m = la$threshold),
+    colors = la$colors[seq_len(k)], shapes = la$shapes[seq_len(k)],
+    size = la$size, drop.distance = TRUE, drop.missing = FALSE, labels = FALSE,
+    sample.names = c("Unadjusted", labs),
+    var.names = if (length(pn)) pn, title = NULL)
+  p <- p + UtilsR::theme_my(base_size = la$base_size)
+  p <- UtilsR::fmt_ref(p, x = la$threshold, color = la$ref_color)
+  # RegR's framed inside legend, but in the bottom-right corner by default:
+  # rows are sorted by unadjusted SMD, so that corner is the one the
+  # reference line leaves empty, and with many schemes RegR's c(0.8, 0.4)
+  # covers it. fmt_legend() derives the justification from the position and
+  # overwrites one passed to it, so an explicit one is set afterwards, also
+  # as legend.justification.inside: fmt_legend() sets that one for an inside
+  # legend, which reads it in preference. Scheme labels are long, so a legend
+  # above or below the panel takes two columns rather than one clipped row.
+  p <- UtilsR::fmt_legend(
+    p, legend.position = la$legend_position,
+    ncol = if (identical(la$legend_position, "top") ||
+               identical(la$legend_position, "bottom")) 2,
+    legend.background = ggplot2::element_rect(
+      fill = "white", colour = "#D6D6D6", linewidth = 1))
+  if (!is.null(la$legend_justification))
+    p <- p + ggplot2::theme(
+      legend.justification = la$legend_justification,
+      legend.justification.inside = la$legend_justification)
+  p <- p + ggplot2::labs(x = "Absolute standardized mean difference",
+                         y = "Covariates")
+
+  p
 }
 
 
@@ -672,49 +731,7 @@ get_bal <- function(data,
   if (length(own))
     rownames(bt$Balance)[match(own, rownames(bt$Balance))] <- unname(vn[own])
   pn <- c(vapply(map, lab_of, ""), vn[setdiff(names(vn), c(map, own))])
-  order <- la$var_order
-  if (length(labs) == 1L && identical(order, labs[[1L]]) &&
-      !order %in% c("unadjusted", "alphabetical")) order <- "adjusted"
-
-  # cobalt refuses an entirely unavailable statistic. Keep the variable
-  # labels on an empty panel, without inventing zero-valued points.
-  p <- if (all(is.na(bal$smd))) {
-    empty <- data.frame(variable = factor(rownames(bt$Balance),
-                        levels = rev(rownames(bt$Balance))), smd = NA_real_)
-    ggplot2::ggplot(empty, ggplot2::aes(x = smd, y = variable)) +
-      ggplot2::geom_blank(na.rm = TRUE) +
-      ggplot2::scale_x_continuous(limits = c(0, max(0.1, la$threshold))) +
-      ggplot2::labs(x = "Absolute Standardized Mean Differences", y = NULL,
-                    subtitle = "Overall SMD unavailable: singular covariance")
-  } else cobalt::love.plot(
-    bt, stats = "mean.diffs", abs = TRUE, var.order = order,
-    line = la$line, thresholds = c(m = la$threshold),
-    colors = la$colors[seq_len(k)], shapes = la$shapes[seq_len(k)],
-    size = la$size, drop.distance = TRUE, drop.missing = FALSE, labels = FALSE,
-    sample.names = c("Unadjusted", labs),
-    var.names = if (length(pn)) pn, title = NULL)
-  p <- p + UtilsR::theme_my(base_size = la$base_size)
-  p <- UtilsR::fmt_ref(p, x = la$threshold, color = la$ref_color)
-  # RegR's framed inside legend, but in the bottom-right corner by default:
-  # rows are sorted by unadjusted SMD, so that corner is the one the
-  # reference line leaves empty, and with many schemes RegR's c(0.8, 0.4)
-  # covers it. fmt_legend() derives the justification from the position and
-  # overwrites one passed to it, so an explicit one is set afterwards, also
-  # as legend.justification.inside: fmt_legend() sets that one for an inside
-  # legend, which reads it in preference. Scheme labels are long, so a legend
-  # above or below the panel takes two columns rather than one clipped row.
-  p <- UtilsR::fmt_legend(
-    p, legend.position = la$legend_position,
-    ncol = if (identical(la$legend_position, "top") ||
-               identical(la$legend_position, "bottom")) 2,
-    legend.background = ggplot2::element_rect(
-      fill = "white", colour = "#D6D6D6", linewidth = 1))
-  if (!is.null(la$legend_justification))
-    p <- p + ggplot2::theme(
-      legend.justification = la$legend_justification,
-      legend.justification.inside = la$legend_justification)
-  p <- p + ggplot2::labs(x = "Absolute standardized mean difference",
-                         y = "Covariates")
+  p <- .bal_love(bt, labs, pn, la)
 
   # tbl: gtsummary's own summaries, SMD and p-value per sample, merged. The
   # zero weights of unmatched and trimmed units stay in each design, so the
