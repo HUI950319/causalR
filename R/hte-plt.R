@@ -84,17 +84,25 @@
   sprintf("CATE: %s %s - %s", what, a$treated, ref)
 }
 
-# Ordinary labelled columns use their storage values, as get_hte() does,
-# without relying on haven's methods being loaded after reading an RDS.
+# Labelled columns use their storage values and SPSS missing values become
+# NA, as in get_hte(), independently of haven's methods after an RDS read.
 #' @keywords internal
 #' @noRd
 .hte_sub_data <- function(d, sub_var, cat_var) {
   if (is.character(sub_var)) {
     for (v in intersect(setdiff(sub_var, cat_var), names(d))) {
       value <- d[[v]]
-      if (!inherits(value, "haven_labelled") ||
-          inherits(value, "haven_labelled_spss")) next
+      spss <- inherits(value, "haven_labelled_spss")
+      if (!inherits(value, "haven_labelled") && !spss) next
+      na_values <- attr(value, "na_values", exact = TRUE)
+      na_range <- attr(value, "na_range", exact = TRUE)
       attributes(value) <- NULL
+      if (spss) {
+        miss <- is.na(value) | value %in% na_values
+        if (length(na_range) == 2L)
+          miss <- miss | (value >= na_range[1L] & value <= na_range[2L])
+        value[miss] <- NA
+      }
       d[[v]] <- value
     }
   }
@@ -613,6 +621,7 @@ plt_hte_dep <- function(x,
 #'   converted to categorical vectors with one value per patient.
 #'   Ordinary labelled columns use their underlying values for grouping,
 #'   independently of whether haven is loaded.
+#'   SPSS user-defined missing values are excluded as ordinary missing values.
 #'   A column the forest does not condition on is
 #'   accepted with a message: its subgroup estimates hold when it is a
 #'   function of the covariates (as `age_55` is of `Age`) or no confounder;
@@ -1659,20 +1668,6 @@ plt_hte_cate <- function(x,
 
   a <- attr(x, "analysis")
   d <- .hte_sub_data(x$data, sub_var, a$cat_var)
-  if (is.character(sub_var)) {
-    for (v in intersect(setdiff(sub_var, a$cat_var), names(d))) {
-      value <- d[[v]]
-      if (!inherits(value, "haven_labelled_spss")) next
-      na_values <- attr(value, "na_values", exact = TRUE)
-      na_range <- attr(value, "na_range", exact = TRUE)
-      attributes(value) <- NULL
-      miss <- is.na(value) | value %in% na_values
-      if (length(na_range) == 2L)
-        miss <- miss | (value >= na_range[1L] & value <= na_range[2L])
-      value[miss] <- NA
-      d[[v]] <- value
-    }
-  }
   if (!is.null(sub_var)) sub_var <- .hte_sub_var(sub_var, d, a)
   if (length(sub_var)) {
     empty <- sub_var[vapply(d[sub_var], function(v) all(is.na(v)), logical(1L))]

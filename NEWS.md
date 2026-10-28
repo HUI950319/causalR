@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `plt_hte_sub()` excludes SPSS user-defined missing subgroup values through
+  the same normalization as `plt_hte_cate()`. Both plots now agree on subgroup
+  counts, effect estimates and interaction tests for auxiliary SPSS columns.
+
 * `plt_hte_cate()` and `plt_hte_sub()` use the underlying values of ordinary
   labelled subgroup columns without requiring haven to be loaded. Results
   read from RDS in a fresh session preserve grouping and missing values.

@@ -40,6 +40,7 @@ List, multi-column matrix and S4 columns must first be explicitly
 converted to categorical vectors with one value per patient.
 Ordinary labelled columns use their underlying values for grouping,
 independently of whether haven is loaded.
+SPSS user-defined missing values are excluded as ordinary missing values.
 A column the forest does not condition on is
 accepted with a message: its subgroup estimates hold when it is a
 function of the covariates (as \code{age_55} is of \code{Age}) or no confounder;

@@ -1490,6 +1490,32 @@ test_that("HTE subgroup plots normalize ordinary labelled columns in a fresh ses
   }
 })
 
+test_that("HTE subgroup plots agree on SPSS user-defined missing values", {
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  res <- dep_res()
+  values <- as.numeric(res$data$stage)
+  values[1:8] <- c(999, 95:99, NA, 999)
+  res$data$aux <- structure(values,
+    class = c("haven_labelled_spss", "haven_labelled"),
+    na_values = 999, na_range = c(95, 99))
+  original <- serialize(res, NULL)
+  reference <- res
+  values[1:8] <- NA_real_
+  reference$data$aux <- values
+  p <- suppressMessages(plt_hte_sub(res, sub_var = "aux"))
+  want <- suppressMessages(plt_hte_sub(reference, sub_var = "aux"))
+  expect_identical(attr(p, "subgroup"), attr(want, "subgroup"))
+  expect_identical(sum(attr(p, "subgroup")$n), nrow(res$data) - 8L)
+  for (type in c("waterfall", "density")) {
+    cate <- suppressMessages(plt_hte_cate(res, sub_var = "aux", type = type))
+    expect_identical(attr(cate, "subgroup"), attr(p, "subgroup"))
+    expect_no_error(ggplot2::ggplot_build(cate))
+  }
+  expect_no_error(ggplot2::ggplotGrob(p))
+  expect_identical(serialize(res, NULL), original)
+})
+
 test_that("CATE plot serialization does not retain unrelated analysis contents", {
   skip_if_not_installed("patchwork")
   res <- dep_res()
