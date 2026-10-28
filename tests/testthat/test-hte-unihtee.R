@@ -32,6 +32,30 @@ uni_bin_data <- function(n = 1500L, seed = 511) {
   d
 }
 
+test_that("unihtee follow-up: shared spline grids exclude zero-weight extremes", {
+  skip_if_not_installed("grf")
+  d <- uni_cont_data(n = 400L, seed = 1028)
+  d$w3[1L] <- 1e6
+  wt <- c(0, rep(1, nrow(d) - 1L))
+  r <- get_hte_unihtee(d, "a", tree_var = c("w3", "w1"), surv = "y",
+    grf_args = list(num.trees = 100, seed = 7, num.threads = 1,
+                    W.hat = rep(0.5, nrow(d)), Y.hat = rep(0, nrow(d)),
+                    sample.weights = wt))
+  expected <- .hte_dr_var(r$data[wt > 0, ], "w3", d$a[wt > 0], qnorm(0.975), 2L)
+  actual <- .hte_dr_var(r$data, "w3", d$a, qnorm(0.975), 2L, weights = wt)
+  expect_equal(actual, expected)
+  p <- plt_hte_unihtee(r, type = "dep", x_var = "w3")
+  spline <- uni_layer(p, "GeomLine", "spline")
+  expect_equal(range(spline$x), range(d$w3[wt > 0]))
+  expect_equal(spline$spline, expected$curve$estimate)
+  p <- plt_hte_dep(r$hte, x_var = "w3", display = "dr")
+  line <- uni_layer(p, "GeomLine", "estimate")
+  expect_equal(line$x, expected$curve$x)
+  expect_equal(line$estimate, expected$curve$estimate)
+  expect_equal(r$hte$importance$p_het[r$hte$importance$variable == "w3"],
+                expected$p_het)
+})
+
 test_that("unihtee survival support excludes zero-weight patients", {
   set.seed(321)
   n <- 400L

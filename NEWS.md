@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* Shared HTE spline plots use the covariate range of the fitted rows.
+  Zero-weight extremes no longer extend curves or compress the visible
+  region in `plt_hte_dep()` and `plt_hte_unihtee()`; inference is unchanged.
+
 * `plt_hte_cate()` keeps only plotting data in captured environments, so
   saved plots no longer retain the full analysis object and forest. Estimates,
   layers, colours and layouts are unchanged.

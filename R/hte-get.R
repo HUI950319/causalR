@@ -476,7 +476,7 @@
     if (is.na(p_het)) return(unavailable("singular or non-finite covariance"))
     if (!curve)
       return(list(type = "continuous", df = length(b), p_het = p_het))
-    g   <- data.frame(x = seq(min(x, na.rm = TRUE), max(x, na.rm = TRUE),
+    g   <- data.frame(x = seq(min(x[i]), max(x[i]),
                               length.out = 100L))
     M   <- stats::model.matrix(stats::delete.response(stats::terms(fit)), g)
     est <- drop(M %*% stats::coef(fit))
