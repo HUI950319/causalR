@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `plt_hte_cate()` and `plt_hte_sub()` load bit64 methods for integer64
+  subgroup columns, including results read from RDS in a new session.
+  Large integer labels and missing values retain their exact meaning.
+
 * `get_bal()` accepts a single scheme's label in `love_args$var_order`,
   translating it to cobalt's single-adjustment ordering convention.
 

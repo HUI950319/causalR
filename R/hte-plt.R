@@ -96,6 +96,10 @@
   if (length(miss))
     stop(sprintf("`sub_var` names no column of `x$data`: %s.",
                  paste0("`", miss, "`", collapse = ", ")), call. = FALSE)
+  if (any(vapply(d[sub_var], inherits, logical(1L), "integer64")) &&
+      !requireNamespace("bit64", quietly = TRUE))
+    stop("Package 'bit64' is required for integer64 subgroup columns.",
+         call. = FALSE)
   num <- sub_var[vapply(d[sub_var], .hte_is_num, logical(1L))]
   if (length(num))
     stop(sprintf("%s %s continuous; cut it into groups first, for example with cut().",
@@ -578,7 +582,9 @@ plt_hte_dep <- function(x,
 #'   in the order given; every level is one subgroup. `NULL` (default) takes
 #'   every categorical covariate of the forest, in the order of `adj_var`. A
 #'   numeric column with more than 5 distinct values is continuous and has to
-#'   be cut into groups first. A column the forest does not condition on is
+#'   be cut into groups first. `integer64` columns require the optional bit64
+#'   package and retain their exact integer labels.
+#'   A column the forest does not condition on is
 #'   accepted with a message: its subgroup estimates hold when it is a
 #'   function of the covariates (as `age_55` is of `Age`) or no confounder;
 #'   otherwise add it with `get_hte(sub_var = )`.

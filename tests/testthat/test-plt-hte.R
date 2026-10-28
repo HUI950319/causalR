@@ -1297,6 +1297,53 @@ test_that("CATE plots distinguish explicit NA levels from missing factor codes",
   }
 })
 
+test_that("HTE subgroup plots load integer64 methods after an RDS round trip", {
+  skip_if_not_installed("bit64")
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  res <- dep_res()
+  labels <- rep(c("9007199254740992", "9007199254740993", NA_character_),
+                length.out = nrow(res$data))
+  res$data$aux <- bit64::as.integer64(labels)
+  path <- tempfile(fileext = ".rds")
+  script <- tempfile(fileext = ".R")
+  output <- tempfile(fileext = ".rds")
+  on.exit(unlink(c(path, script, output)), add = TRUE)
+  saveRDS(res, path)
+  pkg <- getNamespaceInfo(asNamespace("causalR"), "path")
+  reference <- res
+  reference$data$aux <- labels
+  for (fun in c("plt_hte_cate", "plt_hte_sub")) {
+    code <- bquote({
+      options(device = function(...) grDevices::pdf(NULL, ...))
+      .libPaths(.(.libPaths()))
+      pkg <- .(pkg)
+      if (file.exists(file.path(pkg, "Meta", "package.rds"))) {
+        library("causalR", lib.loc = dirname(pkg))
+      } else {
+        pkgload::load_all(pkg, quiet = TRUE)
+      }
+      stopifnot(!isNamespaceLoaded("bit64"))
+      x <- readRDS(.(path))
+      original <- serialize(x, NULL)
+      p <- getExportedValue("causalR", .(fun))(x, sub_var = "aux")
+      stopifnot(isNamespaceLoaded("bit64"), identical(original, serialize(x, NULL)))
+      ggplot2::ggplot_build(p)
+      saveRDS(attr(p, "subgroup"), .(output))
+    })
+    writeLines(deparse(code, width.cutoff = 500L), script)
+    log <- system2(file.path(R.home("bin"), "Rscript"),
+                   c("--vanilla", shQuote(script)), stdout = TRUE, stderr = TRUE)
+    expect_null(attr(log, "status"), info = paste(log, collapse = "\n"))
+    if (!is.null(attr(log, "status"))) next
+    actual <- readRDS(output)
+    want <- suppressMessages(get(fun)(reference, sub_var = "aux"))
+    expect_identical(actual, attr(want, "subgroup"))
+    expect_identical(actual$level, sort(unique(labels[!is.na(labels)])))
+    expect_equal(actual$n, as.integer(table(labels)))
+  }
+})
+
 test_that("CATE plot serialization does not retain unrelated analysis contents", {
   skip_if_not_installed("patchwork")
   res <- dep_res()

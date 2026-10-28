@@ -34,7 +34,9 @@ plt_hte_sub(
 in the order given; every level is one subgroup. \code{NULL} (default) takes
 every categorical covariate of the forest, in the order of \code{adj_var}. A
 numeric column with more than 5 distinct values is continuous and has to
-be cut into groups first. A column the forest does not condition on is
+be cut into groups first. \code{integer64} columns require the optional bit64
+package and retain their exact integer labels.
+A column the forest does not condition on is
 accepted with a message: its subgroup estimates hold when it is a
 function of the covariates (as \code{age_55} is of \code{Age}) or no confounder;
 otherwise add it with \code{get_hte(sub_var = )}.}
