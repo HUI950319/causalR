@@ -1,5 +1,8 @@
 # causalR (development version)
 
+* `get_bal()` accepts a single scheme's label in `love_args$var_order`,
+  translating it to cobalt's single-adjustment ordering convention.
+
 * Unavailable OOB predictions and failed calibration regressions no longer
   abort `get_hte()` or `get_hte_unihtee()`. The two calibration rows retain
   their schema with `NA` values and a diagnostic; no rows are silently omitted.

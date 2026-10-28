@@ -500,6 +500,18 @@ test_that("no argument default needs RegR, a Suggests package", {
     expect_false("RegR" %in% unlist(lapply(formals(f), all.names)))
 })
 
+test_that("a single balance scheme can sort by its label", {
+  d <- bal_data(120L)
+  one <- list(W = list(design = "weighting", estimand = "ATE"))
+  many <- c(one, list(V = list(design = "weighting", estimand = "ATO")))
+  run <- function(m) get_bal(d, "z", bal_adj, methods = m,
+                             var_names = NULL, love_args = list(var_order = "W"))
+  actual <- run(one)
+  reference <- run(many)
+  expect_identical(levels(actual$plt$data$var), levels(reference$plt$data$var))
+  expect_s3_class(ggplot2::ggplot_build(actual$plt), "ggplot_built")
+})
+
 test_that("love_args is validated before anything is fitted", {
   d <- bal_data()
   run <- function(love_args, methods = c("PSM", "ATE"))

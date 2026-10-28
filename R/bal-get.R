@@ -672,6 +672,9 @@ get_bal <- function(data,
   if (length(own))
     rownames(bt$Balance)[match(own, rownames(bt$Balance))] <- unname(vn[own])
   pn <- c(vapply(map, lab_of, ""), vn[setdiff(names(vn), c(map, own))])
+  order <- la$var_order
+  if (length(labs) == 1L && identical(order, labs[[1L]]) &&
+      !order %in% c("unadjusted", "alphabetical")) order <- "adjusted"
 
   # cobalt refuses an entirely unavailable statistic. Keep the variable
   # labels on an empty panel, without inventing zero-valued points.
@@ -684,7 +687,7 @@ get_bal <- function(data,
       ggplot2::labs(x = "Absolute Standardized Mean Differences", y = NULL,
                     subtitle = "Overall SMD unavailable: singular covariance")
   } else cobalt::love.plot(
-    bt, stats = "mean.diffs", abs = TRUE, var.order = la$var_order,
+    bt, stats = "mean.diffs", abs = TRUE, var.order = order,
     line = la$line, thresholds = c(m = la$threshold),
     colors = la$colors[seq_len(k)], shapes = la$shapes[seq_len(k)],
     size = la$size, drop.distance = TRUE, drop.missing = FALSE, labels = FALSE,
