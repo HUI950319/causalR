@@ -71,7 +71,7 @@ scenarios, used by \code{method} \code{"lm"}, \code{"dml"} and \code{"iv"}.
 \code{"iv"}, to the instrument). Default \code{1}.}
 \item{\code{k_out}}{Positive numeric vector or \code{NULL}. Same multiple on the
 outcome side. \code{NULL} (default) reuses \code{k_treat}.}
-\item{\code{bound}}{Length-2 numeric in (0, 1) giving one manual scenario as
+\item{\code{bound}}{Length-2 finite numeric vector in (0, 1) giving one manual scenario as
 \verb{c(treatment-side R2, outcome-side R2)}, or \code{NULL} (default). Mapped
 to \code{r2dz.x}/\code{r2yz.dx} for \code{"lm"}, \code{cf.d}/\code{cf.y} for \code{"dml"} and
 \code{r2zw.x}/\code{r2y0w.zx} for \code{"iv"}.}

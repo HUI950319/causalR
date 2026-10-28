@@ -286,6 +286,28 @@ test_that("get_sens rejects a backend list that does not apply to the method", {
     "does not apply to method")
 })
 
+test_that("manual sensitivity bounds reject missing and non-finite values before fitting", {
+  d <- data.frame(z = rep(0:1, 60), y = seq_len(120))
+  testthat::local_mocked_bindings(.sens_fit_lm = function(...) stop("backend invoked"))
+  invalid <- list(c(NA_real_, 0.1), c(0.1, NA_real_), c(NaN, 0.1),
+                   c(0.1, NaN), c(Inf, 0.1), c(0.1, Inf), c(-Inf, 0.1),
+                   numeric(), 0.1, c(0, 0.1), c(0.1, 1), c(0.1, 0.2, 0.3), "0.1")
+  for (bound in invalid)
+    expect_error(get_sens(d, "z", "y", bench_args = list(bound = bound)),
+                 "bench_args$bound", fixed = TRUE)
+})
+
+test_that("manual sensitivity bounds preserve valid and omitted scenarios", {
+  sens_test_deps("sensemakr")
+  set.seed(2810)
+  d <- data.frame(z = rep(0:1, 60), y = stats::rnorm(120))
+  result <- get_sens(d, "z", "y", bench_args = list(bound = c(0.1, 0.2)))
+  expect_equal(nrow(result$bounds), 1L)
+  expect_equal(result$bounds$r2_treat, 0.1)
+  expect_equal(result$bounds$r2_out, 0.2)
+  expect_null(get_sens(d, "z", "y", bench_args = list(bound = NULL))$bounds)
+})
+
 test_that("get_sens rejects unknown and duplicated named-list fields", {
   sens_test_deps("sensemakr")
   expect_error(

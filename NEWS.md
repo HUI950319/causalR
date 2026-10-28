@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* Manual sensitivity bounds reject missing and non-finite values before
+  fitting, with a named `bench_args$bound` diagnostic instead of an internal
+  missing-condition error.
+
 * Independent HTE categorical diagnostics compute group variances without
   observation-by-level influence matrices and use the equivalent diagonal
   Wald calculation when well conditioned. Clustered, overlapping and

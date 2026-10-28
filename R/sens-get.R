@@ -445,7 +445,7 @@
 #'       `"iv"`, to the instrument). Default `1`.}
 #'     \item{`k_out`}{Positive numeric vector or `NULL`. Same multiple on the
 #'       outcome side. `NULL` (default) reuses `k_treat`.}
-#'     \item{`bound`}{Length-2 numeric in (0, 1) giving one manual scenario as
+#'     \item{`bound`}{Length-2 finite numeric vector in (0, 1) giving one manual scenario as
 #'       `c(treatment-side R2, outcome-side R2)`, or `NULL` (default). Mapped
 #'       to `r2dz.x`/`r2yz.dx` for `"lm"`, `cf.d`/`cf.y` for `"dml"` and
 #'       `r2zw.x`/`r2y0w.zx` for `"iv"`.}
@@ -648,8 +648,9 @@ get_sens <- function(data,
                                several.ok = TRUE)
   if (!is.null(bench_args$bound) &&
       (!is.numeric(bench_args$bound) || length(bench_args$bound) != 2L ||
+       any(!is.finite(bench_args$bound)) ||
        any(bench_args$bound <= 0) || any(bench_args$bound >= 1)))
-    stop("`bench_args$bound` must be `NULL` or two numbers in (0, 1).",
+    stop("`bench_args$bound` must be `NULL` or two finite numbers in (0, 1).",
          call. = FALSE)
 
   used <- c(treat, outcome, time, instrument, adj_var)
