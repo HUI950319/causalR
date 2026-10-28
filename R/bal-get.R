@@ -240,7 +240,10 @@
 #' level proportions, treated minus control, and \eqn{S} the mean of the two
 #' arms' unweighted multinomial covariance matrices
 #' \eqn{\mathrm{diag}(p) - p p^\top}, with \eqn{S^{+}} its pseudo-inverse. It
-#' has no sign, and it is never smaller than the largest absolute SMD of a
+#' has no sign. If the covariance rank is below the number of levels minus
+#' one, the overall SMD is unavailable (`NA`) with a warning; use
+#' `cat_smd = "level"` to inspect the individual levels. Otherwise it is
+#' never smaller than the largest absolute SMD of a
 #' single level, so a threshold applied to it is the stricter one. It is the
 #' number `gtsummary::add_difference(test = ~ "smd")` and
 #' `halfmoon::tidy_smd()` report for the variable.
@@ -586,10 +589,15 @@ get_bal <- function(data,
     }
     e  <- svd((covm(z == 1) + covm(z == 0)) / 2)
     ok <- e$d > sqrt(.Machine$double.eps) * e$d[1L]
+    singular <- sum(ok) < nlevels(x) - 1L
+    if (singular)
+      warning(sprintf("Covariate `%s` has a singular pooled covariance beyond the redundant level; overall SMD is NA. Use cat_smd = \"level\" to inspect levels.",
+                      v), call. = FALSE)
     Si <- e$v[, ok, drop = FALSE] %*% (t(e$u[, ok, drop = FALSE]) / e$d[ok])
     at  <- which(rownames(B) %in% paste0(v, "_", levels(x)))
     row <- B[at[1L], , drop = FALSE]
     row[dcols] <- vapply(c(list(rep(1, length(x))), w), function(wt) {
+      if (singular) return(NA_real_)
       D <- prop(z == 1, wt) - prop(z == 0, wt)
       sqrt(max(0, drop(D %*% Si %*% D)))
     }, 0)
@@ -620,11 +628,21 @@ get_bal <- function(data,
     rownames(bt$Balance)[match(own, rownames(bt$Balance))] <- unname(vn[own])
   pn <- c(vapply(map, lab_of, ""), vn[setdiff(names(vn), c(map, own))])
 
-  p <- cobalt::love.plot(
+  # cobalt refuses an entirely unavailable statistic. Keep the variable
+  # labels on an empty panel, without inventing zero-valued points.
+  p <- if (all(is.na(bal$smd))) {
+    empty <- data.frame(variable = factor(rownames(bt$Balance),
+                        levels = rev(rownames(bt$Balance))), smd = NA_real_)
+    ggplot2::ggplot(empty, ggplot2::aes(x = smd, y = variable)) +
+      ggplot2::geom_blank(na.rm = TRUE) +
+      ggplot2::scale_x_continuous(limits = c(0, max(0.1, la$threshold))) +
+      ggplot2::labs(x = "Absolute Standardized Mean Differences", y = NULL,
+                    subtitle = "Overall SMD unavailable: singular covariance")
+  } else cobalt::love.plot(
     bt, stats = "mean.diffs", abs = TRUE, var.order = la$var_order,
     line = la$line, thresholds = c(m = la$threshold),
     colors = la$colors[seq_len(k)], shapes = la$shapes[seq_len(k)],
-    size = la$size, drop.distance = TRUE, labels = FALSE,
+    size = la$size, drop.distance = TRUE, drop.missing = FALSE, labels = FALSE,
     sample.names = c("Unadjusted", labs),
     var.names = if (length(pn)) pn, title = NULL)
   p <- p + UtilsR::theme_my(base_size = la$base_size)
@@ -731,8 +749,10 @@ print.bal_res <- function(x, ...) {
   lv  <- unique(b$method)
   m   <- factor(b$method, lv)
   tab <- data.frame(method = lv,
-                    max = as.numeric(tapply(abs(b$smd), m, max, na.rm = TRUE)),
-                    over = as.integer(tapply(abs(b$smd) > 0.1, m, sum, na.rm = TRUE)))
+                    max = as.numeric(tapply(abs(b$smd), m, function(x)
+                      if (all(is.na(x))) NA_real_ else max(x, na.rm = TRUE))),
+                    over = as.integer(tapply(abs(b$smd) > 0.1, m, function(x)
+                      if (all(is.na(x))) NA_integer_ else sum(x, na.rm = TRUE))))
   names(tab) <- c("method", "max |SMD|", "over 0.1")
   k <- sum(lv != "Unadjusted")
   UtilsR::pr_head("bal_res", "Covariate balance",
@@ -740,7 +760,7 @@ print.bal_res <- function(x, ...) {
                   sprintf("n = %d", NROW(x$data)))
   UtilsR::pr_kv(list(covariates = unique(b$variable)))
   UtilsR::pr_section("Largest standardised mean difference")
-  over <- tab[["max |SMD|"]] > 0.1
+  over <- !is.na(tab[["max |SMD|"]]) & tab[["max |SMD|"]] > 0.1
   UtilsR::pr_table(tab, highlight = over, n = NULL, digits = 3)
   if (any(over)) UtilsR::pr_note("Highlighted: an |SMD| above 0.1.")
   UtilsR::pr_note("<result>$plt is the love plot, $balance every SMD, $data the ",

@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_bal()` reports `NA` with a warning for overall categorical SMDs
+  with extra covariance rank deficiency, instead of misleading zero balance.
+  Printing an entirely unavailable scheme no longer reports negative infinity.
+
 * Shared HTE spline plots use the covariate range of the fitted rows.
   Zero-weight extremes no longer extend curves or compress the visible
   region in `plt_hte_dep()` and `plt_hte_unihtee()`; inference is unchanged.

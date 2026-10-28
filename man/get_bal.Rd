@@ -210,7 +210,10 @@ A factor or character covariate with three or more levels is, under
 level proportions, treated minus control, and \eqn{S} the mean of the two
 arms' unweighted multinomial covariance matrices
 \eqn{\mathrm{diag}(p) - p p^\top}, with \eqn{S^{+}} its pseudo-inverse. It
-has no sign, and it is never smaller than the largest absolute SMD of a
+has no sign. If the covariance rank is below the number of levels minus
+one, the overall SMD is unavailable (\code{NA}) with a warning; use
+\code{cat_smd = "level"} to inspect the individual levels. Otherwise it is
+never smaller than the largest absolute SMD of a
 single level, so a threshold applied to it is the stricter one. It is the
 number \code{gtsummary::add_difference(test = ~ "smd")} and
 \code{halfmoon::tidy_smd()} report for the variable.

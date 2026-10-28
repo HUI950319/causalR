@@ -22,6 +22,25 @@ bal_smd <- function(res, method, variable = "x1") {
   b$smd[b$method == method & b$variable == variable]
 }
 
+test_that("singular overall balance is unavailable rather than zero", {
+  d <- data.frame(z = rep(0:1, each = 60),
+                  f = factor(c(rep("a", 60), rep("b", 30), rep("c", 30))),
+                  p = 0.5)
+  methods <- list(W = list(design = "weighting", estimand = "ATE", ps = "p"))
+  expect_warning(r <- get_bal(d, "z", "f", methods = methods,
+                               var_names = NULL), "`f`.*singular.*NA")
+  expect_true(all(is.na(r$balance$smd)))
+  expect_s3_class(ggplot2::ggplot_build(r$plt), "ggplot_built")
+  txt <- capture.output(print(r))
+  expect_false(any(grepl("Inf", txt)))
+  expect_true(any(grepl("NA", txt)))
+  level <- get_bal(d, "z", "f", methods = methods, cat_smd = "level")
+  expect_equal(max(abs(level$balance$smd)), 2)
+  d$f <- factor(rep(c("a", "b", "c"), 40))
+  expect_no_warning(ok <- get_bal(d, "z", "f", methods = methods))
+  expect_equal(ok$balance$smd, c(0, 0))
+})
+
 
 test_that("get_bal expands shorthand into labelled schemes", {
   d   <- bal_data()
