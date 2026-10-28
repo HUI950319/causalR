@@ -19,7 +19,13 @@ get_bal(
 )
 }
 \arguments{
-\item{data}{A data frame holding every column named below.}
+\item{data}{A data frame holding every column named below. Analysis
+columns stored as \code{integer64} are converted through bit64 within the
+exact double range [-2^53, 2^53]. Labelled storage is unwrapped; SPSS
+user-defined missing values and explicit missing factor levels become
+\code{NA} before complete-case selection. Matrix, list, complex and S4
+analysis columns require explicit conversion. Grouped/rowwise frames
+and data.tables are analysed and returned as ordinary data frames.}
 
 \item{treat}{Length-1 character. The binary exposure column, coded as in
 \code{\link[=get_PSW]{get_PSW()}}: \code{0}/\code{1}, logical, or a two-level factor or character column

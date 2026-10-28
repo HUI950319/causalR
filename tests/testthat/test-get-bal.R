@@ -42,6 +42,46 @@ test_that("singular overall balance is unavailable rather than zero", {
 })
 
 
+test_that("balance normalises special storage before complete cases", {
+  skip_if_not_installed("bit64")
+  d <- bal_data(120L)
+  d$x1 <- round(d$x1 * 5)
+  methods <- list(W = list(design = "weighting", estimand = "ATE", ps = "p"))
+  d$p <- 0.5
+  run <- function(d) get_bal(d, "z", "x1", methods = methods, var_names = NULL)
+  reference <- run(d)
+  for (cl in list(c("grouped_df", "tbl_df", "tbl", "data.frame"),
+                  c("rowwise_df", "tbl_df", "tbl", "data.frame"),
+                  c("data.table", "data.frame"))) {
+    x <- d
+    class(x) <- cl
+    expect_equal(run(x)$balance, reference$balance)
+    expect_identical(class(run(x)$data), "data.frame")
+  }
+  x <- d
+  x$x1 <- bit64::as.integer64(x$x1)
+  expect_equal(run(x)$balance, reference$balance)
+  expect_equal(nrow(run(x)$data), 120L)
+  x$x1[1] <- bit64::as.integer64("9007199254740993")
+  expect_error(run(x), "exact double range")
+  x <- d
+  x$x1[1:3] <- c(999, 997, 998)
+  x$x1 <- structure(x$x1, class = c("haven_labelled_spss", "haven_labelled"),
+                     na_values = 999, na_range = c(997, 998), label = "Age")
+  expect_equal(run(x)$balance, run(d[-(1:3), ])$balance)
+  expect_equal(nrow(run(x)$data), 117L)
+  x <- d
+  x$x1 <- factor(rep(c("a", NA, "b"), 40), levels = c("a", NA, "b"), exclude = NULL)
+  ref <- x
+  ref$x1 <- factor(as.character(ref$x1))
+  expect_equal(run(x)$balance, run(ref)$balance)
+  for (bad in list(matrix(1, 120, 2), as.list(d$x1), d$x1 + 1i)) {
+    x <- d
+    x$x1 <- bad
+    expect_error(run(x), "Column `x1`")
+  }
+})
+
 test_that("get_bal expands shorthand into labelled schemes", {
   d   <- bal_data()
   res <- get_bal(d, treat = "z", adj_var = bal_adj,

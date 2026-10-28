@@ -254,7 +254,13 @@
 #' logistic score on the same covariates balance every covariate mean
 #' exactly.
 #'
-#' @param data A data frame holding every column named below.
+#' @param data A data frame holding every column named below. Analysis
+#'   columns stored as `integer64` are converted through bit64 within the
+#'   exact double range [-2^53, 2^53]. Labelled storage is unwrapped; SPSS
+#'   user-defined missing values and explicit missing factor levels become
+#'   `NA` before complete-case selection. Matrix, list, complex and S4
+#'   analysis columns require explicit conversion. Grouped/rowwise frames
+#'   and data.tables are analysed and returned as ordinary data frames.
 #' @param treat Length-1 character. The binary exposure column, coded as in
 #'   [get_PSW()]: `0`/`1`, logical, or a two-level factor or character column
 #'   whose second level is the treated one.
@@ -513,6 +519,45 @@ get_bal <- function(data,
   # people.
   ps_cols <- unique(unlist(lapply(specs, `[[`, "ps")))
   ps_cols <- .sens_check_col(ps_cols, data, "ps")
+  if (inherits(data, c("data.table", "grouped_df", "rowwise_df")))
+    data <- as.data.frame(data)
+  # Normalise only analysis columns; complete.cases() ignores class-specific
+  # missingness and reads integer64's bit storage as ordinary doubles.
+  for (v in unique(c(treat, adj_var, ps_cols))) {
+    x <- data[[v]]
+    if (!is.null(dim(x)) || is.list(x) || isS4(x))
+      stop(sprintf("Column `%s` must be an atomic vector, not a matrix, list or S4 column.",
+                   v), call. = FALSE)
+    if (is.complex(x))
+      stop(sprintf("Column `%s` must not contain complex values.", v), call. = FALSE)
+    if (inherits(x, "integer64")) {
+      if (!requireNamespace("bit64", quietly = TRUE))
+        stop("Package 'bit64' is required for integer64 columns.", call. = FALSE)
+      if (any(x < -(2^53) | x > 2^53, na.rm = TRUE))
+        stop(sprintf("Column `%s` has integer64 values outside the exact double range [-2^53, 2^53].",
+                     v), call. = FALSE)
+      x <- as.double(x)
+    } else if (inherits(x, "haven_labelled")) {
+      spss <- inherits(x, "haven_labelled_spss")
+      values <- attr(x, "na_values", exact = TRUE)
+      range <- attr(x, "na_range", exact = TRUE)
+      label <- attr(x, "label", exact = TRUE)
+      attributes(x) <- NULL
+      if (spss) {
+        missing <- is.na(x) | x %in% values
+        if (length(range) == 2L)
+          missing <- missing | (x >= range[1L] & x <= range[2L])
+        x[missing] <- NA
+      }
+      attr(x, "label") <- label
+    } else if (is.factor(x) && anyNA(levels(x))) {
+      levels(x) <- levels(x)
+    }
+    if (is.numeric(x) && any(is.infinite(x)))
+      stop(sprintf("Column `%s` must not contain infinite values; use NA for missingness.",
+                   v), call. = FALSE)
+    data[[v]] <- x
+  }
   data    <- .sens_complete(data, c(treat, adj_var, ps_cols))
   hit <- intersect(labs, names(data))
   if (length(hit))

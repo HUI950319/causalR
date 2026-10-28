@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_bal()` normalises integer64 storage, SPSS user-defined missingness
+  and explicit missing factor levels before selecting complete cases. Unsafe
+  integer64 ranges and unsupported column shapes fail before fitting.
+
 * `get_hte()` and both `get_hte_unihtee()` backends reject an exposure
   column that is also an outcome, including survival time and event columns.
   The error identifies `cat_var` before any model is fitted.
