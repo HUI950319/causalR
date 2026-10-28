@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* HTE subgroup plots reject unsupported list, multi-column matrix and S4
+  columns with a named-column diagnostic before estimating subgroups.
+  Supported categorical vectors and single-column matrices keep their behavior.
+
 * Weighted HTE analyses require at least two positive-weight complete rows
   in each arm before fitting. Both public entry points check support after
   aligning row weights, while preserving existing cluster-error precedence.

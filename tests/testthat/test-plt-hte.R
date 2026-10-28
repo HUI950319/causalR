@@ -1378,6 +1378,35 @@ test_that("CATE plots reuse uncached OOB predictions without changing results", 
   }
 })
 
+test_that("HTE subgroup plots diagnose unsupported column storage", {
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  res <- dep_res()
+  values <- rep(0:1, length.out = nrow(res$data))
+  invalid <- list(as.list(values), cbind(values, values), data.frame(values))
+  classes <- new.env()
+  s4 <- methods::setClass("hte_subgroup_test", contains = "numeric", where = classes)
+  on.exit(methods::removeClass("hte_subgroup_test", where = classes), add = TRUE)
+  invalid[[4L]] <- s4(values)
+  for (value in invalid) {
+    res$data$aux <- value
+    original <- res$data$aux
+    for (fun in list(plt_hte_cate, plt_hte_sub))
+      expect_error(fun(res, sub_var = "aux"), "Unsupported subgroup column.*aux")
+    expect_identical(res$data$aux, original)
+  }
+  for (value in list(matrix(values, ncol = 1L), as.Date(values, origin = "2000-01-01"),
+                     as.difftime(values, units = "days"), as.complex(values))) {
+    res$data$aux <- value
+    reference <- res
+    reference$data$aux <- as.factor(value)
+    p <- suppressMessages(plt_hte_cate(res, sub_var = "aux"))
+    want <- suppressMessages(plt_hte_cate(reference, sub_var = "aux"))
+    expect_identical(attr(p, "subgroup"), attr(want, "subgroup"))
+    expect_identical(ggplot2::ggplot_build(p)$data, ggplot2::ggplot_build(want)$data)
+  }
+})
+
 test_that("CATE plot serialization does not retain unrelated analysis contents", {
   skip_if_not_installed("patchwork")
   res <- dep_res()

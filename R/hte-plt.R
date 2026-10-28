@@ -96,6 +96,13 @@
   if (length(miss))
     stop(sprintf("`sub_var` names no column of `x$data`: %s.",
                  paste0("`", miss, "`", collapse = ", ")), call. = FALSE)
+  unsupported <- sub_var[vapply(d[sub_var], function(value) {
+    isS4(value) || (is.list(value) && !inherits(value, "POSIXt")) ||
+      (!is.null(dim(value)) && length(value) != nrow(d))
+  }, logical(1L))]
+  if (length(unsupported))
+    stop(sprintf("Unsupported subgroup column storage for %s; convert to categorical vectors with one value per patient first.",
+                 paste0("`", unsupported, "`", collapse = ", ")), call. = FALSE)
   if (any(vapply(d[sub_var], inherits, logical(1L), "integer64")) &&
       !requireNamespace("bit64", quietly = TRUE))
     stop("Package 'bit64' is required for integer64 subgroup columns.",
@@ -584,6 +591,8 @@ plt_hte_dep <- function(x,
 #'   numeric column with more than 5 distinct values is continuous and has to
 #'   be cut into groups first. `integer64` columns require the optional bit64
 #'   package and retain their exact integer labels.
+#'   List, multi-column matrix and S4 columns must first be explicitly
+#'   converted to categorical vectors with one value per patient.
 #'   A column the forest does not condition on is
 #'   accepted with a message: its subgroup estimates hold when it is a
 #'   function of the covariates (as `age_55` is of `Age`) or no confounder;
