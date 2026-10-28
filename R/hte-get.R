@@ -74,6 +74,20 @@
 .hte_score_summary <- function(s, groups, weights, clusters) {
   mu <- vapply(groups, function(i) stats::weighted.mean(s[i], weights[i]),
                numeric(1L))
+  rows <- unlist(groups, use.names = FALSE)
+  # Disjoint groups of independent observations have zero cross-covariance.
+  if (!anyNA(clusters) && !anyDuplicated(clusters) && !anyDuplicated(rows) &&
+      all(is.finite(mu)) && all(is.finite(s[rows])) && all(is.finite(weights[rows]))) {
+    variance <- vapply(seq_along(groups), function(j) {
+      i <- groups[[j]]
+      k <- sum(weights[i] > 0)
+      if (k < 2L) return(NA_real_)
+      u <- weights[i] * (s[i] - mu[j]) / sum(weights[i]) * sqrt(k / (k - 1))
+      sum(u^2)
+    }, numeric(1L))
+    if (all(is.finite(variance)))
+      return(list(estimate = mu, vcov = diag(variance, length(groups))))
+  }
   influence <- vapply(seq_along(groups), function(j) {
     i <- groups[[j]]
     u <- numeric(length(s))
@@ -135,6 +149,19 @@
 }
 
 .hte_equal_p <- function(th, V) {
+  variance <- diag(V)
+  if (length(th) > 2L && all(is.finite(th)) && all(is.finite(V)) &&
+      all(variance > 0) && all(V == diag(variance, length(th)))) {
+    # The diagonal-covariance Wald test equals inverse-variance weighted
+    # dispersion. Keep the original numerical guard for ill-conditioned cases.
+    bound <- (max(variance[-1L]) + (length(th) - 1L) * variance[1L]) /
+      min(variance[-1L])
+    center <- stats::weighted.mean(th, min(variance) / variance)
+    if (is.finite(bound) && bound < 1 / sqrt(.Machine$double.eps) &&
+        is.finite(center) && all(is.finite(th - th[1L])))
+      return(stats::pchisq(sum(((th - center) / sqrt(variance))^2),
+                            length(th) - 1L, lower.tail = FALSE))
+  }
   C <- cbind(-1, diag(length(th) - 1L))
   b <- drop(C %*% th)
   .hte_wald_p(b, C %*% V %*% t(C))

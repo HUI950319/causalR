@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* Independent HTE categorical diagnostics compute group variances without
+  observation-by-level influence matrices and use the equivalent diagonal
+  Wald calculation when well conditioned. Clustered, overlapping and
+  unavailable groups keep the full covariance path and existing inference.
+
 * Propensity diagnostic plots pass only view-specific data into forced
   renderer arguments. All four PSM and PSW plot types release unused input
   columns and fitted models while preserving their data, layers and layout.

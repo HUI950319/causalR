@@ -130,6 +130,39 @@ test_that("unihtee repair: a failed projection leaves other candidates available
   expect_equal(nrow(out$data), nrow(d))
 })
 
+test_that("unihtee repair: independent categorical diagnostics avoid observation by level matrices", {
+  skip_if_not_installed("grf")
+  skip_if_not(capabilities("profmem"))
+  set.seed(914)
+  n <- 400L
+  d <- data.frame(a = rep(0:1, n / 2L), x = rnorm(n),
+                   g = factor(rep(seq_len(n / 4L), each = 4L)))
+  d$y <- d$a * (1 + d$x) + rnorm(n)
+  wt <- runif(n, 0.5, 2)
+  path <- tempfile()
+  on.exit({ Rprofmem(NULL); unlink(path) }, add = TRUE)
+  Rprofmem(path)
+  out <- get_hte_unihtee(d, "a", tree_var = "x", adj_var = "g", surv = "y",
+    grf_args = list(num.trees = 100, seed = 7, num.threads = 1,
+                    W.hat = rep(0.5, n), Y.hat = rep(0, n), sample.weights = wt))
+  Rprofmem(NULL)
+  allocations <- grep(".hte_score_summary", readLines(path), value = TRUE, fixed = TRUE)
+  bytes <- suppressWarnings(as.numeric(sub(" .*", "", allocations)))
+  expect_lt(max(bytes, na.rm = TRUE), 8 * n * nlevels(d$g))
+  fits <- lapply(split(seq_len(n), d$g), function(i)
+    lm(p ~ 1, weights = w, data = data.frame(p = out$data$.dr_score[i], w = wt[i])))
+  mu <- vapply(fits, function(f) unname(coef(f)[1L]), numeric(1L))
+  V <- diag(vapply(fits, function(f) sandwich::vcovCL(f, type = "HC0")[1L, 1L],
+                    numeric(1L)))
+  C <- cbind(-1, diag(length(mu) - 1L))
+  b <- drop(C %*% mu)
+  expected <- pchisq(drop(crossprod(b, solve(C %*% V %*% t(C), b))),
+                      length(mu) - 1L, lower.tail = FALSE)
+  expect_equal(out$hte$importance$p_het[out$hte$importance$variable == "g"],
+                 expected, tolerance = 1e-12)
+  expect_true(is.finite(out$vip$estimate))
+})
+
 test_that("unihtee follow-up: shared spline grids exclude zero-weight extremes", {
   skip_if_not_installed("grf")
   d <- uni_cont_data(n = 400L, seed = 1028)
