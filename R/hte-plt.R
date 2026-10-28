@@ -1719,7 +1719,7 @@ plt_hte_cate <- function(x,
       pd$panel <- v
       r <- sub[sub$sub_var == v & !is.na(sub$estimate), ]
       lines <- data.frame(level = factor(r$level, levels = levels(g), exclude = NULL),
-                          estimate = r$estimate, panel = v)
+                          estimate = r$estimate, panel = rep(v, nrow(r)))
     }
     ref <- if (overall) data.frame(ate = ate)
 

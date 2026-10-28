@@ -1407,6 +1407,40 @@ test_that("HTE subgroup plots diagnose unsupported column storage", {
   }
 })
 
+test_that("CATE plots retain panels when every subgroup reference is unavailable", {
+  skip_if_not_installed("patchwork")
+  res <- dep_res()
+  res$data$aux <- factor(ifelse(res$data$z == 0, "control only", "treated only"))
+  original <- serialize(res, NULL)
+  draw <- function(...) {
+    warnings <- character()
+    p <- withCallingHandlers(suppressMessages(plt_hte_cate(res, ...)),
+      warning = function(w) {
+        warnings <<- c(warnings, conditionMessage(w))
+        invokeRestart("muffleWarning")
+      })
+    expect_length(warnings, 2L)
+    expect_true(all(grepl("fewer than two units in one arm", warnings)))
+    p
+  }
+  for (type in c("waterfall", "density")) {
+    geom <- if (type == "waterfall") "GeomCol" else "GeomDensity"
+    line <- if (type == "waterfall") "GeomHline" else "GeomVline"
+    for (overall in c(FALSE, TRUE)) {
+      p <- draw(sub_var = "aux", type = type, overall = overall)
+      expect_identical(nrow(layer_data_of(p, geom)), nrow(res$data))
+      expect_true(all(is.na(attr(p, "subgroup")$estimate)))
+      expect_null(layer_data_of(p, line, "estimate"))
+      expect_identical(!is.null(layer_data_of(p, line, "ate")), overall)
+      expect_no_error(ggplot2::ggplot_build(p))
+    }
+    p <- draw(sub_var = c("aux", "stage"), type = type)
+    expect_identical(vapply(panels_of(p), strip_of, ""), c("aux", "stage"))
+    expect_no_error(patchwork::patchworkGrob(p))
+  }
+  expect_identical(serialize(res, NULL), original)
+})
+
 test_that("CATE plot serialization does not retain unrelated analysis contents", {
   skip_if_not_installed("patchwork")
   res <- dep_res()

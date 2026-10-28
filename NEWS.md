@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `plt_hte_cate()` retains patient distributions when every subgroup ATE
+  reference line is unavailable, instead of failing while constructing an
+  empty line table. Existing warnings and available overall lines are kept.
+
 * `get_bal()` reuses identical default GLM initial propensity scores across
   matching and weighting schemes. Custom model arguments and score refits
   after trimming remain independent; matching and weighting results agree
