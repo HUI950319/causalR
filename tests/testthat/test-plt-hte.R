@@ -1269,6 +1269,34 @@ test_that("CATE plots diagnose empty subgroups and retain usable panels", {
   expect_identical(nrow(layer_data_of(p, "GeomCol")), nrow(res$data))
 })
 
+test_that("CATE plots distinguish explicit NA levels from missing factor codes", {
+  res <- dep_res()
+  codes <- rep(c(1L, 2L, 3L, NA_integer_), length.out = nrow(res$data))
+  res$data$aux <- structure(codes, levels = c("A", "B", NA_character_),
+                             class = "factor")
+  original <- res$data$aux
+  for (type in c("waterfall", "density")) {
+    p <- suppressMessages(plt_hte_cate(res, sub_var = "aux", type = type))
+    geom <- if (type == "waterfall") "GeomCol" else "GeomDensity"
+    line <- if (type == "waterfall") "GeomHline" else "GeomVline"
+    pd <- layer_data_of(p, geom)
+    sub <- attr(p, "subgroup")
+    refs <- layer_data_of(p, line, "estimate")
+    expect_identical(nrow(pd), sum(!is.na(codes)))
+    expect_identical(levels(pd$level), levels(original))
+    expect_equal(as.integer(table(pd$level)), sub$n)
+    expect_equal(sort(pd$cate), sort(res$data$.cate[!is.na(codes)]))
+    expect_identical(levels(refs$level), levels(pd$level))
+    expect_identical(as.integer(refs$level), seq_len(3L))
+    for (j in seq_len(3L)) {
+      ref <- grf::average_treatment_effect(res$fit, subset = which(codes == j))
+      expect_equal(sub$estimate[j], unname(ref[["estimate"]]))
+    }
+    expect_no_error(ggplot2::ggplot_build(p))
+    expect_identical(res$data$aux, original)
+  }
+})
+
 test_that("CATE plot serialization does not retain unrelated analysis contents", {
   skip_if_not_installed("patchwork")
   res <- dep_res()

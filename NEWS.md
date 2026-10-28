@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `plt_hte_cate()` keeps genuine missing factor codes separate from an
+  explicit NA level, so plotted patients and subgroup estimates use the
+  same groups, including their reference lines.
+
 * `get_bal()` reports `NA` with a warning for overall categorical SMDs
   with extra covariance rank deficiency, instead of misleading zero balance.
   Printing an entirely unavailable scheme no longer reports negative infinity.

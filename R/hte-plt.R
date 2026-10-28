@@ -1681,7 +1681,7 @@ plt_hte_cate <- function(x,
                                      c = 100, l = 65)
   environment(hue) <- baseenv()
   groups <- stats::setNames(lapply(sub_var, function(v)
-    droplevels(as.factor(d[[v]]))), sub_var)
+    .hte_drop_levels(d[[v]])), sub_var)
 
   panel <- function(v) {
     g <- if (!is.null(v)) groups[[v]]
@@ -1697,7 +1697,7 @@ plt_hte_cate <- function(x,
       pd$level <- g[o]
       pd$panel <- v
       r <- sub[sub$sub_var == v & !is.na(sub$estimate), ]
-      lines <- data.frame(level = factor(r$level, levels = levels(g)),
+      lines <- data.frame(level = factor(r$level, levels = levels(g), exclude = NULL),
                           estimate = r$estimate, panel = v)
     }
     ref <- if (overall) data.frame(ate = ate)
