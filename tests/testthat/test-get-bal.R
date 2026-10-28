@@ -624,6 +624,18 @@ test_that("tbl = TRUE merges one gtsummary table per scheme; FALSE skips it", {
   }
 })
 
+test_that("small automatic balance tables avoid worker startup", {
+  skip_if_no_tbl()
+  d <- bal_data(120L)
+  serial <- get_bal(d, "z", bal_adj[1:2], methods = "ATO", tbl = TRUE, cores = 1)
+  testthat::local_mocked_bindings(
+    makeCluster = function(...) stop("unexpected worker startup"),
+    mclapply = function(...) stop("unexpected worker startup"), .package = "parallel")
+  automatic <- get_bal(d, "z", bal_adj[1:2], methods = "ATO", tbl = TRUE)
+  expect_identical(automatic$tbl$table_body, serial$tbl$table_body)
+  expect_identical(automatic$balance, serial$balance)
+})
+
 test_that("cores builds the scheme tables in parallel with the same result", {
   skip_if_no_tbl()
   d   <- stage_data()

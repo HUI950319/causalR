@@ -342,7 +342,9 @@
 #'   non-empty `save_tbl` builds it too.
 #' @param cores `NULL` (default) or a positive whole number: how many worker
 #'   processes build `$tbl`, whose tables, one for the unadjusted sample and
-#'   one per scheme, are independent. `NULL` takes the number of tables, at
+#'   one per scheme, are independent. `NULL` uses one process for a single
+#'   adjusted scheme with at most 1000 rows and two covariates; otherwise it
+#'   takes the number of tables, at
 #'   most 8 and at most the logical cores less two; `1` builds them one after
 #'   another. Workers are forked through [parallel::mclapply()] on Linux and
 #'   macOS (WSL included) and started as a PSOCK cluster on Windows, which
@@ -765,6 +767,9 @@ get_bal <- function(data,
     dc <- parallel::detectCores()
     nc <- if (is.null(cores)) min(length(W), 8L, max(1L, dc - 2L, na.rm = TRUE))
           else min(as.integer(cores), length(W))
+    if (is.null(cores) && length(W) == 2L && nrow(dd) <= 1000L &&
+        length(adj_var) <= 2L)
+      nc <- 1L
     # survey reads weights summing below n as mis-scaled sampling weights;
     # balancing weights (ATO, matching zeros) do that by design.
     tabs <- withCallingHandlers({

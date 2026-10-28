@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_bal()` avoids process startup for small automatic table workloads
+  (one adjusted scheme, at most 1000 rows and two covariates). Explicit `cores`
+  settings still select the requested serial or parallel path.
+
 * `get_hte_unihtee()` reuses the OOB predictions computed by `get_hte()`
   when forest caching is disabled, avoiding a second prediction pass for
   continuous and survival outcomes. Results and returned cache settings agree.
