@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_bal()` printing uses the configured love-plot threshold for counts
+  and highlighting. Older saved results without threshold metadata retain
+  the conventional 0.1 cutoff.
+
 * `get_bal()` rejects non-finite or overflowing core counts, invalid
   numeric plot controls, missing styling values and empty or duplicated
   covariate selections before model fitting.

@@ -549,6 +549,19 @@ test_that("balance rejects invalid finite and column arguments before fitting", 
   expect_error(get_bal(d, "z", c("x1", "x1")), "`adj_var`.*duplicated")
 })
 
+test_that("balance printing follows the configured plot threshold", {
+  r <- get_bal(bal_data(120L), "z", bal_adj, methods = "ATE",
+                love_args = list(threshold = 2))
+  expect_lt(max(abs(r$balance$smd)), 2)
+  txt <- capture.output(print(r))
+  expect_true(any(grepl("over 2", txt, fixed = TRUE)))
+  expect_false(any(grepl("Highlighted:", txt, fixed = TRUE)))
+  attr(r, "threshold") <- NULL
+  legacy <- capture.output(print(r))
+  expect_true(any(grepl("over 0.1", legacy, fixed = TRUE)))
+  expect_true(any(grepl("Highlighted:", legacy, fixed = TRUE)))
+})
+
 test_that("love_args is validated before anything is fitted", {
   d <- bal_data()
   run <- function(love_args, methods = c("PSM", "ATE"))

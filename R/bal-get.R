@@ -364,7 +364,7 @@
 #'   keeps every default. Unknown or duplicated fields are an error.
 #'   \describe{
 #'     \item{`threshold`}{Finite non-negative number, default `0.1`. Where the reference
-#'       line is drawn.}
+#'       line is drawn; also used for the printed counts and highlighting.}
 #'     \item{`colors`}{Character vector, or `NULL` (default) for
 #'       `UtilsR::pal_lancet`. The first colour is the unadjusted sample's,
 #'       then one per scheme; at least that many are required.}
@@ -404,7 +404,8 @@
 #'   error. Neither save changes the return value.
 #'
 #' @return A list of class `c("bal_res", "list")`, printed as the largest
-#'   SMD of each method, of
+#'   SMD of each method. The plot cutoff is stored in `attr(., "threshold")`
+#'   for printing. Its components are
 #'   \describe{
 #'     \item{`plt`}{The love plot, a `ggplot` carrying its pinned size in
 #'       `attr(., "plot_size")`.}
@@ -814,6 +815,7 @@ get_bal <- function(data,
   out <- list(plt = plt, balance = bal, data = data)
   if (tbl) out$tbl <- tb
   class(out) <- c("bal_res", "list")
+  attr(out, "threshold") <- la$threshold
   out
 }
 
@@ -824,23 +826,26 @@ get_bal <- function(data,
 #' @noRd
 print.bal_res <- function(x, ...) {
   b   <- x$balance
+  threshold <- attr(x, "threshold", exact = TRUE)
+  if (is.null(threshold)) threshold <- 0.1
+  threshold_label <- format(threshold, trim = TRUE)
   lv  <- unique(b$method)
   m   <- factor(b$method, lv)
   tab <- data.frame(method = lv,
                     max = as.numeric(tapply(abs(b$smd), m, function(x)
                       if (all(is.na(x))) NA_real_ else max(x, na.rm = TRUE))),
-                    over = as.integer(tapply(abs(b$smd) > 0.1, m, function(x)
+                    over = as.integer(tapply(abs(b$smd) > threshold, m, function(x)
                       if (all(is.na(x))) NA_integer_ else sum(x, na.rm = TRUE))))
-  names(tab) <- c("method", "max |SMD|", "over 0.1")
+  names(tab) <- c("method", "max |SMD|", paste("over", threshold_label))
   k <- sum(lv != "Unadjusted")
   UtilsR::pr_head("bal_res", "Covariate balance",
                   sprintf("%d scheme%s", k, if (k == 1L) "" else "s"),
                   sprintf("n = %d", NROW(x$data)))
   UtilsR::pr_kv(list(covariates = unique(b$variable)))
   UtilsR::pr_section("Largest standardised mean difference")
-  over <- !is.na(tab[["max |SMD|"]]) & tab[["max |SMD|"]] > 0.1
+  over <- !is.na(tab[["max |SMD|"]]) & tab[["max |SMD|"]] > threshold
   UtilsR::pr_table(tab, highlight = over, n = NULL, digits = 3)
-  if (any(over)) UtilsR::pr_note("Highlighted: an |SMD| above 0.1.")
+  if (any(over)) UtilsR::pr_note(paste0("Highlighted: an |SMD| above ", threshold_label, "."))
   UtilsR::pr_note("<result>$plt is the love plot, $balance every SMD, $data the ",
                   "weights", if (!is.null(x$tbl)) ", $tbl the table")
   UtilsR::pr_note("Components: {names(x)}; see {.code UtilsR::pr_tree()}.")

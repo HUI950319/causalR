@@ -78,7 +78,7 @@ keeps the column names.}
 keeps every default. Unknown or duplicated fields are an error.
 \describe{
 \item{\code{threshold}}{Finite non-negative number, default \code{0.1}. Where the reference
-line is drawn.}
+line is drawn; also used for the printed counts and highlighting.}
 \item{\code{colors}}{Character vector, or \code{NULL} (default) for
 \code{UtilsR::pal_lancet}. The first colour is the unadjusted sample's,
 then one per scheme; at least that many are required.}
@@ -121,7 +121,8 @@ error. Neither save changes the return value.}
 }
 \value{
 A list of class \code{c("bal_res", "list")}, printed as the largest
-SMD of each method, of
+SMD of each method. The plot cutoff is stored in \code{attr(., "threshold")}
+for printing. Its components are
 \describe{
 \item{\code{plt}}{The love plot, a \code{ggplot} carrying its pinned size in
 \code{attr(., "plot_size")}.}
