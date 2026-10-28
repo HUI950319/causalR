@@ -551,6 +551,7 @@
 #'   below. Used columns must be vectors; matrix, array, complex and infinite
 #'   values are rejected. The output names
 #'   `.cate` and `.dr_score` are reserved and must not already be columns.
+#'   Formula-special column names are handled internally and retained in output.
 #' @param cat_var Length-1 character. The binary exposure column: `0`/`1`,
 #'   logical, or a two-level factor or character column whose **second** level
 #'   is the treated arm, as in [get_PSW()]. Unlike [RegR::get_eff()], exactly

@@ -29,7 +29,11 @@
   for (a in 0:1) fold[W == a] <- sample(rep_len(seq_len(folds), sum(W == a)))
   rhs <- .sens_quote_names(covars)
   dd  <- data[covars]
-  response <- tail(make.unique(c(covars, ".w", ".y")), 2L)
+  if (any(covars %in% c(".", "...") | grepl("^\\.\\.[0-9]+$", covars))) {
+    rhs <- paste0(".uni_x", seq_along(covars))
+    names(dd) <- rhs
+  }
+  response <- tail(make.unique(c(names(dd), ".w", ".y")), 2L)
   dd[[response[1L]]] <- W
   dd[[response[2L]]] <- Y
   e <- mu1 <- mu0 <- numeric(n)
@@ -39,12 +43,12 @@
     if (family$family == "binomial" && length(unique(y)) < 2L)
       stop(sprintf("%s needs both events and non-events in its training rows.",
                    context), call. = FALSE)
-    for (v in covars) {
-      if (is.factor(dd[[v]]) || is.character(dd[[v]])) {
-        seen <- unique(as.character(dd[[v]][rows]))
-        if (length(seen) < 2L || any(!as.character(te[[v]]) %in% seen))
+    for (j in seq_along(covars)) {
+      if (is.factor(dd[[j]]) || is.character(dd[[j]])) {
+        seen <- unique(as.character(dd[[j]][rows]))
+        if (length(seen) < 2L || any(!as.character(te[[j]]) %in% seen))
           stop(sprintf("%s: column `%s` has fewer than two training levels or an unseen validation level.",
-                       context, v), call. = FALSE)
+                       context, covars[j]), call. = FALSE)
       }
     }
     notes <- character()
@@ -282,6 +286,7 @@
 #'   labels are removed for analysis and SPSS user-missing values become `NA`;
 #'   other classed numeric storage (such as `integer64`) and infinite values
 #'   must be converted explicitly before calling.
+#'   Formula-special column names are handled internally and retained in output.
 #' @param cat_var Length-1 character. The binary exposure column, coded as in
 #'   [get_hte()]: `0`/`1`, logical, or a two-level factor or character column
 #'   whose second level is the treated arm. It must not be an outcome column.

@@ -85,6 +85,13 @@
 .sens_model_matrix <- function(data, vars, one_hot = FALSE) {
   if (is.null(vars) || !length(vars))
     return(matrix(numeric(0), nrow = nrow(data), ncol = 0L))
+  original <- vars
+  # Formula syntax gives these otherwise valid column names special meaning.
+  if (any(vars %in% c(".", "...") | grepl("^\\.\\.[0-9]+$", vars))) {
+    data <- data[vars]
+    vars <- paste0(".sens_x", seq_along(vars))
+    names(data) <- vars
+  }
   quoted <- .sens_quote_names(vars)
   # Without an intercept only the first factor keeps every level. `one_hot`
   # keeps every level of every factor, which forests (get_hte) need so that
@@ -102,6 +109,15 @@
   form <- stats::reformulate(quoted, intercept = FALSE)
   mf   <- stats::model.frame(form, data = data, na.action = stats::na.pass)
   mm   <- stats::model.matrix(form, data = mf, contrasts.arg = ca)
+  if (!identical(vars, original)) {
+    term <- attr(mm, "assign")
+    colnames(mm) <- paste0(.sens_quote_names(original)[term],
+                           substring(colnames(mm), nchar(quoted[term]) + 1L))
+    if (!is.null(attr(mm, "contrasts")))
+      names(attr(mm, "contrasts")) <- original[match(names(attr(mm, "contrasts")), vars)]
+    vars <- original
+    quoted <- .sens_quote_names(vars)
+  }
   # Matrix backends select numeric benchmarks by the original column name.
   hit <- match(colnames(mm), quoted)
   colnames(mm)[!is.na(hit)] <- vars[hit[!is.na(hit)]]

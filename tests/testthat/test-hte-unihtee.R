@@ -32,6 +32,53 @@ uni_bin_data <- function(n = 1500L, seed = 511) {
   d
 }
 
+test_that("unihtee repair: formula-special names preserve models and public names", {
+  skip_if_not_installed("grf")
+  d <- uni_cont_data(n = 200L)
+  ga <- list(num.trees = 100, seed = 7, num.threads = 1, W.hat = rep(0.5, nrow(d)))
+  for (method in c("glm", "grf", "direct")) {
+    run <- function(data, v) {
+      if (method == "direct")
+        return(get_hte(data, "a", adj_var = c(v, "w1"), surv = "y", grf_args = ga))
+      get_hte_unihtee(data, "a", tree_var = c(v, "w1"), surv = "y", method = method,
+        grf_args = if (method == "grf") ga else list())
+    }
+    ref <- run(d, "w3")
+    for (v in c(".", "...", "..1", "..2")) {
+      dd <- d
+      names(dd)[names(dd) == "w3"] <- v
+      out <- run(dd, v)
+      expect_identical(names(out$data), replace(names(ref$data), names(ref$data) == "w3", v))
+      if (method == "direct") {
+        expect_equal(out$stats, ref$stats, tolerance = 1e-12)
+        expect_identical(colnames(out$fit$X.orig), c(v, "w1"))
+      } else {
+        expect_equal(out$vip[setdiff(names(out$vip), "variable")],
+                       ref$vip[setdiff(names(ref$vip), "variable")], tolerance = 1e-12)
+        expect_equal(out$data[c(".ps", ".mu1", ".mu0", ".score_diff")],
+                       ref$data[c(".ps", ".mu1", ".mu0", ".score_diff")], tolerance = 1e-12)
+        expect_setequal(out$vip$variable, c(v, "w1"))
+      }
+    }
+  }
+})
+
+test_that("unihtee repair: shared matrix aliases preserve factor coding and missing rows", {
+  d <- data.frame(x = c(1, NA, 3:12), f = factor(rep(c("a", "b"), 6)),
+                   h = factor(rep(c("c", "d", "e"), 4)))
+  dd <- d
+  names(dd) <- c("..1", ".", "...")
+  for (one_hot in c(FALSE, TRUE)) {
+    ref <- .sens_model_matrix(d, names(d), one_hot)
+    out <- .sens_model_matrix(dd, names(dd), one_hot)
+    expect_equal(as.numeric(out), as.numeric(ref))
+    expect_identical(attr(out, "assign"), attr(ref, "assign"))
+    expect_identical(colnames(out)[attr(out, "assign") == 1L], "..1")
+    expect_identical(names(attr(out, "contrasts")), c(".", "..."))
+    expect_equal(nrow(out), nrow(d))
+  }
+})
+
 test_that("unihtee follow-up: shared spline grids exclude zero-weight extremes", {
   skip_if_not_installed("grf")
   d <- uni_cont_data(n = 400L, seed = 1028)

@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* HTE models accept formula-special column names such as `.`, `...` and
+  `..1` through internal aliases. GLM nuisances no longer expand `.` into
+  internal responses; shared design matrices retain original column names,
+  factor coding and row alignment.
+
 * `plt_hte_sub()` excludes SPSS user-defined missing subgroup values through
   the same normalization as `plt_hte_cate()`. Both plots now agree on subgroup
   counts, effect estimates and interaction tests for auxiliary SPSS columns.
