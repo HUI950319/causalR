@@ -29,7 +29,7 @@ values are rejected. The output names
 \item{cat_var}{Length-1 character. The binary exposure column: \code{0}/\code{1},
 logical, or a two-level factor or character column whose \strong{second} level
 is the treated arm, as in \code{\link[=get_PSW]{get_PSW()}}. Unlike \code{\link[RegR:get_eff]{RegR::get_eff()}}, exactly
-one exposure is analysed.}
+one exposure is analysed. It must not be an outcome column.}
 
 \item{sub_var}{Character vector of categorical subgroup columns, or \code{NULL}
 (default). Each level gets one \verb{$subgroup} row per estimand and measure.

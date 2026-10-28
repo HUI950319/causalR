@@ -542,7 +542,7 @@
 #' @param cat_var Length-1 character. The binary exposure column: `0`/`1`,
 #'   logical, or a two-level factor or character column whose **second** level
 #'   is the treated arm, as in [get_PSW()]. Unlike [RegR::get_eff()], exactly
-#'   one exposure is analysed.
+#'   one exposure is analysed. It must not be an outcome column.
 #' @param sub_var Character vector of categorical subgroup columns, or `NULL`
 #'   (default). Each level gets one `$subgroup` row per estimand and measure.
 #'   Numeric columns with more than 5 distinct values are rejected; cut them
@@ -900,6 +900,9 @@ get_hte <- function(data,
       stop("`time` only applies to survival outcomes (`surv = TRUE`).",
            call. = FALSE)
   }
+
+  if (cat_var %in% outcome)
+    stop("`cat_var` must not be an outcome column.", call. = FALSE)
 
   # ---- Covariates: subgroup variables must enter the forest ---------------
   covars <- unique(c(adj_var, sub_var))

@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `get_hte()` and both `get_hte_unihtee()` backends reject an exposure
+  column that is also an outcome, including survival time and event columns.
+  The error identifies `cat_var` before any model is fitted.
+
 * `plt_hte_cate()` keeps genuine missing factor codes separate from an
   explicit NA level, so plotted patients and subgroup estimates use the
   same groups, including their reference lines.

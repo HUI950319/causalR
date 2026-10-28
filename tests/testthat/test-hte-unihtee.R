@@ -56,6 +56,25 @@ test_that("unihtee follow-up: shared spline grids exclude zero-weight extremes",
                 expected$p_het)
 })
 
+test_that("unihtee follow-up: exposure cannot also be an outcome column", {
+  skip_if_not_installed("grf")
+  d <- uni_cont_data(n = 200L)
+  ga <- list(num.trees = 100, seed = 7, num.threads = 1)
+  expect_error(get_hte(d, "a", adj_var = "w3", surv = "a", grf_args = ga),
+                "`cat_var`.*outcome")
+  for (method in c("grf", "glm"))
+    expect_error(get_hte_unihtee(d, "a", tree_var = "w3", surv = "a", method = method,
+      grf_args = if (method == "grf") ga else list()), "`cat_var`.*outcome")
+  d$time <- seq(1, 15, length.out = nrow(d))
+  d$DSS <- d$a
+  for (exposure in c("DSS", "time")) {
+    expect_error(get_hte(d, exposure, adj_var = "w3", time = 5, grf_args = ga),
+                  "`cat_var`.*outcome")
+    expect_error(get_hte_unihtee(d, exposure, tree_var = "w3", time = 5, grf_args = ga),
+                  "`cat_var`.*outcome")
+  }
+})
+
 test_that("unihtee survival support excludes zero-weight patients", {
   set.seed(321)
   n <- 400L

@@ -32,7 +32,7 @@ must be converted explicitly before calling.}
 
 \item{cat_var}{Length-1 character. The binary exposure column, coded as in
 \code{\link[=get_hte]{get_hte()}}: \code{0}/\code{1}, logical, or a two-level factor or character column
-whose second level is the treated arm.}
+whose second level is the treated arm. It must not be an outcome column.}
 
 \item{tree_var}{Character vector of the candidate modifiers, one table
 row each, or \code{NULL} (default) for every \code{adj_var} column. A numeric

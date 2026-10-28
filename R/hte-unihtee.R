@@ -284,7 +284,7 @@
 #'   must be converted explicitly before calling.
 #' @param cat_var Length-1 character. The binary exposure column, coded as in
 #'   [get_hte()]: `0`/`1`, logical, or a two-level factor or character column
-#'   whose second level is the treated arm.
+#'   whose second level is the treated arm. It must not be an outcome column.
 #' @param tree_var Character vector of the candidate modifiers, one table
 #'   row each, or `NULL` (default) for every `adj_var` column. A numeric
 #'   column with more than two distinct values is a continuous candidate; any
@@ -512,6 +512,8 @@ get_hte_unihtee <- function(data,
 
   outcome_cols <- .sens_check_col(if (is_surv) c("time", "DSS") else surv,
                                   data, "surv", n = if (is_surv) 2L else 1L)
+  if (cat_var %in% outcome_cols)
+    stop("`cat_var` must not be an outcome column.", call. = FALSE)
   for (v in unique(c(cat_var, covars, outcome_cols))) {
     x <- data[[v]]
     if (inherits(x, "haven_labelled")) {
@@ -597,7 +599,7 @@ get_hte_unihtee <- function(data,
       stop("`surv` must be TRUE (columns `time` / `DSS`) or a single outcome column name.",
            call. = FALSE)
     outcome <- .sens_check_col(surv, data, "surv", n = 1L)
-    if (outcome %in% c(cat_var, covars))
+    if (outcome %in% covars)
       stop("`adj_var` / `tree_var` must not include the outcome column.",
            call. = FALSE)
     backend_args <- .merge_named_arg(glm_args, list(folds = 5L, ps_trim = 0.01),
