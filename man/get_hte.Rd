@@ -300,6 +300,9 @@ where, with positive observation weights, \verb{$calibration} equals
 survival outcome the same regression runs on the censoring-adjusted
 residual the \code{causal_survival_forest} keeps.
 Zero-weight patients are excluded from this regression and its covariance.
+Non-finite predictions or residuals on positive-weight rows, or a failed
+calibration regression, leave both calibration rows unavailable with a
+warning. The other results remain available; rows are not silently omitted.
 Clustered analyses require at least two positive-weight clusters after
 dropping patients with missing exposure or outcome; this is checked before
 growing the forest.

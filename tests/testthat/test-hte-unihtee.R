@@ -75,6 +75,30 @@ test_that("unihtee follow-up: exposure cannot also be an outcome column", {
   }
 })
 
+test_that("unihtee follow-up: unavailable OOB calibration preserves the result", {
+  skip_if_not_installed("grf")
+  d <- uni_cont_data(n = 400L, seed = 1028)
+  ga <- list(num.trees = 10, seed = 7, num.threads = 1,
+              W.hat = rep(0.5, nrow(d)), Y.hat = rep(0, nrow(d)))
+  notes <- character()
+  out <- withCallingHandlers(get_hte_unihtee(d, "a", tree_var = c("w3", "w1"),
+    surv = "y", grf_args = ga), warning = function(w) {
+      notes <<- c(notes, conditionMessage(w)); invokeRestart("muffleWarning")
+    })
+  expect_true(any(!is.finite(out$hte$fit$predictions)))
+  expect_true(any(grepl("Calibration.*unavailable.*non-finite", notes)))
+  expect_identical(out$hte$calibration$term,
+                    c("mean.forest.prediction", "differential.forest.prediction"))
+  expect_true(all(is.na(out$hte$calibration[-1L])))
+  expect_equal(nrow(out$data), nrow(d))
+  expect_equal(out$vip$n, rep(sum(is.finite(out$data$.score_diff)), 2L))
+  expect_true(all(is.finite(out$vip$estimate)))
+  direct <- suppressWarnings(get_hte(d, "a", adj_var = c("w3", "w1"),
+                                      surv = "y", grf_args = ga))
+  expect_identical(direct$calibration, out$hte$calibration)
+  expect_identical(direct$data, out$hte$data)
+})
+
 test_that("unihtee survival support excludes zero-weight patients", {
   set.seed(321)
   n <- 400L

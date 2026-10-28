@@ -200,12 +200,23 @@
   if (length(cl)) cl <- cl[keep]
   wt <- wt[keep]
   wt <- wt / sum(wt)
-  mp <- stats::weighted.mean(tau, wt)
-  m  <- stats::lm(r ~ 0 + mean.forest.prediction +
-                    differential.forest.prediction, weights = wt,
-                  data = data.frame(r = r, mean.forest.prediction = wc * mp,
-                                    differential.forest.prediction =
-                                      wc * (tau - mp)))
+  m <- tryCatch({
+    if (any(!is.finite(c(tau, wc, r, wt))))
+      stop("non-finite predictions or residuals on positive-weight rows", call. = FALSE)
+    mp <- stats::weighted.mean(tau, wt)
+    stats::lm(r ~ 0 + mean.forest.prediction +
+                differential.forest.prediction, weights = wt,
+              data = data.frame(r = r, mean.forest.prediction = wc * mp,
+                                differential.forest.prediction = wc * (tau - mp)),
+              na.action = stats::na.fail)
+  }, error = identity)
+  if (inherits(m, "error")) {
+    warning(sprintf("Calibration inference is unavailable (%s).", conditionMessage(m)),
+            call. = FALSE)
+    return(tibble::tibble(
+      term = c("mean.forest.prediction", "differential.forest.prediction"),
+      estimate = NA_real_, std.error = NA_real_, statistic = NA_real_, p.value = NA_real_))
+  }
   b  <- stats::coef(m)
   se <- stats::setNames(rep(NA_real_, length(b)), names(b))
   cov_error <- NULL
@@ -740,6 +751,9 @@
 #' survival outcome the same regression runs on the censoring-adjusted
 #' residual the `causal_survival_forest` keeps.
 #' Zero-weight patients are excluded from this regression and its covariance.
+#' Non-finite predictions or residuals on positive-weight rows, or a failed
+#' calibration regression, leave both calibration rows unavailable with a
+#' warning. The other results remain available; rows are not silently omitted.
 #' Clustered analyses require at least two positive-weight clusters after
 #' dropping patients with missing exposure or outcome; this is checked before
 #' growing the forest.

@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* Unavailable OOB predictions and failed calibration regressions no longer
+  abort `get_hte()` or `get_hte_unihtee()`. The two calibration rows retain
+  their schema with `NA` values and a diagnostic; no rows are silently omitted.
+
 * `get_bal()` removes unused treatment levels from its table input, so
   weighted summaries use the same two observed arms as the balance plot.
   The returned analysis data retains the original factor levels.
