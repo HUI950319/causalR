@@ -1,5 +1,10 @@
 # causalR (development version)
 
+* Continuous HTE projections and shared spline diagnostics rescale extreme
+  covariate units internally to avoid variance underflow or overflow. Failed
+  univariate fits retain other candidates with a diagnostic; estimates keep
+  their original per-SD definition and plots keep the input units.
+
 * Propensity and sensitivity inputs use the same stored-type normalisation
   as `get_bal()`. Integer64 covariates no longer cause spurious row deletion,
   and SPSS user-defined missingness is handled before PSM, PSW or sensitivity

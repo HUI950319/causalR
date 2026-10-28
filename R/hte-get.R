@@ -473,9 +473,12 @@
         return(empty)
     }
     i <- which(!is.na(x) & is.finite(s) & weights > 0)
+    unit <- max(abs(x[i]), 0)
+    if (unit == 0 || (unit >= sqrt(.Machine$double.xmin) &&
+                       unit <= sqrt(.Machine$double.xmax))) unit <- 1
     fit <- tryCatch(
       stats::lm(s ~ splines::ns(x, df = spline_df), weights = wt,
-                 data = data.frame(s = s[i], x = x[i], wt = weights[i])),
+                 data = data.frame(s = s[i], x = x[i] / unit, wt = weights[i])),
       error = function(e) e)
     if (inherits(fit, "error")) return(unavailable(conditionMessage(fit)))
     if (fit$rank < length(stats::coef(fit)) || fit$df.residual <= 0L ||
@@ -490,7 +493,8 @@
       return(list(type = "continuous", df = length(b), p_het = p_het))
     g   <- data.frame(x = seq(min(x[i]), max(x[i]),
                               length.out = 100L))
-    M   <- stats::model.matrix(stats::delete.response(stats::terms(fit)), g)
+    M   <- stats::model.matrix(stats::delete.response(stats::terms(fit)),
+                               data.frame(x = g$x / unit))
     est <- drop(M %*% stats::coef(fit))
     se  <- sqrt(rowSums((M %*% V) * M))
     return(list(
@@ -552,6 +556,8 @@
 #'   values are rejected. The output names
 #'   `.cate` and `.dr_score` are reserved and must not already be columns.
 #'   Formula-special column names are handled internally and retained in output.
+#'   Continuous diagnostics rescale extreme units internally without changing
+#'   the reported or plotted scales.
 #' @param cat_var Length-1 character. The binary exposure column: `0`/`1`,
 #'   logical, or a two-level factor or character column whose **second** level
 #'   is the treated arm, as in [get_PSW()]. Unlike [RegR::get_eff()], exactly

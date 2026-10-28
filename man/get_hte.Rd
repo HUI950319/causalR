@@ -25,7 +25,9 @@ get_hte(
 below. Used columns must be vectors; matrix, array, complex and infinite
 values are rejected. The output names
 \code{.cate} and \code{.dr_score} are reserved and must not already be columns.
-Formula-special column names are handled internally and retained in output.}
+Formula-special column names are handled internally and retained in output.
+Continuous diagnostics rescale extreme units internally without changing
+the reported or plotted scales.}
 
 \item{cat_var}{Length-1 character. The binary exposure column: \code{0}/\code{1},
 logical, or a two-level factor or character column whose \strong{second} level

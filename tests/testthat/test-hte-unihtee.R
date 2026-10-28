@@ -79,6 +79,57 @@ test_that("unihtee repair: shared matrix aliases preserve factor coding and miss
   }
 })
 
+test_that("unihtee repair: extreme units preserve projections and shared spline inference", {
+  skip_if_not_installed("grf")
+  d <- uni_cont_data(n = 200L)
+  ga <- list(num.trees = 100, seed = 7, num.threads = 1,
+               W.hat = rep(0.5, nrow(d)), Y.hat = rep(0, nrow(d)))
+  run <- function(data) get_hte_unihtee(data, "a", tree_var = c("w3", "w1"),
+                                        surv = "y", grf_args = ga)
+  ref <- run(d)
+  rp <- plt_hte_unihtee(ref, type = "dep", x_var = "w3")
+  keep <- c("estimate", "std.error", "conf.low", "conf.high", "p.value")
+  for (unit in c(1e-200, 1e200)) {
+    dd <- d
+    dd$w3 <- dd$w3 * unit
+    out <- run(dd)
+    expect_equal(out$vip[keep], ref$vip[keep], tolerance = 1e-10)
+    expect_equal(out$vip$sd[out$vip$variable == "w3"] / unit,
+                   ref$vip$sd[ref$vip$variable == "w3"], tolerance = 1e-10)
+    expect_equal(out$hte$importance$p_het, ref$hte$importance$p_het, tolerance = 1e-10)
+    p <- plt_hte_unihtee(out, type = "dep", x_var = "w3")
+    for (col in c("estimate", "spline")) {
+      line <- uni_layer(p, "GeomLine", col)
+      expected <- uni_layer(rp, "GeomLine", col)
+      expect_equal(line[[col]], expected[[col]], tolerance = 1e-10)
+      expect_equal(line$x / unit, expected$x, tolerance = 1e-10)
+    }
+  }
+})
+
+test_that("unihtee repair: a failed projection leaves other candidates available", {
+  d <- uni_cont_data(n = 200L)
+  state <- new.env(parent = emptyenv())
+  state$failed <- FALSE
+  spy <- stats::lm
+  env <- new.env(parent = environment(spy))
+  env$state <- state
+  environment(spy) <- env
+  body(spy) <- substitute({
+    if (identical(deparse(formula), "p ~ x") && !state$failed) {
+      state$failed <- TRUE
+      stop("projection failure fixture")
+    }
+    BODY
+  }, list(BODY = body(spy)))
+  testthat::local_mocked_bindings(lm = spy, .package = "stats")
+  expect_warning(out <- get_hte_unihtee(d, "a", tree_var = c("w3", "w1"),
+    surv = "y", method = "glm"), "projection failure fixture.*estimate set to NA")
+  expect_true(is.na(out$vip$estimate[out$vip$variable == "w3"]))
+  expect_true(is.finite(out$vip$estimate[out$vip$variable == "w1"]))
+  expect_equal(nrow(out$data), nrow(d))
+})
+
 test_that("unihtee follow-up: shared spline grids exclude zero-weight extremes", {
   skip_if_not_installed("grf")
   d <- uni_cont_data(n = 400L, seed = 1028)

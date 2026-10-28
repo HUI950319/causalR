@@ -114,12 +114,19 @@
   if (!enough)
     return(list(why = if (cont) "fewer than three distinct values remain"
                 else "a level has fewer than two patients in one arm"))
-  sd <- if (cont) sqrt(stats::cov.wt(cbind(x[i]), wt[i])$cov[1L, 1L]) else NA_real_
+  unit <- if (cont) max(abs(x[i])) else 1
+  if (unit >= sqrt(.Machine$double.xmin) && unit <= sqrt(.Machine$double.xmax))
+    unit <- 1
+  sd <- if (cont)
+    sqrt(stats::cov.wt(cbind(x[i] / unit), wt[i])$cov[1L, 1L]) * unit else NA_real_
   center <- if (cont) stats::weighted.mean(x[i], wt[i]) else 0
   scale <- if (cont) sd else 1
-  fit <- stats::lm(p ~ x, weights = w,
+  if (cont && (!is.finite(sd) || sd <= 0 || !is.finite(center)))
+    return(list(why = "the candidate has no finite positive scale"))
+  fit <- tryCatch(stats::lm(p ~ x, weights = w,
                    data = data.frame(p = phi[i], x = (x[i] - center) / scale,
-                                     w = wt[i]))
+                                     w = wt[i])), error = identity)
+  if (inherits(fit, "error")) return(list(why = conditionMessage(fit)))
   if (fit$rank < 2L || fit$df.residual <= 0L ||
       (length(cl) && length(unique(cl[i])) < 2L))
     return(list(why = "the regression is rank deficient or has too few clusters"))
@@ -287,6 +294,8 @@
 #'   other classed numeric storage (such as `integer64`) and infinite values
 #'   must be converted explicitly before calling.
 #'   Formula-special column names are handled internally and retained in output.
+#'   Continuous diagnostics rescale extreme units internally without changing
+#'   the reported or plotted scales. Failed projections retain other candidates.
 #' @param cat_var Length-1 character. The binary exposure column, coded as in
 #'   [get_hte()]: `0`/`1`, logical, or a two-level factor or character column
 #'   whose second level is the treated arm. It must not be an outcome column.
