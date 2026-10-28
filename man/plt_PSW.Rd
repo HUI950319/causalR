@@ -41,7 +41,8 @@ file is written; the defaults come from the plot's own pinned size.}
 }
 \value{
 A \code{ggplot} object, carrying its pinned size in
-\code{attr(., "plot_size")}.
+\code{attr(., "plot_size")}. Captured plot environments retain only the
+selected view's data, not unused input columns or propensity fits.
 }
 \description{
 Four views of a \code{\link[=get_PSW]{get_PSW()}} result: how well each weighting scheme balances

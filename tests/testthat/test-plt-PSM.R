@@ -13,6 +13,29 @@ plt_psm_res <- function(balance = TRUE, ...) {
 }
 
 
+test_that("PSM plots retain only data needed by their selected view", {
+  skip_if_not_installed("halfmoon")
+  make <- function(extra, type) {
+    set.seed(2810)
+    d <- data.frame(z = rep(0:1, 60), x = stats::rnorm(120), p = 0.5)
+    if (extra) d$unused <- I(matrix(stats::rnorm(120000), 120))
+    r <- causalR::get_PSM(d, "z", adj_var = "x", ps = "p")
+    causalR::plt_PSM(r, type)
+  }
+  environment(make) <- globalenv()
+  path <- withr::local_tempfile()
+  for (type in c("ess", "love", "weight", "ps")) {
+    a <- make(FALSE, type)
+    b <- make(TRUE, type)
+    saveRDS(a, path)
+    small <- file.size(path)
+    saveRDS(b, path)
+    expect_lt(file.size(path) - small, 100 * 1024)
+    expect_identical(a$data, b$data)
+    expect_identical(ggplot2::ggplot_build(a)$data, ggplot2::ggplot_build(b)$data)
+  }
+})
+
 test_that("every type returns a sized ggplot", {
   skip_if_not_installed("halfmoon")
   res <- plt_psm_res(caliper = 0.2)

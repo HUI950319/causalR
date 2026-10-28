@@ -56,6 +56,10 @@
 #' @keywords internal
 #' @noRd
 .psw_plt_love <- function(x, wcols, threshold, title) {
+  force(x)
+  force(wcols)
+  force(threshold)
+  force(title)
   if (!requireNamespace("halfmoon", quietly = TRUE))
     stop("Package 'halfmoon' is required for plt_PSW(type = \"love\")",
          call. = FALSE)
@@ -80,6 +84,9 @@
 #' @keywords internal
 #' @noRd
 .psw_plt_ess <- function(x, wcols, title) {
+  force(x)
+  force(wcols)
+  force(title)
   lab <- .psw_labels(wcols)
   d   <- x$stats[x$stats$estimand %in% toupper(sub("^w_", "", wcols)), ,
                  drop = FALSE]
@@ -107,6 +114,9 @@
 #' @keywords internal
 #' @noRd
 .psw_plt_weight <- function(x, wcols, title) {
+  force(x)
+  force(wcols)
+  force(title)
   a   <- attr(x, "analysis")
   lab <- .psw_labels(wcols)
   d   <- x$data[!x$data$.trimmed, , drop = FALSE]
@@ -133,6 +143,10 @@
 #' @keywords internal
 #' @noRd
 .psw_plt_ps <- function(x, wcols, bins, title) {
+  force(x)
+  force(wcols)
+  force(bins)
+  force(title)
   if (!requireNamespace("halfmoon", quietly = TRUE))
     stop("Package 'halfmoon' is required for plt_PSW(type = \"ps\")",
          call. = FALSE)
@@ -188,7 +202,8 @@
 #'   file is written; the defaults come from the plot's own pinned size.
 #'
 #' @return A `ggplot` object, carrying its pinned size in
-#'   `attr(., "plot_size")`.
+#'   `attr(., "plot_size")`. Captured plot environments retain only the
+#'   selected view's data, not unused input columns or propensity fits.
 #'
 #' @seealso [get_PSW()].
 #'
@@ -237,12 +252,20 @@ plt_PSW <- function(x,
   if (!is.numeric(bins) || length(bins) != 1L || is.na(bins) || bins < 2)
     stop("`bins` must be a single number of at least 2.", call. = FALSE)
 
+  # Only the selected view's small input reaches returned layer environments.
+  plot_data <- switch(type,
+    love = list(balance = x$balance),
+    ess = list(stats = x$stats),
+    list(data = x$data[unique(c(a$treat, ".trimmed",
+                                if (type == "ps") "ps", wcols))]))
+  attr(plot_data, "analysis") <- list(treat = a$treat)
+
   p <- switch(
     type,
-    love   = .psw_plt_love(x, wcols, threshold, title),
-    ess    = .psw_plt_ess(x, wcols, title),
-    weight = .psw_plt_weight(x, wcols, title),
-    ps     = .psw_plt_ps(x, wcols, bins, title),
+    love   = .psw_plt_love(plot_data, wcols, threshold, title),
+    ess    = .psw_plt_ess(plot_data, wcols, title),
+    weight = .psw_plt_weight(plot_data, wcols, title),
+    ps     = .psw_plt_ps(plot_data, wcols, bins, title),
     stop(sprintf("Unsupported type: '%s'", type), call. = FALSE))
 
   plot_size <- switch(type,

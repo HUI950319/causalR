@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* Propensity diagnostic plots pass only view-specific data into forced
+  renderer arguments. All four PSM and PSW plot types release unused input
+  columns and fitted models while preserving their data, layers and layout.
+
 * Weight summaries rescale extreme finite weights to avoid overflow or
   underflow in ESS, standard deviation and coefficient of variation.
   `get_PSW()` rejects non-finite generated weights before reporting results,

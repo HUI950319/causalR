@@ -36,6 +36,10 @@
 #' @keywords internal
 #' @noRd
 .psm_plt_love <- function(x, wcols, threshold, title) {
+  force(x)
+  force(wcols)
+  force(threshold)
+  force(title)
   if (!requireNamespace("halfmoon", quietly = TRUE))
     stop("Package 'halfmoon' is required for plt_PSM(type = \"love\")",
          call. = FALSE)
@@ -59,6 +63,9 @@
 #' @keywords internal
 #' @noRd
 .psm_plt_ess <- function(x, wcols, title) {
+  force(x)
+  force(wcols)
+  force(title)
   a <- attr(x, "analysis")
   d <- x$stats[x$stats$method %in% sub("^w_", "", wcols), , drop = FALSE]
   d <- d[order(d$ess), , drop = FALSE]
@@ -87,6 +94,9 @@
 #' @keywords internal
 #' @noRd
 .psm_plt_weight <- function(x, wcols, title) {
+  force(x)
+  force(wcols)
+  force(title)
   a   <- attr(x, "analysis")
   lab <- .psm_labels(wcols)
   arm <- factor(.psw_treat(x$data[[a$treat]], a$treat)$z, levels = c(0L, 1L),
@@ -117,6 +127,10 @@
 #' @keywords internal
 #' @noRd
 .psm_plt_ps <- function(x, wcols, bins, title) {
+  force(x)
+  force(wcols)
+  force(bins)
+  force(title)
   if (!requireNamespace("halfmoon", quietly = TRUE))
     stop("Package 'halfmoon' is required for plt_PSM(type = \"ps\")",
          call. = FALSE)
@@ -172,7 +186,8 @@
 #'   file is written; the defaults come from the plot's own pinned size.
 #'
 #' @return A `ggplot` object, carrying its pinned size in
-#'   `attr(., "plot_size")`.
+#'   `attr(., "plot_size")`. Captured plot environments retain only the
+#'   selected view's data, not unused input columns or matching fits.
 #'
 #' @seealso [get_PSM()], and [plt_PSW()] for the weighting dual.
 #'
@@ -222,12 +237,19 @@ plt_PSM <- function(x,
   if (!is.numeric(bins) || length(bins) != 1L || is.na(bins) || bins < 2)
     stop("`bins` must be a single number of at least 2.", call. = FALSE)
 
+  # Only the selected view's small input reaches returned layer environments.
+  plot_data <- switch(type,
+    love = list(balance = x$balance),
+    ess = list(stats = x$stats),
+    list(data = x$data[unique(c(a$treat, if (type == "ps") "ps", wcols))]))
+  attr(plot_data, "analysis") <- list(treat = a$treat, n = a$n)
+
   p <- switch(
     type,
-    love   = .psm_plt_love(x, wcols, threshold, title),
-    ess    = .psm_plt_ess(x, wcols, title),
-    weight = .psm_plt_weight(x, wcols, title),
-    ps     = .psm_plt_ps(x, wcols, bins, title),
+    love   = .psm_plt_love(plot_data, wcols, threshold, title),
+    ess    = .psm_plt_ess(plot_data, wcols, title),
+    weight = .psm_plt_weight(plot_data, wcols, title),
+    ps     = .psm_plt_ps(plot_data, wcols, bins, title),
     stop(sprintf("Unsupported type: '%s'", type), call. = FALSE))
 
   plot_size <- switch(type,
