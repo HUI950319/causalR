@@ -658,7 +658,7 @@ plt_hte_dep <- function(x,
 #' @param show_pinter Logical. `TRUE` adds a "P for interaction" column: for
 #'   every variable, the Wald test that its subgroup effects are equal (the
 #'   `p_inter` of [get_hte()]). Default `FALSE`.
-#' @param label_column_list `NULL` (default) or a named list or character
+#' @param name_map `NULL` (default) or a named list or character
 #'   vector giving display names for the label column, keyed by the text as
 #'   drawn, e.g. `c(age_55 = "Age category (year)", F = "Female",
 #'   "All patients" = "Overall")`. It applies to every row: variable names,
@@ -748,7 +748,9 @@ plt_hte_dep <- function(x,
 #'   Default `"blue4"`.
 #' @param ... Deprecated: `est_label`, now `header_list$effect`, keeps working
 #'   for one cycle with a warning and is ignored when `header_list$effect` is
-#'   given as well. Any other name is rejected as an unused argument.
+#'   given as well; `label_column_list`, the former name of `name_map`, keeps
+#'   working with a warning, and `name_map` wins when both are given. Any other
+#'   name is rejected as an unused argument.
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
 #'   `width` or `height` left out is taken from `attr(p, "plot_size")`. Do not
@@ -865,7 +867,7 @@ plt_hte_sub <- function(x,
                         show_n      = TRUE,
                         show_pvalue = FALSE,
                         show_pinter = FALSE,
-                        label_column_list = NULL,
+                        name_map    = NULL,
                         header_list = NULL,
                         xlab        = NULL,
                         axis_args   = list(xlim = NULL, xticks = NULL,
@@ -881,16 +883,25 @@ plt_hte_sub <- function(x,
 
   if (!inherits(x, "hte_res"))
     stop("`x` must be an `hte_res` object from get_hte().", call. = FALSE)
-  # `est_label` is deprecated and lives in `...`, out of the usage; any other
-  # name is a typo, not a silent no-op
+  # `est_label` and `label_column_list` (now `name_map`) are deprecated and
+  # live in `...`, out of the usage; any other name is a typo, not a silent
+  # no-op
   dots <- list(...)
   bad  <- if (is.null(names(dots))) rep("", length(dots)) else names(dots)
-  bad  <- c(setdiff(bad, "est_label"), bad[duplicated(bad)])
+  bad  <- c(setdiff(bad, c("est_label", "label_column_list")),
+            bad[duplicated(bad)])
   if (length(bad))
     stop(sprintf("unused argument(s) in plt_hte_sub(): %s.",
                  paste(unique(ifelse(nzchar(bad), bad, "<unnamed>")),
                        collapse = ", ")),
          call. = FALSE)
+  if (!is.null(dots[["label_column_list"]])) {
+    warning("`label_column_list` is deprecated in plt_hte_sub(); use `name_map` instead.",
+            if (!is.null(name_map))
+              " `name_map` wins; `label_column_list` is ignored." else "",
+            call. = FALSE)
+    if (is.null(name_map)) name_map <- dots[["label_column_list"]]
+  }
   measure <- match.arg(measure)
   if (!is.numeric(conf_level) || length(conf_level) != 1L ||
       is.na(conf_level) || conf_level <= 0 || conf_level >= 1)
@@ -905,12 +916,12 @@ plt_hte_sub <- function(x,
   log_x <- measure != "diff"
   # A repeated name keeps its first label, as RegR's colname_map does: the
   # lookup below indexes by name, which takes the first match
-  if (length(label_column_list) &&
-      (!(is.list(label_column_list) || is.character(label_column_list)) ||
-       is.null(names(label_column_list)) || !all(nzchar(names(label_column_list))) ||
-       !all(vapply(as.list(label_column_list), function(s)
+  if (length(name_map) &&
+      (!(is.list(name_map) || is.character(name_map)) ||
+       is.null(names(name_map)) || !all(nzchar(names(name_map))) ||
+       !all(vapply(as.list(name_map), function(s)
          is.character(s) && length(s) == 1L && !is.na(s), logical(1L)))))
-    stop("`label_column_list` must be `NULL` or a named list or character vector of single strings, e.g. c(age_55 = \"Age category (year)\").",
+    stop("`name_map` must be `NULL` or a named list or character vector of single strings, e.g. c(age_55 = \"Age category (year)\").",
          call. = FALSE)
   axis_args <- .merge_named_arg(
     axis_args, list(xlim = NULL, xticks = NULL, percent = TRUE,
@@ -1258,13 +1269,13 @@ plt_hte_sub <- function(x,
                          fmt_p(r$p.value), "", r$estimate, r$conf.low,
                          r$conf.high, FALSE))
   }
-  # Display names: label_column_list on every row, over the SEER dictionary
+  # Display names: name_map on every row, over the SEER dictionary
   # of RegR::plt_eff2() on the variable rows only, as its keys are variable
   # names ("M" is M stage, not a level of sex)
   raw  <- trimws(body$label)
   disp <- raw
   seer <- if (requireNamespace("RegR", quietly = TRUE)) RegR:::.eff_seer_dict()
-  maps <- list(seer = seer, user = as.list(label_column_list))
+  maps <- list(seer = seer, user = as.list(name_map))
   for (k in names(maps)) {
     hit <- raw %in% names(maps[[k]]) & (k == "user" | body$bold)
     disp[hit] <- unlist(maps[[k]][raw[hit]], use.names = FALSE)

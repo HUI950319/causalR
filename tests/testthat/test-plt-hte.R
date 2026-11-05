@@ -713,7 +713,7 @@ test_that("effect moves the All patients row with the subgroup rows it replaces"
     fmt(e1, e1 - z * ov$std.error, e1 + z * ov$std.error))
 })
 
-test_that("label_column_list renames rows; the SEER dictionary names variables only", {
+test_that("name_map renames rows; the SEER dictionary names variables only", {
   skip_if_not_installed("forestplot")
   skip_if_not_installed("ggplotify")
   skip_if_not_installed("RegR")
@@ -721,7 +721,7 @@ test_that("label_column_list renames rows; the SEER dictionary names variables o
   res$data$age_55 <- ifelse(res$data$age < 55, "Below 55", "55 and above")
   p <- suppressMessages(plt_hte_sub(
     res, sub_var = c("age_55", "sex"),
-    label_column_list = c(sex = "Sex", F = "Female", "All patients" = "Overall")))
+    name_map = c(sex = "Sex", F = "Female", "All patients" = "Overall")))
   # age_55 from the SEER dictionary; the level M is not its "M stage"
   expect_identical(trimws(fp_col(p, 1)),
                    c("Subgroup", "Overall", "Age category (year)", "55 and above",
@@ -729,18 +729,31 @@ test_that("label_column_list renames rows; the SEER dictionary names variables o
   expect_identical(unique(attr(p, "subgroup")$sub_var), c("age_55", "sex"))
   # a user key wins over the dictionary
   q <- suppressMessages(plt_hte_sub(res, sub_var = "age_55", overall = FALSE,
-                                    label_column_list = list(age_55 = "Age")))
+                                    name_map = list(age_55 = "Age")))
   expect_identical(trimws(fp_col(q, 1))[2], "Age")
   # a name given twice keeps its first label, as RegR's colname_map does
   q2 <- suppressMessages(plt_hte_sub(res, sub_var = "age_55", overall = FALSE,
-                                     label_column_list = list(age_55 = "Age",
+                                     name_map = list(age_55 = "Age",
                                                               age_55 = "Age group")))
   expect_identical(trimws(fp_col(q2, 1))[2], "Age")
 
   expect_identical(names(formals(plt_hte_sub))[9:11],
-                   c("show_pinter", "label_column_list", "header_list"))
-  expect_error(plt_hte_sub(res, label_column_list = "Sex"), "label_column_list")
-  expect_error(plt_hte_sub(res, label_column_list = list(sex = 1)), "label_column_list")
+                   c("show_pinter", "name_map", "header_list"))
+  expect_error(plt_hte_sub(res, name_map = "Sex"), "name_map")
+  expect_error(plt_hte_sub(res, name_map = list(sex = 1)), "name_map")
+
+  # the former name still works, with a warning; `name_map` wins over it
+  expect_warning(
+    old <- suppressMessages(plt_hte_sub(res, sub_var = "age_55", overall = FALSE,
+                                        label_column_list = list(age_55 = "Age"))),
+    "`label_column_list` is deprecated in plt_hte_sub\\(\\); use `name_map`")
+  expect_identical(trimws(fp_col(old, 1))[2], "Age")
+  expect_warning(
+    both <- suppressMessages(plt_hte_sub(res, sub_var = "age_55", overall = FALSE,
+                                         name_map = list(age_55 = "Age group"),
+                                         label_column_list = list(age_55 = "Age"))),
+    "`name_map` wins")
+  expect_identical(trimws(fp_col(both, 1))[2], "Age group")
 })
 
 test_that("sub_var defaults to the categorical covariates and checks columns", {
@@ -1084,7 +1097,7 @@ test_that("ci_shape and box_col draw a meta-analysis style", {
   expect_error(plt_hte_sub(res, box_col = c("red", "blue", "green")), "`box_col`")
   expect_error(plt_hte_sub(res, box_col = "notacolour"), "`box_col`")
   expect_identical(names(formals(plt_hte_sub))[10:14],
-                   c("label_column_list", "header_list", "xlab", "axis_args",
+                   c("name_map", "header_list", "xlab", "axis_args",
                      "title"))
 })
 

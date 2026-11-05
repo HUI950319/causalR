@@ -1,5 +1,9 @@
 # causalR (development version)
 
+* `plt_hte_sub()` calls its label map `name_map`, as the RegR plotters do,
+  instead of `label_column_list`. The old name still works with a
+  deprecation warning, and `name_map` wins when both are given.
+
 * Manual sensitivity bounds reject missing and non-finite values before
   fitting, with a named `bench_args$bound` diagnostic instead of an internal
   missing-condition error.

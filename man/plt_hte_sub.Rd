@@ -14,7 +14,7 @@ plt_hte_sub(
   show_n = TRUE,
   show_pvalue = FALSE,
   show_pinter = FALSE,
-  label_column_list = NULL,
+  name_map = NULL,
   header_list = NULL,
   xlab = NULL,
   axis_args = list(xlim = NULL, xticks = NULL, percent = TRUE, direction_labels = TRUE),
@@ -87,7 +87,7 @@ every row. Default \code{FALSE}.}
 every variable, the Wald test that its subgroup effects are equal (the
 \code{p_inter} of \code{\link[=get_hte]{get_hte()}}). Default \code{FALSE}.}
 
-\item{label_column_list}{\code{NULL} (default) or a named list or character
+\item{name_map}{\code{NULL} (default) or a named list or character
 vector giving display names for the label column, keyed by the text as
 drawn, e.g. \code{c(age_55 = "Age category (year)", F = "Female", "All patients" = "Overall")}. It applies to every row: variable names,
 levels and "All patients". Its keys take precedence over the SEER
@@ -183,7 +183,9 @@ Default \code{"blue4"}.}
 
 \item{...}{Deprecated: \code{est_label}, now \code{header_list$effect}, keeps working
 for one cycle with a warning and is ignored when \code{header_list$effect} is
-given as well. Any other name is rejected as an unused argument.}
+given as well; \code{label_column_list}, the former name of \code{name_map}, keeps
+working with a warning, and \code{name_map} wins when both are given. Any other
+name is rejected as an unused argument.}
 
 \item{save}{\code{NULL} or a list with \code{filename}, \code{width} and \code{height}, passed
 to \code{RegR::save_plt()} for PDF output. \code{list()} and \code{NULL} skip saving; a
