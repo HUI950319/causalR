@@ -1,5 +1,14 @@
 # causalR (development version)
 
+* `plt_hte_cate()` gains `color`, so the plot can take a manuscript palette:
+  one colour per `sub_var` level (by name or in level order, also for the
+  subgroup ATE lines), the two or three colours of the waterfall gradient
+  without `sub_var`, or the fill of the density. `show_calibration = TRUE`
+  (default) writes the calibration rows of `get_hte()$calibration` with a
+  one-sided P below 0.05 inside the first panel, bottom right of a waterfall
+  and top right of a density. With `sub_var`, the legend now sits inside the
+  top left of the panel instead of below it.
+
 * `get_hte()` gains `keep_trees`, default `FALSE`: the returned `$fit` drops
   the forest's trees and keeps the per-patient fields, with the out-of-bag
   predictions cached, so every estimate, `plt_hte_sub()`, `plt_hte_rate()`,

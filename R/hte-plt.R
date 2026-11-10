@@ -1568,6 +1568,26 @@ plt_hte_sub <- function(x,
 }
 
 
+# The calibration rows of get_hte() with a one-sided P below 0.05, as lines
+# of text for plt_hte_cate(); NULL when none is (or the table is missing).
+#' @keywords internal
+#' @noRd
+.hte_calib_label <- function(cal) {
+  if (is.null(cal)) return(NULL)
+  cal <- as.data.frame(cal)
+  if (!all(c("term", "estimate", "p.value") %in% names(cal))) return(NULL)
+  keep <- !is.na(cal$p.value) & cal$p.value < 0.05
+  if (!any(keep)) return(NULL)
+  nm <- c(mean.forest.prediction = "Mean forest prediction",
+          differential.forest.prediction = "Differential forest prediction")
+  term <- ifelse(cal$term %in% names(nm), nm[cal$term], cal$term)
+  p <- ifelse(cal$p.value < 0.001, "P < 0.001", sprintf("P = %.3f", cal$p.value))
+  paste(c("Calibration test",
+          sprintf("%s: %.2f, %s", term[keep], cal$estimate[keep], p[keep])),
+        collapse = "\n")
+}
+
+
 #' Waterfall and density plots of the CATE by subgroup
 #'
 #' Draws the conditional average treatment effect (CATE) that [get_hte()]
@@ -1580,7 +1600,8 @@ plt_hte_sub <- function(x,
 #' @param x An `hte_res` object from [get_hte()].
 #' @param sub_var `NULL` (default) for one panel of every patient, or a
 #'   character vector of categorical columns of `x$data`: one panel each,
-#'   three per row, coloured by level. The columns follow the rules of
+#'   three per row, coloured by level, with the legend inside the top left
+#'   of the panel. The columns follow the rules of
 #'   [plt_hte_sub()]; a patient missing the value is left out of that panel.
 #'   SPSS user-defined missing values are treated as missing too.
 #'   Columns with no non-missing values are omitted with a warning; an error
@@ -1595,6 +1616,22 @@ plt_hte_sub <- function(x,
 #'   by `type = "waterfall"`.
 #' @param overall Logical. `TRUE` (default) marks the overall ATE with a black
 #'   dashed line.
+#' @param show_calibration Logical. `TRUE` (default) writes the calibration
+#'   test of `x$calibration` ([grf::test_calibration()], see [get_hte()])
+#'   inside the first panel, only the rows with a one-sided P below 0.05: the
+#'   coefficient and P of the mean and of the differential forest prediction.
+#'   Nothing is written when neither is below 0.05. Bottom right of a
+#'   waterfall, which the sorted bars leave empty, top right of a density.
+#' @param color `NULL` (default) or a character vector of colour names or hex
+#'   codes, for example a manuscript palette such as `my_color[c(3, 9)]`.
+#'   With `sub_var`, one colour per level for the bars or curves and the
+#'   subgroup ATE lines: taken by name when the names cover a panel's levels,
+#'   otherwise in level order, so a panel needs at least as many colours as
+#'   levels. Without `sub_var`, the waterfall shades the bars from the first
+#'   colour (most negative CATE) through white to the second (most positive),
+#'   or through the second to the third when three are given; the density
+#'   fills its curve with the first colour. `NULL` keeps ggplot2's default
+#'   hues by level, a navy-white-firebrick gradient and a grey density.
 #' @param title Plot title, or `NULL` (default).
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
@@ -1640,6 +1677,9 @@ plt_hte_sub <- function(x,
 #' # Patients sorted by their CATE, coloured by sex
 #' plt_hte_cate(res, sub_var = "sex")
 #'
+#' # The same in a manuscript's colours
+#' plt_hte_cate(res, sub_var = "sex", color = c(F = "#D6604D", M = "#4393C3"))
+#'
 #' # Density of the CATE by sex and by stage
 #' plt_hte_cate(res, sub_var = c("sex", "stage"), type = "density")
 #' }
@@ -1651,12 +1691,19 @@ plt_hte_cate <- function(x,
                          show_ci    = FALSE,
                          conf_level = 0.95,
                          overall    = TRUE,
+                         show_calibration = TRUE,
+                         color      = NULL,
                          title      = NULL,
                          save       = list()) {
 
   if (!inherits(x, "hte_res"))
     stop("`x` must be an `hte_res` object from get_hte().", call. = FALSE)
   type <- match.arg(type)
+  if (!is.null(color) &&
+      (!is.character(color) || !length(color) || anyNA(color) ||
+       inherits(try(grDevices::col2rgb(color), silent = TRUE), "try-error")))
+    stop("`color` must be `NULL` or a character vector of colour names or hex codes.",
+         call. = FALSE)
   if (type == "density") {
     used <- c(show_ci = !missing(show_ci), conf_level = !missing(conf_level))
     if (any(used))
@@ -1664,7 +1711,8 @@ plt_hte_cate <- function(x,
                    paste0("`", names(used)[used], "`", collapse = ", ")),
            call. = FALSE)
   }
-  flags <- list(show_ci = show_ci, overall = overall)
+  flags <- list(show_ci = show_ci, overall = overall,
+                show_calibration = show_calibration)
   for (nm in names(flags))
     if (!is.logical(flags[[nm]]) || length(flags[[nm]]) != 1L ||
         is.na(flags[[nm]]))
@@ -1732,6 +1780,28 @@ plt_hte_cate <- function(x,
   environment(hue) <- baseenv()
   groups <- stats::setNames(lapply(sub_var, function(v)
     .hte_drop_levels(d[[v]])), sub_var)
+  # One colour per level: by name when the names cover the levels, else in order
+  level_cols <- lapply(stats::setNames(sub_var, sub_var), function(v) {
+    lv <- levels(groups[[v]])
+    if (is.null(color)) return(stats::setNames(hue(length(lv)), lv))
+    if (!is.null(names(color)) && all(lv %in% names(color))) return(color[lv])
+    if (length(color) < length(lv))
+      stop(sprintf("`color` has %d colour(s), but `%s` has %d levels.",
+                   length(color), v, length(lv)), call. = FALSE)
+    stats::setNames(unname(color[seq_along(lv)]), lv)
+  })
+  grad <- c("navy", "white", "firebrick")
+  dens <- c("grey70", "grey30")
+  if (!is.null(color) && !length(sub_var)) {
+    if (type == "waterfall") {
+      if (!length(color) %in% 2:3)
+        stop("Without `sub_var`, the waterfall takes 2 colours in `color` (most negative and most positive CATE) or 3 (negative, zero, positive).",
+             call. = FALSE)
+      grad <- if (length(color) == 2L) c(color[1L], "white", color[2L]) else color
+    } else {
+      dens <- rep(color[1L], 2L)
+    }
+  }
 
   panel <- function(v) {
     g <- if (!is.null(v)) groups[[v]]
@@ -1762,11 +1832,11 @@ plt_hte_cate <- function(x,
                                                        fill = cate,
                                                        colour = cate),
                                width = 1, linewidth = 0.3),
-             ggplot2::scale_fill_gradient2(low = "navy", mid = "white",
-                                           high = "firebrick", midpoint = 0,
+             ggplot2::scale_fill_gradient2(low = grad[1L], mid = grad[2L],
+                                           high = grad[3L], midpoint = 0,
                                            guide = "none"),
-             ggplot2::scale_colour_gradient2(low = "navy", mid = "white",
-                                             high = "firebrick", midpoint = 0,
+             ggplot2::scale_colour_gradient2(low = grad[1L], mid = grad[2L],
+                                             high = grad[3L], midpoint = 0,
                                              guide = "none"))
       } else {
         ggplot2::geom_col(data = pd, ggplot2::aes(x = rank, y = cate,
@@ -1795,7 +1865,7 @@ plt_hte_cate <- function(x,
       q <- q + ggplot2::geom_vline(xintercept = 0, colour = "grey75") +
         if (is.null(g)) {
           ggplot2::geom_density(data = pd, ggplot2::aes(x = cate),
-                                fill = "grey70", colour = "grey30", alpha = 0.5)
+                                fill = dens[1L], colour = dens[2L], alpha = 0.5)
         } else {
           ggplot2::geom_density(data = pd, ggplot2::aes(x = cate, fill = level,
                                                         colour = level),
@@ -1815,27 +1885,44 @@ plt_hte_cate <- function(x,
     # 1% of the axis beside the bars or curves instead of ggplot2's 5%
     q <- q + ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = 0.01))
     if (!is.null(g)) {
-      cols <- stats::setNames(hue(nlevels(g)), levels(g))
+      cols <- level_cols[[v]]
+      # Inside the top left, which the sorted bars and the curves' left tail
+      # leave empty, with a translucent fill over any line it covers
       q <- q + ggplot2::scale_fill_manual(values = cols, name = NULL) +
         ggplot2::scale_colour_manual(values = cols, guide = "none") +
         ggplot2::facet_wrap(~panel) +
-        ggplot2::theme(legend.position = "bottom")
+        ggplot2::theme(
+          legend.position = "inside",
+          legend.position.inside = c(0.02, 0.98),
+          legend.justification.inside = c(0, 1),
+          legend.background = ggplot2::element_rect(
+            fill = grDevices::adjustcolor("white", 0.85), colour = NA))
     }
     q
   }
   # aes() and facet formulas capture this environment, so keep only plot data.
   environment(panel) <- list2env(
     list(groups = groups, cate = cate, se = se, z = z, sub = sub, ate = ate,
-         type = type, show_ci = show_ci, overall = overall, lab = lab, hue = hue),
+         type = type, show_ci = show_ci, overall = overall, lab = lab,
+         level_cols = level_cols, grad = grad, dens = dens),
     parent = baseenv())
   plots <- lapply(if (length(sub_var)) sub_var else list(NULL), panel)
+  cal_lab <- if (show_calibration) .hte_calib_label(x$calibration)
+  # Added from a bare environment, so the plot does not keep `x` alive
+  add_cal <- function(q, lab, waterfall) q + ggplot2::annotate(
+    "text", x = Inf, y = if (waterfall) -Inf else Inf, label = lab,
+    hjust = 1.03, vjust = if (waterfall) -0.3 else 1.3, size = 3.2, lineheight = 1)
+  environment(add_cal) <- baseenv()
+  if (length(cal_lab))
+    plots[[1L]] <- add_cal(plots[[1L]], cal_lab, type == "waterfall")
 
   caption <- paste(c(
     if (type == "waterfall") "bars: out-of-bag CATE per patient, sorted"
     else "curves: density of the out-of-bag CATE",
     if (show_ci) sprintf("grey: %g%% CI", 100 * conf_level),
     if (overall) "black dashed: ATE",
-    if (length(sub_var)) "coloured dashed: subgroup ATE (doubly robust)"),
+    if (length(sub_var)) "coloured dashed: subgroup ATE (doubly robust)",
+    if (length(cal_lab)) "text: calibration test, rows with one-sided P < 0.05"),
     collapse = "; ")
   caption <- paste0(toupper(substr(caption, 1L, 1L)), substring(caption, 2L))
   ncol <- min(3L, length(plots))

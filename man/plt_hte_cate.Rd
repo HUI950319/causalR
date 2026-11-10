@@ -11,6 +11,8 @@ plt_hte_cate(
   show_ci = FALSE,
   conf_level = 0.95,
   overall = TRUE,
+  show_calibration = TRUE,
+  color = NULL,
   title = NULL,
   save = list()
 )
@@ -20,7 +22,8 @@ plt_hte_cate(
 
 \item{sub_var}{\code{NULL} (default) for one panel of every patient, or a
 character vector of categorical columns of \code{x$data}: one panel each,
-three per row, coloured by level. The columns follow the rules of
+three per row, coloured by level, with the legend inside the top left
+of the panel. The columns follow the rules of
 \code{\link[=plt_hte_sub]{plt_hte_sub()}}; a patient missing the value is left out of that panel.
 SPSS user-defined missing values are treated as missing too.
 Columns with no non-missing values are omitted with a warning; an error
@@ -39,6 +42,24 @@ by \code{type = "waterfall"}.}
 
 \item{overall}{Logical. \code{TRUE} (default) marks the overall ATE with a black
 dashed line.}
+
+\item{show_calibration}{Logical. \code{TRUE} (default) writes the calibration
+test of \code{x$calibration} (\code{\link[grf:test_calibration]{grf::test_calibration()}}, see \code{\link[=get_hte]{get_hte()}})
+inside the first panel, only the rows with a one-sided P below 0.05: the
+coefficient and P of the mean and of the differential forest prediction.
+Nothing is written when neither is below 0.05. Bottom right of a
+waterfall, which the sorted bars leave empty, top right of a density.}
+
+\item{color}{\code{NULL} (default) or a character vector of colour names or hex
+codes, for example a manuscript palette such as \code{my_color[c(3, 9)]}.
+With \code{sub_var}, one colour per level for the bars or curves and the
+subgroup ATE lines: taken by name when the names cover a panel's levels,
+otherwise in level order, so a panel needs at least as many colours as
+levels. Without \code{sub_var}, the waterfall shades the bars from the first
+colour (most negative CATE) through white to the second (most positive),
+or through the second to the third when three are given; the density
+fills its curve with the first colour. \code{NULL} keeps ggplot2's default
+hues by level, a navy-white-firebrick gradient and a grey density.}
 
 \item{title}{Plot title, or \code{NULL} (default).}
 
@@ -94,6 +115,9 @@ res <- get_hte(d, cat_var = "z", adj_var = c("age", "sex", "stage"),
 
 # Patients sorted by their CATE, coloured by sex
 plt_hte_cate(res, sub_var = "sex")
+
+# The same in a manuscript's colours
+plt_hte_cate(res, sub_var = "sex", color = c(F = "#D6604D", M = "#4393C3"))
 
 # Density of the CATE by sex and by stage
 plt_hte_cate(res, sub_var = c("sex", "stage"), type = "density")

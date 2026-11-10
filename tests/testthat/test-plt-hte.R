@@ -1126,6 +1126,67 @@ test_that("plt_hte_sub returns a ggplot patchwork can combine", {
 
 # ---- plt_hte_cate() ---------------------------------------------------------
 
+test_that("plt_hte_cate color sets level colours, the gradient and the density fill", {
+  res  <- dep_res()
+  cols <- c("#D6604D", "#4393C3")
+  fill_map <- function(p, lv)
+    ggplot2::ggplot_build(p)$plot$scales$get_scales("fill")$map(lv)
+
+  # by level order, also for the subgroup ATE lines; legend inside the panel
+  p <- plt_hte_cate(res, sub_var = "sex", color = cols, show_calibration = FALSE)
+  expect_identical(unname(fill_map(p, c("F", "M"))), cols)
+  b <- ggplot2::ggplot_build(p)
+  expect_true(all(unique(b$data[[length(b$data)]]$colour) %in% cols))
+  expect_identical(p$theme$legend.position, "inside")
+  expect_equal(p$theme$legend.position.inside, c(0.02, 0.98))
+
+  # by name, whatever the order
+  p <- plt_hte_cate(res, sub_var = "sex", color = c(M = cols[2], F = cols[1]))
+  expect_identical(unname(fill_map(p, c("F", "M"))), cols)
+  p <- plt_hte_cate(res, sub_var = "sex", type = "density", color = cols)
+  expect_identical(unname(fill_map(p, c("F", "M"))), cols)
+
+  # without sub_var: gradient ends, and the density fill
+  p <- plt_hte_cate(res, color = c("#2166AC", "#B2182B"))
+  d <- ggplot2::ggplot_build(p)$data[[2]]
+  cate <- sort(res$data$.cate)
+  side <- if (abs(cate[1]) >= abs(cate[length(cate)])) 1L else length(cate)
+  expect_identical(toupper(d$fill[side]), if (side == 1L) "#2166AC" else "#B2182B")
+  p <- plt_hte_cate(res, type = "density", color = "#4393C3")
+  expect_identical(ggplot2::ggplot_build(p)$data[[2]]$fill[1], "#4393C3")
+
+  # NULL keeps the defaults: ggplot2's hues by level
+  p <- plt_hte_cate(res, sub_var = "sex")
+  expect_identical(unname(fill_map(p, c("F", "M"))), scales::hue_pal()(2))
+
+  expect_error(plt_hte_cate(res, sub_var = "sex", color = "#D6604D"), "has 1 colour")
+  expect_error(plt_hte_cate(res, color = "#D6604D"), "takes 2 colours")
+  expect_error(plt_hte_cate(res, color = "notacolour"), "`color` must be")
+  expect_error(plt_hte_cate(res, color = 3), "`color` must be")
+})
+
+test_that("plt_hte_cate writes the calibration rows with P < 0.05 in the first panel", {
+  res <- dep_res()
+  text_of <- function(p) {
+    l <- Filter(function(l) inherits(l$geom, "GeomText"), p$layers)
+    if (length(l)) l[[1]]$aes_params$label
+  }
+  r <- res
+  r$calibration$p.value <- c(0.0004, 0.2)
+  r$calibration$estimate <- c(1.02, 0.4)
+  lab <- text_of(plt_hte_cate(r))
+  expect_match(lab, "Calibration test\nMean forest prediction: 1.02, P < 0.001")
+  expect_false(grepl("Differential", lab))
+  r$calibration$p.value <- c(0.2, 0.012)
+  expect_match(text_of(plt_hte_cate(r, type = "density")), "Differential forest prediction: 0.40, P = 0.012")
+  expect_match(plt_hte_cate(r)$labels$caption, "calibration test")
+  expect_null(text_of(plt_hte_cate(r, show_calibration = FALSE)))
+  r$calibration$p.value <- c(0.2, 0.3)
+  expect_null(text_of(plt_hte_cate(r)))
+  expect_false(grepl("calibration", plt_hte_cate(r)$labels$caption))
+  expect_error(plt_hte_cate(res, show_calibration = NA), "`show_calibration` must be TRUE or FALSE")
+})
+
 test_that("CATE-only plots do not compute unused arm scores", {
   res <- dep_res()
   local_mocked_bindings(.hte_arm_scores = function(...) stop("unused scores"))
@@ -1143,7 +1204,7 @@ test_that("plt_hte_cate draws the sorted CATE with the overall and subgroup ATE"
   res <- dep_res()
   expect_identical(names(formals(plt_hte_cate)),
                    c("x", "sub_var", "type", "show_ci", "conf_level",
-                     "overall", "title", "save"))
+                     "overall", "show_calibration", "color", "title", "save"))
   p <- plt_hte_cate(res, sub_var = "stage")
   expect_s3_class(p, "ggplot")
   bars <- layer_data_of(p, "GeomCol")
