@@ -92,7 +92,8 @@ d <- data.frame(age = rnorm(n, 60, 10), x2 = rnorm(n),
 d$z <- rbinom(n, 1, 0.5)
 d$y <- d$x2 + d$z * (0.5 + 0.05 * (d$age - 60)) + rnorm(n)
 res <- get_hte(d, cat_var = "z", adj_var = c("age", "x2", "stage"),
-               surv = "y", grf_args = list(num.trees = 500, seed = 1))
+               surv = "y", grf_args = list(num.trees = 500, seed = 1),
+               keep_trees = TRUE)   # predicting at new covariate values needs the trees
 get_hte_pdp(res, x_var = c("age", "stage"))
 }
 \dontshow{\}) # examplesIf}

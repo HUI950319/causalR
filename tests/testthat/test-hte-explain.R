@@ -20,7 +20,7 @@ expl_res <- function(encoding = "integer", weighted = FALSE) {
     # weights that tilt the population towards older patients
     ga <- list(num.trees = 200, seed = 1)
     if (weighted) ga$sample.weights <- ifelse(d$age > 60, 4, 1)
-    expl_cache[[key]] <- suppressMessages(get_hte(
+    expl_cache[[key]] <- suppressMessages(get_hte(keep_trees = TRUE, 
       d, cat_var = "z", adj_var = c("age", "stage", "sex", "nodes"),
       surv = "y", factor_encoding = encoding, grf_args = ga))
   }
@@ -205,7 +205,7 @@ test_that("get_hte_ale() steps an unordered factor through similar levels", {
                                  ordered = TRUE))
   d$z <- stats::rbinom(n, 1, 0.5)
   d$y <- d$z * (d$grp %in% c("B", "D")) + stats::rnorm(n, sd = 0.5)
-  res <- suppressMessages(get_hte(d, cat_var = "z",
+  res <- suppressMessages(get_hte(keep_trees = TRUE, d, cat_var = "z",
                                   adj_var = c("grp", "age", "sz", "ord"),
                                   surv = "y",
                                   grf_args = list(num.trees = 200, seed = 1)))
@@ -256,7 +256,7 @@ test_that("get_hte_ale() joins the levels the explained patients have", {
   d$nodes[rare] <- c(1, 1, 2, 2)
   d$z <- stats::rbinom(n, 1, 0.5)
   d$y <- d$z * (1 + 0.3 * d$nodes) + stats::rnorm(n, sd = 0.5)
-  res  <- suppressMessages(get_hte(d, cat_var = "z", adj_var = c("age", "nodes"),
+  res  <- suppressMessages(get_hte(keep_trees = TRUE, d, cat_var = "z", adj_var = c("age", "nodes"),
                                    surv = "y",
                                    grf_args = list(num.trees = 200, seed = 1)))
 
@@ -407,7 +407,7 @@ test_that("explanations handle missing values, logical, character and odd names"
   adj <- c("age", "Tumor size", "T stage", "smoker", "site")
 
   for (enc in c("integer", "onehot")) {
-    res <- suppressWarnings(suppressMessages(get_hte(
+    res <- suppressWarnings(suppressMessages(get_hte(keep_trees = TRUE, 
       d, cat_var = "z", adj_var = adj, surv = "y", factor_encoding = enc,
       grf_args = list(num.trees = 100, seed = 1))))
 
@@ -458,7 +458,7 @@ test_that("get_hte_shp() Kernel SHAP stays additive beyond 8 covariates", {
                             dimnames = list(NULL, paste0("x", 1:9))))
   d$z <- stats::rbinom(n, 1, 0.5)
   d$y <- d$z * (1 + d$x1) + stats::rnorm(n)
-  res <- suppressMessages(get_hte(d, cat_var = "z", adj_var = paste0("x", 1:9),
+  res <- suppressMessages(get_hte(keep_trees = TRUE, d, cat_var = "z", adj_var = paste0("x", 1:9),
                                   surv = "y",
                                   grf_args = list(num.trees = 100, seed = 1)))
   # 9 covariates: sampled coalitions on top of the exact degree-2 ones
@@ -482,7 +482,7 @@ test_that("explanations run on a survival forest", {
   ce <- pmin(stats::rexp(n, 0.01), 120)
   d$time <- pmin(ev, ce)
   d$DSS  <- as.integer(ev <= ce)
-  res <- suppressMessages(get_hte(d, cat_var = "z", adj_var = c("age", "stage"),
+  res <- suppressMessages(get_hte(keep_trees = TRUE, d, cat_var = "z", adj_var = c("age", "stage"),
                                   surv = TRUE, time = 60,
                                   grf_args = list(num.trees = 100, seed = 1)))
   expect_true(all(is.finite(get_hte_pdp(res, max_n = 50, grid_n = 5)$estimate)))

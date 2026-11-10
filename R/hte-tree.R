@@ -1074,7 +1074,7 @@ get_hte_tree <- function(data,
     if (is.null(g$num.trees) && nrow(rows) <= 10000L) g$num.trees <- 500L
     do.call(get_hte, c(
       list(data = rows, cat_var = cat_var, adj_var = adj_var, surv = surv,
-           factor_encoding = factor_encoding, grf_args = g),
+           factor_encoding = factor_encoding, grf_args = g, keep_trees = TRUE),
       if (is_surv) list(time = time)))
   }
   notes <- character()

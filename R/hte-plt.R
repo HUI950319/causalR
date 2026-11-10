@@ -38,6 +38,7 @@
 #' @keywords internal
 #' @noRd
 .hte_pdp <- function(x, vars, grid_n, max_n) {
+  .hte_need_trees(x, "plt_hte_dep() with display = \"pdp\" or type = \"heat\"")
   d    <- x$data
   rows <- .hte_explain_rows(nrow(x$fit$X.orig), max_n)
   grid <- lapply(stats::setNames(vars, vars), function(v)
@@ -276,7 +277,8 @@
 #' d$y <- rbinom(n, 1, plogis(-1 + 0.02 * (d$age - 50) +
 #'                              d$z * (0.2 + 0.6 * (d$sex == "M"))))
 #' res <- get_hte(d, cat_var = "z", adj_var = c("age", "sex", "stage"),
-#'                surv = "y", grf_args = list(num.trees = 500, seed = 1))
+#'                surv = "y", grf_args = list(num.trees = 500, seed = 1),
+#'                keep_trees = TRUE)   # predicting at new covariate values needs the trees
 #'
 #' # Every covariate, ordered by importance
 #' plt_hte_dep(res)
@@ -1717,6 +1719,7 @@ plt_hte_cate <- function(x,
   ate <- if (overall)
     .hte_muffle_ps(.hte_estimate(fit, s, rep(TRUE, nrow(d)), grid, FALSE, z,
                                  "Overall", beyond, estimator))$estimate
+  if (show_ci) .hte_need_trees(x, "plt_hte_cate(show_ci = TRUE)")
   se  <- if (show_ci)
     sqrt(as.numeric(stats::predict(fit, estimate.variance = TRUE)$variance.estimates))
 

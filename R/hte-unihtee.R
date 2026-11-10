@@ -583,9 +583,10 @@ get_hte_unihtee <- function(data,
     res <- if (is_surv)
       get_hte(data, cat_var, adj_var = covars, surv = TRUE, measure = measure,
               conf_level = conf_level, time = time, grf_args = grf_args,
-              verbose = verbose) else
+              keep_trees = TRUE, verbose = verbose) else
       get_hte(data, cat_var, adj_var = covars, surv = surv, measure = measure,
-              conf_level = conf_level, grf_args = grf_args, verbose = verbose)
+              conf_level = conf_level, grf_args = grf_args, keep_trees = TRUE,
+              verbose = verbose)
     fit  <- res$fit
     an   <- attr(res, "analysis")
     d    <- res$data

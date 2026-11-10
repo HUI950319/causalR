@@ -34,7 +34,7 @@ hte_bin <- function() {
   skip_if_not_installed("grf")
   # ratio / OR for ATT, ATC and ATO are skipped with a message
   if (is.null(hte_cache$bin))
-    hte_cache$bin <- suppressMessages(get_hte(
+    hte_cache$bin <- suppressMessages(get_hte(keep_trees = TRUE, 
       hte_bin_data(), cat_var = "z", adj_var = c("age", "x2", "sex", "stage"),
       surv = "y", estimand = c("ATE", "ATT", "ATC", "ATO"),
       measure = c("diff", "ratio", "OR"), factor_encoding = "onehot",
@@ -45,7 +45,7 @@ hte_bin <- function() {
 hte_surv <- function() {
   skip_if_not_installed("grf")
   if (is.null(hte_cache$surv))
-    hte_cache$surv <- get_hte(hte_surv_data(), cat_var = "z",
+    hte_cache$surv <- get_hte(keep_trees = TRUE, hte_surv_data(), cat_var = "z",
                               adj_var = c("age", "x2", "sex"), surv = TRUE,
                               time = 60, measure = c("diff", "ratio", "OR"),
                               grf_args = hte_args)
@@ -83,6 +83,58 @@ test_that("get_hte returns the documented structure", {
   expect_identical(nrow(res$stats), 6L)
   expect_true(all(c(".cate", ".dr_score") %in% names(res$data)))
   expect_identical(attr(res, "analysis")$outcome_type, "binary")
+})
+
+test_that("keep_trees = FALSE (default) drops the trees and keeps every estimate", {
+  skip_if_not_installed("grf")
+  set.seed(20261110)
+  n <- 400L
+  d <- data.frame(age = stats::rnorm(n, 60, 10), x2 = stats::rnorm(n),
+                  sex = factor(sample(c("F", "M"), n, replace = TRUE)))
+  d$z  <- stats::rbinom(n, 1, stats::plogis(0.3 * d$x2))
+  ev   <- stats::rexp(n, 0.02 * exp(0.3 * d$x2 - 0.5 * d$z))
+  cens <- pmin(stats::rexp(n, 0.01), 120)
+  d$time <- pmin(ev, cens)
+  d$DSS  <- as.integer(ev <= cens)
+  fit_one <- function(...) suppressWarnings(get_hte(
+    d, cat_var = "z", adj_var = c("age", "x2", "sex"), sub_var = "sex",
+    time = 60, ...))
+  ga   <- list(num.trees = 100, seed = 1)
+  slim <- fit_one(grf_args = ga)
+  full <- fit_one(grf_args = ga, keep_trees = TRUE)
+
+  expect_null(slim$fit[["_root_nodes"]])
+  expect_false(is.null(full$fit[["_root_nodes"]]))
+  expect_lt(as.numeric(object.size(slim$fit)), as.numeric(object.size(full$fit)) / 3)
+  expect_s3_class(slim$fit, "causal_survival_forest")
+  for (k in c("stats", "subgroup", "importance", "calibration", "data"))
+    expect_equal(slim[[k]], full[[k]])
+  expect_equal(slim$fit$predictions, full$fit$predictions)
+  expect_equal(suppressWarnings(grf::average_treatment_effect(slim$fit)),
+               suppressWarnings(grf::average_treatment_effect(full$fit)))
+  expect_false(attr(slim, "analysis")$keep_trees)
+  expect_true(attr(full, "analysis")$keep_trees)
+  expect_match(paste(capture.output(print(slim)), collapse = "\n"), "keep_trees = TRUE")
+
+  # plots read only the per-patient fields (grob names are counters, so the
+  # built layer data are compared)
+  built <- function(p) ggplot2::ggplot_build(p)$data
+  expect_equal(built(plt_hte_sub(slim, sub_var = "sex")),
+               built(plt_hte_sub(full, sub_var = "sex")))
+  expect_equal(built(plt_hte_cate(slim)), built(plt_hte_cate(full)))
+
+  # predictions at new covariate values stop with a pointer to keep_trees
+  expect_error(get_hte_pdp(slim, x_var = "age"), "keep_trees = TRUE")
+  expect_error(plt_hte_dep(slim, x_var = "age", display = "pdp"), "keep_trees = TRUE")
+  expect_error(plt_hte_dep(slim, x_var = c("age", "x2"), type = "heat"), "keep_trees = TRUE")
+  expect_error(plt_hte_cate(slim, show_ci = TRUE), "keep_trees = TRUE")
+  expect_no_error(get_hte_pdp(full, x_var = "age"))
+
+  # grf without its prediction cache: the slim forest still carries them
+  nc <- fit_one(grf_args = c(ga, compute.oob.predictions = FALSE))
+  expect_equal(as.numeric(nc$fit$predictions), nc$data$.cate)
+
+  expect_error(fit_one(grf_args = ga, keep_trees = NA), "`keep_trees` must be TRUE or FALSE")
 })
 
 test_that("every factor enters the forest with one column per level", {
@@ -811,11 +863,11 @@ test_that("HTE follow-up: uncached OOB predictions are reused within one analysi
   testthat::local_mocked_bindings(causal_predict_oob = spy, .package = "grf")
   ga <- hte_repair_args
   ga$compute.oob.predictions <- TRUE
-  ref <- get_hte(d, "z", sub_var = "g", adj_var = c("x", "g"), surv = "y",
+  ref <- get_hte(keep_trees = TRUE, d, "z", sub_var = "g", adj_var = c("x", "g"), surv = "y",
                    estimand = c("ATE", "ATT", "ATC", "ATO"), grf_args = ga)
   expect_identical(counter$n, 0L)
   ga$compute.oob.predictions <- FALSE
-  r <- get_hte(d, "z", sub_var = "g", adj_var = c("x", "g"), surv = "y",
+  r <- get_hte(keep_trees = TRUE, d, "z", sub_var = "g", adj_var = c("x", "g"), surv = "y",
                  estimand = c("ATE", "ATT", "ATC", "ATO"), grf_args = ga)
   expect_identical(counter$n, 1L)
   for (slot in c("stats", "subgroup", "importance", "calibration", "data"))

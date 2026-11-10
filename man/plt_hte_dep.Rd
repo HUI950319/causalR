@@ -148,7 +148,8 @@ d$z <- rbinom(n, 1, 0.5)
 d$y <- rbinom(n, 1, plogis(-1 + 0.02 * (d$age - 50) +
                              d$z * (0.2 + 0.6 * (d$sex == "M"))))
 res <- get_hte(d, cat_var = "z", adj_var = c("age", "sex", "stage"),
-               surv = "y", grf_args = list(num.trees = 500, seed = 1))
+               surv = "y", grf_args = list(num.trees = 500, seed = 1),
+               keep_trees = TRUE)   # predicting at new covariate values needs the trees
 
 # Every covariate, ordered by importance
 plt_hte_dep(res)

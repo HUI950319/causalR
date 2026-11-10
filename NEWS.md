@@ -1,5 +1,17 @@
 # causalR (development version)
 
+* `get_hte()` gains `keep_trees`, default `FALSE`: the returned `$fit` drops
+  the forest's trees and keeps the per-patient fields, with the out-of-bag
+  predictions cached, so every estimate, `plt_hte_sub()`, `plt_hte_rate()`,
+  `plt_hte_cate()` and the `"cate"` / `"dr"` layers of `plt_hte_dep()` are
+  unchanged while a saved result of 40,825 survival rows and 2000 trees
+  shrinks from 209 MB to 4 MB. `get_hte_pdp()`, `get_hte_ale()`,
+  `get_hte_shp()`, `plt_hte_dep()` with `display = "pdp"` or
+  `type = "heat"`, and `plt_hte_cate(show_ci = TRUE)` predict from the trees
+  and stop with a message pointing to `keep_trees = TRUE`. The forests
+  `get_hte_icf()`, `get_hte_tree()` and `get_hte_unihtee()` fit internally
+  keep their trees as before.
+
 * `plt_hte_sub()` calls its label map `name_map`, as the RegR plotters do,
   instead of `label_column_list`. The old name still works with a
   deprecation warning, and `name_map` wins when both are given.

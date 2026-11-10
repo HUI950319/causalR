@@ -16,7 +16,7 @@ dep_res <- function() {
     d$y <- stats::rbinom(n, 1, stats::plogis(-1 + 0.02 * (d$age - 50) +
                                                d$z * (0.2 + 0.6 * (d$sex == "M"))))
     # sex is added to the covariates with a message
-    dep_cache$res <- suppressMessages(get_hte(
+    dep_cache$res <- suppressMessages(get_hte(keep_trees = TRUE, 
       d, cat_var = "z", sub_var = "sex", adj_var = c("age", "stage"),
       surv = "y", factor_encoding = "onehot",
       grf_args = list(num.trees = 300, seed = 1)))
@@ -177,7 +177,7 @@ test_that("the cate layer draws 2000 patients; its line and y range use all", {
                   sex = factor(sample(c("F", "M"), n, replace = TRUE)))
   d$z <- stats::rbinom(n, 1, 0.5)
   d$y <- stats::rbinom(n, 1, stats::plogis(-1 + d$z * (0.2 + 0.6 * (d$sex == "M"))))
-  res <- get_hte(d, cat_var = "z", adj_var = c("age", "sex"), surv = "y",
+  res <- get_hte(keep_trees = TRUE, d, cat_var = "z", adj_var = c("age", "sex"), surv = "y",
                  grf_args = list(num.trees = 50, seed = 1))
   p <- plt_hte_dep(res, display = "cate")
   for (q in panels_of(p))
@@ -258,7 +258,7 @@ test_that("pdp sets an integer-coded factor through its level code", {
                   stage = factor(sample(c("I", "II", "III"), n, replace = TRUE)))
   d$z <- stats::rbinom(n, 1, 0.5)
   d$y <- stats::rbinom(n, 1, stats::plogis(-1 + d$z * (0.2 + 0.4 * (d$stage == "III"))))
-  res <- get_hte(d, cat_var = "z", adj_var = c("age", "stage"), surv = "y",
+  res <- get_hte(keep_trees = TRUE, d, cat_var = "z", adj_var = c("age", "stage"), surv = "y",
                  factor_encoding = "integer",
                  grf_args = list(num.trees = 300, seed = 1))
 
@@ -296,7 +296,7 @@ test_that("a covariate with missing values draws only its observed patients", {
   d$stage[41:80] <- NA
   d$z <- stats::rbinom(n, 1, 0.5)
   d$y <- stats::rbinom(n, 1, 0.3 + 0.1 * d$z)
-  res <- get_hte(d, cat_var = "z", adj_var = c("age", "stage"), surv = "y",
+  res <- get_hte(keep_trees = TRUE, d, cat_var = "z", adj_var = c("age", "stage"), surv = "y",
                  grf_args = list(num.trees = 200, seed = 1))
   expect_identical(nrow(res$data), n)
 
@@ -326,7 +326,7 @@ test_that("survival: levels and values no arm follows past `time` leave the dr l
   d$time[cut] <- 50
   d$DSS[cut]  <- 0L
   expect_warning(
-    res <- get_hte(d, "z", sub_var = "stage", adj_var = c("age", "stage"),
+    res <- get_hte(keep_trees = TRUE, d, "z", sub_var = "stage", adj_var = c("age", "stage"),
                    surv = TRUE, time = 60,
                    grf_args = list(num.trees = 300, seed = 1)),
     "stage = III: no patient in one arm")
@@ -789,7 +789,7 @@ test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
   cut <- d$z == 1 & d$stage == "III" & d$time > 50
   d$time[cut] <- 50
   d$DSS[cut]  <- 0L
-  res <- get_hte(d, "z", adj_var = c("age", "stage"), surv = TRUE, time = 60,
+  res <- get_hte(keep_trees = TRUE, d, "z", adj_var = c("age", "stage"), surv = TRUE, time = 60,
                  grf_args = list(num.trees = 300, seed = 1))
 
   expect_warning(p <- plt_hte_sub(res, sub_var = "stage"),
@@ -847,7 +847,7 @@ test_that("plt_hte_sub rejects invalid requests and saves a PDF", {
                    g = factor(sample(c("a", "b"), 300, replace = TRUE)))
   dc$z <- stats::rbinom(300, 1, 0.5)
   dc$y <- stats::rnorm(300) + dc$z
-  rc <- get_hte(dc, "z", adj_var = c("x", "g"), surv = "y",
+  rc <- get_hte(keep_trees = TRUE, dc, "z", adj_var = c("x", "g"), surv = "y",
                 grf_args = list(num.trees = 100, seed = 1))
   expect_error(plt_hte_sub(rc, measure = "OR"), "OR")
 

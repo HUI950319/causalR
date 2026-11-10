@@ -60,6 +60,34 @@
 
 # ---- L2 scores and estimates -----------------------------------------------
 
+# The grf fields that hold the trees, read only to predict at new covariate
+# values. Dropping them keeps every per-patient field the estimates use; the
+# out-of-bag predictions `fit` computed are cached when grf did not cache them.
+#' @keywords internal
+#' @noRd
+.HTE_TREE_FIELDS <- c("_drawn_samples", "_leaf_samples", "_pv_values",
+                      "_child_nodes", "_split_vars", "_split_values",
+                      "_send_missing_left", "_root_nodes")
+
+#' @keywords internal
+#' @noRd
+.hte_drop_trees <- function(raw_fit, fit) {
+  for (f in c("predictions", "debiased.error", "excess.error"))
+    if (is.null(raw_fit[[f]]) && !is.null(fit[[f]])) raw_fit[[f]] <- fit[[f]]
+  raw_fit[intersect(.HTE_TREE_FIELDS, names(raw_fit))] <- NULL
+  raw_fit
+}
+
+# Stop before a prediction at new covariate values on a forest without trees.
+#' @keywords internal
+#' @noRd
+.hte_need_trees <- function(x, what) {
+  if (is.null(x$fit[["_root_nodes"]]))
+    stop(sprintf("%s needs the forest's trees, which get_hte() drops by default; refit with get_hte(..., keep_trees = TRUE).",
+                 what), call. = FALSE)
+  invisible(NULL)
+}
+
 # Observation weights shared by all summaries of the forest.
 .hte_weights <- function(fit) {
   if (!is.null(fit$sample.weights)) return(fit$sample.weights)
@@ -669,7 +697,8 @@
 #'   with `measure = "diff"`. Each arm needs at least two positive-weight
 #'   complete rows. Required out-of-bag predictions are computed once
 #'   and reused internally if grf has not cached them; the returned forest
-#'   retains the backend's original cache setting.
+#'   retains the backend's original cache setting with `keep_trees = TRUE`
+#'   and carries them without its trees.
 #'   Without `num.trees`, grf grows its default 2000 trees, or 200 when more
 #'   than 10,000 rows are analysed, with a message:
 #'   at 100,000 survival rows that took 13 s instead of 83 s with the same
@@ -680,6 +709,16 @@
 #'   point between `time` and it gets that point, since grf moves every time
 #'   down to the grid point at or before it and would otherwise count them
 #'   as deaths at `time`.
+#' @param keep_trees Logical. `FALSE` (default) drops the forest's trees from
+#'   `$fit` before returning. The per-patient fields stay, with the
+#'   out-of-bag predictions cached, so every estimate, `plt_hte_sub()`,
+#'   `plt_hte_rate()`, `plt_hte_cate()` and the `"cate"` / `"dr"` layers of
+#'   `plt_hte_dep()` give the same results; at 40,825 survival rows and 2000
+#'   trees the saved result shrank from 209 MB to 4 MB. Predicting at new
+#'   covariate values needs the trees: `get_hte_pdp()`, `get_hte_ale()`,
+#'   `get_hte_shp()`, `plt_hte_dep()` with `display = "pdp"` or
+#'   `type = "heat"`, and `plt_hte_cate(show_ci = TRUE)` stop with a message
+#'   on a result without them. `TRUE` keeps the complete grf forest.
 #' @param verbose Logical. `TRUE` reports how many rows were dropped for a
 #'   missing `cat_var` or outcome. Default `FALSE`.
 #'
@@ -829,7 +868,8 @@
 #'       CATE, and `.dr_score`, the AIPW score (equal to
 #'       [grf::get_scores()] at interior propensities). Both are on the `"diff"` scale whatever
 #'       `measure` is.}
-#'     \item{`fit`}{The grf forest.}
+#'     \item{`fit`}{The grf forest, without its trees unless
+#'       `keep_trees = TRUE`; its out-of-bag predictions are cached either way.}
 #'   }
 #'   Analysis metadata is attached as `attr(x, "analysis")`, including the
 #'   covariates actually used, the treated level, the propensity range
@@ -898,6 +938,7 @@ get_hte <- function(data,
                     conf_level = 0.95,
                     time       = 120,
                     grf_args   = list(),
+                    keep_trees = FALSE,
                     verbose    = FALSE) {
 
   method <- match.arg(method, "grf")
@@ -908,6 +949,8 @@ get_hte <- function(data,
       is.na(conf_level) || conf_level <= 0 || conf_level >= 1)
     stop("`conf_level` must be a single number strictly between 0 and 1.",
          call. = FALSE)
+  if (!isTRUE(keep_trees) && !isFALSE(keep_trees))
+    stop("`keep_trees` must be TRUE or FALSE.", call. = FALSE)
   if (!is.character(estimand) || !length(estimand))
     stop("`estimand` must be a character vector.", call. = FALSE)
   est_all  <- names(.HTE_ESTIMANDS)
@@ -1271,6 +1314,7 @@ get_hte <- function(data,
     df         = vapply(dr, function(r) r$df, integer(1L)),
     p_het      = vapply(dr, function(r) r$p_het, numeric(1L)))
   imp_tbl <- imp_tbl[order(imp_tbl$importance, decreasing = TRUE), ]
+  if (!keep_trees) raw_fit <- .hte_drop_trees(raw_fit, fit)
 
   structure(
     list(stats = stats_tbl, subgroup = sub_tbl, importance = imp_tbl,
@@ -1286,7 +1330,8 @@ get_hte <- function(data,
       estimand = estimand, measure = measure, target = target,
       time = if (is_surv) time else NULL, conf_level = conf_level,
       n = length(W), n_treat = sum(W), ps_range = ps_rng,
-      seed = fit[["seed"]], grf_args = grf_args, call = match.call()))
+      seed = fit[["seed"]], grf_args = grf_args, keep_trees = keep_trees,
+      call = match.call()))
 }
 
 
@@ -1305,7 +1350,9 @@ print.hte_res <- function(x, ...) {
     target     = if (!is.null(a$time))
       sprintf("%s at time = %s", a$target, format(a$time)),
     conf_level = format(a$conf_level),
-    propensity = sprintf("range %.3f to %.3f", a$ps_range[1L], a$ps_range[2L])
+    propensity = sprintf("range %.3f to %.3f", a$ps_range[1L], a$ps_range[2L]),
+    trees      = if (is.null(x$fit[["_root_nodes"]]))
+      "dropped (get_hte(keep_trees = TRUE) keeps them)"
   ))
   UtilsR::pr_section("Overall effect")
   print(x$stats)

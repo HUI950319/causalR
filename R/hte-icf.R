@@ -904,7 +904,7 @@ get_hte_icf <- function(data,
                                   c("num.trees", "seed", "target", "W.hat"))]
   hte <- function(rows) do.call(get_hte, c(
     list(data = rows, cat_var = cat_var, adj_var = adj_var, surv = surv,
-         factor_encoding = factor_encoding, grf_args = ga),
+         factor_encoding = factor_encoding, grf_args = ga, keep_trees = TRUE),
     if (is_surv) list(time = time)))
   notes <- character()
   run <- function(idx, vote = TRUE) withCallingHandlers(

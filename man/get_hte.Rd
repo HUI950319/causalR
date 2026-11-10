@@ -17,6 +17,7 @@ get_hte(
   conf_level = 0.95,
   time = 120,
   grf_args = list(),
+  keep_trees = FALSE,
   verbose = FALSE
 )
 }
@@ -123,7 +124,8 @@ rows analysed only. \code{clusters} and \code{sample.weights} are only supported
 with \code{measure = "diff"}. Each arm needs at least two positive-weight
 complete rows. Required out-of-bag predictions are computed once
 and reused internally if grf has not cached them; the returned forest
-retains the backend's original cache setting.
+retains the backend's original cache setting with \code{keep_trees = TRUE}
+and carries them without its trees.
 Without \code{num.trees}, grf grows its default 2000 trees, or 200 when more
 than 10,000 rows are analysed, with a message:
 at 100,000 survival rows that took 13 s instead of 83 s with the same
@@ -134,6 +136,17 @@ for months) is what bounds time and memory. Patients followed past
 point between \code{time} and it gets that point, since grf moves every time
 down to the grid point at or before it and would otherwise count them
 as deaths at \code{time}.}
+
+\item{keep_trees}{Logical. \code{FALSE} (default) drops the forest's trees from
+\verb{$fit} before returning. The per-patient fields stay, with the
+out-of-bag predictions cached, so every estimate, \code{plt_hte_sub()},
+\code{plt_hte_rate()}, \code{plt_hte_cate()} and the \code{"cate"} / \code{"dr"} layers of
+\code{plt_hte_dep()} give the same results; at 40,825 survival rows and 2000
+trees the saved result shrank from 209 MB to 4 MB. Predicting at new
+covariate values needs the trees: \code{get_hte_pdp()}, \code{get_hte_ale()},
+\code{get_hte_shp()}, \code{plt_hte_dep()} with \code{display = "pdp"} or
+\code{type = "heat"}, and \code{plt_hte_cate(show_ci = TRUE)} stop with a message
+on a result without them. \code{TRUE} keeps the complete grf forest.}
 
 \item{verbose}{Logical. \code{TRUE} reports how many rows were dropped for a
 missing \code{cat_var} or outcome. Default \code{FALSE}.}
@@ -174,7 +187,8 @@ calibration test, \code{mean.forest.prediction} and
 CATE, and \code{.dr_score}, the AIPW score (equal to
 \code{\link[grf:get_scores]{grf::get_scores()}} at interior propensities). Both are on the \code{"diff"} scale whatever
 \code{measure} is.}
-\item{\code{fit}}{The grf forest.}
+\item{\code{fit}}{The grf forest, without its trees unless
+\code{keep_trees = TRUE}; its out-of-bag predictions are cached either way.}
 }
 Analysis metadata is attached as \code{attr(x, "analysis")}, including the
 covariates actually used, the treated level, the propensity range

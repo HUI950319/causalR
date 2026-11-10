@@ -113,6 +113,7 @@
 .hte_explain_check <- function(x, max_n, time_budget, verbose) {
   if (!inherits(x, "hte_res") || is.null(x$fit))
     stop("`x` must be an `hte_res` object from get_hte().", call. = FALSE)
+  .hte_need_trees(x, "Partial dependence, ALE or SHAP")
   if (!requireNamespace("grf", quietly = TRUE))
     stop("Package 'grf' is required to predict from the forest.", call. = FALSE)
   if (!is.null(max_n) && (!is.numeric(max_n) || length(max_n) != 1L ||
@@ -324,7 +325,8 @@
 #' d$z <- rbinom(n, 1, 0.5)
 #' d$y <- d$x2 + d$z * (0.5 + 0.05 * (d$age - 60)) + rnorm(n)
 #' res <- get_hte(d, cat_var = "z", adj_var = c("age", "x2", "stage"),
-#'                surv = "y", grf_args = list(num.trees = 500, seed = 1))
+#'                surv = "y", grf_args = list(num.trees = 500, seed = 1),
+#'                keep_trees = TRUE)   # predicting at new covariate values needs the trees
 #' get_hte_pdp(res, x_var = c("age", "stage"))
 #' }
 #'
@@ -450,7 +452,8 @@ get_hte_pdp <- function(x,
 #' d$z <- rbinom(n, 1, 0.5)
 #' d$y <- d$x2 + d$z * (0.5 + 0.05 * (d$age - 60)) + rnorm(n)
 #' res <- get_hte(d, cat_var = "z", adj_var = c("age", "x2", "stage"),
-#'                surv = "y", grf_args = list(num.trees = 500, seed = 1))
+#'                surv = "y", grf_args = list(num.trees = 500, seed = 1),
+#'                keep_trees = TRUE)   # predicting at new covariate values needs the trees
 #' get_hte_ale(res, x_var = "age", n_bins = 10)
 #' }
 #'
@@ -730,7 +733,8 @@ get_hte_ale <- function(x,
 #' d$z <- rbinom(n, 1, 0.5)
 #' d$y <- d$x2 + d$z * (0.5 + 0.05 * (d$age - 60)) + rnorm(n)
 #' res <- get_hte(d, cat_var = "z", adj_var = c("age", "x2", "stage"),
-#'                surv = "y", grf_args = list(num.trees = 500, seed = 1))
+#'                surv = "y", grf_args = list(num.trees = 500, seed = 1),
+#'                keep_trees = TRUE)   # predicting at new covariate values needs the trees
 #' sv <- get_hte_shp(res)
 #' attr(sv, "analysis")$r2
 #' shapviz::sv_importance(sv)
