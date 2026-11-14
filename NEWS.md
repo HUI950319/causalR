@@ -1,5 +1,15 @@
 # causalR (development version)
 
+* New `save_hte()` stacks the variable importance bars of
+  `MLR::plt_bar_per()` -- or, when `sub_var` is not among the three most
+  important variables, the CATE waterfall of `plt_hte_cate()` -- over the
+  subgroup forest plot of `plt_hte_sub()`, and saves it at a page as wide as
+  the forest plot: its count and effect headers and axis title break onto two
+  lines, and the width adds 0.5 in under the bars or 1.2 in under the
+  waterfall. `sub_args`, `imp_args` and `cate_args` pass the arguments of the
+  three plots, merged over the defaults in the usage. MLR joins Suggests
+  (2026-11-15, the Supplementary Figure 5 of the oral/TRT series).
+
 * `plt_hte_sub()` names the arms after `cat_var` also when the treated level
   is the "no" one: an exposure ordered `Yes`, `No` with `No` treated read
   "Favours Yes" and "No - Yes", and now reads "Favours ACT" and
