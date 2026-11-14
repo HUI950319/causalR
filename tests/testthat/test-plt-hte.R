@@ -826,7 +826,7 @@ test_that("survival: a subgroup no arm follows past `time` is drawn empty", {
   expect_identical(as.character(layer_data_of(pc, "GeomVline", "estimate")$level),
                    c("I", "II"))
   expect_identical(nlevels(layer_data_of(pc, "GeomDensity")$level), 3L)
-  expect_identical(pc$labels$x, "CATE: S(60) 1 - 0")
+  expect_identical(pc$labels$x, "CATE: S(60) z - no z")
 })
 
 test_that("plt_hte_sub rejects invalid requests and saves a PDF", {
@@ -959,6 +959,19 @@ test_that("plt_hte_sub shows percentages, plain titles and direction labels", {
                            ov$estimate + stats::qnorm(0.95) * ov$std.error))
   expect_false(any(c("Higher with no z", "Higher with z") %in% fp_texts(p0)))
   expect_true("Risk difference, z - no z" %in% fp_texts(p0))
+
+  # A treated level "No" against "Yes" is named after the column too, the
+  # other way round, and the CATE axis takes the same names (2026-11-14,
+  # oral/TRT paper 3 read "Favours Yes" and "No - Yes")
+  rev_res <- res
+  rev_res$data$z <- factor(ifelse(res$data$z == 1, "No", "Yes"),
+                           levels = c("Yes", "No"))
+  attr(rev_res, "analysis")$treated <- "No"
+  p_rev <- plt_hte_sub(rev_res, sub_var = "stage")
+  expect_true("Risk difference (%), no z - z" %in% fp_texts(p_rev))
+  expect_true(all(c("Higher with no z", "Higher with z") %in% fp_texts(p_rev)))
+  expect_identical(causalR:::.hte_cate_label(rev_res), "CATE: risk no z - z")
+  expect_identical(causalR:::.hte_cate_label(res), "CATE: risk z - no z")
 
   p1 <- plt_hte_sub(res, sub_var = "stage",
                     header_list = list(effect = "ARD (95% CI)"),

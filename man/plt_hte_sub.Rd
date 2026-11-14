@@ -118,7 +118,8 @@ interval level is not named.}
 names the measure and the comparison, treated arm first, e.g.
 \code{"Difference in 3-year DSS (\%), NACT - no NACT"}. An exposure whose two
 levels read yes / no (\code{Yes}/\code{No}, \code{1}/\code{0}, \code{TRUE}/\code{FALSE}, in any case) is
-named after \code{cat_var}, as here; otherwise its levels name the arms.}
+named after \code{cat_var}, as here, also when the treated level is the "no"
+one (\code{"no NACT - NACT"}); otherwise its levels name the arms.}
 
 \item{axis_args}{Named list of axis settings, as \code{axis_args} of
 \code{RegR::plt_eff2()}; the defaults are written out in the usage above. A

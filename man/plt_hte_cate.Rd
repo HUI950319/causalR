@@ -71,7 +71,9 @@ include the \code{plot} argument; it is supplied internally.}
 \value{
 A \code{ggplot} for one panel, otherwise a patchwork. The CATE axis is
 the S(t) or RMST difference for a survival outcome, the risk difference
-for a binary one and the mean difference otherwise.
+for a binary one and the mean difference otherwise; its title names the
+arms as the \code{xlab} of \code{\link[=plt_hte_sub]{plt_hte_sub()}} does, e.g.
+\code{"CATE: S(60) PORT - no PORT"}.
 \code{attr(p, "subgroup")} holds the subgroup ATEs drawn, laid out as
 \code{get_hte()$subgroup} (\code{NULL} without \code{sub_var}), and
 \code{attr(p, "plot_size")} a suggested \code{c(width, height)} in inches. If

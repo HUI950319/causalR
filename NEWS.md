@@ -1,5 +1,12 @@
 # causalR (development version)
 
+* `plt_hte_sub()` names the arms after `cat_var` also when the treated level
+  is the "no" one: an exposure ordered `Yes`, `No` with `No` treated read
+  "Favours Yes" and "No - Yes", and now reads "Favours ACT" and
+  "no ACT - ACT" (2026-11-14, oral/TRT paper 3). The CATE axis of
+  `plt_hte_cate()`, `plt_hte_dep()` and `plt_hte_unihtee()` takes the same
+  names, "CATE: S(60) PORT - no PORT" instead of "CATE: S(60) Yes - No".
+
 * `plt_hte_cate()` gains `color`, so the plot can take a manuscript palette:
   one colour per `sub_var` level (by name or in level order, also for the
   subgroup ATE lines), the two or three colours of the waterfall gradient

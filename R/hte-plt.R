@@ -14,6 +14,7 @@
 #   L2  .hte_pdp()        forest CATE averaged with covariates set to grid values
 #   L2  .hte_beyond()     survival patients followed past `time`
 #   L2  .hte_cate_label() axis label of the CATE
+#   L2  .hte_arm_names()  display names of the two arms, treated first
 #   L2  .hte_sub_data()   normalises labelled subgroup columns for both plots
 #   L2  .hte_sub_var()    `sub_var` checks of plt_hte_sub() and plt_hte_cate()
 #   L2  .hte_muffle_ps()  silences grf's overlap warning in recomputed estimates
@@ -82,7 +83,26 @@
                                       format(a$time)),
                  binary     = "risk",
                  continuous = "mean")
-  sprintf("CATE: %s %s - %s", what, a$treated, ref)
+  arms <- .hte_arm_names(a$cat_var, a$treated, ref)
+  sprintf("CATE: %s %s - %s", what, arms[1L], arms[2L])
+}
+
+# Names of the two arms, treated first. An exposure whose levels read
+# yes / no, in either order, is named after its column ("PORT" and
+# "no PORT"); other levels name the arms themselves.
+#' @keywords internal
+#' @noRd
+.hte_arm_names <- function(cat_var, treated, ref) {
+  yn  <- tolower(c(treated, ref))
+  yes <- c("yes", "1", "true")
+  no  <- c("no", "0", "false")
+  if (yn[1L] %in% yes && yn[2L] %in% no) {
+    c(cat_var, paste("no", cat_var))
+  } else if (yn[1L] %in% no && yn[2L] %in% yes) {
+    c(paste("no", cat_var), cat_var)
+  } else {
+    c(treated, ref)
+  }
 }
 
 # Labelled columns use their storage values and SPSS missing values become
@@ -692,7 +712,8 @@ plt_hte_dep <- function(x,
 #'   names the measure and the comparison, treated arm first, e.g.
 #'   `"Difference in 3-year DSS (%), NACT - no NACT"`. An exposure whose two
 #'   levels read yes / no (`Yes`/`No`, `1`/`0`, `TRUE`/`FALSE`, in any case) is
-#'   named after `cat_var`, as here; otherwise its levels name the arms.
+#'   named after `cat_var`, as here, also when the treated level is the "no"
+#'   one (`"no NACT - NACT"`); otherwise its levels name the arms.
 #' @param axis_args Named list of axis settings, as `axis_args` of
 #'   `RegR::plt_eff2()`; the defaults are written out in the usage above. A
 #'   partial list is merged over them, so only the fields given change;
@@ -1232,9 +1253,7 @@ plt_hte_sub <- function(x,
                    binary = "Risk ratio", continuous = "Ratio of means"),
     OR    = switch(scale, S = "Event odds ratio", binary = "Odds ratio"))
   # An exposure whose levels read yes / no is named after its column
-  yn <- tolower(c(a$treated, ref))
-  arms <- if (yn[1L] %in% c("yes", "1", "true") && yn[2L] %in% c("no", "0", "false"))
-    c(a$cat_var, paste("no", a$cat_var)) else c(a$treated, ref)
+  arms <- .hte_arm_names(a$cat_var, a$treated, ref)
   # Left and right of the reference line: the arm a survival effect favours
   # (an event risk ratio below 1 favours the treated arm), otherwise the arm
   # with the higher value
@@ -1651,7 +1670,9 @@ plt_hte_sub <- function(x,
 #'
 #' @return A `ggplot` for one panel, otherwise a patchwork. The CATE axis is
 #'   the S(t) or RMST difference for a survival outcome, the risk difference
-#'   for a binary one and the mean difference otherwise.
+#'   for a binary one and the mean difference otherwise; its title names the
+#'   arms as the `xlab` of [plt_hte_sub()] does, e.g.
+#'   `"CATE: S(60) PORT - no PORT"`.
 #'   `attr(p, "subgroup")` holds the subgroup ATEs drawn, laid out as
 #'   `get_hte()$subgroup` (`NULL` without `sub_var`), and
 #'   `attr(p, "plot_size")` a suggested `c(width, height)` in inches. If
