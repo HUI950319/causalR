@@ -1,5 +1,14 @@
 # causalR (development version)
 
+* `plt_hte_sub()` sets a header of several lines as one block, its lines 1.2
+  times the type apart instead of `row_height` apart: every line took a table
+  row, which set the two lines of `save_hte()`'s headers 0.5 in apart. The
+  block takes as few table rows as leave it the room a one-line header has in
+  a row of 0.3 in -- one row from `row_height = 0.5` for two lines, so a
+  `save_hte()` page is 0.5 in shorter, and a row per line at the default
+  `0.3` -- and the other headers and the direction labels stand on its last
+  line (2026-11-15, the Supplementary Figure 5 of the oral/TRT series).
+
 * New `save_hte()` stacks the variable importance bars of
   `MLR::plt_bar_per()` -- or, when `sub_var` is not among the three most
   important variables, the CATE waterfall of `plt_hte_cate()` -- over the

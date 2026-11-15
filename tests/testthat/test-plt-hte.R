@@ -981,8 +981,8 @@ test_that("plt_hte_sub shows percentages, plain titles and direction labels", {
   expect_identical(fp_headers(p1)[3], "ARD (95% CI)")
   expect_true(all(c("Absolute risk difference", "Favours control",
                     "Favours z") %in% fp_texts(p1)))
-  # each line of a header takes a table row of its own; the direction labels
-  # sit in the last header row
+  # in rows of 0.3 in a header takes a table row per line (see the next test
+  # for its lines); the direction labels sit in the last header row
   q <- plt_hte_sub(res, sub_var = "stage", conf_level = 0.9,
                    header_list = list(effect = "Risk difference, %\n(90% CI)"))
   expect_identical(fp_headers(q)[3], "Risk difference, %\n(90% CI)")
@@ -1007,6 +1007,69 @@ test_that("plt_hte_sub shows percentages, plain titles and direction labels", {
   expect_error(plt_hte_sub(res, xlab = c("a", "b")), "`xlab`")
   expect_error(plt_hte_sub(res, axis_args = list(direction_labels = "left")),
                "`axis_args$direction_labels`", fixed = TRUE)
+})
+
+test_that("a header of several lines is one block at the line spacing of its type", {
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  res  <- dep_res()
+  two  <- list(count = "N\n(z / no z)", effect = "Risk\ndifference, %")
+  cell <- function(p, lab)
+    Filter(function(k) identical(k$label, lab), fp_grobs(p, "text"))[[1L]]
+  # Inches of a cell's anchor above the bottom of its table row, `row` in
+  # tall, and the height and line pitch of a two-line block in its type
+  on_row <- function(g, row) {
+    grDevices::pdf(NULL)
+    on.exit(grDevices::dev.off())
+    grid::pushViewport(grid::viewport(height = grid::unit(row, "in")))
+    blk <- grid::textGrob("A\nA", gp = g$gp)
+    c(y     = grid::convertY(g$y, "in", valueOnly = TRUE),
+      block = grid::convertHeight(grid::grobHeight(blk), "in", valueOnly = TRUE),
+      pitch = grid::convertHeight(grid::grobHeight(blk) -
+                                    grid::grobHeight(grid::textGrob("A", gp = g$gp)),
+                                  "in", valueOnly = TRUE))
+  }
+  # Rows of 0.5 in hold two lines, so the header takes one table row, as a
+  # one-line header does (2026-11-15: every line took a row, which set the
+  # lines of save_hte()'s headers 0.5 in apart)
+  p1 <- plt_hte_sub(res, sub_var = "stage", row_height = 0.5)
+  p2 <- plt_hte_sub(res, sub_var = "stage", row_height = 0.5, header_list = two)
+  expect_equal(drawn(p2, 14, 10)$heights, rep(0.5, 6L), tolerance = 1e-6)
+  expect_identical(attr(p2, "plot_size")[["height"]],
+                   attr(p1, "plot_size")[["height"]])
+  expect_identical(fp_headers(p2), c("Subgroup", two$count, two$effect))
+  # the lines are 1.2 x the 11.56 pt bold type apart, the block is centred in
+  # the row, and every header and the direction labels share its last baseline
+  m <- on_row(cell(p2, two$count), 0.5)
+  expect_equal(m[["pitch"]], 1.2 * (0.88 + 1 / 12) * 12 / 72, tolerance = 0.01)
+  expect_equal(m[["y"]], 0.25 - m[["block"]] / 2, tolerance = 1e-6)
+  for (lab in c("Subgroup", two$count, two$effect, "Higher with no z",
+                "Higher with z")) {
+    g <- cell(p2, lab)
+    expect_identical(g$vjust, 0)
+    expect_equal(on_row(g, 0.5)[["y"]], m[["y"]], tolerance = 1e-6)
+  }
+  expect_match(cell(p2, "Higher with z")$vp$name, "^Line_1_")
+  # a one-line header stays centred on its row
+  expect_null(cell(p1, "Subgroup")$vjust)
+  expect_null(cell(p1, "Higher with z")$vjust)
+
+  # Rows of 0.3 in do not: the block takes two, and sits in the middle of them
+  p3 <- plt_hte_sub(res, sub_var = "stage", header_list = two)
+  expect_equal(drawn(p3, 14, 10)$heights, rep(0.3, 7L), tolerance = 1e-6)
+  expect_identical(fp_headers(p3), c("Subgroup", two$count, two$effect))
+  for (lab in c("Subgroup", two$count, "Higher with z"))
+    expect_equal(on_row(cell(p3, lab), 0.3)[["y"]], 0.3 - m[["block"]] / 2,
+                 tolerance = 1e-6)
+  expect_match(cell(p3, "Higher with z")$vp$name, "^Line_2_")
+  # three lines in rows of 0.5 in take two rows, not three
+  p4 <- plt_hte_sub(res, sub_var = "stage", row_height = 0.5,
+                    header_list = list(effect = "Risk\ndifference\n(95% CI)"))
+  expect_length(drawn(p4, 14, 10)$heights, 7L)
+  # stretched over the page the block keeps its place in its rows
+  pf <- plt_hte_sub(res, sub_var = "stage", fixed_size = FALSE, header_list = two)
+  expect_equal(on_row(cell(pf, two$count), 0.3)[["y"]], 0.3 - m[["block"]] / 2,
+               tolerance = 1e-6)
 })
 
 test_that("plt_hte_sub takes header_list and deprecates est_label", {

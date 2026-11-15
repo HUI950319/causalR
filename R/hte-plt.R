@@ -694,8 +694,12 @@ plt_hte_dep <- function(x,
 #' @param header_list `NULL` (default) or a named list of single strings
 #'   replacing column headers, keyed as in `RegR::plt_eff2()`; a header left
 #'   out keeps its default. `"\n"` starts a new header line, e.g.
-#'   `list(effect = "3-year DSS difference, %\n(95% CI)")`: each line takes a
-#'   table row, and the other headers sit on the last one.
+#'   `list(effect = "3-year DSS difference, %\n(95% CI)")`: the lines of a
+#'   header are set 1.2 times its type apart whatever `row_height` is, the
+#'   block centred in as few table rows as leave it the room a one-line
+#'   header has in a row of 0.3 in -- one row from `row_height = 0.5` for two
+#'   lines, a row per line at the default `0.3` -- and the other headers and
+#'   the direction labels stand on its last line.
 #'   \describe{
 #'     \item{`label`}{The label column. Default `"Subgroup"`.}
 #'     \item{`count`}{The patients per arm. Default `"N (<treated> /
@@ -1306,8 +1310,11 @@ plt_hte_sub <- function(x,
   body$label <- ifelse(flush, disp, paste0("   ", disp))
   cols <- c("label", if (show_n) "n", "est", if (show_pvalue) "p",
             if (show_pinter) "p_inter")
-  # forestplot draws every row at one height, so a header cell with line
-  # breaks takes one table row per line; shorter cells sit on the last one.
+  # forestplot draws every row at one height. A header with line breaks is
+  # one cell, its lines 1.2 x its 11.56 pt bold type apart whatever
+  # `row_height` is, in the last of the table rows it takes: as few as leave
+  # it the room a one-line header has in a row of 0.3 in. set_head() below
+  # centres the block in those rows, shorter headers on its last baseline.
   # The interval is left out of the effect header, which keeps it narrow.
   hd <- function(key, auto) if (is.null(heads[[key]])) auto else heads[[key]]
   head <- strsplit(c(hd("label", "Subgroup"),
@@ -1316,10 +1323,13 @@ plt_hte_sub <- function(x,
                      if (show_pvalue) hd("p.value", "P"),
                      if (show_pinter) hd("p.interaction", "P for interaction")),
                    "\n", fixed = TRUE)
-  n_hdr <- max(lengths(head))
-  head  <- vapply(head, function(l) c(rep("", n_hdr - length(l)), l),
-                  character(n_hdr))
-  text  <- rbind(matrix(head, nrow = n_hdr), as.matrix(body[cols]))
+  n_line   <- max(lengths(head), 1L)
+  cex_bold <- 0.88 + 1 / 12
+  n_hdr <- as.integer(ceiling(((n_line - 1) * 1.2 * cex_bold / 6 +
+                                 min(row_height, 0.3)) / row_height - 1e-8))
+  text  <- rbind(matrix("", n_hdr - 1L, length(head)),
+                 vapply(head, paste, "", collapse = "\n"),
+                 as.matrix(body[cols]))
   dimnames(text) <- NULL
   mean  <- c(rep(NA, n_hdr), body$mean)
   lower <- c(rep(NA, n_hdr), body$lower)
@@ -1433,7 +1443,7 @@ plt_hte_sub <- function(x,
   # forestplot takes a label gpar per non-summary row and column, and derives
   # every default font from the first, so the others are all given.
   cex_lab  <- 0.8 + 1 / 12
-  cex_bold <- 0.88 + 1 / 12
+  bold_gp  <- grid::gpar(cex = cex_bold, fontface = "bold", lineheight = 1)
   xlab_gp  <- grid::gpar(cex = 0.9 + 1 / 12, fontface = "plain")
   lab_gp <- rep(list(rep(list(grid::gpar(cex = cex_lab)), n_text)), sum(!is_sum))
   if (overall && !is_sum[ov_row])
@@ -1452,8 +1462,7 @@ plt_hte_sub <- function(x,
     boxsize = box_size,
     col = forestplot::fpColors(box = box_col[1L], lines = box_col[1L],
                                summary = box_col[2L], zero = "black"),
-    txt_gp = forestplot::fpTxtGp(label = lab_gp,
-                                 summary = grid::gpar(cex = cex_bold, fontface = "bold"),
+    txt_gp = forestplot::fpTxtGp(label = lab_gp, summary = bold_gp,
                                  ticks = grid::gpar(cex = cex_lab, fontface = "plain"),
                                  xlab  = xlab_gp,
                                  title = grid::gpar(cex = 1.2 + 1 / 12, fontface = "bold")),
@@ -1473,14 +1482,31 @@ plt_hte_sub <- function(x,
     vps <- grid::grid.ls(viewports = TRUE, grobs = FALSE, print = FALSE)$name
     grep(sprintf("^Line_%d_", n_hdr), vps, value = TRUE)[1L]
   }
+  # forestplot centres every cell on its own row. The cells of a header of
+  # several lines are set on one baseline instead, the block centred in the
+  # table rows it takes; the direction labels stand on that baseline too.
+  head_at <- if (n_line > 1L)
+    list(y = grid::unit(n_hdr / 2, "npc") - 0.5 * grid::grobHeight(grid::textGrob(
+           paste(rep("A", n_line), collapse = "\n"), gp = bold_gp)),
+         vjust = 0)
+  set_head <- function() {
+    if (is.null(head_at)) return(invisible())
+    ls  <- grid::grid.ls(viewports = TRUE, print = FALSE)
+    hit <- ls$type == "grobListing" &
+      grepl(sprintf("Label_vp_%d_[0-9]+$", n_hdr), ls$vpPath)
+    for (nm in ls$name[hit])
+      do.call(grid::grid.edit, c(list(nm, redraw = FALSE), head_at))
+  }
   draw_dir <- function() {
     if (is.null(dir_lab) || is.na(vp <- head_vp())) return(invisible())
     grid::seekViewport(vp)
     zx <- grid::unit(tr_x(zero), "native")
-    grid::grid.text(dir_lab[1L], x = zx - grid::unit(dir_gap, "mm"), hjust = 1,
-                    gp = dir_gp, name = "direction_left")
-    grid::grid.text(dir_lab[2L], x = zx + grid::unit(dir_gap, "mm"), hjust = 0,
-                    gp = dir_gp, name = "direction_right")
+    do.call(grid::grid.text, c(list(dir_lab[1L], x = zx - grid::unit(dir_gap, "mm"),
+                                    hjust = 1, gp = dir_gp, name = "direction_left"),
+                               head_at))
+    do.call(grid::grid.text, c(list(dir_lab[2L], x = zx + grid::unit(dir_gap, "mm"),
+                                    hjust = 0, gp = dir_gp, name = "direction_right"),
+                               head_at))
     grid::upViewport(0)
   }
 
@@ -1563,7 +1589,7 @@ plt_hte_sub <- function(x,
   # forestplot does, save for the 5 mm margins, which forestplot turns into a
   # share of the capture. grid.grabExpr() hands back to the device that was
   # current, and selecting the null device opens a new one, hence on_null().
-  g <- on_null(grid::grid.grabExpr({print(p); draw_dir()}, warn = 0,
+  g <- on_null(grid::grid.grabExpr({print(p); set_head(); draw_dir()}, warn = 0,
                                    width = size[["width"]],
                                    height = size[["height"]]))
   # ggplotify 0.1.2 builds its ggplot with aes_(), deprecated in ggplot2

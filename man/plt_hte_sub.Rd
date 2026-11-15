@@ -101,8 +101,12 @@ shared across studies can be passed whole. Only the drawing changes:
 \item{header_list}{\code{NULL} (default) or a named list of single strings
 replacing column headers, keyed as in \code{RegR::plt_eff2()}; a header left
 out keeps its default. \code{"\\n"} starts a new header line, e.g.
-\code{list(effect = "3-year DSS difference, \%\\n(95\% CI)")}: each line takes a
-table row, and the other headers sit on the last one.
+\code{list(effect = "3-year DSS difference, \%\\n(95\% CI)")}: the lines of a
+header are set 1.2 times its type apart whatever \code{row_height} is, the
+block centred in as few table rows as leave it the room a one-line
+header has in a row of 0.3 in -- one row from \code{row_height = 0.5} for two
+lines, a row per line at the default \code{0.3} -- and the other headers and
+the direction labels stand on its last line.
 \describe{
 \item{\code{label}}{The label column. Default \code{"Subgroup"}.}
 \item{\code{count}}{The patients per arm. Default \code{"N (<treated> / <reference>)"}, e.g. \code{"N (1 / 0)"}.}
