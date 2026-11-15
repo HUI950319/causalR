@@ -28,11 +28,12 @@ save_res <- function() {
   save_cache$res
 }
 
-# The arguments save_hte() hands to plt_hte_sub(), and its plot. The mock
-# keeps the formals of plt_hte_sub(), which save_hte() checks `sub_args` by.
-capture_sub <- function(...) {
+# The arguments save_hte() hands to one of its plot functions, and its plot.
+# The mock keeps the formals of the function, which save_hte() checks its
+# `*_args` by.
+capture_call <- function(fun, pkg, ...) {
   got  <- NULL
-  orig <- plt_hte_sub
+  orig <- get(fun, envir = asNamespace(pkg))
   mock <- orig
   body(mock) <- quote({
     cl  <- match.call()
@@ -41,15 +42,58 @@ capture_sub <- function(...) {
     eval(cl, parent.frame())
   })
   environment(mock) <- environment()
-  local_mocked_bindings(plt_hte_sub = mock, .package = "causalR")
+  do.call(local_mocked_bindings,
+          c(stats::setNames(list(mock), fun), list(.package = pkg, .env = environment())))
   p <- save_hte(...)
   list(args = got, plot = p)
 }
+capture_sub <- function(...) capture_call("plt_hte_sub", "causalR", ...)
 
 test_that("save_hte() has the usage of its contract", {
   expect_identical(names(formals(save_hte)),
                    c("x", "sub_var", "panel", "name_map", "sub_args",
-                     "imp_args", "cate_args", "top_height", "save"))
+                     "imp_args", "cate_args", "top_height", "color", "save"))
+})
+
+test_that("color colours the three plots from one palette, and a colour in *_args wins", {
+  res <- save_res()
+  pal <- UtilsR::pal_get("PiYG")
+  expect_length(pal, 11L)
+  args_of <- function(fun, pkg, panel, ...)
+    suppressWarnings(capture_call(fun, pkg, res, sub_var = "sex", panel = panel, ...))$args
+
+  # the forest plot: the subgroup rows, then the "All patients" row
+  expect_identical(args_of("plt_hte_sub", "causalR", "cate", color = pal)$box_col,
+                   pal[c(3, 9)])
+  # a palette name of UtilsR::pal_get() is that palette
+  expect_identical(args_of("plt_hte_sub", "causalR", "cate", color = "PiYG")$box_col,
+                   pal[c(3, 9)])
+  # without it the plot keeps its own colours, and its own colour wins
+  expect_false("box_col" %in% names(args_of("plt_hte_sub", "causalR", "cate")))
+  expect_identical(args_of("plt_hte_sub", "causalR", "cate", color = pal,
+                           sub_args = list(box_col = "red"))$box_col, "red")
+
+  # the CATE waterfall: from the most negative to the most positive
+  expect_identical(args_of("plt_hte_cate", "causalR", "cate", color = pal)$color,
+                   pal[c(9, 3)])
+  expect_false("color" %in% names(args_of("plt_hte_cate", "causalR", "cate")))
+  expect_identical(args_of("plt_hte_cate", "causalR", "cate", color = pal,
+                           cate_args = list(color = c("blue", "red")))$color,
+                   c("blue", "red"))
+
+  expect_error(save_hte(res, sub_var = "sex", color = pal[1:8]), "at least 9")
+  expect_error(save_hte(res, sub_var = "sex", color = "no such palette"),
+               "`color`", fixed = TRUE)
+  expect_error(save_hte(res, sub_var = "sex", color = 1:11), "`color`", fixed = TRUE)
+
+  # the importance bars and their rings
+  skip_if_not_installed("MLR")
+  expect_identical(args_of("plt_bar_per", "MLR", "importance", color = pal)$bar_per_palette,
+                   list(pal[5:3], pal[7:9]))
+  expect_false("bar_per_palette" %in% names(args_of("plt_bar_per", "MLR", "importance")))
+  own <- list(pal[1:3], pal[9:11])
+  expect_identical(args_of("plt_bar_per", "MLR", "importance", color = pal,
+                           imp_args = list(bar_per_palette = own))$bar_per_palette, own)
 })
 
 test_that("the forest plot gets two-line headers named after the arms", {

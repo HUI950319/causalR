@@ -71,6 +71,17 @@
 #' @param top_height `NULL` (default) or a single positive number: the height
 #'   of the top panel in inches. `NULL` gives 4.1 in to the importance bars
 #'   and 3.6 in to the CATE waterfall.
+#' @param color `NULL` (default) or one palette for the three plots, of at
+#'   least 9 colours: a palette name of `UtilsR::pal_get()` -- an RColorBrewer
+#'   palette such as `"PiYG"`, or any name `UtilsR::pal_list()` shows -- or a
+#'   vector of colours. An 11-colour diverging palette suits, its sixth colour
+#'   the light middle: colours 3 and 9 go to the subgroup rows and the "All
+#'   patients" row of the forest plot (`box_col` of [plt_hte_sub()]), 5 to 3
+#'   and 7 to 9 to the bars and rings of the importance plot
+#'   (`bar_per_palette` of `MLR::plt_bar_per()`), and 9 and 3 to the most
+#'   negative and most positive CATE of the waterfall (`color` of
+#'   [plt_hte_cate()]). A colour given in `sub_args`, `imp_args` or
+#'   `cate_args` wins; `NULL` leaves the plots their own colours.
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
 #'   `width` or `height` left out is taken from `attr(p, "plot_size")`. Do not
@@ -108,9 +119,11 @@
 #'                surv = TRUE, time = 60,
 #'                grf_args = list(num.trees = 500, seed = 1))
 #'
-#' # The CATE waterfall over the forest plot, the axis centred on 0
+#' # The CATE waterfall over the forest plot, the axis centred on 0, both
+#' # coloured from one diverging palette
 #' p <- save_hte(res, sub_var = "sex", panel = "cate",
-#'               sub_args = list(axis_args = list(xlim = c(-0.3, 0.3))))
+#'               sub_args = list(axis_args = list(xlim = c(-0.3, 0.3))),
+#'               color = "PiYG")
 #' attr(p, "plot_size")
 #'
 #' # The importance bars on top, written to PDF at the page size
@@ -134,6 +147,7 @@ save_hte <- function(x,
                                                         y = NULL)),
                      cate_args  = list(),
                      top_height = NULL,
+                     color      = NULL,
                      save       = list()) {
 
   if (!inherits(x, "hte_res"))
@@ -147,6 +161,13 @@ save_hte <- function(x,
        !is.finite(top_height) || top_height <= 0))
     stop("`top_height` must be `NULL` or a single positive height in inches.",
          call. = FALSE)
+  if (!is.null(color)) {
+    color <- tryCatch(UtilsR::pal_get(color), error = function(e)
+      stop("`color`: ", conditionMessage(e), call. = FALSE))
+    if (!is.character(color) || length(color) < 9L)
+      stop("`color` must be `NULL`, a palette name of UtilsR::pal_get() or a ",
+           "colour vector, of at least 9 colours.", call. = FALSE)
+  }
   if (!requireNamespace("patchwork", quietly = TRUE))
     stop("Package 'patchwork' is required for save_hte().", call. = FALSE)
 
@@ -173,6 +194,16 @@ save_hte <- function(x,
     imp_args <- .merge_named_arg(
       imp_args, eval(usage$imp_args), "imp_args",
       setdiff(names(formals(MLR::plt_bar_per)), c("data", "add_name", "save")))
+  }
+
+  # One palette colours the three plots, at the positions the manuscripts
+  # take from an 11-colour diverging palette whose sixth colour is the light
+  # middle; a colour named in `sub_args`, `imp_args` or `cate_args` wins
+  if (!is.null(color)) {
+    if (!"box_col" %in% names(sub_args)) sub_args$box_col <- color[c(3L, 9L)]
+    if (panel == "importance" && !"bar_per_palette" %in% names(imp_args))
+      imp_args$bar_per_palette <- list(color[5:3], color[7:9])
+    if (!"color" %in% names(cate_args)) cate_args$color <- color[c(9L, 3L)]
   }
 
   # Two-line headers and axis title for a difference of survival

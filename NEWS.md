@@ -1,5 +1,12 @@
 # causalR (development version)
 
+* `save_hte()` gains `color`: one palette for its three plots, a palette name
+  of `UtilsR::pal_get()` such as `"PiYG"` or a vector of at least 9 colours.
+  Colours 3 and 9 go to the forest plot (`box_col`), 5 to 3 and 7 to 9 to the
+  importance bars and rings (`bar_per_palette`), and 9 and 3 to the CATE
+  waterfall, the positions the oral/TRT scripts wrote out in `sub_args`,
+  `imp_args` and `cate_args`; a colour given there still wins (2026-11-15).
+
 * `plt_hte_sub()` sets a header of several lines as one block, its lines 1.2
   times the type apart instead of `row_height` apart: every line took a table
   row, which set the two lines of `save_hte()`'s headers 0.5 in apart. The

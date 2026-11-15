@@ -15,6 +15,7 @@ save_hte(
     = list(x = "Variable importance", y = NULL)),
   cate_args = list(),
   top_height = NULL,
+  color = NULL,
   save = list()
 )
 }
@@ -80,6 +81,18 @@ in the figure legend.}
 of the top panel in inches. \code{NULL} gives 4.1 in to the importance bars
 and 3.6 in to the CATE waterfall.}
 
+\item{color}{\code{NULL} (default) or one palette for the three plots, of at
+least 9 colours: a palette name of \code{UtilsR::pal_get()} -- an RColorBrewer
+palette such as \code{"PiYG"}, or any name \code{UtilsR::pal_list()} shows -- or a
+vector of colours. An 11-colour diverging palette suits, its sixth colour
+the light middle: colours 3 and 9 go to the subgroup rows and the "All
+patients" row of the forest plot (\code{box_col} of \code{\link[=plt_hte_sub]{plt_hte_sub()}}), 5 to 3
+and 7 to 9 to the bars and rings of the importance plot
+(\code{bar_per_palette} of \code{MLR::plt_bar_per()}), and 9 and 3 to the most
+negative and most positive CATE of the waterfall (\code{color} of
+\code{\link[=plt_hte_cate]{plt_hte_cate()}}). A colour given in \code{sub_args}, \code{imp_args} or
+\code{cate_args} wins; \code{NULL} leaves the plots their own colours.}
+
 \item{save}{\code{NULL} or a list with \code{filename}, \code{width} and \code{height}, passed
 to \code{RegR::save_plt()} for PDF output. \code{list()} and \code{NULL} skip saving; a
 \code{width} or \code{height} left out is taken from \code{attr(p, "plot_size")}. Do not
@@ -126,9 +139,11 @@ res <- get_hte(d, cat_var = "PORT", sub_var = "sex", adj_var = c("age", "x1"),
                surv = TRUE, time = 60,
                grf_args = list(num.trees = 500, seed = 1))
 
-# The CATE waterfall over the forest plot, the axis centred on 0
+# The CATE waterfall over the forest plot, the axis centred on 0, both
+# coloured from one diverging palette
 p <- save_hte(res, sub_var = "sex", panel = "cate",
-              sub_args = list(axis_args = list(xlim = c(-0.3, 0.3))))
+              sub_args = list(axis_args = list(xlim = c(-0.3, 0.3))),
+              color = "PiYG")
 attr(p, "plot_size")
 
 # The importance bars on top, written to PDF at the page size
