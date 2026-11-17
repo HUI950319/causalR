@@ -1400,6 +1400,25 @@ plt_hte_sub <- function(x,
       if (length(ticks_at) < 2L) ticks_at <- xlim
     }
   }
+  # A given `xlim` narrower than the data clips those intervals and forestplot
+  # draws the clip without saying so, while `xlim = NULL` takes the range from
+  # the data -- so only an explicit limit can hide a bound (paper-pac pac/TRT
+  # 2026-11-17: a 183-patient subgroup reached +24.2% on a +-20% axis, and only
+  # a read of the PDF text layer caught it).
+  if (!is.null(xlim)) {
+    out_of <- which(!is.na(lower) & !is.na(upper) &
+                      (lower < xlim[1L] | upper > xlim[2L]))
+    if (length(out_of)) {
+      rows <- trimws(text[out_of, 1L])
+      need <- max(abs(c(lower[out_of], upper[out_of])), na.rm = TRUE)
+      cli::cli_warn(c(
+        "!" = paste("{length(out_of)} confidence interval{?s} {?is/are} drawn",
+                    "clipped at {.arg axis_args$xlim}: {.val {rows}}."),
+        "i" = paste("{.arg xlim} holds every interval from",
+                    "{.val {signif(need, 3)}}, printed as",
+                    "{.val {signif(k_x * need, 3)}}.")))
+    }
+  }
   # forestplot wants every log-axis value positive, so the open clip starts
   # at the smallest limit or tick rather than at 0
   clip <- if (!is.null(xlim)) {

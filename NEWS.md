@@ -1,5 +1,12 @@
 # causalR (development version)
 
+* `plt_hte_sub()` warns when a given `axis_args$xlim` is narrower than a
+  confidence interval: forestplot drew the clipped interval without a word,
+  and a 183-patient subgroup reaching +24.2% on a +-20% axis was caught only
+  by reading the PDF text layer. The warning names the rows and the limit
+  that holds every interval; `xlim = NULL` takes the range from the data, as
+  before (2026-11-17).
+
 * `save_hte()` gains `color`: one palette for its three plots, a palette name
   of `UtilsR::pal_get()` such as `"PiYG"` or a vector of at least 9 colours.
   Colours 3 and 9 go to the forest plot (`box_col`), 5 to 3 and 7 to 9 to the
