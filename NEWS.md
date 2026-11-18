@@ -1,5 +1,17 @@
 # causalR (development version)
 
+* `get_hte()` gains `ps` and `trim`: a propensity score for the backend --
+  fitted through WeightIt (`"glm"` and the other [get_PSW()] methods), taken
+  from a column of `data`, or given as one number per row -- and the overlap
+  region to keep, either `c(lower, upper)` or Crump's `"cr"`. grf grows its
+  own regression forest for \eqn{e(x)} and reaches exactly 0 or 1 wherever a
+  covariate region holds one arm only, which leaves the doubly robust scores
+  undefined; the `glm()` + trim + `grf_args$W.hat` workaround for it was
+  written out at 68 call sites across two manuscript series. `print()` and
+  `attr(x, "analysis")$ps` / `$n_trimmed` report which score was used and how
+  many rows trimming dropped. Defaults are unchanged.
+
+
 * `plt_hte_sub()` warns when a given `axis_args$xlim` is narrower than a
   confidence interval: forestplot drew the clipped interval without a word,
   and a 183-patient subgroup reaching +24.2% on a +-20% axis was caught only

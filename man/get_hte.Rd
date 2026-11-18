@@ -16,6 +16,8 @@ get_hte(
   measure = "diff",
   conf_level = 0.95,
   time = 120,
+  ps = NULL,
+  trim = NULL,
   grf_args = list(),
   keep_trees = FALSE,
   verbose = FALSE
@@ -110,6 +112,27 @@ grf itself does for RMST: the estimand is unchanged, but grf's nuisance
 survival forest can split when events are rare (at 130,923 patients with
 1,043 events, 41 s instead of 236 s, and a CATE more stable across
 seeds). \verb{$data} keeps the observed times.}
+
+\item{ps}{Propensity score \eqn{e(x)} for the backend, or \code{NULL} (default)
+to let grf grow its own regression forest for it. A single string is
+either a column of \code{data} holding the score, or one of the \code{\link[=get_PSW]{get_PSW()}}
+methods \code{"glm"} / \code{"gbm"} / \code{"cbps"} / \code{"bart"} / \code{"super"}, fitted with
+\code{\link[WeightIt:weightit]{WeightIt::weightit()}} on \code{cat_var ~ adj_var + sub_var} over the analysed
+rows; a numeric vector gives one score per row of \code{data}, or per analysed
+row. The score reaches the backend as \code{grf_args$W.hat}, so the two cannot
+both be given. A fitted score needs complete covariates, while grf itself
+splits on missing ones. Use it when grf's own forest reaches a propensity
+of exactly 0 or 1 -- it does wherever a covariate region holds one arm
+only, and the doubly robust scores are then undefined; a logistic score
+cannot reach the boundary.}
+
+\item{trim}{Overlap region to keep, or \code{NULL} (default) to keep every row.
+\code{c(lower, upper)} drops the rows whose propensity falls outside, and
+\code{"cr"} takes Crump's optimal cut from the scores themselves, as
+\code{\link[=get_PSW]{get_PSW()}}'s \code{trim_args} does. It needs a propensity to work on, from
+\code{ps} or from \code{grf_args$W.hat}. Trimming changes the estimand to the
+effect in the region kept, so report how many rows went: \code{print()} and
+\code{attr(x, "analysis")$n_trimmed} carry the count.}
 
 \item{grf_args}{Named list forwarded to \code{\link[grf:causal_forest]{grf::causal_forest()}} or
 \code{\link[grf:causal_survival_forest]{grf::causal_survival_forest()}}, for example \code{num.trees}, \code{seed},

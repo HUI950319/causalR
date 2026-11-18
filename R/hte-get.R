@@ -684,6 +684,25 @@
 #'   survival forest can split when events are rare (at 130,923 patients with
 #'   1,043 events, 41 s instead of 236 s, and a CATE more stable across
 #'   seeds). `$data` keeps the observed times.
+#' @param ps Propensity score \eqn{e(x)} for the backend, or `NULL` (default)
+#'   to let grf grow its own regression forest for it. A single string is
+#'   either a column of `data` holding the score, or one of the [get_PSW()]
+#'   methods `"glm"` / `"gbm"` / `"cbps"` / `"bart"` / `"super"`, fitted with
+#'   [WeightIt::weightit()] on `cat_var ~ adj_var + sub_var` over the analysed
+#'   rows; a numeric vector gives one score per row of `data`, or per analysed
+#'   row. The score reaches the backend as `grf_args$W.hat`, so the two cannot
+#'   both be given. A fitted score needs complete covariates, while grf itself
+#'   splits on missing ones. Use it when grf's own forest reaches a propensity
+#'   of exactly 0 or 1 -- it does wherever a covariate region holds one arm
+#'   only, and the doubly robust scores are then undefined; a logistic score
+#'   cannot reach the boundary.
+#' @param trim Overlap region to keep, or `NULL` (default) to keep every row.
+#'   `c(lower, upper)` drops the rows whose propensity falls outside, and
+#'   `"cr"` takes Crump's optimal cut from the scores themselves, as
+#'   [get_PSW()]'s `trim_args` does. It needs a propensity to work on, from
+#'   `ps` or from `grf_args$W.hat`. Trimming changes the estimand to the
+#'   effect in the region kept, so report how many rows went: `print()` and
+#'   `attr(x, "analysis")$n_trimmed` carry the count.
 #' @param grf_args Named list forwarded to [grf::causal_forest()] or
 #'   [grf::causal_survival_forest()], for example `num.trees`, `seed`,
 #'   `tune.parameters` or a known propensity `W.hat` (as in a trial). `X`,
@@ -937,6 +956,8 @@ get_hte <- function(data,
                     measure    = "diff",
                     conf_level = 0.95,
                     time       = 120,
+                    ps         = NULL,
+                    trim       = NULL,
                     grf_args   = list(),
                     keep_trees = FALSE,
                     verbose    = FALSE) {
@@ -951,6 +972,19 @@ get_hte <- function(data,
          call. = FALSE)
   if (!isTRUE(keep_trees) && !isFALSE(keep_trees))
     stop("`keep_trees` must be TRUE or FALSE.", call. = FALSE)
+  if (!is.null(ps) && !(is.numeric(ps) && length(ps) > 1L) &&
+      !(is.character(ps) && length(ps) == 1L && !is.na(ps)))
+    stop(sprintf("`ps` must be one propensity per row of `data`, or a single string: a column of `data` or one of %s.",
+                 paste0("\"", .PSW_PS_METHODS, "\"", collapse = " / ")),
+         call. = FALSE)
+  if (!is.null(trim)) {
+    if (!identical(trim, "cr"))
+      trim <- .psw_bounds(trim[1L], if (length(trim) > 1L) trim[2L] else NA_real_,
+                          "trim")
+    if (is.null(ps) && is.null(grf_args$W.hat))
+      stop("`trim` keeps the rows whose propensity lies inside its bounds, so it needs `ps` or `grf_args$W.hat`.",
+           call. = FALSE)
+  }
   if (!is.character(estimand) || !length(estimand))
     stop("`estimand` must be a character vector.", call. = FALSE)
   est_all  <- names(.HTE_ESTIMANDS)
@@ -1072,6 +1106,76 @@ get_hte <- function(data,
   if (sum(W == 1L) < 2L || sum(W == 0L) < 2L)
     stop("Both arms of `cat_var` need at least two complete rows.",
          call. = FALSE)
+
+  # ---- Propensity score and overlap trimming -------------------------------
+  # grf grows its own regression forest for e(x). It reaches exactly 0 or 1
+  # wherever a covariate region holds one arm only -- most easily when one arm
+  # holds most of the cohort -- and the doubly robust scores are undefined
+  # there. A logistic score cannot reach the boundary, so `ps` removes that
+  # failure, and the same score is what `trim` defines the overlap region on.
+  # Trimming here, before `Y`, `D` and `X` are taken from `data`, keeps every
+  # per-row object aligned: `keep` tracks the analysed rows for the per-row
+  # fields of `grf_args` below.
+  ps_lab <- NULL
+  n_trim <- 0L
+  score  <- NULL
+  if (!is.null(ps)) {
+    if (!is.null(grf_args$W.hat))
+      stop("Give the propensity either as `ps` or as `grf_args$W.hat`, not both.",
+           call. = FALSE)
+    if (is.numeric(ps)) {
+      if (length(ps) == length(keep) && !all(keep)) ps <- ps[keep]
+      if (length(ps) != nrow(data))
+        stop(sprintf("`ps` holds %d value(s) for %d analysed row(s).",
+                     length(ps), nrow(data)), call. = FALSE)
+      score  <- as.numeric(ps)
+      ps_lab <- "supplied"
+    } else if (ps %in% names(data)) {
+      score  <- as.numeric(data[[ps]])
+      ps_lab <- sprintf("column `%s`", ps)
+    } else {
+      ps_lab <- match.arg(ps, .PSW_PS_METHODS)
+      if (!length(covars))
+        stop("A fitted propensity needs covariates: give `adj_var` or `sub_var`.",
+             call. = FALSE)
+      na_cov <- covars[vapply(data[covars], anyNA, logical(1L))]
+      if (length(na_cov))
+        stop(sprintf("A fitted propensity needs complete covariates, but %s hold missing values -- grf itself splits on them. Supply the score through `ps` or drop those columns.",
+                     paste0("`", na_cov, "`", collapse = ", ")), call. = FALSE)
+      score <- .psw_fit(data, cat_var, covars, ps_lab, list())$ps
+    }
+    if (anyNA(score) || any(!is.finite(score)))
+      stop("The propensity score must be non-missing and finite.", call. = FALSE)
+  } else if (!is.null(trim)) {
+    score  <- as.numeric(grf_args$W.hat)
+    if (length(score) == length(keep) && !all(keep)) score <- score[keep]
+    ps_lab <- "supplied"
+  }
+  if (!is.null(trim)) {
+    b <- if (identical(trim, "cr")) {
+      a <- .psw_crump(score)
+      c(a, 1 - a)
+    } else trim
+    out    <- !is.finite(score) | score < b[1L] | score > b[2L]
+    n_trim <- sum(out)
+    if (n_trim) {
+      if (all(out))
+        stop(sprintf("`trim` keeps no row: every propensity lies outside %s to %s.",
+                     format(b[1L]), format(b[2L])), call. = FALSE)
+      data       <- data[!out, , drop = FALSE]
+      W          <- W[!out]
+      score      <- score[!out]
+      keep[keep] <- !out
+      if (sum(W == 1L) < 2L || sum(W == 0L) < 2L)
+        stop(sprintf("`trim` leaves fewer than two rows in an arm of `%s`.",
+                     cat_var), call. = FALSE)
+    }
+    if (isTRUE(verbose))
+      cli::cli_inform(c("i" = "Trimmed {n_trim} row{?s} outside the propensity range {format(b[1L])} to {format(b[2L])}."))
+    ps_lab <- sprintf("%s, trimmed %s to %s", ps_lab, format(b[1L]), format(b[2L]))
+  }
+  # The score reaches the backend the same way a known propensity does.
+  if (!is.null(score)) grf_args$W.hat <- score
 
   if (is_surv) {
     Y <- data[["time"]]
@@ -1330,6 +1434,7 @@ get_hte <- function(data,
       estimand = estimand, measure = measure, target = target,
       time = if (is_surv) time else NULL, conf_level = conf_level,
       n = length(W), n_treat = sum(W), ps_range = ps_rng,
+      ps = ps_lab, n_trimmed = n_trim,
       seed = fit[["seed"]], grf_args = grf_args, keep_trees = keep_trees,
       call = match.call()))
 }
@@ -1350,7 +1455,13 @@ print.hte_res <- function(x, ...) {
     target     = if (!is.null(a$time))
       sprintf("%s at time = %s", a$target, format(a$time)),
     conf_level = format(a$conf_level),
-    propensity = sprintf("range %.3f to %.3f", a$ps_range[1L], a$ps_range[2L]),
+    propensity = sprintf("%srange %.3f to %.3f%s",
+                         if (is.null(a$ps)) "" else paste0(a$ps, "; "),
+                         a$ps_range[1L], a$ps_range[2L],
+                         if (isTRUE(a$n_trimmed > 0L))
+                           sprintf(" (%d row%s trimmed)", a$n_trimmed,
+                                   if (a$n_trimmed == 1L) "" else "s")
+                         else ""),
     trees      = if (is.null(x$fit[["_root_nodes"]]))
       "dropped (get_hte(keep_trees = TRUE) keeps them)"
   ))
