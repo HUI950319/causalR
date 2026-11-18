@@ -1,5 +1,14 @@
 # causalR (development version)
 
+* The N column of `plt_hte_sub()` counts the cohort as `get_hte()` received
+  it, so the figure agrees with the baseline table and the flow diagram of
+  the same paper; `show_n = "analysed"` counts the rows the forest used
+  instead. The two differ only where `get_hte(trim = )` kept the region of
+  overlap: those rows now travel with the result in
+  `attr(x, "analysis")$trimmed`, together with `$n_all` and `$n_treat_all`,
+  which also lets a subgroup `plt_hte_sub()` recomputes be counted on the
+  same cohort. The estimates in every row still rest on the analysed rows.
+
 * `get_hte()` gains `ps` and `trim`: a propensity score for the backend --
   fitted through WeightIt (`"glm"` and the other [get_PSW()] methods), taken
   from a column of `data`, or given as one number per row -- and the overlap

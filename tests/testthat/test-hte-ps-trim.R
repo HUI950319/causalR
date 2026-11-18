@@ -92,3 +92,56 @@ test_that("a supplied propensity, and the checks on ps / trim", {
             ps = "nosuch", grf_args = ga),
     "'arg' should be one of|a column of")
 })
+
+test_that("the N column counts the cohort as given, not the rows left after trimming", {
+  skip_if_not_installed("grf")
+  skip_if_not_installed("WeightIt")
+  d <- mk_ps_data()
+  d$grp <- factor(ifelse(d$x2 == 1L, "A", "B"))
+  ga <- list(num.trees = 50, seed = 1)
+
+  res <- get_hte(d, cat_var = "z", sub_var = "grp", adj_var = c("age", "x2"),
+                 surv = TRUE, time = 4, ps = "glm", trim = c(0.1, 0.9),
+                 grf_args = ga)
+  a <- attr(res, "analysis")
+  expect_gt(a$n_trimmed, 0L)
+  # The cohort as handed over, beside the rows the forest used.
+  expect_identical(a$n_all, nrow(d))
+  expect_identical(a$n_treat_all, sum(d$z))
+  expect_identical(a$n, nrow(d) - a$n_trimmed)
+  # The trimmed rows come along whole, so any subgroup can be counted on the
+  # cohort -- including one plt_hte_sub() recomputes for itself.
+  expect_identical(nrow(a$trimmed$data), a$n_trimmed)
+  expect_identical(length(a$trimmed$treated), a$n_trimmed)
+  expect_true(all(names(d) %in% names(a$trimmed$data)))
+  for (l in levels(d$grp)) {
+    i <- res$subgroup$level == l
+    cut_i <- as.character(a$trimmed$data$grp) == l
+    expect_equal(unique(res$subgroup$n[i]) + sum(cut_i), sum(d$grp == l))
+    expect_equal(unique(res$subgroup$n_treat[i]) + sum(a$trimmed$treated[cut_i]),
+                 sum(d$z[d$grp == l]))
+  }
+  # $subgroup keeps its columns: plt_hte_sub() recomputes the same table.
+  expect_false(any(c("n_all", "n_treat_all") %in% names(res$subgroup)))
+
+  # Without trimming nothing is carried and the counts are the analysed ones.
+  res0 <- get_hte(d, cat_var = "z", sub_var = "grp", adj_var = c("age", "x2"),
+                  surv = TRUE, time = 4, grf_args = ga)
+  a0 <- attr(res0, "analysis")
+  expect_null(a0$trimmed)
+  expect_identical(a0$n_all, a0$n)
+  expect_identical(a0$n_treat_all, a0$n_treat)
+
+  skip_if_not_installed("forestplot")
+  skip_if_not_installed("ggplotify")
+  # forestplot draws while it builds; a null device keeps Rplots.pdf out of
+  # the test directory (as test-plt-hte.R does).
+  grDevices::pdf(NULL)
+  on.exit(grDevices::dev.off(), add = TRUE)
+  expect_s3_class(suppressWarnings(plt_hte_sub(res, sub_var = "grp")), "ggplot")
+  expect_s3_class(
+    suppressWarnings(plt_hte_sub(res, sub_var = "grp", show_n = "analysed")),
+    "ggplot")
+  expect_error(plt_hte_sub(res, sub_var = "grp", show_n = "nosuch"),
+               "TRUE, FALSE or")
+})

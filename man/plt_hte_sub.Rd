@@ -77,8 +77,13 @@ rows given an estimate or an interval. See Replaced rows.}
 \item{overall}{Logical. \code{TRUE} (default) adds an "All patients" row with the
 overall ATE.}
 
-\item{show_n}{Logical. \code{TRUE} (default) shows the column of patients per
-arm, treated first; \code{FALSE} leaves it out.}
+\item{show_n}{\code{TRUE} (default) shows the column of patients per arm,
+treated first, counting the cohort as \code{\link[=get_hte]{get_hte()}} received it -- the
+numbers the baseline table and the flow diagram of the same paper report.
+\code{"analysed"} counts the rows the forest used instead, which is fewer
+wherever \code{get_hte(trim = )} kept the region of overlap; the estimates in
+the same row always rest on those rows, and \code{print()} reports how many
+trimming dropped. \code{FALSE} leaves the column out.}
 
 \item{show_pvalue}{Logical. \code{TRUE} adds a \code{P} column with the p-value of
 every row. Default \code{FALSE}.}

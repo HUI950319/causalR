@@ -1116,9 +1116,15 @@ get_hte <- function(data,
   # Trimming here, before `Y`, `D` and `X` are taken from `data`, keeps every
   # per-row object aligned: `keep` tracks the analysed rows for the per-row
   # fields of `grf_args` below.
-  ps_lab <- NULL
-  n_trim <- 0L
-  score  <- NULL
+  ps_lab   <- NULL
+  n_trim   <- 0L
+  score    <- NULL
+  trim_out <- NULL
+  # The cohort as it reached the forest, kept whole: `trim` subsets `data` and
+  # `W` below, and the N column of plt_hte_sub() counts these instead, so the
+  # figure agrees with the Table 1 and the flow diagram of the same paper.
+  data_pre <- data
+  W_pre    <- W
   if (!is.null(ps)) {
     if (!is.null(grf_args$W.hat))
       stop("Give the propensity either as `ps` or as `grf_args$W.hat`, not both.",
@@ -1156,8 +1162,9 @@ get_hte <- function(data,
       a <- .psw_crump(score)
       c(a, 1 - a)
     } else trim
-    out    <- !is.finite(score) | score < b[1L] | score > b[2L]
-    n_trim <- sum(out)
+    out      <- !is.finite(score) | score < b[1L] | score > b[2L]
+    n_trim   <- sum(out)
+    trim_out <- out
     if (n_trim) {
       if (all(out))
         stop(sprintf("`trim` keeps no row: every propensity lies outside %s to %s.",
@@ -1434,6 +1441,12 @@ get_hte <- function(data,
       estimand = estimand, measure = measure, target = target,
       time = if (is_surv) time else NULL, conf_level = conf_level,
       n = length(W), n_treat = sum(W), ps_range = ps_rng,
+      # The cohort as it arrived: its size, its treated count, and the rows
+      # `trim` removed, kept whole so plt_hte_sub() can count any subgroup on
+      # it (`$data` holds the analysed rows only).
+      n_all = nrow(data_pre), n_treat_all = sum(W_pre),
+      trimmed = if (n_trim) list(data = data_pre[trim_out, , drop = FALSE],
+                                 treated = W_pre[trim_out] == 1L),
       ps = ps_lab, n_trimmed = n_trim,
       seed = fit[["seed"]], grf_args = grf_args, keep_trees = keep_trees,
       call = match.call()))

@@ -673,8 +673,13 @@ plt_hte_dep <- function(x,
 #'   rows given an estimate or an interval. See Replaced rows.
 #' @param overall Logical. `TRUE` (default) adds an "All patients" row with the
 #'   overall ATE.
-#' @param show_n Logical. `TRUE` (default) shows the column of patients per
-#'   arm, treated first; `FALSE` leaves it out.
+#' @param show_n `TRUE` (default) shows the column of patients per arm,
+#'   treated first, counting the cohort as [get_hte()] received it -- the
+#'   numbers the baseline table and the flow diagram of the same paper report.
+#'   `"analysed"` counts the rows the forest used instead, which is fewer
+#'   wherever `get_hte(trim = )` kept the region of overlap; the estimates in
+#'   the same row always rest on those rows, and `print()` reports how many
+#'   trimming dropped. `FALSE` leaves the column out.
 #' @param show_pvalue Logical. `TRUE` adds a `P` column with the p-value of
 #'   every row. Default `FALSE`.
 #' @param show_pinter Logical. `TRUE` adds a "P for interaction" column: for
@@ -934,7 +939,9 @@ plt_hte_sub <- function(x,
       is.na(conf_level) || conf_level <= 0 || conf_level >= 1)
     stop("`conf_level` must be a single number strictly between 0 and 1.",
          call. = FALSE)
-  flags <- list(overall = overall, show_n = show_n, show_pvalue = show_pvalue,
+  if (!isTRUE(show_n) && !isFALSE(show_n) && !identical(show_n, "analysed"))
+    stop("`show_n` must be TRUE, FALSE or \"analysed\".", call. = FALSE)
+  flags <- list(overall = overall, show_pvalue = show_pvalue,
                 show_pinter = show_pinter)
   for (nm in names(flags))
     if (!is.logical(flags[[nm]]) || length(flags[[nm]]) != 1L ||
@@ -1276,20 +1283,42 @@ plt_hte_sub <- function(x,
   fmt_p <- function(p)
     ifelse(is.na(p), "", ifelse(p < 0.001, "<0.001", sprintf("%.3f", p)))
   fmt_n <- function(n, nt) sprintf("%d / %d", nt, n - nt)
+  # The N column counts the cohort as get_hte() received it -- what the
+  # baseline table and the flow diagram of the same paper report -- so a
+  # reader can line the two up; `show_n = "analysed"` counts the rows the
+  # forest used instead. The two differ only where get_hte(trim = ) kept the
+  # region of overlap: those rows come back from `analysis$trimmed`, which
+  # also lets a subgroup this call recomputes be counted on the same cohort.
+  # Results fitted before `trimmed` existed fall back to the analysed counts.
+  as_given <- !identical(show_n, "analysed")
+  cut_d  <- if (as_given) a$trimmed else NULL
+  back   <- function(v, lv) {
+    if (is.null(cut_d) || !v %in% names(cut_d$data))
+      return(list(n = rep(0L, length(lv)), nt = rep(0L, length(lv))))
+    x <- as.character(cut_d$data[[v]])
+    i <- lapply(lv, function(l) !is.na(x) & x == l)
+    list(n  = vapply(i, sum, integer(1L)),
+         nt = vapply(i, function(k) sum(cut_d$treated[k]), integer(1L)))
+  }
   row_df <- function(label, n, est, p, p_inter, mean, lower, upper, bold)
     data.frame(label = label, n = n, est = est, p = p, p_inter = p_inter,
                mean = mean, lower = lower, upper = upper, bold = bold,
                stringsAsFactors = FALSE)
 
   body <- if (overall)
-    row_df("All patients", fmt_n(nrow(d), sum(fit$W.orig)),
+    row_df("All patients",
+           fmt_n(if (as_given && !is.null(a$n_all)) a$n_all else nrow(d),
+                 if (as_given && !is.null(a$n_treat_all)) a$n_treat_all
+                 else sum(fit$W.orig)),
            fmt_est(ov$estimate, ov$conf.low, ov$conf.high), fmt_p(ov$p.value),
            "", ov$estimate, ov$conf.low, ov$conf.high, FALSE)
   for (v in sub_var) {
     r <- sub[sub$sub_var == v, ]
+    add <- back(v, r$level)
     body <- rbind(body,
                   row_df(v, "", "", "", fmt_p(r$p_inter[1L]), NA, NA, NA, TRUE),
-                  row_df(paste0("   ", r$level), fmt_n(r$n, r$n_treat),
+                  row_df(paste0("   ", r$level),
+                         fmt_n(r$n + add$n, r$n_treat + add$nt),
                          fmt_est(r$estimate, r$conf.low, r$conf.high),
                          fmt_p(r$p.value), "", r$estimate, r$conf.low,
                          r$conf.high, FALSE))
@@ -1308,7 +1337,7 @@ plt_hte_sub <- function(x,
   flush <- body$bold
   flush[1L] <- flush[1L] || overall   # the "All patients" row
   body$label <- ifelse(flush, disp, paste0("   ", disp))
-  cols <- c("label", if (show_n) "n", "est", if (show_pvalue) "p",
+  cols <- c("label", if (!isFALSE(show_n)) "n", "est", if (show_pvalue) "p",
             if (show_pinter) "p_inter")
   # forestplot draws every row at one height. A header with line breaks is
   # one cell, its lines 1.2 x its 11.56 pt bold type apart whatever
@@ -1318,7 +1347,8 @@ plt_hte_sub <- function(x,
   # The interval is left out of the effect header, which keeps it narrow.
   hd <- function(key, auto) if (is.null(heads[[key]])) auto else heads[[key]]
   head <- strsplit(c(hd("label", "Subgroup"),
-                     if (show_n) hd("count", sprintf("N (%s / %s)", a$treated, ref)),
+                     if (!isFALSE(show_n))
+                       hd("count", sprintf("N (%s / %s)", a$treated, ref)),
                      hd("effect", paste0(lab, if (pct) ", %")),
                      if (show_pvalue) hd("p.value", "P"),
                      if (show_pinter) hd("p.interaction", "P for interaction")),
