@@ -96,7 +96,13 @@ negative and most positive CATE of the waterfall (\code{color} of
 \item{save}{\code{NULL} or a list with \code{filename}, \code{width} and \code{height}, passed
 to \code{RegR::save_plt()} for PDF output. \code{list()} and \code{NULL} skip saving; a
 \code{width} or \code{height} left out is taken from \code{attr(p, "plot_size")}. Do not
-include the \code{plot} argument; it is supplied internally.}
+include the \code{plot} argument; it is supplied internally. A bare label
+such as \code{filename = "Supplementary Figure 13"} is completed from
+\code{RegR::set_paper()} into "Supplementary Figure 13. Heterogeneity analysis
+of the effect of sex on disease-specific survival based on causal
+survival forest", with the \code{treat} and \code{outcome} of \code{set_paper()} and the
+forest the \code{\link[=get_hte]{get_hte()}} result records ("causal forest" for other
+outcomes).}
 }
 \value{
 A \pkg{patchwork} of the two panels, with \code{attr(p, "plot_size")}

@@ -1,5 +1,14 @@
 # causalR (development version)
 
+* `save_hte()` completes a bare `save$filename` label from
+  `RegR::set_paper()`: `save = list(filename = "Supplementary Figure 13")`
+  writes "Supplementary Figure 13. Heterogeneity analysis of the effect of
+  sex on disease-specific survival based on causal survival forest", with
+  the `treat` and `outcome` of `set_paper()` and the forest `get_hte()`
+  records in `attr(x, "analysis")$forest` ("causal forest" for other
+  outcomes). A result without that record stops and asks for the full name
+  (paper-Sex, author, 2026-11-24).
+
 * The N column of `plt_hte_sub()` counts the cohort as `get_hte()` received
   it, so the figure agrees with the baseline table and the flow diagram of
   the same paper; `show_n = "analysed"` counts the rows the forest used

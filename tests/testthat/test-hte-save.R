@@ -176,6 +176,33 @@ test_that("bad arguments are rejected before any plot is drawn", {
   expect_error(save_hte(list(), sub_var = "sex"), "hte_res")
 })
 
+test_that("save completes a bare label from RegR::set_paper()", {
+  skip_if_not_installed("RegR")
+  res <- save_res()
+  old <- options(RegR.paper = NULL)
+  on.exit(options(old), add = TRUE)
+  suppressMessages(RegR::set_paper(treat = "postoperative radiotherapy",
+                                   modifier = "sex"))
+  seen <- NULL
+  local_mocked_bindings(save_plt = function(plot, filename, ...) {
+    seen <<- filename
+    invisible(plot)
+  }, .package = "RegR")
+  draw <- function(x) suppressWarnings(suppressMessages(save_hte(
+    x, sub_var = "sex", panel = "cate",
+    save = list(filename = "Supplementary Figure 13"))))
+  draw(res)
+  expect_identical(seen, paste(
+    "Supplementary Figure 13. Heterogeneity analysis of the effect of",
+    "postoperative radiotherapy on disease-specific survival based on causal",
+    "survival forest"))
+  # a result that does not say which forest it is gets no name guessed
+  bare <- res
+  attr(bare, "analysis")$forest <- NULL
+  expect_error(draw(bare), "does not record its forest")
+})
+
+
 test_that("save writes a PDF at the page size", {
   skip_if_not_installed("RegR")
   res <- save_res()

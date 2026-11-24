@@ -85,7 +85,13 @@
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
 #'   `width` or `height` left out is taken from `attr(p, "plot_size")`. Do not
-#'   include the `plot` argument; it is supplied internally.
+#'   include the `plot` argument; it is supplied internally. A bare label
+#'   such as `filename = "Supplementary Figure 13"` is completed from
+#'   `RegR::set_paper()` into "Supplementary Figure 13. Heterogeneity analysis
+#'   of the effect of sex on disease-specific survival based on causal
+#'   survival forest", with the `treat` and `outcome` of `set_paper()` and the
+#'   forest the [get_hte()] result records ("causal forest" for other
+#'   outcomes).
 #'
 #' @section Page size:
 #' The width is that of the forest plot, `attr(, "plot_size")` of
@@ -256,9 +262,36 @@ save_hte <- function(x,
   if (!is.null(save) && length(save) > 0L) {
     if (!requireNamespace("RegR", quietly = TRUE))
       stop("Package 'RegR' is required for a non-empty `save`.", call. = FALSE)
+    save <- .hte_paper_fill(save, x)
     if (is.null(save[["width"]]))  save$width  <- size[[1L]]
     if (is.null(save[["height"]])) save$height <- size[[2L]]
     do.call(RegR::save_plt, c(list(plot = p), save))
   }
   p
+}
+
+# A bare `save$filename` label ("Supplementary Figure 13") is completed from
+# RegR::set_paper() into the heterogeneity sentence of the manuscripts, "...
+# Heterogeneity analysis of the effect of <treat> on <outcome> based on causal
+# survival forest", naming the forest get_hte() recorded. RegR is a Suggests
+# package, already required for a non-empty `save`; its sentences are reached
+# through `RegR:::`, as plt_hte_sub() reaches its SEER labels.
+.hte_paper_fill <- function(save, x) {
+  if (!is.list(save) || !RegR:::.paper_is_label(save[["filename"]])) {
+    return(save)
+  }
+  forest <- attr(x, "analysis", exact = TRUE)[["forest"]]
+  learner <- if (is.null(forest)) NULL else switch(
+    forest,
+    causal_survival_forest = "causal survival forest",
+    causal_forest          = "causal forest",
+    NULL)
+  if (is.null(learner)) {
+    stop(sprintf(paste0(
+      "save_hte(): \"%s\" is a bare label, but this result does not record ",
+      "its forest; write the full name."), save[["filename"]][[1L]]),
+      call. = FALSE)
+  }
+  RegR:::.paper_fill(save, "filename", "hte", caller = "save_hte()",
+                     learner = learner)
 }
