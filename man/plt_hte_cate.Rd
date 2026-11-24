@@ -13,6 +13,7 @@ plt_hte_cate(
   overall = TRUE,
   show_calibration = TRUE,
   range_q = "auto",
+  max_bars = 1000,
   color = NULL,
   title = NULL,
   save = list()
@@ -31,7 +32,8 @@ Columns with no non-missing values are omitted with a warning; an error
 is raised if none of the requested subgroup columns remain.}
 
 \item{type}{\code{"waterfall"} (default) draws one bar per patient, sorted by
-the CATE; \code{"density"} draws the density of the CATE per level.}
+the CATE, or per group of patients beyond \code{max_bars}; \code{"density"} draws
+the density of the CATE per level.}
 
 \item{show_ci}{Logical. \code{TRUE} adds grf's pointwise confidence interval of
 every patient's CATE (grey), which needs a forest grown with
@@ -62,6 +64,17 @@ the patients beyond run off its edge, the density is still estimated
 from every patient, and the range widens to keep the ATE lines in view.
 The colour gradient of a waterfall without \code{sub_var} spans the zoomed
 axis. The caption counts the patients beyond the axis.}
+
+\item{max_bars}{\code{NULL} or a whole number, default \code{1000}: the most bars a
+waterfall without \code{sub_var} draws. Beyond as many patients, they are
+split by rank into \code{max_bars} groups of equal size -- 0.1\% each with the
+default -- and each bar is the mean CATE of its group. A 7-in waterfall
+is about 2,000 pixels wide at 300 dpi, so 146,603 bars looked the same
+as 1,000 but made the PDF 13 times larger and 9 times slower to draw.
+The axis range of \code{range_q} and the patients counted beyond it still
+come from every patient. \code{NULL} draws one bar per patient, as do
+\code{sub_var}, whose bars are coloured by level, and \code{show_ci}, whose
+intervals are per patient. Only used by \code{type = "waterfall"}.}
 
 \item{color}{\code{NULL} (default) or a character vector of colour names or hex
 codes, for example a manuscript palette such as \code{my_color[c(3, 9)]}.
@@ -107,8 +120,9 @@ robust estimates \code{\link[=plt_hte_sub]{plt_hte_sub()}} draws.
 }
 \section{Reading the plots}{
 
-The bars and curves are the forest's out-of-bag estimates, one per patient,
-on the \code{"diff"} scale of \code{\link[=get_hte]{get_hte()}}. They describe how the forest spreads
+The bars and curves are the forest's out-of-bag estimates, one per patient
+or the mean of a group of patients (\code{max_bars}), on the \code{"diff"} scale of
+\code{\link[=get_hte]{get_hte()}}. They describe how the forest spreads
 the effect and test nothing: forest estimates are shrunk towards the
 overall mean, and their spread mixes real heterogeneity with estimation
 noise. The coloured lines are the doubly robust subgroup ATEs, whose

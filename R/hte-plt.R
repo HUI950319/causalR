@@ -1701,7 +1701,8 @@ plt_hte_sub <- function(x,
 #'   Columns with no non-missing values are omitted with a warning; an error
 #'   is raised if none of the requested subgroup columns remain.
 #' @param type `"waterfall"` (default) draws one bar per patient, sorted by
-#'   the CATE; `"density"` draws the density of the CATE per level.
+#'   the CATE, or per group of patients beyond `max_bars`; `"density"` draws
+#'   the density of the CATE per level.
 #' @param show_ci Logical. `TRUE` adds grf's pointwise confidence interval of
 #'   every patient's CATE (grey), which needs a forest grown with
 #'   `ci.group.size` of at least 2, grf's default. Default `FALSE`. Only used
@@ -1727,6 +1728,16 @@ plt_hte_sub <- function(x,
 #'   from every patient, and the range widens to keep the ATE lines in view.
 #'   The colour gradient of a waterfall without `sub_var` spans the zoomed
 #'   axis. The caption counts the patients beyond the axis.
+#' @param max_bars `NULL` or a whole number, default `1000`: the most bars a
+#'   waterfall without `sub_var` draws. Beyond as many patients, they are
+#'   split by rank into `max_bars` groups of equal size -- 0.1% each with the
+#'   default -- and each bar is the mean CATE of its group. A 7-in waterfall
+#'   is about 2,000 pixels wide at 300 dpi, so 146,603 bars looked the same
+#'   as 1,000 but made the PDF 13 times larger and 9 times slower to draw.
+#'   The axis range of `range_q` and the patients counted beyond it still
+#'   come from every patient. `NULL` draws one bar per patient, as do
+#'   `sub_var`, whose bars are coloured by level, and `show_ci`, whose
+#'   intervals are per patient. Only used by `type = "waterfall"`.
 #' @param color `NULL` (default) or a character vector of colour names or hex
 #'   codes, for example a manuscript palette such as `my_color[c(3, 9)]`.
 #'   With `sub_var`, one colour per level for the bars or curves and the
@@ -1744,8 +1755,9 @@ plt_hte_sub <- function(x,
 #'   include the `plot` argument; it is supplied internally.
 #'
 #' @section Reading the plots:
-#' The bars and curves are the forest's out-of-bag estimates, one per patient,
-#' on the `"diff"` scale of [get_hte()]. They describe how the forest spreads
+#' The bars and curves are the forest's out-of-bag estimates, one per patient
+#' or the mean of a group of patients (`max_bars`), on the `"diff"` scale of
+#' [get_hte()]. They describe how the forest spreads
 #' the effect and test nothing: forest estimates are shrunk towards the
 #' overall mean, and their spread mixes real heterogeneity with estimation
 #' noise. The coloured lines are the doubly robust subgroup ATEs, whose
@@ -1804,6 +1816,7 @@ plt_hte_cate <- function(x,
                          overall    = TRUE,
                          show_calibration = TRUE,
                          range_q    = "auto",
+                         max_bars   = 1000,
                          color      = NULL,
                          title      = NULL,
                          save       = list()) {
@@ -1817,7 +1830,8 @@ plt_hte_cate <- function(x,
     stop("`color` must be `NULL` or a character vector of colour names or hex codes.",
          call. = FALSE)
   if (type == "density") {
-    used <- c(show_ci = !missing(show_ci), conf_level = !missing(conf_level))
+    used <- c(show_ci = !missing(show_ci), conf_level = !missing(conf_level),
+              max_bars = !missing(max_bars))
     if (any(used))
       stop(sprintf("%s only applies to type = \"waterfall\".",
                    paste0("`", names(used)[used], "`", collapse = ", ")),
@@ -1837,6 +1851,11 @@ plt_hte_cate <- function(x,
       (!is.numeric(range_q) || length(range_q) != 2L || anyNA(range_q) ||
        range_q[1L] < 0 || range_q[2L] > 1 || range_q[1L] >= range_q[2L]))
     stop("`range_q` must be \"auto\", `NULL` or two increasing probabilities such as c(0.01, 0.99).",
+         call. = FALSE)
+  if (!is.null(max_bars) &&
+      (!is.numeric(max_bars) || length(max_bars) != 1L || is.na(max_bars) ||
+       max_bars < 1 || max_bars != round(max_bars)))
+    stop("`max_bars` must be `NULL` or a single whole number of at least 1.",
          call. = FALSE)
   if (!is.null(save) && !is.list(save))
     stop("`save` must be `NULL` or a list.", call. = FALSE)
@@ -1905,6 +1924,10 @@ plt_hte_cate <- function(x,
                   n_above = sum(cate > lim[2L], na.rm = TRUE),
                   widened = !isTRUE(all.equal(lim, q_lim)))
   }
+  # Beyond `max_bars` patients, an ungrouped waterfall draws group means
+  binned  <- type == "waterfall" && !length(sub_var) && !show_ci &&
+    !is.null(max_bars) && length(cate) > max_bars
+  bar_pct <- if (binned) paste0(signif(100 / max_bars, 3), "%")
   oob_keep   <- function(x, ...) x
   oob_squish <- function(x, range, ...) pmin(pmax(x, range[1L]), range[2L])
   environment(oob_keep) <- environment(oob_squish) <- baseenv()
@@ -1942,6 +1965,9 @@ plt_hte_cate <- function(x,
     o <- order(cate)
     if (!is.null(g)) o <- o[!is.na(g[o])]
     pd <- data.frame(rank = seq_along(o), cate = cate[o])
+    if (binned)
+      pd <- data.frame(rank = seq_len(max_bars), cate = as.numeric(
+        tapply(pd$cate, ceiling(seq_along(o) * max_bars / length(o)), mean)))
     if (show_ci) {
       pd$conf.low  <- pd$cate - z * se[o]
       pd$conf.high <- pd$cate + z * se[o]
@@ -1992,7 +2018,9 @@ plt_hte_cate <- function(x,
                                      ggplot2::aes(yintercept = estimate,
                                                   colour = level),
                                      linetype = 2, linewidth = 0.8)
-      q <- q + ggplot2::labs(x = "Patients ranked by CATE", y = lab) +
+      q <- q + ggplot2::labs(x = if (binned)
+        sprintf("Patients ranked by CATE (%s per bar)", bar_pct)
+        else "Patients ranked by CATE", y = lab) +
         UtilsR::theme_my(base_rect_size = 1.5) +
         ggplot2::theme(axis.text.x = ggplot2::element_blank(),
                        axis.ticks.x = ggplot2::element_blank(),
@@ -2049,7 +2077,8 @@ plt_hte_cate <- function(x,
     list(groups = groups, cate = cate, se = se, z = z, sub = sub, ate = ate,
          type = type, show_ci = show_ci, overall = overall, lab = lab,
          level_cols = level_cols, grad = grad, dens = dens, rng = rng,
-         oob_keep = oob_keep, oob_squish = oob_squish),
+         oob_keep = oob_keep, oob_squish = oob_squish, binned = binned,
+         max_bars = max_bars, bar_pct = bar_pct),
     parent = baseenv())
   plots <- lapply(if (length(sub_var)) sub_var else list(NULL), panel)
   cal_lab <- if (show_calibration) .hte_calib_label(x$calibration)
@@ -2062,7 +2091,11 @@ plt_hte_cate <- function(x,
     plots[[1L]] <- add_cal(plots[[1L]], cal_lab, type == "waterfall")
 
   caption <- paste(c(
-    if (type == "waterfall") "bars: out-of-bag CATE per patient, sorted"
+    if (binned) {
+      k <- range(tabulate(ceiling(seq_along(cate) * max_bars / length(cate))))
+      sprintf("bars: mean out-of-bag CATE of each %s of patients (%s patients), sorted",
+              bar_pct, if (k[1L] == k[2L]) k[1L] else paste(k, collapse = "-"))
+    } else if (type == "waterfall") "bars: out-of-bag CATE per patient, sorted"
     else "curves: density of the out-of-bag CATE",
     if (show_ci) sprintf("grey: %g%% CI", 100 * conf_level),
     if (overall) "black dashed: ATE",

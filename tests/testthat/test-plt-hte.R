@@ -1280,8 +1280,8 @@ test_that("plt_hte_cate draws the sorted CATE with the overall and subgroup ATE"
   res <- dep_res()
   expect_identical(names(formals(plt_hte_cate)),
                    c("x", "sub_var", "type", "show_ci", "conf_level",
-                     "overall", "show_calibration", "range_q", "color", "title",
-                     "save"))
+                     "overall", "show_calibration", "range_q", "max_bars", "color",
+                     "title", "save"))
   p <- plt_hte_cate(res, sub_var = "stage")
   expect_s3_class(p, "ggplot")
   bars <- layer_data_of(p, "GeomCol")
@@ -1378,7 +1378,7 @@ test_that("plt_hte_cate zooms the CATE axis by the number of patients", {
   }
   for (n in c(2000L, 12000L)) {
     r     <- big(n)
-    p     <- plt_hte_cate(r, overall = FALSE)
+    p     <- plt_hte_cate(r, overall = FALSE, max_bars = NULL)
     probs <- if (n < 10000L) c(0.005, 0.995) else c(0.01, 0.99)
     lim   <- unname(stats::quantile(r$data$.cate, probs))
     rng   <- attr(p, "cate_range")
@@ -1424,6 +1424,46 @@ test_that("plt_hte_cate zooms the CATE axis by the number of patients", {
 
   for (bad in list(c(0.9, 0.1), 0.01, "full", c(-0.1, 0.9), c(0.1, NA)))
     expect_error(plt_hte_cate(res, range_q = bad), "`range_q`")
+})
+
+test_that("plt_hte_cate draws at most max_bars bars, each the mean CATE of its group", {
+  res <- dep_res()
+  bars_of <- function(p) layer_data_of(p, "GeomCol")
+  r <- res
+  set.seed(3)
+  n <- 2500L
+  r$data <- r$data[sample(nrow(r$data), n, replace = TRUE), ]
+  r$data$.cate <- stats::rt(n, df = 2) / 20
+  cate <- sort(r$data$.cate)
+
+  # default: 1,000 bars, 0.1% of the patients each, in rank order
+  p <- plt_hte_cate(r, overall = FALSE)
+  expect_equal(bars_of(p)$cate,
+               as.numeric(tapply(cate, ceiling(seq_len(n) * 1000 / n), mean)))
+  expect_identical(nrow(bars_of(p)), 1000L)
+  expect_identical(p$labels$x, "Patients ranked by CATE (0.1% per bar)")
+  expect_match(gsub("\\s+", " ", p$labels$caption),
+               "mean out-of-bag CATE of each 0.1% of patients \\(2-3 patients\\)")
+  # the axis is still set by the patients
+  expect_equal(attr(p, "cate_range")$limits,
+               unname(stats::quantile(cate, c(0.005, 0.995))))
+
+  # a coarser grouping, and one bar per patient
+  expect_identical(nrow(bars_of(plt_hte_cate(r, overall = FALSE, max_bars = 200))), 200L)
+  p0 <- plt_hte_cate(r, overall = FALSE, max_bars = NULL)
+  expect_identical(nrow(bars_of(p0)), n)
+  expect_identical(p0$labels$x, "Patients ranked by CATE")
+
+  # bars coloured by level and per-patient intervals stay one per patient
+  expect_identical(nrow(bars_of(plt_hte_cate(res, sub_var = "stage", max_bars = 100))),
+                   nrow(res$data))
+  expect_identical(nrow(bars_of(plt_hte_cate(res, show_ci = TRUE, overall = FALSE,
+                                             max_bars = 100))), nrow(res$data))
+  expect_identical(nrow(bars_of(plt_hte_cate(res, overall = FALSE, max_bars = 100))), 100L)
+
+  expect_error(plt_hte_cate(res, type = "density", max_bars = 100), "only applies")
+  for (bad in list(0, 1.5, "a", c(10, 20), NA))
+    expect_error(plt_hte_cate(res, max_bars = bad), "`max_bars`")
 })
 
 
