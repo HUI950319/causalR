@@ -1716,6 +1716,17 @@ plt_hte_sub <- function(x,
 #'   coefficient and P of the mean and of the differential forest prediction.
 #'   Nothing is written when neither is below 0.05. Bottom right of a
 #'   waterfall, which the sorted bars leave empty, top right of a density.
+#' @param range_q Quantiles of the CATE that bound its axis -- the y axis of a
+#'   waterfall, the x axis of a density -- so that a few extreme patients do
+#'   not flatten everyone else. `"auto"` (default) picks them by the number
+#'   of patients: the full range below 1,000, where every bar can be told
+#'   apart; the 0.5th to 99.5th percentile below 10,000; the 1st to 99th from
+#'   10,000 on. `NULL` keeps the full range, and two probabilities such as
+#'   `c(0.01, 0.99)` set the quantiles. Only the axis is zoomed: the bars of
+#'   the patients beyond run off its edge, the density is still estimated
+#'   from every patient, and the range widens to keep the ATE lines in view.
+#'   The colour gradient of a waterfall without `sub_var` spans the zoomed
+#'   axis. The caption counts the patients beyond the axis.
 #' @param color `NULL` (default) or a character vector of colour names or hex
 #'   codes, for example a manuscript palette such as `my_color[c(3, 9)]`.
 #'   With `sub_var`, one colour per level for the bars or curves and the
@@ -1749,7 +1760,11 @@ plt_hte_sub <- function(x,
 #'   arms as the `xlab` of [plt_hte_sub()] does, e.g.
 #'   `"CATE: S(60) PORT - no PORT"`.
 #'   `attr(p, "subgroup")` holds the subgroup ATEs drawn, laid out as
-#'   `get_hte()$subgroup` (`NULL` without `sub_var`), and
+#'   `get_hte()$subgroup` (`NULL` without `sub_var`),
+#'   `attr(p, "cate_range")` the axis range of `range_q` for the figure
+#'   legend -- a list of `probs`, `limits`, `n_below` and `n_above` (the
+#'   patients beyond the axis) and `widened` (`TRUE` when the range was
+#'   widened to the ATE lines), `NULL` for the full range -- and
 #'   `attr(p, "plot_size")` a suggested `c(width, height)` in inches. If
 #'   `save` is non-empty, the plot is also written to PDF through
 #'   `RegR::save_plt()`.
@@ -1788,6 +1803,7 @@ plt_hte_cate <- function(x,
                          conf_level = 0.95,
                          overall    = TRUE,
                          show_calibration = TRUE,
+                         range_q    = "auto",
                          color      = NULL,
                          title      = NULL,
                          save       = list()) {
@@ -1816,6 +1832,11 @@ plt_hte_cate <- function(x,
   if (!is.numeric(conf_level) || length(conf_level) != 1L ||
       is.na(conf_level) || conf_level <= 0 || conf_level >= 1)
     stop("`conf_level` must be a single number strictly between 0 and 1.",
+         call. = FALSE)
+  if (!is.null(range_q) && !identical(range_q, "auto") &&
+      (!is.numeric(range_q) || length(range_q) != 2L || anyNA(range_q) ||
+       range_q[1L] < 0 || range_q[2L] > 1 || range_q[1L] >= range_q[2L]))
+    stop("`range_q` must be \"auto\", `NULL` or two increasing probabilities such as c(0.01, 0.99).",
          call. = FALSE)
   if (!is.null(save) && !is.list(save))
     stop("`save` must be `NULL` or a list.", call. = FALSE)
@@ -1870,6 +1891,23 @@ plt_hte_cate <- function(x,
   # ---- One panel per variable ------------------------------------------------
   lab  <- .hte_cate_label(x)
   cate <- d$.cate
+  # Axis range from every patient, shared by the panels; the ATE lines stay in view
+  if (identical(range_q, "auto")) {
+    n_pt    <- length(cate)
+    range_q <- if (n_pt < 1000L) NULL else if (n_pt < 10000L) c(0.005, 0.995) else c(0.01, 0.99)
+  }
+  rng <- NULL
+  if (!is.null(range_q)) {
+    q_lim <- unname(stats::quantile(cate, range_q, na.rm = TRUE))
+    lim   <- range(q_lim, ate, sub$estimate, na.rm = TRUE)
+    rng   <- list(probs = range_q, limits = lim,
+                  n_below = sum(cate < lim[1L], na.rm = TRUE),
+                  n_above = sum(cate > lim[2L], na.rm = TRUE),
+                  widened = !isTRUE(all.equal(lim, q_lim)))
+  }
+  oob_keep   <- function(x, ...) x
+  oob_squish <- function(x, range, ...) pmin(pmax(x, range[1L]), range[2L])
+  environment(oob_keep) <- environment(oob_squish) <- baseenv()
   # ggplot2's default hues, so the lines take the colour of their level
   hue  <- function(k) grDevices::hcl(h = seq(15, 375, length.out = k + 1L)[seq_len(k)],
                                      c = 100, l = 65)
@@ -1923,17 +1961,20 @@ plt_hte_cate <- function(x,
       q <- q + ggplot2::geom_hline(yintercept = 0, colour = "grey75")
       # Outlined in their own colour: side by side, bare bars leave hairline
       # gaps once rasterised.
+      # With `range_q` the gradient spans the zoomed axis, the bars beyond it
+      # taking the end colours; over the full range most bars would be white
+      gl <- if (!is.null(rng)) list(limits = rng$limits, oob = oob_squish)
       q <- q + if (is.null(g)) {
         list(ggplot2::geom_col(data = pd, ggplot2::aes(x = rank, y = cate,
                                                        fill = cate,
                                                        colour = cate),
                                width = 1, linewidth = 0.3),
-             ggplot2::scale_fill_gradient2(low = grad[1L], mid = grad[2L],
-                                           high = grad[3L], midpoint = 0,
-                                           guide = "none"),
-             ggplot2::scale_colour_gradient2(low = grad[1L], mid = grad[2L],
-                                             high = grad[3L], midpoint = 0,
-                                             guide = "none"))
+             do.call(ggplot2::scale_fill_gradient2,
+                     c(list(low = grad[1L], mid = grad[2L], high = grad[3L],
+                            midpoint = 0, guide = "none"), gl)),
+             do.call(ggplot2::scale_colour_gradient2,
+                     c(list(low = grad[1L], mid = grad[2L], high = grad[3L],
+                            midpoint = 0, guide = "none"), gl)))
       } else {
         ggplot2::geom_col(data = pd, ggplot2::aes(x = rank, y = cate,
                                                   fill = level, colour = level),
@@ -1978,8 +2019,15 @@ plt_hte_cate <- function(x,
       q <- q + ggplot2::labs(x = lab, y = "Density") +
         UtilsR::theme_my(base_rect_size = 1.5)
     }
-    # 1% of the axis beside the bars or curves instead of ggplot2's 5%
-    q <- q + ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = 0.01))
+    # 1% of the axis beside the bars or curves instead of ggplot2's 5%. With
+    # `range_q` only the axis is zoomed: the bars run off its edge, and the
+    # density of every patient is evaluated over the zoomed range.
+    xs <- list(expand = ggplot2::expansion(mult = 0.01))
+    if (!is.null(rng)) {
+      if (type == "density") xs <- c(xs, list(limits = rng$limits, oob = oob_keep))
+      else q <- q + ggplot2::scale_y_continuous(limits = rng$limits, oob = oob_keep)
+    }
+    q <- q + do.call(ggplot2::scale_x_continuous, xs)
     if (!is.null(g)) {
       cols <- level_cols[[v]]
       # Inside the top left, which the sorted bars and the curves' left tail
@@ -2000,7 +2048,8 @@ plt_hte_cate <- function(x,
   environment(panel) <- list2env(
     list(groups = groups, cate = cate, se = se, z = z, sub = sub, ate = ate,
          type = type, show_ci = show_ci, overall = overall, lab = lab,
-         level_cols = level_cols, grad = grad, dens = dens),
+         level_cols = level_cols, grad = grad, dens = dens, rng = rng,
+         oob_keep = oob_keep, oob_squish = oob_squish),
     parent = baseenv())
   plots <- lapply(if (length(sub_var)) sub_var else list(NULL), panel)
   cal_lab <- if (show_calibration) .hte_calib_label(x$calibration)
@@ -2018,7 +2067,19 @@ plt_hte_cate <- function(x,
     if (show_ci) sprintf("grey: %g%% CI", 100 * conf_level),
     if (overall) "black dashed: ATE",
     if (length(sub_var)) "coloured dashed: subgroup ATE (doubly robust)",
-    if (length(cal_lab)) "text: calibration test, rows with one-sided P < 0.05"),
+    if (length(cal_lab)) "text: calibration test, rows with one-sided P < 0.05",
+    if (!is.null(rng)) {
+      ord <- function(p) {
+        v <- as.character(round(100 * p, 4))
+        k <- if (grepl(".", v, fixed = TRUE)) 0L else as.integer(v)
+        paste0(v, if (k %% 100L %in% 11:13) "th" else
+          switch(as.character(k %% 10L), "1" = "st", "2" = "nd", "3" = "rd", "th"))
+      }
+      sprintf("axis: %s-%s percentile of the CATE%s, %s patients below and %s above",
+              ord(rng$probs[1L]), ord(rng$probs[2L]),
+              if (rng$widened) " widened to the ATE lines" else "",
+              format(rng$n_below, big.mark = ","), format(rng$n_above, big.mark = ","))
+    }),
     collapse = "; ")
   caption <- paste0(toupper(substr(caption, 1L, 1L)), substring(caption, 2L))
   ncol <- min(3L, length(plots))
@@ -2037,8 +2098,9 @@ plt_hte_cate <- function(x,
                                  theme = UtilsR::theme_my(base_rect_size = 1.5))
   }
 
-  attr(p, "subgroup")  <- sub
-  attr(p, "plot_size") <- stats::setNames(size, c("width", "height"))
+  attr(p, "subgroup")   <- sub
+  attr(p, "cate_range") <- rng
+  attr(p, "plot_size")  <- stats::setNames(size, c("width", "height"))
   if (!is.null(save) && length(save) > 0L) {
     if (!requireNamespace("RegR", quietly = TRUE))
       stop("Package 'RegR' is required for a non-empty `save`.", call. = FALSE)

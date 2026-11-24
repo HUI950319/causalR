@@ -75,7 +75,8 @@ bottom, width and height of the rings, as fractions of the panel.}
 \item{cate_args}{Named list of arguments of \code{\link[=plt_hte_cate]{plt_hte_cate()}} for the CATE
 waterfall, other than \code{x} and \code{save}; \code{list()} (default) keeps all of
 its defaults. The caption of \code{\link[=plt_hte_cate]{plt_hte_cate()}} is dropped, to be written
-in the figure legend.}
+in the figure legend; \code{attr(p, "cate_range")} keeps the patients it
+counts beyond the axis.}
 
 \item{top_height}{\code{NULL} (default) or a single positive number: the height
 of the top panel in inches. \code{NULL} gives 4.1 in to the importance bars
@@ -106,8 +107,10 @@ outcomes).}
 }
 \value{
 A \pkg{patchwork} of the two panels, with \code{attr(p, "plot_size")}
-the \code{c(width, height)} of the page in inches. If \code{save} is non-empty,
-the figure is also written to PDF through \code{RegR::save_plt()}.
+the \code{c(width, height)} of the page in inches and, under a CATE
+waterfall, \code{attr(p, "cate_range")} that of \code{\link[=plt_hte_cate]{plt_hte_cate()}}. If \code{save}
+is non-empty, the figure is also written to PDF through
+\code{RegR::save_plt()}.
 }
 \description{
 Stacks a top panel over the subgroup forest plot of \code{\link[=plt_hte_sub]{plt_hte_sub()}}: the

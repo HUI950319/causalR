@@ -67,7 +67,8 @@
 #' @param cate_args Named list of arguments of [plt_hte_cate()] for the CATE
 #'   waterfall, other than `x` and `save`; `list()` (default) keeps all of
 #'   its defaults. The caption of [plt_hte_cate()] is dropped, to be written
-#'   in the figure legend.
+#'   in the figure legend; `attr(p, "cate_range")` keeps the patients it
+#'   counts beyond the axis.
 #' @param top_height `NULL` (default) or a single positive number: the height
 #'   of the top panel in inches. `NULL` gives 4.1 in to the importance bars
 #'   and 3.6 in to the CATE waterfall.
@@ -103,8 +104,10 @@
 #' top left corner.
 #'
 #' @return A \pkg{patchwork} of the two panels, with `attr(p, "plot_size")`
-#'   the `c(width, height)` of the page in inches. If `save` is non-empty,
-#'   the figure is also written to PDF through `RegR::save_plt()`.
+#'   the `c(width, height)` of the page in inches and, under a CATE
+#'   waterfall, `attr(p, "cate_range")` that of [plt_hte_cate()]. If `save`
+#'   is non-empty, the figure is also written to PDF through
+#'   `RegR::save_plt()`.
 #'
 #' @seealso [plt_hte_sub()], [plt_hte_cate()]; `MLR::plt_bar_per()`.
 #'
@@ -236,14 +239,16 @@ save_hte <- function(x,
   p_sub <- do.call(plt_hte_sub,
                    c(list(quote(x), sub_var = sub_var, name_map = name_map),
                      sub_args))
+  rng <- NULL
   if (panel == "importance") {
     p_top <- do.call(MLR::plt_bar_per,
                      c(list(quote(imp), add_name = name_map), imp_args))
     h_top <- 4.1
     w_pad <- 0.5
   } else {
-    p_top <- do.call(plt_hte_cate, c(list(quote(x)), cate_args)) +
-      ggplot2::labs(caption = NULL)
+    p_top <- do.call(plt_hte_cate, c(list(quote(x)), cate_args))
+    rng   <- attr(p_top, "cate_range")
+    p_top <- p_top + ggplot2::labs(caption = NULL)
     h_top <- 3.6
     # the waterfall's axis title and tick labels push the forest plot right
     w_pad <- 1.2
@@ -258,7 +263,8 @@ save_hte <- function(x,
   p  <- UtilsR::fmt_tag(p, label_position = "tl-out")
 
   size <- c(width = sz[[1L]] + w_pad, height = h_top + sz[[2L]] + 0.6)
-  attr(p, "plot_size") <- size
+  attr(p, "plot_size")  <- size
+  attr(p, "cate_range") <- rng
   if (!is.null(save) && length(save) > 0L) {
     if (!requireNamespace("RegR", quietly = TRUE))
       stop("Package 'RegR' is required for a non-empty `save`.", call. = FALSE)

@@ -163,6 +163,17 @@ test_that("panel = 'auto' draws the importance bars only for a top-three variabl
   }
 })
 
+test_that("the axis range of the CATE waterfall stays with the page", {
+  res <- save_res()
+  p   <- suppressWarnings(save_hte(res, sub_var = "sex", panel = "cate",
+                                   cate_args = list(range_q = c(0.05, 0.95))))
+  rng <- attr(p, "cate_range")
+  expect_equal(rng$probs, c(0.05, 0.95))
+  expect_gt(rng$n_below + rng$n_above, 0)
+  expect_null(attr(suppressWarnings(save_hte(res, sub_var = "sex", panel = "cate")),
+                   "cate_range"))
+})
+
 test_that("bad arguments are rejected before any plot is drawn", {
   res <- save_res()
   expect_error(save_hte(res, sub_var = c("sex", "grp")), "single column name")

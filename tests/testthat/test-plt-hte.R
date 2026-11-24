@@ -1280,7 +1280,8 @@ test_that("plt_hte_cate draws the sorted CATE with the overall and subgroup ATE"
   res <- dep_res()
   expect_identical(names(formals(plt_hte_cate)),
                    c("x", "sub_var", "type", "show_ci", "conf_level",
-                     "overall", "show_calibration", "color", "title", "save"))
+                     "overall", "show_calibration", "range_q", "color", "title",
+                     "save"))
   p <- plt_hte_cate(res, sub_var = "stage")
   expect_s3_class(p, "ggplot")
   bars <- layer_data_of(p, "GeomCol")
@@ -1356,6 +1357,73 @@ test_that("plt_hte_cate adds grf's pointwise intervals and checks its input", {
                   "ggplot")
   expect_true(file.exists(f))
   unlink(f)
+})
+
+test_that("plt_hte_cate zooms the CATE axis by the number of patients", {
+  res <- dep_res()
+  y_range <- function(p) ggplot2::ggplot_build(p)$layout$panel_params[[1]]$y.range
+  caption <- function(p) gsub("\\s+", " ", p$labels$caption)
+  # "auto" below 1,000 patients: the full range, as range_q = NULL
+  expect_null(attr(plt_hte_cate(res), "cate_range"))
+  expect_equal(y_range(plt_hte_cate(res)), y_range(plt_hte_cate(res, range_q = NULL)))
+
+  # 0.5th-99.5th percentile from 1,000 patients, 1st-99th from 10,000; only
+  # the axis is zoomed, every bar is kept
+  big <- function(n) {
+    r <- res
+    set.seed(n)
+    r$data <- r$data[sample(nrow(r$data), n, replace = TRUE), ]
+    r$data$.cate <- stats::rt(n, df = 2) / 20
+    r
+  }
+  for (n in c(2000L, 12000L)) {
+    r     <- big(n)
+    p     <- plt_hte_cate(r, overall = FALSE)
+    probs <- if (n < 10000L) c(0.005, 0.995) else c(0.01, 0.99)
+    lim   <- unname(stats::quantile(r$data$.cate, probs))
+    rng   <- attr(p, "cate_range")
+    expect_equal(rng$probs, probs)
+    expect_equal(rng$limits, lim)
+    expect_identical(rng$n_below, sum(r$data$.cate < lim[1]))
+    expect_identical(rng$n_above, sum(r$data$.cate > lim[2]))
+    expect_false(rng$widened)
+    expect_equal(y_range(p), lim + c(-1, 1) * 0.05 * diff(lim))
+    expect_identical(nrow(layer_data_of(p, "GeomCol")), n)
+    # the gradient spans the zoomed axis: the bars at and beyond its farther
+    # end take the end colour
+    fill <- ggplot2::ggplot_build(p)$data[[2]]$fill
+    side <- if (abs(lim[1]) >= abs(lim[2])) 1L else n
+    expect_equal(grDevices::col2rgb(fill[side]),
+                 grDevices::col2rgb(if (side == 1L) "navy" else "firebrick"),
+                 ignore_attr = TRUE)
+    expect_match(caption(p),
+                 if (n < 10000L) "0.5th-99.5th percentile" else "1st-99th percentile")
+    expect_match(caption(p),
+                 sprintf("%d patients below and %d above", rng$n_below, rng$n_above))
+  }
+
+  # density: estimated from every patient, drawn over the zoomed range
+  pd  <- plt_hte_cate(res, type = "density", range_q = c(0.05, 0.95), overall = FALSE)
+  lim <- unname(stats::quantile(res$data$.cate, c(0.05, 0.95)))
+  expect_equal(attr(pd, "cate_range")$limits, lim)
+  dens <- ggplot2::ggplot_build(pd)$data[[2]]
+  expect_equal(range(dens$x), lim)
+  expect_equal(dens$density,
+               stats::density(res$data$.cate, from = lim[1], to = lim[2])$y,
+               tolerance = 1e-6)
+
+  # the range widens to keep the ATE lines in view
+  p   <- plt_hte_cate(res, sub_var = "stage", range_q = c(0.95, 1))
+  rng <- attr(p, "cate_range")
+  ate <- res$stats$estimate[res$stats$measure == "diff"]
+  expect_equal(rng$limits,
+               range(stats::quantile(res$data$.cate, c(0.95, 1)), ate,
+                     attr(p, "subgroup")$estimate))
+  expect_true(rng$widened)
+  expect_match(caption(p), "widened to the ATE lines")
+
+  for (bad in list(c(0.9, 0.1), 0.01, "full", c(-0.1, 0.9), c(0.1, NA)))
+    expect_error(plt_hte_cate(res, range_q = bad), "`range_q`")
 })
 
 

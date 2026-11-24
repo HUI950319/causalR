@@ -12,6 +12,7 @@ plt_hte_cate(
   conf_level = 0.95,
   overall = TRUE,
   show_calibration = TRUE,
+  range_q = "auto",
   color = NULL,
   title = NULL,
   save = list()
@@ -50,6 +51,18 @@ coefficient and P of the mean and of the differential forest prediction.
 Nothing is written when neither is below 0.05. Bottom right of a
 waterfall, which the sorted bars leave empty, top right of a density.}
 
+\item{range_q}{Quantiles of the CATE that bound its axis -- the y axis of a
+waterfall, the x axis of a density -- so that a few extreme patients do
+not flatten everyone else. \code{"auto"} (default) picks them by the number
+of patients: the full range below 1,000, where every bar can be told
+apart; the 0.5th to 99.5th percentile below 10,000; the 1st to 99th from
+10,000 on. \code{NULL} keeps the full range, and two probabilities such as
+\code{c(0.01, 0.99)} set the quantiles. Only the axis is zoomed: the bars of
+the patients beyond run off its edge, the density is still estimated
+from every patient, and the range widens to keep the ATE lines in view.
+The colour gradient of a waterfall without \code{sub_var} spans the zoomed
+axis. The caption counts the patients beyond the axis.}
+
 \item{color}{\code{NULL} (default) or a character vector of colour names or hex
 codes, for example a manuscript palette such as \code{my_color[c(3, 9)]}.
 With \code{sub_var}, one colour per level for the bars or curves and the
@@ -75,7 +88,11 @@ for a binary one and the mean difference otherwise; its title names the
 arms as the \code{xlab} of \code{\link[=plt_hte_sub]{plt_hte_sub()}} does, e.g.
 \code{"CATE: S(60) PORT - no PORT"}.
 \code{attr(p, "subgroup")} holds the subgroup ATEs drawn, laid out as
-\code{get_hte()$subgroup} (\code{NULL} without \code{sub_var}), and
+\code{get_hte()$subgroup} (\code{NULL} without \code{sub_var}),
+\code{attr(p, "cate_range")} the axis range of \code{range_q} for the figure
+legend -- a list of \code{probs}, \code{limits}, \code{n_below} and \code{n_above} (the
+patients beyond the axis) and \code{widened} (\code{TRUE} when the range was
+widened to the ATE lines), \code{NULL} for the full range -- and
 \code{attr(p, "plot_size")} a suggested \code{c(width, height)} in inches. If
 \code{save} is non-empty, the plot is also written to PDF through
 \code{RegR::save_plt()}.

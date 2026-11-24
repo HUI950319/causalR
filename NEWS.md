@@ -1,5 +1,18 @@
 # causalR (development version)
 
+* `plt_hte_cate()` gains `range_q`, the quantiles of the CATE that bound its
+  axis. The default `"auto"` picks them by the number of patients: the full
+  range below 1,000, the 0.5th to 99.5th percentile below 10,000 and the 1st
+  to 99th from 10,000 on. In a 146,603-patient SEER cohort the out-of-bag
+  CATE ran from -210 to +56 percentage points around a median of -0.06, so
+  the waterfall of `save_hte()` was an empty panel with a spike at each end.
+  Only the axis is zoomed: the bars beyond run off its edge, the density is
+  still estimated from every patient, the range widens to keep the ATE lines
+  in view, and the gradient of an ungrouped waterfall spans the zoomed axis.
+  The caption and `attr(p, "cate_range")`, which `save_hte()` keeps, count
+  the patients beyond. `range_q = NULL` draws the full range as before
+  (paper-Sex, author, 2026-11-24).
+
 * `save_hte()` completes a bare `save$filename` label from
   `RegR::set_paper()`: `save = list(filename = "Supplementary Figure 13")`
   writes "Supplementary Figure 13. Heterogeneity analysis of the effect of
