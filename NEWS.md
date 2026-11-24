@@ -6,8 +6,8 @@
   pixels wide at 300 dpi, so the 146,603 bars of a SEER cohort looked the
   same as 1,000 but made the panel's PDF 188 KB instead of 14 KB and 3.5 s
   instead of 0.4 s to rasterise. The axis range of `range_q` and the
-  patients counted beyond it still come from every patient; the x-axis title
-  reads "Patients ranked by CATE (0.1% per bar)". `max_bars = NULL`, a
+  patients counted beyond it still come from every patient, and the caption
+  says how many patients each bar averages. `max_bars = NULL`, a
   `sub_var` (bars coloured by level) or `show_ci = TRUE` (per-patient
   intervals) keep one bar per patient (paper-Sex, author, 2026-11-24).
 

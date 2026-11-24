@@ -2018,9 +2018,7 @@ plt_hte_cate <- function(x,
                                      ggplot2::aes(yintercept = estimate,
                                                   colour = level),
                                      linetype = 2, linewidth = 0.8)
-      q <- q + ggplot2::labs(x = if (binned)
-        sprintf("Patients ranked by CATE (%s per bar)", bar_pct)
-        else "Patients ranked by CATE", y = lab) +
+      q <- q + ggplot2::labs(x = "Patients ranked by CATE", y = lab) +
         UtilsR::theme_my(base_rect_size = 1.5) +
         ggplot2::theme(axis.text.x = ggplot2::element_blank(),
                        axis.ticks.x = ggplot2::element_blank(),
@@ -2078,7 +2076,7 @@ plt_hte_cate <- function(x,
          type = type, show_ci = show_ci, overall = overall, lab = lab,
          level_cols = level_cols, grad = grad, dens = dens, rng = rng,
          oob_keep = oob_keep, oob_squish = oob_squish, binned = binned,
-         max_bars = max_bars, bar_pct = bar_pct),
+         max_bars = max_bars),
     parent = baseenv())
   plots <- lapply(if (length(sub_var)) sub_var else list(NULL), panel)
   cal_lab <- if (show_calibration) .hte_calib_label(x$calibration)

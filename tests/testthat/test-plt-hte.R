@@ -1441,7 +1441,7 @@ test_that("plt_hte_cate draws at most max_bars bars, each the mean CATE of its g
   expect_equal(bars_of(p)$cate,
                as.numeric(tapply(cate, ceiling(seq_len(n) * 1000 / n), mean)))
   expect_identical(nrow(bars_of(p)), 1000L)
-  expect_identical(p$labels$x, "Patients ranked by CATE (0.1% per bar)")
+  expect_identical(p$labels$x, "Patients ranked by CATE")
   expect_match(gsub("\\s+", " ", p$labels$caption),
                "mean out-of-bag CATE of each 0.1% of patients \\(2-3 patients\\)")
   # the axis is still set by the patients
