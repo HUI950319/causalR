@@ -841,13 +841,16 @@ get_hte_unihtee <- function(data,
 #'   `"all"` (default) for one y range across panels, covering the lines and
 #'   bin means but not the intervals, as in [plt_hte_dep()]; `"none"` for a
 #'   range per panel that also covers its intervals.
-#' @param var_names Display labels keyed by candidate name, a named list or
+#' @param name_map Display labels keyed by candidate name, a named list or
 #'   character vector such as `c(bmi = "Body mass index")`, as in
 #'   [get_bal()]; `character()` (default) gives none of your own. When RegR
 #'   is installed they are merged into `RegR::name_map_seer`, your labels
 #'   winning; a name given more than once keeps its first label. A candidate
 #'   in neither keeps its column name. `NULL` keeps every column name. Two
-#'   candidates may not share a label.
+#'   candidates may not share a label. The map recorded by `RegR::set_paper(name_map = )` follows a map given
+#'   here, the first entry for a name winning.
+#' @param var_names Former name of `name_map`, which still works with a
+#'   warning.
 #' @param title Plot title, or `NULL` (default).
 #' @param save `NULL` or a list with `filename`, `width` and `height`, passed
 #'   to `RegR::save_plt()` for PDF output. `list()` and `NULL` skip saving; a
@@ -887,12 +890,12 @@ get_hte_unihtee <- function(data,
 #' plt_hte_unihtee(res)                      # signed estimates with CIs
 #' plt_hte_unihtee(res, type = "volcano")
 #' plt_hte_unihtee(res, type = "dep", x_var = c("w3", "sex", "w2"),
-#'                 var_names = NULL)
+#'                 name_map = NULL)
 #'
 #' # Quantile-bin means as a shape check, one y range per panel, own labels
 #' plt_hte_unihtee(res, type = "dep", x_var = c("w3", "sex"),
 #'                 dr_args = list(bins = 5), axis_arg = list(share_y = "none"),
-#'                 var_names = c(w3 = "Biomarker", sex = "Sex"))
+#'                 name_map = c(w3 = "Biomarker", sex = "Sex"))
 #'
 #' @export
 plt_hte_unihtee <- function(x,
@@ -902,9 +905,12 @@ plt_hte_unihtee <- function(x,
                             sig_level = 0.05,
                             dr_args   = list(spline_df = 2, bins = 0),
                             axis_arg  = list(share_y = "all"),
-                            var_names = character(),
+                            name_map  = character(),
                             title     = NULL,
+                            var_names = NULL,
                             save      = list()) {
+  name_map <- .causal_name_map(name_map, !missing(name_map), var_names,
+                              !missing(var_names), "var_names", "plt_hte_unihtee")
 
   a <- attr(x, "analysis")
   if (!is.list(x) || !all(c("vip", "data") %in% names(x)) ||
@@ -961,26 +967,26 @@ plt_hte_unihtee <- function(x,
   v   <- v[match(vars, v$variable), , drop = FALSE]
   rel <- measure != "diff"
 
-  # var_names as in get_bal(): the caller's labels first, then
+  # name_map as in get_bal(): the caller's labels first, then
   # RegR::name_map_seer, the first of a repeated name winning; a candidate in
   # neither keeps its column name.
   disp <- stats::setNames(v$variable, v$variable)
-  if (!is.null(var_names)) {
+  if (!is.null(name_map)) {
     one_lab <- function(s) is.character(s) && length(s) == 1L && !is.na(s)
-    if (!(is.list(var_names) || is.character(var_names)) ||
-        (length(var_names) &&
-         (is.null(names(var_names)) || any(!nzchar(names(var_names))) ||
-          !all(vapply(var_names, one_lab, logical(1L))))))
-      stop("`var_names` must be NULL or a named list or character vector of single labels.",
+    if (!(is.list(name_map) || is.character(name_map)) ||
+        (length(name_map) &&
+         (is.null(names(name_map)) || any(!nzchar(names(name_map))) ||
+          !all(vapply(name_map, one_lab, logical(1L))))))
+      stop("`name_map` must be NULL or a named list or character vector of single labels.",
            call. = FALSE)
-    vn <- c(as.list(var_names),
+    vn <- c(as.list(name_map),
             if (requireNamespace("RegR", quietly = TRUE)) RegR::name_map_seer)
     vn <- unlist(vn[!duplicated(names(vn)) & names(vn) %in% v$variable])
     if (length(vn)) disp[names(vn)] <- vn
   }
   clash <- disp %in% disp[duplicated(disp)]
   if (any(clash))
-    stop(sprintf("`var_names` gives candidates the same display label: %s. Give them distinct labels.",
+    stop(sprintf("`name_map` gives candidates the same display label: %s. Give them distinct labels.",
                  paste(sprintf("`%s` -> \"%s\"", names(disp)[clash], disp[clash]),
                        collapse = ", ")), call. = FALSE)
 

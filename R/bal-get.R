@@ -230,6 +230,38 @@
 }
 
 
+# The labels a causalR plot adds on top of RegR::name_map_seer: the map given
+# as `name_map`, then the map recorded by RegR::set_paper(name_map = ), the
+# first entry for a name winning. Read from options(), so it needs no RegR.
+# `NULL` given keeps every column name, as before; with neither map the
+# result is `character()`, "none of your own". A former argument name
+# (`var_names`) still works, with one warning per function and session.
+.causal_name_map <- function(name_map, given, old = NULL, old_given = FALSE,
+                             old_name = NULL, fun = NULL) {
+  if (old_given) {
+    key <- paste0(fun, ":", old_name)
+    if (!isTRUE(.causal_name_map_warned[[key]])) {
+      assign(key, TRUE, envir = .causal_name_map_warned)
+      warning(sprintf("`%s` of %s() is renamed `name_map`; the old name still works for now.%s",
+                      old_name, fun, if (given) " `name_map` wins." else ""),
+              call. = FALSE)
+    }
+    if (!given) {
+      name_map <- old
+      given <- TRUE
+    }
+  }
+  if (given && is.null(name_map)) return(NULL)
+  own <- c(if (given) as.list(name_map), as.list(getOption("RegR.name_map")))
+  if (!length(own)) return(character())
+  if (!is.null(names(own))) own <- own[!duplicated(names(own)) | !nzchar(names(own))]
+  own
+}
+
+# Which former argument names have warned in this session ("fun:arg").
+.causal_name_map_warned <- new.env(parent = emptyenv())
+
+
 #' Compare covariate balance across matching and weighting schemes
 #'
 #' Fits any mix of propensity score matching ([get_PSM()]) and weighting
@@ -355,16 +387,19 @@
 #'   macOS (WSL included) and started as a PSOCK cluster on Windows, which
 #'   costs a few seconds. The result does not depend on `cores`, and it is
 #'   ignored when no table is built.
-#' @param var_names Display labels keyed by column name, a named list or
+#' @param name_map Display labels keyed by column name, a named list or
 #'   character vector such as `c(bmi = "Body mass index")`, used by the plot
 #'   and `$tbl`; `character()` (default) gives none of your own. When RegR is
 #'   installed they are merged into `RegR::name_map_seer`, your labels
 #'   winning; a name given more than once keeps its first label, as in the
-#'   `colname_map` of `RegR::get_tb_gtsummary()`. Names not in `adj_var` are
+#'   `name_map` of `RegR::get_tb_gtsummary()`. Names not in `adj_var` are
 #'   ignored, and a covariate in neither
 #'   keeps its column name. `NULL` keeps every column name. In the plot a
 #'   factor's label is applied to each of its level rows; `$balance` always
-#'   keeps the column names.
+#'   keeps the column names. The map recorded by `RegR::set_paper(name_map = )` follows a map given
+#'   here, the first entry for a name winning.
+#' @param var_names Former name of `name_map`, which still works with a
+#'   warning.
 #' @param love_args Named list of love plot settings; `list()` (default)
 #'   keeps every default. Unknown or duplicated fields are an error.
 #'   \describe{
@@ -472,7 +507,7 @@
 #' # Restyle: stricter threshold, legend below, readable covariate names
 #' get_bal(d, treat = "z", adj_var = c("x1", "x2", "x3"),
 #'         methods = c("PSM", "ATO"),
-#'         var_names = c(x1 = "Age", x2 = "Male", x3 = "Frailty"),
+#'         name_map = c(x1 = "Age", x2 = "Male", x3 = "Frailty"),
 #'         love_args = list(threshold = 0.05, legend_position = "bottom"))$plt
 #'
 #' # Table 1 per scheme: both arms, SMD and p-value under one spanner each
@@ -491,10 +526,13 @@ get_bal <- function(data,
                     cat_smd   = c("overall", "level"),
                     tbl       = FALSE,
                     cores     = NULL,
-                    var_names = character(),
+                    name_map  = character(),
                     love_args = list(),
+                    var_names = NULL,
                     save_plt  = list(),
                     save_tbl  = list()) {
+  name_map <- .causal_name_map(name_map, !missing(name_map), var_names,
+                              !missing(var_names), "var_names", "get_bal")
 
   if (!is.data.frame(data) || !nrow(data))
     stop("`data` must be a non-empty data frame.", call. = FALSE)
@@ -556,19 +594,19 @@ get_bal <- function(data,
     bad("legend_position", "must be one string such as \"right\" or \"none\", or two numbers.")
   if (!is.null(la$legend_justification) && !place(la$legend_justification))
     bad("legend_justification", "must be NULL, one string, or two numbers.")
-  # var_names: the caller's labels first, then RegR::name_map_seer, as
+  # name_map: the caller's labels first, then RegR::name_map_seer, as
   # RegR::get_tb_gtsummary() merges them, the first of a repeated name
   # winning; only adj_var entries are kept.
   vn <- NULL
-  if (!is.null(var_names)) {
+  if (!is.null(name_map)) {
     one_lab <- function(x) is.character(x) && length(x) == 1L && !is.na(x)
-    if (!(is.list(var_names) || is.character(var_names)) ||
-        (length(var_names) &&
-         (is.null(names(var_names)) || any(!nzchar(names(var_names))) ||
-          !all(vapply(var_names, one_lab, logical(1))))))
-      stop("`var_names` must be NULL or a named list or character vector of single labels.",
+    if (!(is.list(name_map) || is.character(name_map)) ||
+        (length(name_map) &&
+         (is.null(names(name_map)) || any(!nzchar(names(name_map))) ||
+          !all(vapply(name_map, one_lab, logical(1))))))
+      stop("`name_map` must be NULL or a named list or character vector of single labels.",
            call. = FALSE)
-    vn <- c(as.list(var_names),
+    vn <- c(as.list(name_map),
             if (requireNamespace("RegR", quietly = TRUE)) RegR::name_map_seer)
     vn <- unlist(vn[!duplicated(names(vn)) & names(vn) %in% adj_var])
     if (!length(vn)) vn <- NULL
@@ -581,7 +619,7 @@ get_bal <- function(data,
   clash <- disp %in% disp[duplicated(disp)]
   if (any(clash)) {
     grp <- split(adj_var[clash], disp[clash])
-    stop(sprintf("`var_names` gives covariates the same display label, which would share one plot row: %s. Give them distinct labels in `var_names`.",
+    stop(sprintf("`name_map` gives covariates the same display label, which would share one plot row: %s. Give them distinct labels in `name_map`.",
                  paste(sprintf("%s -> \"%s\"", vapply(grp, function(v)
                    paste0("`", v, "`", collapse = ", "), ""), names(grp)),
                    collapse = "; ")), call. = FALSE)
@@ -716,7 +754,7 @@ get_bal <- function(data,
     stringsAsFactors = FALSE)
 
   # Plot labels: a two-level factor under its variable's label; any other
-  # var_names entry goes to cobalt, which labels each level of a factor.
+  # name_map entry goes to cobalt, which labels each level of a factor.
   lab_of <- function(v) if (v %in% names(vn)) vn[[v]] else v
   # cobalt reads a factor's name in var.names as the label of its level rows,
   # so a cat_smd = "overall" row is relabelled by renaming it instead.

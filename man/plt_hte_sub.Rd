@@ -99,9 +99,11 @@ levels and "All patients". Its keys take precedence over the SEER
 dictionary of \code{RegR::plt_eff2()}, which, when \pkg{RegR} is installed,
 renames variable rows only (its keys are variable names, so a level \code{M}
 stays \code{M}). A name given more than once keeps its first label, as in
-the \code{colname_map} of \code{RegR::get_tb_gtsummary()}, so a dictionary
+the \code{name_map} of \code{RegR::get_tb_gtsummary()}, so a dictionary
 shared across studies can be passed whole. Only the drawing changes:
-\code{sub_var}, \code{effect} and \code{attr(p, "subgroup")} keep the original names.}
+\code{sub_var}, \code{effect} and \code{attr(p, "subgroup")} keep the original names.
+The map recorded by \code{RegR::set_paper(name_map = )} follows a map given
+here, the first entry for a name winning; \code{NULL} given ignores it.}
 
 \item{header_list}{\code{NULL} (default) or a named list of single strings
 replacing column headers, keyed as in \code{RegR::plt_eff2()}; a header left

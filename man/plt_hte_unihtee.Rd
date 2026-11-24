@@ -12,8 +12,9 @@ plt_hte_unihtee(
   sig_level = 0.05,
   dr_args = list(spline_df = 2, bins = 0),
   axis_arg = list(share_y = "all"),
-  var_names = character(),
+  name_map = character(),
   title = NULL,
+  var_names = NULL,
   save = list()
 )
 }
@@ -58,15 +59,19 @@ bins.}
 bin means but not the intervals, as in \code{\link[=plt_hte_dep]{plt_hte_dep()}}; \code{"none"} for a
 range per panel that also covers its intervals.}
 
-\item{var_names}{Display labels keyed by candidate name, a named list or
+\item{name_map}{Display labels keyed by candidate name, a named list or
 character vector such as \code{c(bmi = "Body mass index")}, as in
 \code{\link[=get_bal]{get_bal()}}; \code{character()} (default) gives none of your own. When RegR
 is installed they are merged into \code{RegR::name_map_seer}, your labels
 winning; a name given more than once keeps its first label. A candidate
 in neither keeps its column name. \code{NULL} keeps every column name. Two
-candidates may not share a label.}
+candidates may not share a label. The map recorded by \code{RegR::set_paper(name_map = )} follows a map given
+here, the first entry for a name winning.}
 
 \item{title}{Plot title, or \code{NULL} (default).}
+
+\item{var_names}{Former name of \code{name_map}, which still works with a
+warning.}
 
 \item{save}{\code{NULL} or a list with \code{filename}, \code{width} and \code{height}, passed
 to \code{RegR::save_plt()} for PDF output. \code{list()} and \code{NULL} skip saving; a
@@ -116,12 +121,12 @@ res <- get_hte_unihtee(d, cat_var = "a", adj_var = c("w1", "w2", "w3", "sex"),
 plt_hte_unihtee(res)                      # signed estimates with CIs
 plt_hte_unihtee(res, type = "volcano")
 plt_hte_unihtee(res, type = "dep", x_var = c("w3", "sex", "w2"),
-                var_names = NULL)
+                name_map = NULL)
 
 # Quantile-bin means as a shape check, one y range per panel, own labels
 plt_hte_unihtee(res, type = "dep", x_var = c("w3", "sex"),
                 dr_args = list(bins = 5), axis_arg = list(share_y = "none"),
-                var_names = c(w3 = "Biomarker", sex = "Sex"))
+                name_map = c(w3 = "Biomarker", sex = "Sex"))
 \dontshow{\}) # examplesIf}
 }
 \seealso{

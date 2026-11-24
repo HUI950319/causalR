@@ -12,8 +12,9 @@ get_bal(
   cat_smd = c("overall", "level"),
   tbl = FALSE,
   cores = NULL,
-  var_names = character(),
+  name_map = character(),
   love_args = list(),
+  var_names = NULL,
   save_plt = list(),
   save_tbl = list()
 )
@@ -63,16 +64,17 @@ macOS (WSL included) and started as a PSOCK cluster on Windows, which
 costs a few seconds. The result does not depend on \code{cores}, and it is
 ignored when no table is built.}
 
-\item{var_names}{Display labels keyed by column name, a named list or
+\item{name_map}{Display labels keyed by column name, a named list or
 character vector such as \code{c(bmi = "Body mass index")}, used by the plot
 and \verb{$tbl}; \code{character()} (default) gives none of your own. When RegR is
 installed they are merged into \code{RegR::name_map_seer}, your labels
 winning; a name given more than once keeps its first label, as in the
-\code{colname_map} of \code{RegR::get_tb_gtsummary()}. Names not in \code{adj_var} are
+\code{name_map} of \code{RegR::get_tb_gtsummary()}. Names not in \code{adj_var} are
 ignored, and a covariate in neither
 keeps its column name. \code{NULL} keeps every column name. In the plot a
 factor's label is applied to each of its level rows; \verb{$balance} always
-keeps the column names.}
+keeps the column names. The map recorded by \code{RegR::set_paper(name_map = )} follows a map given
+here, the first entry for a name winning.}
 
 \item{love_args}{Named list of love plot settings; \code{list()} (default)
 keeps every default. Unknown or duplicated fields are an error.
@@ -105,6 +107,9 @@ columns.}
 position: the nearest corner for an inside legend, \code{c(1, 0)} for the
 default, and the centre of the edge for an outside one.}
 }}
+
+\item{var_names}{Former name of \code{name_map}, which still works with a
+warning.}
 
 \item{save_plt}{\code{NULL} or a named list saving the love plot as a PDF
 through \code{RegR::save_plt()}: \code{filename}, and optionally \code{width} and
@@ -265,7 +270,7 @@ get_bal(d, treat = "z", adj_var = c("x1", "x2", "x3"),
 # Restyle: stricter threshold, legend below, readable covariate names
 get_bal(d, treat = "z", adj_var = c("x1", "x2", "x3"),
         methods = c("PSM", "ATO"),
-        var_names = c(x1 = "Age", x2 = "Male", x3 = "Frailty"),
+        name_map = c(x1 = "Age", x2 = "Male", x3 = "Frailty"),
         love_args = list(threshold = 0.05, legend_position = "bottom"))$plt
 
 # Table 1 per scheme: both arms, SMD and p-value under one spanner each

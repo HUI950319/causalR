@@ -1,5 +1,16 @@
 # causalR (development version)
 
+* The label maps of `get_bal()`, `plt_hte_unihtee()`, `plt_hte_sub()` and
+  `save_hte()` are all `name_map` and read the map recorded by
+  `RegR::set_paper(name_map = )` (from `getOption("RegR.name_map")`, so RegR
+  stays a Suggests): a map given here comes first, then the recorded one, and
+  `RegR::name_map_seer` underneath as before. `name_map = NULL` keeps every
+  column name and ignores the recorded map. `var_names` of `get_bal()` and
+  `plt_hte_unihtee()` is the former name, which still works with one warning
+  per function and session; the defaults stay free of RegR (`character()` /
+  `NULL`). `save_hte()` passes its map to `MLR::plt_bar_per()` as `name_map`
+  (paper-Sex PTC papers 4-10, author, 2026-11-24).
+
 * `plt_hte_cate()` gains `max_bars`, default `1000`: beyond as many patients,
   a waterfall without `sub_var` splits them by rank into 1,000 groups of
   0.1% and draws the mean CATE of each. A 7-in waterfall is about 2,000

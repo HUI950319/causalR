@@ -26,8 +26,9 @@
 #'   `x$importance`, and the CATE waterfall otherwise; `"importance"` and
 #'   `"cate"` draw one of them.
 #' @param name_map `NULL` (default) or the display names of variables and
-#'   levels, passed as `name_map` to [plt_hte_sub()] and as `add_name` to
-#'   `MLR::plt_bar_per()`.
+#'   levels, passed as `name_map` to [plt_hte_sub()] and
+#'   `MLR::plt_bar_per()`. The map recorded by `RegR::set_paper(name_map = )` follows a map given
+#'   here, the first entry for a name winning; `NULL` given ignores it.
 #' @param sub_args Named list of arguments of [plt_hte_sub()], other than
 #'   `x`, `sub_var`, `name_map` and `save`. A partial list is merged over the
 #'   defaults written out in the usage, so only the fields given change;
@@ -53,7 +54,7 @@
 #'       axis centred on 0.}
 #'   }
 #' @param imp_args Named list of arguments of `MLR::plt_bar_per()` for the
-#'   importance bars, other than `data`, `add_name` and `save`, merged over
+#'   importance bars, other than `data`, `name_map` and `save`, merged over
 #'   the defaults in the usage as `sub_args` is. Fields are checked against
 #'   `MLR::plt_bar_per()` only when the importance bars are drawn.
 #'   \describe{
@@ -158,6 +159,7 @@ save_hte <- function(x,
                      top_height = NULL,
                      color      = NULL,
                      save       = list()) {
+  name_map <- .causal_name_map(name_map, !missing(name_map))
 
   if (!inherits(x, "hte_res"))
     stop("`x` must be an `hte_res` object from get_hte().", call. = FALSE)
@@ -202,7 +204,7 @@ save_hte <- function(x,
            "or use `panel = \"cate\"`.", call. = FALSE)
     imp_args <- .merge_named_arg(
       imp_args, eval(usage$imp_args), "imp_args",
-      setdiff(names(formals(MLR::plt_bar_per)), c("data", "add_name", "save")))
+      setdiff(names(formals(MLR::plt_bar_per)), c("data", "name_map", "add_name", "save")))
   }
 
   # One palette colours the three plots, at the positions the manuscripts
@@ -242,7 +244,7 @@ save_hte <- function(x,
   rng <- NULL
   if (panel == "importance") {
     p_top <- do.call(MLR::plt_bar_per,
-                     c(list(quote(imp), add_name = name_map), imp_args))
+                     c(list(quote(imp), name_map = name_map), imp_args))
     h_top <- 4.1
     w_pad <- 0.5
   } else {

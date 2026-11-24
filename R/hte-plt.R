@@ -693,9 +693,11 @@ plt_hte_dep <- function(x,
 #'   dictionary of `RegR::plt_eff2()`, which, when \pkg{RegR} is installed,
 #'   renames variable rows only (its keys are variable names, so a level `M`
 #'   stays `M`). A name given more than once keeps its first label, as in
-#'   the `colname_map` of `RegR::get_tb_gtsummary()`, so a dictionary
+#'   the `name_map` of `RegR::get_tb_gtsummary()`, so a dictionary
 #'   shared across studies can be passed whole. Only the drawing changes:
 #'   `sub_var`, `effect` and `attr(p, "subgroup")` keep the original names.
+#'   The map recorded by `RegR::set_paper(name_map = )` follows a map given
+#'   here, the first entry for a name winning; `NULL` given ignores it.
 #' @param header_list `NULL` (default) or a named list of single strings
 #'   replacing column headers, keyed as in `RegR::plt_eff2()`; a header left
 #'   out keeps its default. `"\n"` starts a new header line, e.g.
@@ -927,13 +929,18 @@ plt_hte_sub <- function(x,
                  paste(unique(ifelse(nzchar(bad), bad, "<unnamed>")),
                        collapse = ", ")),
          call. = FALSE)
+  name_map_given <- !missing(name_map)
   if (!is.null(dots[["label_column_list"]])) {
     warning("`label_column_list` is deprecated in plt_hte_sub(); use `name_map` instead.",
-            if (!is.null(name_map))
+            if (name_map_given)
               " `name_map` wins; `label_column_list` is ignored." else "",
             call. = FALSE)
-    if (is.null(name_map)) name_map <- dots[["label_column_list"]]
+    if (!name_map_given) {
+      name_map <- dots[["label_column_list"]]
+      name_map_given <- TRUE
+    }
   }
+  name_map <- .causal_name_map(name_map, name_map_given)
   measure <- match.arg(measure)
   if (!is.numeric(conf_level) || length(conf_level) != 1L ||
       is.na(conf_level) || conf_level <= 0 || conf_level >= 1)

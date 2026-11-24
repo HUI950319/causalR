@@ -32,8 +32,9 @@ when \code{sub_var} is among the three most important variables of
 \code{"cate"} draw one of them.}
 
 \item{name_map}{\code{NULL} (default) or the display names of variables and
-levels, passed as \code{name_map} to \code{\link[=plt_hte_sub]{plt_hte_sub()}} and as \code{add_name} to
-\code{MLR::plt_bar_per()}.}
+levels, passed as \code{name_map} to \code{\link[=plt_hte_sub]{plt_hte_sub()}} and
+\code{MLR::plt_bar_per()}. The map recorded by \code{RegR::set_paper(name_map = )} follows a map given
+here, the first entry for a name winning; \code{NULL} given ignores it.}
 
 \item{sub_args}{Named list of arguments of \code{\link[=plt_hte_sub]{plt_hte_sub()}}, other than
 \code{x}, \code{sub_var}, \code{name_map} and \code{save}. A partial list is merged over the
@@ -60,7 +61,7 @@ axis centred on 0.}
 }}
 
 \item{imp_args}{Named list of arguments of \code{MLR::plt_bar_per()} for the
-importance bars, other than \code{data}, \code{add_name} and \code{save}, merged over
+importance bars, other than \code{data}, \code{name_map} and \code{save}, merged over
 the defaults in the usage as \code{sub_args} is. Fields are checked against
 \code{MLR::plt_bar_per()} only when the importance bars are drawn.
 \describe{

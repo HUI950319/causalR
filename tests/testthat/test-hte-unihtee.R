@@ -987,29 +987,29 @@ test_that("axis_arg$share_y = 'none' gives each dep panel its own range", {
   expect_error(plt_hte_unihtee(res, axis_arg = list(share_y = "none")), "type = \"dep\"")
   expect_error(plt_hte_unihtee(res, type = "dep", axis_arg = list(share_y = "x")),
                "share_y")
-  expect_identical(tail(names(formals(plt_hte_unihtee)), 4L),
-                   c("axis_arg", "var_names", "title", "save"))
+  expect_identical(tail(names(formals(plt_hte_unihtee)), 5L),
+                   c("axis_arg", "name_map", "title", "var_names", "save"))
 })
 
-test_that("var_names relabels every type and rejects clashing labels", {
+test_that("name_map relabels every type and rejects clashing labels", {
   res <- uni_plot_res()
-  b <- uni_layer(plt_hte_unihtee(res, var_names = c(w3 = "Weight", sex = "Sex")),
+  b <- uni_layer(plt_hte_unihtee(res, name_map = c(w3 = "Weight", sex = "Sex")),
                  "GeomCol", "estimate")
   expect_true(all(c("Weight (+1 SD)", "Sex (M vs F)", "w1 (+1 SD)") %in%
                     as.character(b$label)))
-  b0 <- uni_layer(plt_hte_unihtee(res, var_names = NULL), "GeomCol", "estimate")
+  b0 <- uni_layer(plt_hte_unihtee(res, name_map = NULL), "GeomCol", "estimate")
   expect_true("w3 (+1 SD)" %in% as.character(b0$label))
   # a name given twice keeps its first label
-  b2 <- uni_layer(plt_hte_unihtee(res, var_names = c(w3 = "Weight", w3 = "Mass")),
+  b2 <- uni_layer(plt_hte_unihtee(res, name_map = c(w3 = "Weight", w3 = "Mass")),
                   "GeomCol", "estimate")
   expect_true("Weight (+1 SD)" %in% as.character(b2$label))
-  txt <- uni_layer(plt_hte_unihtee(res, type = "volcano", var_names = c(w3 = "Weight")),
+  txt <- uni_layer(plt_hte_unihtee(res, type = "volcano", name_map = c(w3 = "Weight")),
                    "GeomText", "display")
   expect_true("Weight" %in% txt$display)
-  q <- plt_hte_unihtee(res, type = "dep", x_var = "w3", var_names = c(w3 = "Weight"))
+  q <- plt_hte_unihtee(res, type = "dep", x_var = "w3", name_map = c(w3 = "Weight"))
   expect_match(uni_layer(q, "GeomLine", "estimate")$panel[1], "^Weight:")
   expect_identical(ggplot2::get_labs(q)$x, "Weight")
-  expect_error(plt_hte_unihtee(res, var_names = c(w3 = "A", w4 = "A")),
+  expect_error(plt_hte_unihtee(res, name_map = c(w3 = "A", w4 = "A")),
                "same display label")
-  expect_error(plt_hte_unihtee(res, var_names = list(w3 = 1)), "var_names")
+  expect_error(plt_hte_unihtee(res, name_map = list(w3 = 1)), "name_map")
 })

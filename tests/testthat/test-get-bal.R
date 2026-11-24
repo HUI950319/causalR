@@ -1,7 +1,7 @@
 # get_bal() builds on get_PSM() / get_PSW() for the weights and on cobalt
 # (a WeightIt dependency, so always installed) for the balance, so the core
 # paths never skip. optmatch ("full") and RegR (save, and the
-# RegR::name_map_seer labels that var_names merges in) are Suggests.
+# RegR::name_map_seer labels that name_map merges in) are Suggests.
 
 bal_data <- function(n = 400L) {
   set.seed(20260927)
@@ -28,7 +28,7 @@ test_that("singular overall balance is unavailable rather than zero", {
                   p = 0.5)
   methods <- list(W = list(design = "weighting", estimand = "ATE", ps = "p"))
   expect_warning(r <- get_bal(d, "z", "f", methods = methods,
-                               var_names = NULL), "`f`.*singular.*NA")
+                               name_map = NULL), "`f`.*singular.*NA")
   expect_true(all(is.na(r$balance$smd)))
   expect_s3_class(ggplot2::ggplot_build(r$plt), "ggplot_built")
   txt <- capture.output(print(r))
@@ -48,7 +48,7 @@ test_that("balance normalises special storage before complete cases", {
   d$x1 <- round(d$x1 * 5)
   methods <- list(W = list(design = "weighting", estimand = "ATE", ps = "p"))
   d$p <- 0.5
-  run <- function(d) get_bal(d, "z", "x1", methods = methods, var_names = NULL)
+  run <- function(d) get_bal(d, "z", "x1", methods = methods, name_map = NULL)
   reference <- run(d)
   for (cl in list(c("grouped_df", "tbl_df", "tbl", "data.frame"),
                   c("rowwise_df", "tbl_df", "tbl", "data.frame"),
@@ -430,7 +430,7 @@ bal_pts <- function(p) ggplot2::layer_data(
 test_that("love_args defaults keep the RegR-style plot", {
   expect_identical(names(formals(get_bal)),
                    c("data", "treat", "adj_var", "methods", "cat_smd",
-                     "tbl", "cores", "var_names", "love_args", "save_plt",
+                     "tbl", "cores", "name_map", "love_args", "var_names", "save_plt",
                      "save_tbl"))
   p <- get_bal(bal_data(), "z", bal_adj, methods = c("PSM", "ATE"))$plt
 
@@ -482,26 +482,26 @@ test_that("love_args restyles points, lines, theme and legend", {
   expect_equal(p$theme$legend.justification.inside, c(0, 0))
 })
 
-test_that("var_names relabels the plot, not $balance", {
+test_that("name_map relabels the plot, not $balance", {
   d <- bal_data()
   d$sex   <- factor(ifelse(d$x2 == 1, "M", "F"))
   d$stage <- factor(rep_len(c("I", "II", "III"), nrow(d)))
   adj <- c("x1", "sex", "stage")
   vn  <- c(x1 = "Age", sex = "Sex", stage = "Stage")
   res <- get_bal(d, "z", adj, methods = "ATO", cat_smd = "level",
-                 var_names = vn)
+                 name_map = vn)
 
   expect_setequal(levels(res$plt$data$var),
                   c("Age", "Sex", "Stage_I", "Stage_II", "Stage_III"))
   expect_setequal(unique(res$balance$variable),
                   c("x1", "sex", "stage_I", "stage_II", "stage_III"))
 
-  res <- get_bal(d, "z", adj, methods = "ATO", var_names = vn)
+  res <- get_bal(d, "z", adj, methods = "ATO", name_map = vn)
   expect_setequal(levels(res$plt$data$var), c("Age", "Sex", "Stage"))
   expect_setequal(unique(res$balance$variable), adj)
 })
 
-test_that("var_names merges into RegR::name_map_seer; NULL keeps the names", {
+test_that("name_map merges into RegR::name_map_seer; NULL keeps the names", {
   skip_if_not_installed("RegR")
   d <- bal_data()
   names(d)[names(d) == "x1"] <- "Age"
@@ -511,23 +511,23 @@ test_that("var_names merges into RegR::name_map_seer; NULL keeps the names", {
 
   expect_setequal(lab(), c("Age (year)", "x2", "x3"))
   # the former default gives the same labels as character()
-  expect_identical(lab(var_names = RegR::name_map_seer), lab())
-  expect_setequal(lab(var_names = c(x2 = "Male")), c("Age (year)", "Male", "x3"))
-  expect_setequal(lab(var_names = list(Age = "Age, y")), c("Age, y", "x2", "x3"))
-  expect_setequal(lab(var_names = NULL), adj)
-  expect_error(lab(var_names = "Age"), "`var_names` must be")
+  expect_identical(lab(name_map = RegR::name_map_seer), lab())
+  expect_setequal(lab(name_map = c(x2 = "Male")), c("Age (year)", "Male", "x3"))
+  expect_setequal(lab(name_map = list(Age = "Age, y")), c("Age, y", "x2", "x3"))
+  expect_setequal(lab(name_map = NULL), adj)
+  expect_error(lab(name_map = "Age"), "`name_map` must be")
   # a name given twice keeps its first label, as RegR's colname_map does
-  expect_setequal(lab(var_names = c(x2 = "A", x2 = "B")), c("Age (year)", "A", "x3"))
-  expect_error(lab(var_names = list(x2 = 1)), "`var_names` must be")
+  expect_setequal(lab(name_map = c(x2 = "A", x2 = "B")), c("Age (year)", "A", "x3"))
+  expect_error(lab(name_map = list(x2 = 1)), "`name_map` must be")
   # two covariates under one label would share one plot row
-  expect_error(lab(var_names = c(x2 = "Age (year)")),
+  expect_error(lab(name_map = c(x2 = "Age (year)")),
                "same display label.*`Age`.*`x2`")
-  expect_error(lab(var_names = c(x2 = "x3")), "same display label.*`x2`.*`x3`")
+  expect_error(lab(name_map = c(x2 = "x3")), "same display label.*`x2`.*`x3`")
 })
 
 test_that("no argument default needs RegR, a Suggests package", {
   # a default is evaluated as soon as the body reads the argument, so
-  # var_names = RegR::name_map_seer failed for anyone without RegR
+  # name_map = RegR::name_map_seer failed for anyone without RegR
   for (f in list(get_bal, plt_hte_unihtee))
     expect_false("RegR" %in% unlist(lapply(formals(f), all.names)))
 })
@@ -537,7 +537,7 @@ test_that("balance plots do not retain unrelated analysis columns", {
     set.seed(105)
     d <- data.frame(z = rep(0:1, 60), x = stats::rnorm(120), p = 0.5)
     if (extra) d$unused <- I(matrix(stats::rnorm(120000), 120))
-    causalR::get_bal(d, "z", "x", var_names = NULL,
+    causalR::get_bal(d, "z", "x", name_map = NULL,
                      methods = list(W = list(design = "weighting", estimand = "ATE", ps = "p")))$plt
   }
   environment(make) <- globalenv()
@@ -557,7 +557,7 @@ test_that("a single balance scheme can sort by its label", {
   one <- list(W = list(design = "weighting", estimand = "ATE"))
   many <- c(one, list(V = list(design = "weighting", estimand = "ATO")))
   run <- function(m) get_bal(d, "z", bal_adj, methods = m,
-                             var_names = NULL, love_args = list(var_order = "W"))
+                             name_map = NULL, love_args = list(var_order = "W"))
   actual <- run(one)
   reference <- run(many)
   expect_identical(levels(actual$plt$data$var), levels(reference$plt$data$var))
@@ -614,8 +614,8 @@ test_that("love_args is validated before anything is fitted", {
                "`love_args\\$var_order` must be")
   expect_error(run(list(legend_position = c(1, 2, 3))),
                "`love_args\\$legend_position` must be")
-  expect_error(run(list(var_names = c(x1 = "Age"))),
-               "`love_args` contains unknown field.*`var_names`")
+  expect_error(run(list(name_map = c(x1 = "Age"))),
+               "`love_args` contains unknown field.*`name_map`")
 })
 
 test_that("save_plt writes a PDF only when it is a non-empty list", {
@@ -662,7 +662,7 @@ test_that("tbl = TRUE merges one gtsummary table per scheme; FALSE skips it", {
   expect_null(get_bal(d, "z", adj, methods = "ATO")$tbl)
 
   res  <- get_bal(d, "z", adj, methods = c("PSM", "ATE"), tbl = TRUE,
-                  var_names = c(x1 = "Age"))
+                  name_map = c(x1 = "Age"))
   labs <- c("Unadjusted", "PS matching (nearest, ATT)", "IPTW (ATE)")
   expect_s3_class(res$tbl, "tbl_merge")
   expect_length(res$tbl$tbls, 3L)
@@ -735,4 +735,25 @@ test_that("save_tbl builds and writes the table; each save takes its own fields"
   get_bal(d, "z", bal_adj, methods = "ATO", save_plt = list(filename = f),
           save_tbl = list(path = dir, title = "bal_tbl2"))
   expect_setequal(list.files(dir), c("bal_tbl.docx", "bal_tbl2.docx", "bal.pdf"))
+})
+
+test_that("name_map takes the map of RegR::set_paper(), and var_names still works", {
+  lab <- function(...) {
+    p <- get_bal(bal_data(), "z", bal_adj, methods = "ATO", ...)$plt
+    levels(p$data$var)
+  }
+  base <- lab()
+  old <- options(RegR.name_map = stats::setNames(list("Covariate one"), bal_adj[1]))
+  on.exit(options(old), add = TRUE)
+  global <- lab()
+  expect_true("Covariate one" %in% global)
+  expect_false("Covariate one" %in% lab(name_map = NULL))
+  options(RegR.name_map = NULL)
+  expect_identical(lab(name_map = stats::setNames(list("Covariate one"), bal_adj[1])), global)
+  warned <- causalR:::.causal_name_map_warned
+  rm(list = ls(warned), envir = warned)
+  expect_warning(old_name <- lab(var_names = stats::setNames(list("Covariate one"), bal_adj[1])),
+                 "`var_names` of get_bal() is renamed `name_map`", fixed = TRUE)
+  expect_identical(old_name, global)
+  rm(list = ls(warned), envir = warned)
 })
